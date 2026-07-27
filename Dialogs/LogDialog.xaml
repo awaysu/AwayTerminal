@@ -1,0 +1,21 @@
+<Window x:Class="AwayTerminal.Dialogs.LogDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="記錄 log" Width="520" SizeToContent="Height"
+        Background="#2D2D30" WindowStartupLocation="CenterOwner"
+        ResizeMode="NoResize" ShowInTaskbar="False">
+    <StackPanel Margin="16">
+        <TextBlock x:Name="PathLabel" Text="log 存檔位置：" Foreground="#E0E0E0" Margin="0,0,0,6" />
+        <DockPanel>
+            <Button x:Name="BrowseBtn" DockPanel.Dock="Right" Content="瀏覽…" Width="80" Height="24" Margin="8,0,0,0" Click="Browse_Click" />
+            <TextBox x:Name="PathBox" Height="24" Padding="3,2"
+                     Background="#1E1E1E" Foreground="#E0E0E0" BorderBrush="#555" CaretBrush="#E0E0E0" />
+        </DockPanel>
+        <CheckBox x:Name="TsCheck" Content="每行前面加時間戳 [yy-MM-dd HH:mm:ss]" Foreground="#E0E0E0" Margin="0,12,0,0" />
+        <CheckBox x:Name="AppendCheck" Content="檔案已存在時附加（append）" Foreground="#E0E0E0" Margin="0,8,0,0" />
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+            <Button x:Name="StartBtn" Content="開始記錄" Width="100" Height="26" IsDefault="True" Click="Ok_Click" Margin="0,0,8,0" />
+            <Button x:Name="CancelBtn" Content="取消" Width="76" Height="26" IsCancel="True" />
+        </StackPanel>
+    </StackPanel>
+</Window>

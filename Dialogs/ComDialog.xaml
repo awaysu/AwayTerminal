@@ -1,0 +1,71 @@
+<Window x:Class="AwayTerminal.Dialogs.ComDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="開 COM 埠" Width="340" SizeToContent="Height"
+        Background="#2D2D30" WindowStartupLocation="CenterOwner"
+        ResizeMode="NoResize" ShowInTaskbar="False">
+    <Window.Resources>
+        <Style TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#E0E0E0" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Margin" Value="0,0,10,0" />
+        </Style>
+        <Style TargetType="ComboBox">
+            <Setter Property="Margin" Value="0,4" />
+            <Setter Property="Height" Value="24" />
+            <!-- 下拉選單內文字用黑色：擋掉視窗層級的灰字 TextBlock 隱式樣式滲入 ComboBox 模板 -->
+            <Style.Resources>
+                <Style TargetType="TextBlock">
+                    <Setter Property="Foreground" Value="Black" />
+                    <Setter Property="Margin" Value="0" />
+                </Style>
+            </Style.Resources>
+        </Style>
+    </Window.Resources>
+    <Grid Margin="16">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <TextBlock Grid.Row="0" Grid.Column="0" Text="Port" />
+        <ComboBox Grid.Row="0" Grid.Column="1" x:Name="PortCombo" IsEditable="True" />
+
+        <TextBlock Grid.Row="1" Grid.Column="0" Text="Baud rate" />
+        <ComboBox Grid.Row="1" Grid.Column="1" x:Name="BaudCombo" IsEditable="True" />
+
+        <TextBlock Grid.Row="2" Grid.Column="0" Text="Data bits" />
+        <ComboBox Grid.Row="2" Grid.Column="1" x:Name="DataCombo" />
+
+        <TextBlock Grid.Row="3" Grid.Column="0" Text="Parity" />
+        <ComboBox Grid.Row="3" Grid.Column="1" x:Name="ParityCombo" />
+
+        <TextBlock Grid.Row="4" Grid.Column="0" Text="Stop bits" />
+        <ComboBox Grid.Row="4" Grid.Column="1" x:Name="StopCombo" />
+
+        <TextBlock Grid.Row="5" Grid.Column="0" Text="Flow control" />
+        <ComboBox Grid.Row="5" Grid.Column="1" x:Name="FlowCombo" />
+
+        <CheckBox Grid.Row="6" Grid.ColumnSpan="2" x:Name="ReconnectBox" Content="斷線自動重連"
+                  Foreground="#E0E0E0" Margin="0,8,0,0" />
+
+        <DockPanel Grid.Row="7" Grid.ColumnSpan="2" Margin="0,16,0,0">
+            <Button x:Name="ResetBtn" DockPanel.Dock="Left" Content="回到預設" Width="100" Height="26"
+                    HorizontalAlignment="Left" Click="Reset_Click" />
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button x:Name="OpenBtn" Content="開啟" Width="76" Height="26" IsDefault="True" Click="Ok_Click" Margin="0,0,8,0" />
+                <Button x:Name="CancelBtn" Content="取消" Width="76" Height="26" IsCancel="True" />
+            </StackPanel>
+        </DockPanel>
+    </Grid>
+</Window>

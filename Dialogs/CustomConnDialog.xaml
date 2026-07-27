@@ -1,0 +1,86 @@
+<Window x:Class="AwayTerminal.Dialogs.CustomConnDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="自訂新連接" Width="640" Height="540"
+        Background="#2D2D30" WindowStartupLocation="CenterOwner"
+        ResizeMode="CanResize" MinWidth="560" MinHeight="520" ShowInTaskbar="False">
+    <Window.Resources>
+        <Style TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#E0E0E0" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+        <Style TargetType="TextBox">
+            <Setter Property="Background" Value="#1E1E1E" />
+            <Setter Property="Foreground" Value="#E0E0E0" />
+            <Setter Property="BorderBrush" Value="#555" />
+            <Setter Property="CaretBrush" Value="#E0E0E0" />
+            <Setter Property="Padding" Value="4,3" />
+            <Setter Property="Height" Value="27" />
+        </Style>
+        <Style TargetType="CheckBox">
+            <Setter Property="Foreground" Value="#E0E0E0" />
+            <Setter Property="Margin" Value="0,0,0,8" />
+        </Style>
+    </Window.Resources>
+
+    <Grid>
+        <!-- 主體：左清單 + 右編輯 -->
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="190" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <!-- 左：清單，最下方由上往下「自動偵測 / ＋ 新增 / － 刪除」（標準按鈕、統一黑字）-->
+            <DockPanel Grid.Column="0" Background="#232326">
+                <StackPanel DockPanel.Dock="Bottom" Margin="0,5,0,5">
+                    <Button x:Name="AutoDetectBtn" Content="自動偵測" Height="32" Margin="8,3,8,3" Click="AutoDetect_Click" Cursor="Hand" FontSize="13" />
+                    <Button x:Name="AddBtn" Content="＋ 新增" Height="32" Margin="8,3,8,3" Click="Add_Click" Cursor="Hand" FontSize="13" />
+                    <Button x:Name="DeleteBtn" Content="－ 刪除" Height="32" Margin="8,3,8,3" Click="Delete_Click" Cursor="Hand" FontSize="13" />
+                </StackPanel>
+                <ListBox x:Name="List" DisplayMemberPath="Name" SelectionChanged="List_SelectionChanged"
+                         Background="Transparent" Foreground="#E0E0E0" BorderThickness="0" Padding="6" FontSize="13" />
+            </DockPanel>
+
+            <!-- 右：詳細設定 + 右下 儲存/返回 -->
+            <Grid Grid.Column="1" Margin="18,14,16,14">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <StackPanel x:Name="Editor" Grid.Row="0">
+                    <TextBlock x:Name="IconLabel" Text="圖示" />
+                    <ComboBox x:Name="IconCombo" Margin="0,4,0,12" Height="46" Width="76" HorizontalAlignment="Left" />
+
+                    <TextBlock x:Name="NameLabel" Text="名稱" />
+                    <TextBox x:Name="NameBox" Margin="0,4,0,12" />
+
+                    <TextBlock x:Name="PathLabel" Text="執行檔" />
+                    <DockPanel Margin="0,4,0,12">
+                        <Button x:Name="BrowseBtn" DockPanel.Dock="Right" Content="瀏覽…" Width="76" Height="27" Margin="8,0,0,0" Click="Browse_Click" />
+                        <TextBox x:Name="PathBox" />
+                    </DockPanel>
+
+                    <TextBlock x:Name="ArgsLabel" Text="參數" />
+                    <TextBox x:Name="ArgsBox" Margin="0,4,0,12" />
+
+                    <TextBlock x:Name="CloseKeyLabel" Text="關閉按鍵" />
+                    <StackPanel Orientation="Horizontal" Margin="0,4,0,14">
+                        <ComboBox x:Name="CloseKeyCombo" Width="110" Height="27" />
+                        <ComboBox x:Name="CloseCountCombo" Width="70" Height="27" Margin="8,0,0,0" />
+                    </StackPanel>
+
+                    <CheckBox x:Name="HiddenCheck" Content="隱藏" />
+                    <CheckBox x:Name="PickDirCheck" Content="啟動前選擇資料夾" />
+                    <CheckBox x:Name="ViaPsCheck" Content="使用 PowerShell" />
+                </StackPanel>
+
+                <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Bottom">
+                    <Button x:Name="SaveBtn" Content="儲存" Width="84" Height="30" Click="Save_Click" IsDefault="True" Margin="0,0,8,0" />
+                    <Button x:Name="BackBtn" Content="返回" Width="84" Height="30" Click="Back_Click" />
+                </StackPanel>
+            </Grid>
+        </Grid>
+    </Grid>
+</Window>

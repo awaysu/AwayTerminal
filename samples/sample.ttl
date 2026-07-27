@@ -1,0 +1,36 @@
+; AwayTerminal 巨集示範（擴充直譯器）
+; 參考 TeraTerm 巨集：https://teratermproject.github.io/manual/5/en/macro/command/index.html
+; 用法：在 PowerShell 分頁點「M」icon 或右鍵「執行巨集」，選這個檔。
+;
+; 支援：變數 / 整數運算式 / for..next / while..endwhile / if..then..else..endif /
+;       goto/call/return / wait / send/sendln / messagebox/yesnobox/inputbox /
+;       字串函式(strlen strconcat int2str str2int sprintf ...) / 系統變數(result inputstr timeout)
+
+sendln 'echo === macro start ==='
+mpause 300
+
+; --- for 迴圈 + int2str（把數字轉字串再送出）---
+for i 1 3
+  int2str istr i
+  sendln 'echo loop ' istr
+  mpause 200
+next
+
+; --- 變數、運算式、if/then/else/endif ---
+a = 2
+b = 3
+c = a + b
+int2str cstr c
+sendln 'echo a+b = ' cstr
+if c = 5 then
+  sendln 'echo c equals 5 (correct)'
+else
+  sendln 'echo unexpected'
+endif
+
+; --- 等提示字元出現再繼續 ---
+wait 'PS'
+sendln 'echo === macro done ==='
+
+; --- 對話框（result 會被 yesnobox 設定）---
+messagebox '巨集執行完畢!' 'AwayTerminal'

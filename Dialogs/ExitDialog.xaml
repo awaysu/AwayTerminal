@@ -1,0 +1,23 @@
+<Window x:Class="AwayTerminal.Dialogs.ExitDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="關閉艾維終端機" Width="400" SizeToContent="Height"
+        Background="#2D2D30" WindowStartupLocation="CenterOwner"
+        ResizeMode="NoResize" ShowInTaskbar="False">
+    <StackPanel Margin="18">
+        <TextBlock x:Name="MsgText" Text="確定要關閉艾維終端機嗎？" Foreground="#E0E0E0" Margin="0,0,0,12" />
+        <CheckBox x:Name="RestoreCheck" Content="下次開啟恢復目前分頁" IsChecked="True" Foreground="#E0E0E0" Margin="2,4" />
+        <CheckBox x:Name="UpdateMdCheck" Content="Claude Code 離開前更新 CLAUDE.md" IsChecked="False" Foreground="#E0E0E0" Margin="2,4" />
+
+        <StackPanel x:Name="BusyPanel" Visibility="Collapsed" Margin="0,14,0,0">
+            <TextBlock x:Name="BusyText" Text="正在請 Claude Code 更新 CLAUDE.md，請稍候…"
+                       Foreground="#FDFFB0" TextWrapping="Wrap" Margin="0,0,0,6" />
+            <ProgressBar IsIndeterminate="True" Height="6" Foreground="#FDFFB0" Background="#1E1E1E" BorderThickness="0" />
+        </StackPanel>
+
+        <StackPanel x:Name="ButtonPanel" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,18,0,0">
+            <Button x:Name="OkBtn" Content="確定離開" Width="96" Height="28" IsDefault="True" Click="Ok_Click" Margin="0,0,8,0" />
+            <Button x:Name="CancelBtn" Content="取消" Width="76" Height="28" IsCancel="True" />
+        </StackPanel>
+    </StackPanel>
+</Window>

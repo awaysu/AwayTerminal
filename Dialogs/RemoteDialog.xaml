@@ -1,0 +1,44 @@
+<Window x:Class="AwayTerminal.Dialogs.RemoteDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="遠端設定" Width="460" SizeToContent="Height"
+        Background="#2D2D30" WindowStartupLocation="CenterOwner"
+        ResizeMode="NoResize" ShowInTaskbar="False">
+    <Window.Resources>
+        <Style TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#E0E0E0" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+        <Style TargetType="TextBox">
+            <Setter Property="Background" Value="#1E1E1E" />
+            <Setter Property="Foreground" Value="#E0E0E0" />
+            <Setter Property="BorderBrush" Value="#555" />
+            <Setter Property="CaretBrush" Value="#E0E0E0" />
+            <Setter Property="Padding" Value="3,2" />
+            <Setter Property="Height" Value="24" />
+        </Style>
+    </Window.Resources>
+    <StackPanel Margin="16">
+        <CheckBox x:Name="EnableChk" Content="啟用遠端控制" Foreground="#E0E0E0" Margin="0,0,0,12" />
+
+        <TextBlock x:Name="TokenLabel" Text="Bot Token" Margin="0,0,0,3" />
+        <TextBox x:Name="TokenBox" Margin="0,0,0,10" />
+
+        <TextBlock x:Name="ChatLabel" Text="允許的 Chat ID" Margin="0,0,0,3" />
+        <DockPanel Margin="0,0,0,10">
+            <Button x:Name="GetIdBtn" DockPanel.Dock="Right" Content="取得 chat id" Width="110" Height="24"
+                    Margin="8,0,0,0" Click="GetId_Click" />
+            <TextBox x:Name="ChatBox" />
+        </DockPanel>
+
+        <CheckBox x:Name="NotifyChk" Content="忙碌完成時推播通知" Foreground="#E0E0E0" Margin="0,0,0,12" />
+
+        <TextBlock x:Name="HintText" TextWrapping="Wrap" Foreground="#9A9A9A" Margin="0,0,0,14"
+                   Text="向 @BotFather 申請 bot 取得 token；先用手機傳一則訊息給你的 bot，再按「取得 chat id」。" />
+
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+            <Button x:Name="OkBtn" Content="儲存" Width="76" Height="26" IsDefault="True" Click="Ok_Click" Margin="0,0,8,0" />
+            <Button x:Name="CancelBtn" Content="取消" Width="76" Height="26" IsCancel="True" />
+        </StackPanel>
+    </StackPanel>
+</Window>

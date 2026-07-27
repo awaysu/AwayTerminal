@@ -1,0 +1,16 @@
+# ---- Build output ----
+[Bb]in/
+[Oo]bj/
+
+# ---- Installer artifacts (large / regenerable) ----
+installer/dist/
+installer/MicrosoftEdgeWebview2Setup.exe
+
+# ---- IDE / user ----
+.vs/
+*.user
+*.suo
+
+# ---- Logs / temp ----
+*.log
+*.tmp

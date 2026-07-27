@@ -1,0 +1,20 @@
+﻿功能與 icon 檔名對照
+
+中文功能	English	用途	Icon 檔名
+------------------------------------------------------------------------
+PowerShell	PowerShell	選目錄開 PowerShell 分頁	powershell.png
+SSH/Telnet	SSH/Telnet	開 SSH 或 Telnet 連線	ssh-telnet.png
+連接埠	COM	開序列埠(COM)連線	com.png
+視窗分割	Split View	視窗分割	split-view.png
+複製	Copy	複製滑鼠選取的文字	copy.png
+貼上	Paste	貼上剪貼簿	paste.png
+複製全部	Copy All	複製整個緩衝區文字	copy-all.png
+清除畫面	Clear	清除畫面(含未送出的輸入)	clear.png
+Prompt	Prompt	常用 prompt 管理/送出	prompts.png
+字體背景	Font/BG	字型/大小/文字色/背景色	font-bg.png
+遠端設定	Remote	遠端設定	remote-settings.png
+其他設定	Settings	中文/英文切換	settings.png
+關於	About	作者 + 版本	about.png
+分頁排列	Arrange	分頁排列	arrange.png
+Log 紀錄	Log	紀錄 log	log-record.png
+自動執行Script	Auto Script	自動執行 script	auto-script.png

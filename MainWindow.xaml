@@ -1,0 +1,199 @@
+<Window x:Class="AwayTerminal.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
+        xmlns:loc="clr-namespace:AwayTerminal.Localization"
+        xmlns:app="clr-namespace:AwayTerminal"
+        Title="AwayTerminal" Height="640" Width="960"
+        Background="#1E1E1E"
+        Icon="/icon/app-icon.png"
+        UseLayoutRounding="True" SnapsToDevicePixels="True"
+        WindowStartupLocation="CenterScreen"
+        WindowState="Maximized">
+    <Window.TaskbarItemInfo>
+        <TaskbarItemInfo x:Name="Taskbar" />
+    </Window.TaskbarItemInfo>
+    <Window.Resources>
+        <Style x:Key="ToolBtn" TargetType="Button">
+            <Setter Property="Background" Value="#3A3A3D" />
+            <Setter Property="Foreground" Value="#E0E0E0" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="4,4" />
+            <Setter Property="Margin" Value="2,0" />
+            <Setter Property="Width" Value="72" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="bd" Background="{TemplateBinding Background}" CornerRadius="4"
+                                Padding="{TemplateBinding Padding}">
+                            <!-- ToolBtnEx.Horizontal=True 時：圖示左、文字右（右側直欄用）；否則圖示上、文字下 -->
+                            <StackPanel x:Name="sp" Orientation="Vertical" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <Image x:Name="img" Source="{Binding Tag, RelativeSource={RelativeSource TemplatedParent}}"
+                                       Width="26" Height="26" Stretch="Uniform" Margin="0,0,0,3"
+                                       RenderOptions.BitmapScalingMode="HighQuality" SnapsToDevicePixels="True" />
+                                <ContentPresenter x:Name="cp" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="app:ToolBtnEx.Horizontal" Value="True">
+                                <Setter TargetName="sp" Property="Orientation" Value="Horizontal" />
+                                <Setter TargetName="sp" Property="HorizontalAlignment" Value="Left" />
+                                <Setter TargetName="img" Property="Margin" Value="0,0,8,0" />
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="bd" Property="Background" Value="#50505A" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Foreground" Value="#666" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="Sep" TargetType="Rectangle">
+            <Setter Property="Width" Value="1" />
+            <Setter Property="Fill" Value="#555" />
+            <Setter Property="Margin" Value="6,3" />
+        </Style>
+    </Window.Resources>
+
+    <Grid>
+    <DockPanel Background="#1E1E1E">
+        <!-- 功能列（可切換上方橫排 / 右側直欄）-->
+        <Border x:Name="ToolbarBorder" DockPanel.Dock="Top" Background="#2D2D30" Padding="4">
+            <StackPanel x:Name="ToolbarPanel" Orientation="Horizontal">
+                <Button x:Name="BtnNew" Style="{StaticResource ToolBtn}" Click="New_Click" Tag="pack://application:,,,/icon/new-connecting.png">新連接</Button>
+                <Button x:Name="BtnHistory" Style="{StaticResource ToolBtn}" Click="History_Click" Tag="pack://application:,,,/icon/history.png">紀錄</Button>
+                <Rectangle Style="{StaticResource Sep}" />
+                <Button x:Name="BtnCopy" Style="{StaticResource ToolBtn}" Click="Copy_Click" Tag="pack://application:,,,/icon/copy.png">複製</Button>
+                <Button x:Name="BtnPaste" Style="{StaticResource ToolBtn}" Click="Paste_Click" Tag="pack://application:,,,/icon/paste.png">貼上</Button>
+                <Button x:Name="BtnCopyAll" Style="{StaticResource ToolBtn}" Click="CopyAll_Click" Tag="pack://application:,,,/icon/copy-all.png">複製全部</Button>
+                <Button x:Name="BtnClear" Style="{StaticResource ToolBtn}" Click="Clear_Click" Tag="pack://application:,,,/icon/clear.png">清畫面</Button>
+                <Rectangle Style="{StaticResource Sep}" />
+                <Button x:Name="BtnSplit" Style="{StaticResource ToolBtn}" Click="Split_Click" Tag="pack://application:,,,/icon/arrange.png">分割</Button>
+                <Button x:Name="BtnTaskbar" Style="{StaticResource ToolBtn}" Click="TaskbarToggle_Click" Tag="pack://application:,,,/icon/taskbar-change.png">功能列</Button>
+                <Rectangle Style="{StaticResource Sep}" />
+                <Button x:Name="BtnPrompt" Style="{StaticResource ToolBtn}" Click="Prompt_Click" Tag="pack://application:,,,/icon/prompts.png">常用字串</Button>
+                <Button x:Name="BtnRemote" Style="{StaticResource ToolBtn}" Click="Remote_Click" Tag="pack://application:,,,/icon/remote-settings.png">遠端</Button>
+                <Button x:Name="BtnSettings" Style="{StaticResource ToolBtn}" Click="Settings_Click" Tag="pack://application:,,,/icon/settings.png">其他設定</Button>
+                <Rectangle Style="{StaticResource Sep}" />
+                <Button x:Name="BtnAbout" Style="{StaticResource ToolBtn}" Click="About_Click" Tag="pack://application:,,,/icon/about.png">關於</Button>
+            </StackPanel>
+        </Border>
+
+        <!-- 分頁列（顯示在終端機下方；ZIndex 高於終端機外框，讓作用中分頁能蓋掉底邊黃線形成缺口）-->
+        <Border DockPanel.Dock="Bottom" Background="#1E1E1E" Padding="4,0,4,4" Panel.ZIndex="1">
+            <DockPanel>
+            <Button DockPanel.Dock="Right" Content="&#9650;" Click="TabList_Click"
+                    ToolTip="{Binding Path=[tip.tabList], Source={x:Static loc:LocProxy.Instance}}"
+                    Width="22" Height="22" Margin="4,2,0,0" VerticalAlignment="Top"
+                    Background="#3A3A3D" Foreground="#CCCCCC" BorderThickness="0" Cursor="Hand" FontSize="9" />
+            <ItemsControl x:Name="TabStrip">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <StackPanel Orientation="Horizontal" />
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Border Background="{Binding TabBackground}" BorderBrush="{Binding TabBorder}"
+                                BorderThickness="{Binding TabBorderThickness}" CornerRadius="0,0,6,6" Margin="{Binding TabMargin}" Padding="14,5"
+                                Cursor="Hand" MouseLeftButtonUp="Tab_Click" ToolTip="{Binding ToolTipText}">
+                            <Border.ContextMenu>
+                                <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
+                                    <MenuItem Header="{Binding Path=[menu.rename], Source={x:Static loc:LocProxy.Instance}}" Click="MenuRename_Click" />
+                                    <MenuItem Header="{Binding Path=[menu.log], Source={x:Static loc:LocProxy.Instance}}" Click="MenuLog_Click" />
+                                    <MenuItem Header="{Binding Path=[menu.macro], Source={x:Static loc:LocProxy.Instance}}" Click="MenuMacro_Click" />
+                                    <MenuItem Header="{Binding Path=[menu.color], Source={x:Static loc:LocProxy.Instance}}">
+                                        <MenuItem Header="{Binding Path=[menu.colorDefault], Source={x:Static loc:LocProxy.Instance}}" Tag="" Click="MenuColor_Click" />
+                                        <Separator />
+                                        <MenuItem Header="Aa 範例文字" Foreground="#FFFF00" Background="#000000" Tag="#FFFF00|#000000" Click="MenuColor_Click" />
+                                        <MenuItem Header="Aa 範例文字" Foreground="#F8F8F2" Background="#282A36" Tag="#F8F8F2|#282A36" Click="MenuColor_Click" />
+                                        <MenuItem Header="Aa 範例文字" Foreground="#C9D1D9" Background="#0D1117" Tag="#C9D1D9|#0D1117" Click="MenuColor_Click" />
+                                        <MenuItem Header="Aa 範例文字" Foreground="#C0CAF5" Background="#1A1B26" Tag="#C0CAF5|#1A1B26" Click="MenuColor_Click" />
+                                        <MenuItem Header="Aa 範例文字" Foreground="#EBDBB2" Background="#282828" Tag="#EBDBB2|#282828" Click="MenuColor_Click" />
+                                    </MenuItem>
+                                    <Separator />
+                                    <MenuItem Header="{Binding Path=[menu.close], Source={x:Static loc:LocProxy.Instance}}" Click="MenuClose_Click" />
+                                </ContextMenu>
+                            </Border.ContextMenu>
+                            <StackPanel Orientation="Horizontal">
+                                <Ellipse Width="15" Height="15" Fill="{Binding StatusBrush}"
+                                         VerticalAlignment="Center" Margin="0,0,8,0" />
+                                <Image Source="pack://application:,,,/icon/log-record-32.png" Width="18" Height="18"
+                                       Opacity="{Binding LogOpacity}" VerticalAlignment="Center" Margin="0,0,5,0"
+                                       Cursor="Hand" MouseLeftButtonUp="LogIcon_Click"
+                                       ToolTip="{Binding Path=[tip.tabLog], Source={x:Static loc:LocProxy.Instance}}"
+                                       RenderOptions.BitmapScalingMode="HighQuality" />
+                                <Image Source="pack://application:,,,/icon/auto-script-32.png" Width="18" Height="18"
+                                       Opacity="{Binding MacroOpacity}" VerticalAlignment="Center" Margin="0,0,8,0"
+                                       Cursor="Hand" MouseLeftButtonUp="MacroIcon_Click"
+                                       ToolTip="{Binding Path=[tip.tabMacro], Source={x:Static loc:LocProxy.Instance}}"
+                                       RenderOptions.BitmapScalingMode="HighQuality" />
+                                <TextBlock Text="{Binding Title}" Foreground="{Binding TitleBrush}" VerticalAlignment="Center"
+                                           FontSize="15" MaxWidth="340" TextTrimming="CharacterEllipsis" />
+                                <Button Content="&#10005;" Click="TabClose_Click" Width="22" Height="22"
+                                        Margin="10,0,0,0" Padding="0" Background="Transparent" BorderThickness="0"
+                                        Foreground="#AAAAAA" Cursor="Hand" FontSize="13"
+                                        ToolTip="{Binding Path=[tip.tabClose], Source={x:Static loc:LocProxy.Instance}}" />
+                            </StackPanel>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            </DockPanel>
+        </Border>
+
+        <!-- 終端機畫面（黃框，貼到最右）＋ 右側常用字串快速輸入抽屜（不疊在 WebView2 上，避免 airspace）-->
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <Border x:Name="TermFrame" Grid.Column="0" BorderBrush="#FDFFB0" BorderThickness="1" Margin="4,0,4,0">
+                <wv2:WebView2 x:Name="Web" />
+            </Border>
+
+            <!-- 快速輸入面板（寬約 1/5，由上往下：群組 / 標題 / 內容 / 送出）；箭頭在工具列右端 -->
+            <Border x:Name="QuickPanel" Grid.Column="1" Visibility="Collapsed" Background="#252528" BorderBrush="#FDFFB0" BorderThickness="1" Margin="0,0,4,0">
+                <Grid Margin="10">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <TextBlock Grid.Row="0" x:Name="QuickGroupLabel" Text="群組" Foreground="#E0E0E0" Margin="0,0,0,3" />
+                    <ComboBox Grid.Row="1" x:Name="QuickGroupCombo" Height="26" Margin="0,0,0,10" SelectionChanged="QuickGroup_SelectionChanged" />
+                    <TextBlock Grid.Row="2" x:Name="QuickTitleLabel" Text="標題" Foreground="#E0E0E0" Margin="0,0,0,3" />
+                    <ComboBox Grid.Row="3" x:Name="QuickTitleCombo" Height="26" Margin="0,0,0,10" SelectionChanged="QuickTitle_SelectionChanged" />
+                    <TextBlock Grid.Row="4" x:Name="QuickContentLabel" Text="內容" Foreground="#E0E0E0" Margin="0,0,0,3" />
+                    <TextBox Grid.Row="5" x:Name="QuickContentBox" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"
+                             Background="#1E1E1E" Foreground="#E0E0E0" BorderBrush="#555" CaretBrush="#E0E0E0" Padding="4" Margin="0,0,0,10" />
+                    <Button Grid.Row="6" x:Name="QuickSendBtn" Content="送出" Height="30" Click="QuickSend_Click" />
+                </Grid>
+            </Border>
+        </Grid>
+    </DockPanel>
+
+    <!-- 常用字串快速輸入的小箭頭：壓在工具列（關於那列）最右端、貼近黃框上緣，讓終端機黃框能貼到最右 -->
+    <Button x:Name="QuickToggle" Content="&#9660;" Width="30" Height="16"
+            HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,40,8,0" Panel.ZIndex="20"
+            Click="QuickToggle_Click" Background="#3A3A3D" Foreground="#FDFFB0" BorderThickness="0" Cursor="Hand" FontSize="10"
+            ToolTip="{Binding Path=[quick.tip], Source={x:Static loc:LocProxy.Instance}}" />
+
+    <!-- 複製提示：浮在被按的按鈕旁邊 -->
+    <Popup x:Name="CopyPopup" Placement="Bottom" AllowsTransparency="True" StaysOpen="True" PopupAnimation="Fade">
+        <Border Background="#E6222226" CornerRadius="5" Padding="10,6" Margin="0,4,0,0">
+            <TextBlock x:Name="CopyPopupText" Foreground="#F0F0F0" FontSize="12" />
+        </Border>
+    </Popup>
+    </Grid>
+</Window>

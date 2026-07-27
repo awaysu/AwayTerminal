@@ -1,0 +1,271 @@
+using System.Collections.Generic;
+
+namespace AwayTerminal.Localization;
+
+/// <summary>簡易中/英字串表。切換語言時觸發 Changed，讓 UI 重新套用。</summary>
+public static class Loc
+{
+    public static string Lang { get; private set; } = "zh";
+    public static event Action? Changed;
+
+    private static readonly Dictionary<string, (string zh, string en)> M = new()
+    {
+        ["app.name"] = ("AwayTerminal", "AwayTerminal"),
+        ["tb.new"] = ("新連接", "New"),
+        ["tip.new"] = ("新增連線（選擇類型）", "New connection (choose type)"),
+        ["tb.history"] = ("紀錄", "History"),
+        ["tip.history"] = ("最近開過的連線（點選重開）", "Recent connections (click to reopen)"),
+        ["history.empty"] = ("（尚無紀錄）", "(no history yet)"),
+        ["quick.tip"] = ("常用字串快速輸入", "Quick snippet input"),
+        ["quick.all"] = ("（全部）", "(All)"),
+        ["tb.claude"] = ("ClaudeCode", "ClaudeCode"),
+        ["tip.claude"] = ("選目錄開啟並執行 Claude Code", "Open folder and run Claude Code"),
+        ["tb.adb"] = ("ADB", "ADB"),
+        ["tip.adb"] = ("開 ADB shell", "Open ADB shell"),
+        ["adb.noPath"] = ("請先到「設定」設定 adb 路徑。", "Please set the adb path in Settings first."),
+        ["adb.noDevice"] = ("沒有偵測到 adb 裝置。", "No adb device detected."),
+        ["adb.pickDevice"] = ("選擇裝置", "Pick a device"),
+        ["settings.adbPath"] = ("adb 路徑", "adb path"),
+        ["settings.font"] = ("字型", "Font"),
+        ["settings.claudePath"] = ("Claude 路徑", "Claude path"),
+        ["settings.claudeArgs"] = ("Claude 參數", "Claude arguments"),
+        ["settings.claudeViaPs"] = ("透過 PowerShell 執行（npm 版 claude 請勾）", "Run via PowerShell (check for npm claude)"),
+        ["claude.noPath"] = ("請先到「設定」設定 Claude 路徑（找不到 claude 執行檔）。", "Please set the Claude path in Settings first (claude executable not found)."),
+        // 設定 GroupBox 標題 / 啟用勾選
+        ["settings.groupLang"] = ("語言", "Language"),
+        ["settings.groupFont"] = ("字體背景顏色", "Font & colors"),
+        ["settings.groupClaude"] = ("Claude", "Claude"),
+        ["settings.groupAdb"] = ("adb", "adb"),
+        ["settings.claudeEnable"] = ("使用 Claude（工具列顯示按鈕）", "Use Claude (show toolbar button)"),
+        ["settings.adbEnable"] = ("使用 ADB（工具列顯示按鈕）", "Use ADB (show toolbar button)"),
+        ["settings.adbBundledHint"] = ("使用內建 adb，不需另外設定。", "Uses the bundled adb; no setup needed."),
+        // 分頁右鍵：配色
+        ["menu.color"] = ("配色", "Colors"),
+        ["menu.colorDefault"] = ("預設（設定顏色）", "Default (settings colors)"),
+
+        // 自訂新連接
+        ["menu.custom"] = ("自訂…", "Custom…"),
+        ["custom.title"] = ("自訂新連接", "Connections"),
+        ["custom.icon"] = ("圖示", "Icon"),
+        ["custom.name"] = ("名稱", "Name"),
+        ["custom.path"] = ("執行檔", "Executable"),
+        ["custom.args"] = ("參數", "Arguments"),
+        ["custom.pickDir"] = ("啟動前選擇資料夾", "Choose folder before launch"),
+        ["custom.hidden"] = ("隱藏", "Hidden"),
+        ["custom.viaPs"] = ("使用 PowerShell", "Use PowerShell"),
+        ["custom.closeKey"] = ("關閉按鍵", "Close key"),
+        ["custom.closeNone"] = ("無", "None"),
+        ["custom.add"] = ("＋ 新增", "＋ New"),
+        ["custom.delBtn"] = ("－ 刪除", "－ Delete"),
+        ["custom.save"] = ("儲存", "Save"),
+        ["custom.delete"] = ("刪除", "Delete"),
+        ["custom.back"] = ("返回", "Back"),
+        ["custom.detect"] = ("自動偵測", "Auto-detect"),
+        ["custom.detectNone"] = ("沒有偵測到可加入的工具（claude / opencode 等，或都已在清單中）。",
+                                  "No new tools detected (claude / opencode, etc., or all already listed)."),
+        ["custom.detectDone"] = ("已加入：{0}", "Added: {0}"),
+        ["custom.delConfirm"] = ("確定要刪除「{0}」？", "Delete \"{0}\"?"),
+        ["custom.untitled"] = ("新項目", "New item"),
+        ["custom.needName"] = ("請輸入名稱。", "Please enter a name."),
+        ["custom.notFound"] = ("找不到執行檔：", "Executable not found:"),
+        ["custom.unsavedAsk"] = ("尚未儲存，是否儲存變更？", "You have unsaved changes. Save them?"),
+        ["tb.powershell"] = ("PowerShell", "PowerShell"),
+        ["tb.ssh"] = ("SSH/Telnet", "SSH/Telnet"),
+        ["tb.com"] = ("連接埠", "COM"),
+        ["tb.copy"] = ("複製", "Copy"),
+        ["tb.paste"] = ("貼上", "Paste"),
+        ["tb.copyall"] = ("複製全部", "Copy All"),
+        ["tb.clear"] = ("清除畫面", "Clear"),
+        ["tb.prompt"] = ("常用字串", "Snippets"),
+        ["tb.font"] = ("字體背景", "Font/BG"),
+        ["tb.remote"] = ("遠端設定", "Remote"),
+        ["tb.settings"] = ("設定", "Settings"),
+        ["tb.about"] = ("關於", "About"),
+        ["tb.taskbar"] = ("功能列", "Toolbar"),
+        ["tip.taskbar"] = ("切換功能列位置（上方 ↔ 右側）", "Toggle toolbar position (top ↔ right)"),
+        ["tb.split"] = ("視窗分割", "Split"),
+        ["tb.tabs"] = ("視窗分頁", "Tabs"),
+        ["tb.columns"] = ("視窗分欄", "Columns"),
+        ["tip.split"] = ("點按循環：分頁 → 分割 → 分欄", "Click to cycle: Tabs → Split → Columns"),
+        ["tip.tabs"] = ("點按循環：分頁 → 分割 → 分欄", "Click to cycle: Tabs → Split → Columns"),
+        ["tip.columns"] = ("點按循環：分頁 → 分割 → 分欄", "Click to cycle: Tabs → Split → Columns"),
+
+        ["tip.powershell"] = ("開 PowerShell", "Open PowerShell"),
+        ["tip.ssh"] = ("開 SSH / Telnet", "Open SSH / Telnet"),
+        ["tip.com"] = ("開 COM 埠", "Open COM port"),
+        ["tip.copy"] = ("複製選取的文字", "Copy selection"),
+        ["tip.paste"] = ("貼上", "Paste"),
+        ["tip.copyall"] = ("複製全部緩衝文字", "Copy all buffer text"),
+        ["tip.clear"] = ("清除畫面", "Clear screen"),
+        ["tip.prompt"] = ("常用字串", "Common strings"),
+        ["tip.font"] = ("字體 / 背景設定", "Font / background"),
+        ["tip.remote"] = ("遠端控制設定 (Telegram)", "Remote control (Telegram)"),
+        ["tip.settings"] = ("設定", "Settings"),
+        ["tip.about"] = ("關於", "About"),
+
+        ["about.title"] = ("關於 AwayTerminal", "About AwayTerminal"),
+        ["about.author"] = ("作者", "Author"),
+        ["about.version"] = ("版本", "Version"),
+
+        ["settings.title"] = ("設定", "Settings"),
+        ["settings.language"] = ("語言 / Language", "語言 / Language"),
+        ["common.ok"] = ("確定", "OK"),
+        ["common.cancel"] = ("取消", "Cancel"),
+        ["common.save"] = ("儲存", "Save"),
+
+        // 遠端設定 (Telegram)
+        ["remote.title"] = ("遠端設定 (Telegram)", "Remote (Telegram)"),
+        ["remote.enable"] = ("啟用遠端控制", "Enable remote control"),
+        ["remote.token"] = ("Bot Token", "Bot Token"),
+        ["remote.chatId"] = ("允許的 Chat ID", "Allowed Chat ID"),
+        ["remote.getChatId"] = ("取得 chat id", "Get chat id"),
+        ["remote.notify"] = ("忙碌完成時推播通知", "Notify when a tab goes idle"),
+        ["remote.hint"] = ("向 @BotFather 申請 bot 取得 token；先用手機傳一則訊息給你的 bot，再按「取得 chat id」。",
+                            "Create a bot via @BotFather for the token; send your bot a message first, then click \"Get chat id\"."),
+        ["remote.needToken"] = ("請先填入 Bot Token。", "Please enter the Bot Token first."),
+        ["remote.noUpdates"] = ("找不到訊息。請先用手機傳一則訊息給你的 bot，再試一次。",
+                                 "No message found. Send your bot a message from your phone first, then try again."),
+        ["remote.gotChatId"] = ("已取得 chat id：{0}", "Got chat id: {0}"),
+
+        ["msg.willAddP4"] = ("此功能將在 P4 加入。", "This feature will be added in P4."),
+
+        // 分頁右鍵選單 / 分頁列
+        ["menu.rename"] = ("更改名稱", "Rename"),
+        ["menu.log"] = ("記錄 log…", "Record log…"),
+        ["menu.macro"] = ("執行巨集…", "Run macro…"),
+        ["menu.close"] = ("關閉", "Close"),
+        ["tip.tabLog"] = ("記錄 log（點擊開始/停止）", "Record log (click to start/stop)"),
+        ["tip.tabMacro"] = ("巨集（點擊執行/停止）", "Macro (click to run/stop)"),
+        ["tip.tabClose"] = ("關閉", "Close"),
+        ["tip.tabList"] = ("顯示所有分頁", "Show all tabs"),
+
+        // 浮動提示
+        ["toast.copied"] = ("複製成功", "Copied"),
+        ["toast.copiedAll"] = ("已複製全部文字", "All text copied"),
+        ["toast.noSelection"] = ("沒有選取文字", "Nothing selected"),
+
+        // MessageBox
+        ["msg.closeTabConfirm"] = ("確定要關閉「{0}」？", "Close \"{0}\"?"),
+        ["msg.closeTabTitle"] = ("關閉分頁", "Close Tab"),
+        ["msg.connectFail"] = ("連線 / 啟動失敗：", "Connection / launch failed:"),
+        ["msg.restoreAsk"] = ("下次開啟時要恢復目前的分頁嗎？", "Restore current tabs next time?"),
+        ["msg.exitAsk"] = ("確定要關閉 AwayTerminal 嗎？", "Close AwayTerminal?"),
+        ["msg.exitTitle"] = ("關閉程式", "Exit"),
+        ["exit.title"] = ("關閉 AwayTerminal", "Close AwayTerminal"),
+        ["exit.msg"] = ("確定要關閉 AwayTerminal 嗎？", "Close AwayTerminal?"),
+        ["exit.restore"] = ("下次開啟恢復目前分頁", "Restore current tabs next time"),
+        ["exit.updateMd"] = ("Claude Code 離開前更新 CLAUDE.md", "Update CLAUDE.md before Claude Code exits"),
+        ["exit.updating"] = ("正在請 Claude Code 更新 CLAUDE.md，請稍候…", "Asking Claude Code to update CLAUDE.md, please wait…"),
+        ["exit.ok"] = ("確定離開", "Exit"),
+        ["exit.mdPrompt"] = ("請更新 CLAUDE.md，把這次工作的重點與變更記錄進去。", "Please update CLAUDE.md to record this session's key changes."),
+        ["msg.stopLogAsk"] = ("要停止記錄 log 嗎？", "Stop logging?"),
+        ["msg.stopMacroAsk"] = ("要停止巨集嗎？", "Stop the macro?"),
+        ["msg.logFail"] = ("無法開始記錄：", "Cannot start logging:"),
+        ["msg.macroReadFail"] = ("無法讀取巨集：", "Cannot read macro:"),
+        ["dlg.logTitle"] = ("記錄 log", "Record Log"),
+        ["dlg.macroTitle"] = ("執行巨集", "Run Macro"),
+        ["dlg.renameTitle"] = ("更改名稱", "Rename"),
+        ["dlg.renamePrompt"] = ("分頁名稱：", "Tab name:"),
+        ["dlg.pickDirPs"] = ("選擇 PowerShell 工作目錄（可在此按「建立新資料夾」）", "Choose the PowerShell working folder"),
+        ["dlg.pickDirClaude"] = ("選擇 Claude Code 工作目錄（可在此按「建立新資料夾」）", "Choose the Claude Code working folder"),
+        ["term.exited"] = ("[連線已結束]", "[session ended]"),
+        ["term.reconnect"] = ("[連線中斷，{0} 秒後自動重連…（關閉分頁可停止）]", "[Disconnected. Reconnecting in {0}s… (close tab to stop)]"),
+        ["conn.autoReconnect"] = ("斷線自動重連", "Auto-reconnect on disconnect"),
+        ["conn.keepAlive"] = ("保持連線（分鐘，0=關）", "Keep-alive (min, 0=off)"),
+
+        // 終端機右鍵選單
+        ["ctx.cut"] = ("剪下", "Cut"),
+        ["ctx.copy"] = ("複製", "Copy"),
+        ["ctx.paste"] = ("純文字貼上", "Paste as plain text"),
+        ["ctx.selectAll"] = ("全選", "Select all"),
+        ["ctx.search"] = ("搜尋", "Find"),
+
+        // 連線視窗
+        ["conn.title"] = ("開 SSH / Telnet", "Open SSH / Telnet"),
+        ["conn.type"] = ("類型", "Type"),
+        ["conn.host"] = ("IP / 主機", "IP / Host"),
+        ["conn.connect"] = ("連線", "Connect"),
+        ["conn.needHost"] = ("請輸入 IP / 主機。", "Please enter an IP / host."),
+
+        // COM 視窗
+        ["com.title"] = ("開連接埠", "Open COM Port"),
+        ["com.open"] = ("開啟", "Open"),
+        ["common.reset"] = ("回到預設", "Reset to default"),
+
+        // 字體視窗
+        ["font.title"] = ("字體 / 背景設定", "Font / Background"),
+        ["font.family"] = ("字型", "Font"),
+        ["font.size"] = ("大小", "Size"),
+        ["font.fg"] = ("文字顏色", "Text color"),
+        ["font.bg"] = ("背景顏色", "Background color"),
+        ["font.pick"] = ("點我選顏色", "Click to pick a color"),
+
+        // Prompt 視窗
+        ["prompt.title"] = ("常用字串", "Snippets"),
+        ["prompt.send"] = ("送出", "Send"),
+        ["prompt.delete"] = ("刪除", "Delete"),
+        ["prompt.edit"] = ("修改", "Edit"),
+        ["prompt.save"] = ("儲存", "Save"),
+        ["prompt.new"] = ("新增", "New"),
+        ["prompt.clear"] = ("取消/清空", "Clear"),
+        ["prompt.header"] = ("標題", "Title"),
+        ["prompt.content"] = ("內容", "Content"),
+        ["prompt.group"] = ("群組", "Group"),
+        ["prompt.backup"] = ("備份", "Backup"),
+        ["prompt.load"] = ("載入", "Load"),
+        ["prompt.loadReplace"] = ("載入會取代目前的常用字串清單，確定？", "Loading replaces the current snippet list. Continue?"),
+        ["prompt.ungrouped"] = ("未分組", "Ungrouped"),
+        ["prompt.groupRename"] = ("群組改名", "Rename group"),
+        ["prompt.groupRenamePrompt"] = ("新群組名稱：", "New group name:"),
+        ["prompt.groupDelete"] = ("刪除群組", "Delete group"),
+        ["prompt.groupDeleteAsk"] = ("刪除群組「{0}」？\n是＝連同字串一起刪除；否＝把字串移到未分組；取消＝不動作。",
+                                      "Delete group \"{0}\"?\nYes = delete its snippets; No = move them to Ungrouped; Cancel = nothing."),
+        ["prompt.noContent"] = ("沒有內容可送出。", "Nothing to send."),
+        ["prompt.delConfirm"] = ("確定要刪除「{0}」？", "Delete \"{0}\"?"),
+        ["prompt.needTitle"] = ("請輸入標題。", "Please enter a title."),
+
+        // Log 視窗
+        ["log.path"] = ("log 存檔位置：", "Log file path:"),
+        ["log.browse"] = ("瀏覽…", "Browse…"),
+        ["log.timestamp"] = ("每行前面加時間戳 [yy-MM-dd HH:mm:ss]", "Prefix each line with [yy-MM-dd HH:mm:ss]"),
+        ["log.append"] = ("檔案已存在時附加（append）", "Append if the file exists"),
+        ["log.start"] = ("開始記錄", "Start logging"),
+        ["log.needPath"] = ("請輸入 log 存檔位置。", "Please enter the log file path."),
+
+        // 其他設定
+        ["settings.claudeCmd"] = ("Claude Code 指令", "Claude Code command"),
+
+        // 分頁預設名稱
+        ["tab.newConn"] = ("新連線{0}", "New Tab {0}"),
+    };
+
+    public static string T(string key)
+        => M.TryGetValue(key, out var v) ? (Lang == "en" ? v.en : v.zh) : key;
+
+    public static void SetLang(string lang)
+    {
+        var l = lang == "en" ? "en" : "zh";
+        if (l == Lang) return;
+        Lang = l;
+        Changed?.Invoke();
+    }
+
+    public static void Init(string lang)
+    {
+        Lang = lang == "en" ? "en" : "zh";
+    }
+}
+
+/// <summary>供 XAML 綁定用的字串代理（DataTemplate 內的選單/工具提示可動態換語言）。
+/// 用法：Header="{Binding Path=[menu.rename], Source={x:Static loc:LocProxy.Instance}}"</summary>
+public sealed class LocProxy : System.ComponentModel.INotifyPropertyChanged
+{
+    public static LocProxy Instance { get; } = new();
+    private LocProxy()
+    {
+        Loc.Changed += () => PropertyChanged?.Invoke(this,
+            new System.ComponentModel.PropertyChangedEventArgs("Item[]"));
+    }
+    public string this[string key] => Loc.T(key);
+    public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
+}

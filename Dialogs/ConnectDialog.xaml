@@ -1,0 +1,69 @@
+<Window x:Class="AwayTerminal.Dialogs.ConnectDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="開 SSH / Telnet" Width="400" SizeToContent="Height"
+        Background="#2D2D30" WindowStartupLocation="CenterOwner"
+        ResizeMode="NoResize" ShowInTaskbar="False">
+    <Window.Resources>
+        <Style TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#E0E0E0" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Margin" Value="0,0,10,0" />
+        </Style>
+        <Style TargetType="TextBox">
+            <Setter Property="Background" Value="#1E1E1E" />
+            <Setter Property="Foreground" Value="#E0E0E0" />
+            <Setter Property="BorderBrush" Value="#555" />
+            <Setter Property="CaretBrush" Value="#E0E0E0" />
+            <Setter Property="Padding" Value="3,2" />
+            <Setter Property="Height" Value="24" />
+            <Setter Property="Margin" Value="0,4" />
+        </Style>
+        <!-- 下拉選單內文字用黑色：擋掉視窗層級的灰字 TextBlock 隱式樣式滲入 ComboBox 模板 -->
+        <Style TargetType="ComboBox">
+            <Style.Resources>
+                <Style TargetType="TextBlock">
+                    <Setter Property="Foreground" Value="Black" />
+                    <Setter Property="Margin" Value="0" />
+                </Style>
+            </Style.Resources>
+        </Style>
+    </Window.Resources>
+    <Grid Margin="16">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <TextBlock Grid.Row="0" Grid.Column="0" x:Name="TypeLabel" Text="類型" />
+        <ComboBox Grid.Row="0" Grid.Column="1" x:Name="TypeCombo" Height="24" Margin="0,4"
+                  SelectionChanged="TypeCombo_Changed" />
+
+        <TextBlock Grid.Row="1" Grid.Column="0" x:Name="HostLabel" Text="IP / 主機" />
+        <ComboBox Grid.Row="1" Grid.Column="1" x:Name="HostCombo" IsEditable="True" Height="24" Margin="0,4" />
+
+        <TextBlock Grid.Row="2" Grid.Column="0" Text="Port" />
+        <TextBox Grid.Row="2" Grid.Column="1" x:Name="PortBox" />
+
+        <TextBlock Grid.Row="3" Grid.Column="0" x:Name="KeepAliveLabel" Text="保持連線（分鐘，0=關）" />
+        <ComboBox Grid.Row="3" Grid.Column="1" x:Name="KeepAliveCombo" Width="80"
+                  HorizontalAlignment="Left" Height="24" Margin="0,4" />
+
+        <CheckBox Grid.Row="4" Grid.ColumnSpan="2" x:Name="ReconnectBox" Content="斷線自動重連"
+                  Foreground="#E0E0E0" Margin="0,8,0,0" />
+
+        <StackPanel Grid.Row="5" Grid.ColumnSpan="2" Orientation="Horizontal"
+                    HorizontalAlignment="Right" Margin="0,16,0,0">
+            <Button x:Name="ConnectBtn" Content="連線" Width="76" Height="26" IsDefault="True" Click="Ok_Click" Margin="0,0,8,0" />
+            <Button x:Name="CancelBtn" Content="取消" Width="76" Height="26" IsCancel="True" />
+        </StackPanel>
+    </Grid>
+</Window>
