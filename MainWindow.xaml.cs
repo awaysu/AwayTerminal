@@ -1828,6 +1828,17 @@ public partial class MainWindow : Window, IRemoteHost
         linkText.Inlines.Add(link);
         panel.Children.Add(linkText);
 
+        // 編譯時間＝本 exe 的檔案寫入時間（build 當下寫檔；複製/安裝都會保留原時間戳）
+        string built;
+        try
+        {
+            built = File.GetLastWriteTime(Environment.ProcessPath ?? AppContext.BaseDirectory)
+                .ToString("yyyy/M/d HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture);
+        }
+        catch { built = "-"; }
+        panel.Children.Add(new TextBlock
+        { Text = $"{Loc.T("about.buildTime")}: {built}", Foreground = gray, Margin = new Thickness(0, 14, 0, 0) });
+
         var ok = new Button
         { Content = "OK", Width = 76, Height = 26, Margin = new Thickness(0, 18, 0, 0), HorizontalAlignment = HorizontalAlignment.Right, IsDefault = true, IsCancel = true };
         panel.Children.Add(ok);

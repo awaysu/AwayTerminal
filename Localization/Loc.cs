@@ -106,6 +106,7 @@ public static class Loc
         ["about.title"] = ("關於 AwayTerminal", "About AwayTerminal"),
         ["about.author"] = ("作者", "Author"),
         ["about.version"] = ("版本", "Version"),
+        ["about.buildTime"] = ("編譯時間", "Build time"),
 
         ["settings.title"] = ("設定", "Settings"),
         ["settings.language"] = ("語言 / Language", "語言 / Language"),
