@@ -1380,17 +1380,47 @@ public partial class MainWindow : Window, IRemoteHost
     private void Remote_Click(object sender, RoutedEventArgs e)
     {
         var dlg = new RemoteDialog { Owner = this };
-        if (dlg.ShowDialog() == true) StartOrRestartRemote();
+        if (dlg.ShowDialog() != true) return;
+        StartOrRestartRemote();
+        if (RemoteTakenByOther) Info(Loc.T("remote.takenByOther"));   // 另一個實例持有遠端 → 明講沒啟動
     }
 
     // ---------- 遠端（Telegram）：服務控制 + IRemoteHost 實作 ----------
+    // 多開防護：同一 token 兩個實例同時 long polling 會 409 Conflict、訊息被隨機搶走
+    // → 用具名 Mutex 保證同機只有第一個實例啟動遠端；其餘實例跳過並在遠端設定顯示提示。
+    private System.Threading.Mutex? _remoteMutex;
+    /// <summary>遠端已由本機另一個 AwayTerminal 實例使用中（本實例未啟動遠端）。</summary>
+    internal static bool RemoteTakenByOther { get; private set; }
+
+    private bool TryAcquireRemoteLock()
+    {
+        if (_remoteMutex != null) return true;   // 本實例已持有
+        var m = new System.Threading.Mutex(false, @"Local\AwayTerminal.TelegramRemote");
+        bool got;
+        try { got = m.WaitOne(0); }
+        catch (System.Threading.AbandonedMutexException) { got = true; }   // 前實例被強殺 → 直接接手
+        if (got) { _remoteMutex = m; return true; }
+        m.Dispose();
+        return false;
+    }
+
+    private void ReleaseRemoteLock()
+    {
+        try { _remoteMutex?.ReleaseMutex(); } catch { }
+        try { _remoteMutex?.Dispose(); } catch { }
+        _remoteMutex = null;
+    }
+
     private void StartOrRestartRemote()
     {
         var s = AppSettings.Current;
         _remote ??= new TelegramRemote(this);
         _remote.Stop();
-        if (s.RemoteEnabled && !string.IsNullOrWhiteSpace(s.TelegramBotToken) && s.TelegramChatId != 0)
-            _remote.Start(s.TelegramBotToken, s.TelegramChatId, s.RemoteNotify);
+        if (!(s.RemoteEnabled && !string.IsNullOrWhiteSpace(s.TelegramBotToken) && s.TelegramChatId != 0))
+        { ReleaseRemoteLock(); RemoteTakenByOther = false; return; }
+        if (!TryAcquireRemoteLock()) { RemoteTakenByOther = true; return; }
+        RemoteTakenByOther = false;
+        _remote.Start(s.TelegramBotToken, s.TelegramChatId, s.RemoteNotify);
     }
 
     // 去 ANSI：CSI / OSC(BEL) / DCS-PM-APC-SOS(ST) / 其餘 2 字元跳脫

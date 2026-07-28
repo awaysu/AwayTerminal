@@ -16,6 +16,8 @@ public partial class RemoteDialog : Window
         NotifyChk.IsChecked = s.RemoteNotify;
 
         Title = Loc.T("remote.title");
+        TakenHint.Text = Loc.T("remote.takenByOther");
+        TakenHint.Visibility = AwayTerminal.MainWindow.RemoteTakenByOther ? Visibility.Visible : Visibility.Collapsed;
         EnableChk.Content = Loc.T("remote.enable");
         TokenLabel.Text = Loc.T("remote.token");
         ChatLabel.Text = Loc.T("remote.chatId");

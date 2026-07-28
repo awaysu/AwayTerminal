@@ -173,6 +173,10 @@ public static class Loc
         ["conn.autoReconnect"] = ("斷線自動重連", "Auto-reconnect on disconnect"),
         ["conn.keepAlive"] = ("保持連線（分鐘，0=關）", "Keep-alive (min, 0=off)"),
 
+        ["remote.takenByOther"] = (
+            "遠端已由另一個 AwayTerminal 視窗使用中，此視窗不啟動遠端（同一組 Bot Token 同時只能一個視窗連線）。關閉另一個視窗後，回到此視窗的遠端設定按「儲存」即可接手。",
+            "Remote is already running in another AwayTerminal window; this window will not start it (one bot token allows only one active connection). Close the other window, then press Save in this window's Remote settings to take over."),
+
         // 終端機右鍵選單
         ["ctx.cut"] = ("剪下", "Cut"),
         ["ctx.copy"] = ("複製", "Copy"),

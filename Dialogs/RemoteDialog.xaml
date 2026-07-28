@@ -33,6 +33,9 @@
 
         <CheckBox x:Name="NotifyChk" Content="忙碌完成時推播通知" Foreground="#E0E0E0" Margin="0,0,0,12" />
 
+        <TextBlock x:Name="TakenHint" TextWrapping="Wrap" Foreground="#FF9800" Margin="0,0,0,10"
+                   Visibility="Collapsed" Text="遠端已由另一個 AwayTerminal 視窗使用中" />
+
         <TextBlock x:Name="HintText" TextWrapping="Wrap" Foreground="#9A9A9A" Margin="0,0,0,14"
                    Text="向 @BotFather 申請 bot 取得 token；先用手機傳一則訊息給你的 bot，再按「取得 chat id」。" />
 
