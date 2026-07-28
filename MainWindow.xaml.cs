@@ -663,6 +663,7 @@ public partial class MainWindow : Window, IRemoteHost
                 string qk = rest.Substring(p1 + 1, p2 - p1 - 1);
                 string text = rest.Substring(p2 + 1);
                 if (qk == "text") { _remoteTextTcs?.TrySetResult(text); _remoteTextTcs = null; break; } // 遠端查詢，不進剪貼簿
+                if (qk == "file") { SaveBufferToFile(rest.Substring(0, p1), text); break; }             // 複製全部至檔案
                 var target = qk == "all" ? (FrameworkElement)BtnCopyAll : BtnCopy;
                 if (string.IsNullOrEmpty(text)) { ShowCopyFeedback(target, Loc.T("toast.noSelection")); break; }
                 try { Clipboard.SetText(text); ShowCopyFeedback(target, Loc.T(qk == "all" ? "toast.copiedAll" : "toast.copied")); } catch { }
@@ -1315,16 +1316,34 @@ public partial class MainWindow : Window, IRemoteHost
             mi.Click += (_, _) => act();
             return mi;
         }
-        // 終端機畫面內容不可刪 → 剪下的效果同複製（選取文字進剪貼簿）
-        menu.Items.Add(Item("ctx.cut", () => { if (_active != null) PostToWeb("q" + _active.Id + US + "sel"); }));
-        menu.Items.Add(Item("ctx.copy", () => { if (_active != null) PostToWeb("q" + _active.Id + US + "sel"); }));
-        menu.Items.Add(Item("ctx.paste", () => Paste_Click(this, new RoutedEventArgs())));
-        menu.Items.Add(new Separator());
-        menu.Items.Add(Item("ctx.selectAll", () => { if (_active != null) PostToWeb("A" + _active.Id); }));
         menu.Items.Add(Item("ctx.search", () => PostToWeb("F")));
+        menu.Items.Add(Item("ctx.copy", () => { if (_active != null) PostToWeb("q" + _active.Id + US + "sel"); }));
+        menu.Items.Add(Item("tb.copyall", () => { if (_active != null) PostToWeb("q" + _active.Id + US + "all"); }));
+        menu.Items.Add(Item("ctx.copyAllFile", () => { if (_active != null) PostToWeb("q" + _active.Id + US + "file"); }));
+        menu.Items.Add(Item("ctx.paste", () => Paste_Click(this, new RoutedEventArgs())));
         menu.PlacementTarget = Web;
         menu.Placement = System.Windows.Controls.Primitives.PlacementMode.MousePoint;
         menu.IsOpen = true;
+    }
+
+    /// <summary>「複製全部至檔案」：把整個 buffer 的純文字存檔（q…file 的回覆）。</summary>
+    private void SaveBufferToFile(string idStr, string text)
+    {
+        string title = FindTab(idStr)?.Title ?? "AwayTerminal";
+        foreach (var c in Path.GetInvalidFileNameChars()) title = title.Replace(c, '_');
+        var dlg = new Microsoft.Win32.SaveFileDialog
+        {
+            FileName = $"{title}-{DateTime.Now:yyyyMMdd-HHmmss}.txt",
+            Filter = "Text file (*.txt)|*.txt|All files (*.*)|*.*",
+            DefaultExt = ".txt"
+        };
+        if (dlg.ShowDialog(this) != true) return;
+        try { File.WriteAllText(dlg.FileName, text, Encoding.UTF8); }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, Loc.T("msg.saveFail") + "\n" + ex.Message, "AwayTerminal",
+                MessageBoxButton.OK, MessageBoxImage.Error);
+        }
     }
 
     // ---------- 工具列：編輯群組 ----------
@@ -1784,7 +1803,7 @@ public partial class MainWindow : Window, IRemoteHost
         // 作者行以圖片顯示（執行期渲染，畫面上沒有可複製/可被爬的 email 文字）
         panel.Children.Add(new Image
         {
-            Source = RenderTextImage("Awaysu (awaysu" + "@" + "gmail.com)"),
+            Source = RenderTextImage("Awaysu (weisu.tech" + "@" + "gmail.com)"),
             Stretch = System.Windows.Media.Stretch.None,
             HorizontalAlignment = HorizontalAlignment.Left,
             Margin = new Thickness(0, 2, 0, 0)

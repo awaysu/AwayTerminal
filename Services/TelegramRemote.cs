@@ -61,6 +61,10 @@ public sealed class TelegramRemote
     private int _morePos;
     private int _moreTabId;
 
+    // 「只推新輸出」基準：每個分頁上次推播（或附著）當下的原始渲染文字；
+    // follow/完成推播只推基準之後的新行，比對不到（清屏/TUI 重繪）退回快照。
+    private readonly Dictionary<int, string> _baseline = new();
+
     // 10 分鐘閒置自動離開分頁檢視（只離開檢視，分頁照跑；9 分鐘先警告一次）
     private DateTime _lastUserMsgUtc = DateTime.UtcNow;
     private bool _idleWarned;
@@ -93,7 +97,7 @@ public sealed class TelegramRemote
     public void OnTabIdle(int tabId, string title)
     {
         if (_cts == null) return;
-        if (tabId == _currentTabId && _follow) { _ = SendLast(30, $"🟢 {title} 完成"); return; }
+        if (tabId == _currentTabId && _follow) { _ = SendLast(30, $"🟢 {title} 完成", incremental: true); return; }
         if (_notify) _ = SendAsync($"🟢 {title} 閒置（完成）");
     }
 
@@ -244,7 +248,7 @@ public sealed class TelegramRemote
                 // 純文字 = 送到目前分頁
                 if (!_host.SendInputToTab(_currentTabId, text, true))
                 { await SendAsync("分頁已關閉或尚未就緒，請重新 /goto。"); _currentTabId = 0; return; }
-                if (_follow) { await Task.Delay(700); await SendLast(15); }
+                if (_follow) { await Task.Delay(700); await SendLast(15, incremental: true); }
                 return;
             }
 
@@ -317,7 +321,7 @@ public sealed class TelegramRemote
         if (!host.Contains('@'))
         { await SendAsync($"已開啟並進入 [{title}]。login as: → 直接回覆帳號，接著照畫面提示回覆密碼。"); return; }
         await SendAsync($"已開啟並進入 [{title}]。照畫面提示回覆密碼。");
-        if (_follow) { await Task.Delay(1500); await SendLast(12); }
+        if (_follow) { await Task.Delay(1500); await SendLast(12, incremental: true); }
     }
 
     /// <summary>/telnet 主機[:埠]。不帶參數用上次主機。</summary>
@@ -335,7 +339,7 @@ public sealed class TelegramRemote
         if (id == 0) { await SendAsync("開啟失敗。"); return; }
         _currentTabId = id;   // 開完直接附著
         await SendAsync($"已開啟並進入 [{title}]。");
-        if (_follow) { await Task.Delay(1500); await SendLast(12); }   // 推開場畫面（伺服器登入提示）
+        if (_follow) { await Task.Delay(1500); await SendLast(12, incremental: true); }   // 推開場畫面（伺服器登入提示）
     }
 
     /// <summary>解析「[user@]host[:port]」；沒寫 :port 時不動 port（IPv6 不支援）。</summary>
@@ -390,7 +394,7 @@ public sealed class TelegramRemote
         { await SendAsync($"已開啟並進入 [{title}]。login as: → 直接回覆帳號，接著照畫面提示回覆密碼。"); return; }
 
         await SendAsync($"已開啟並進入 [{title}]。直接打字送指令，/last 看輸出。");
-        if (_follow) { await Task.Delay(1500); await SendLast(12); }   // 推開場畫面（telnet/COM 登入提示、shell 提示列）
+        if (_follow) { await Task.Delay(1500); await SendLast(12, incremental: true); }   // 推開場畫面（telnet/COM 登入提示、shell 提示列）
     }
 
     private async Task DoShot()
@@ -408,6 +412,7 @@ public sealed class TelegramRemote
         { await SendAsync("用法：/goto <編號>\n\n" + TabListText()); return; }
         var tab = tabs[idx - 1];
         _currentTabId = tab.Id;
+        _baseline[tab.Id] = _host.GetRecentText(tab.Id, 400);   // 附著即定基準：之後只推新輸出
         await SendAsync($"已進入 [{idx}] {tab.Title}。直接打字送指令，/last 看輸出，/exit 離開。");
     }
 
@@ -418,22 +423,38 @@ public sealed class TelegramRemote
         { await SendAsync("用法：/key <ctrl-c|ctrl-d|esc|tab|enter|up|down|left|right>"); return; }
         if (!_host.SendKeyToTab(_currentTabId, arg.ToLowerInvariant()))
         { await SendAsync("送鍵失敗（分頁關閉或按鍵名稱錯誤）。"); return; }
-        if (_follow) { await Task.Delay(500); await SendLast(15); }
+        if (_follow) { await Task.Delay(500); await SendLast(15, incremental: true); }
     }
 
-    private async Task SendLast(int lines, string? header = null)
+    /// <summary>推畫面給手機。incremental=true（follow/完成推播）：只推「上次推播基準」之後的新輸出，
+    /// 比對不到基準（清屏/TUI 大改/首次）自動退回快照；false（/last 指令）：固定「最後 n 行」快照。
+    /// 兩種模式推完都把基準更新到現在，之後的推播不會重複舊內容。</summary>
+    private async Task SendLast(int lines, string? header = null, bool incremental = false)
     {
         if (_currentTabId == 0) { await SendAsync("尚未選擇分頁。先 /goto。"); return; }
-        // 先抓一大段、瘦身去雜訊後才取最後 n 行，行數額度才不會被 spinner 雜訊吃掉
-        string all = TidyForPhone(_host.GetRecentText(_currentTabId, 400));
-        if (string.IsNullOrWhiteSpace(all))
-        { await SendAsync(header ?? "（暫無輸出）"); _moreBuf = ""; return; }
-        var arr = all.Split('\n');
-        int start = Math.Max(0, arr.Length - lines);
-        string txt = string.Join("\n", arr, start, arr.Length - start);
+        string raw = _host.GetRecentText(_currentTabId, 400);
+        string? diff = incremental && _baseline.TryGetValue(_currentTabId, out var b) ? DiffNew(b, raw) : null;
+        _baseline[_currentTabId] = raw;
+
+        // 先抓一大段、瘦身去雜訊後才取行，行數額度才不會被 spinner 雜訊吃掉
+        string allFull = TidyForPhone(raw);
+        string body = diff != null ? TidyForPhone(diff) : allFull;
+        if (string.IsNullOrWhiteSpace(body))
+        {
+            if (diff != null) { await SendAsync(header ?? "（尚無新輸出）"); return; }
+            await SendAsync(header ?? "（暫無輸出）"); _moreBuf = ""; return;
+        }
+        string txt;
+        if (diff != null) txt = body;   // 增量：整段新輸出（超過 3500 字由 Clip 取尾）
+        else
+        {
+            var arr = body.Split('\n');
+            int start = Math.Max(0, arr.Length - lines);
+            txt = string.Join("\n", arr, start, arr.Length - start);
+        }
         string sent = Clip(txt, 3500);
-        // /more 翻頁狀態：txt 是 all 的尾端、Clip 又取尾端 → sent 一定是 all 的尾端子字串
-        _moreBuf = all; _moreTabId = _currentTabId; _morePos = all.Length - sent.Length;
+        // /more 翻頁狀態：以全文為緩衝；sent 是全文尾端（增量的瘦身結果與全文瘦身可能微差 → 取 max 保護）
+        _moreBuf = allFull; _moreTabId = _currentTabId; _morePos = Math.Max(0, allFull.Length - sent.Length);
         string head = header == null ? "" : EscHtml(header) + "\n";
         // 畫面是選擇題（❯ N. 選單）→ 附上選項按鈕，點了直接選
         var opts = MenuOptions(sent);
@@ -441,6 +462,56 @@ public sealed class TelegramRemote
             ? BtnRows(opts.Select(o => (o.Label, $"opt:{_currentTabId}:{o.Num}")), 3)
             : null;
         await SendAsync(head + "<pre>" + EscHtml(sent) + "</pre>", html: true, buttons: btns);
+    }
+
+    /// <summary>找出 cur 相對 baseline 的新增輸出（終端機往下捲：cur = […基準尾端…][新行]）。
+    /// 錨點=基準尾端最多 3 個非空行；因 prompt 行打字後會「原行變長」（PS&gt; → PS&gt; ls），
+    /// 先用「前幾行完整比對＋最後一行前綴比對」定位，錨點行有變化就把該行算進新輸出。
+    /// 完全比對不到回 null（呼叫端退回快照模式）。</summary>
+    private static string? DiffNew(string baseline, string cur)
+    {
+        if (string.IsNullOrWhiteSpace(baseline)) return null;
+        cur = cur.Replace("\r", "");
+        var bl = baseline.Replace("\r", "").Split('\n');
+        // 錨點=基準尾端「連續」的最後 3 行（保留中間空行、只去尾端空行）——
+        // 跳行拼接會與實際畫面的相鄰關係不符，多行比對就永遠對不上。
+        int end = bl.Length;
+        while (end > 0 && bl[end - 1].Trim().Length == 0) end--;
+        if (end == 0) return cur;   // 基準是空畫面 → 全部都是新的
+        var anchor = new List<string>();
+        for (int i = Math.Max(0, end - 3); i < end; i++) anchor.Add(bl[i]);
+        string lastOld = anchor[^1];
+
+        int lineStart = -1;
+        if (anchor.Count >= 2)
+        {
+            // 多行錨點：前幾行完整出現、且下一行以 lastOld 開頭（prompt 打了指令仍能對上）
+            string headBlock = string.Join("\n", anchor.GetRange(0, anchor.Count - 1)) + "\n";
+            int from = cur.Length - 1;
+            while (from >= 0)
+            {
+                int h = cur.LastIndexOf(headBlock, from, StringComparison.Ordinal);
+                if (h < 0) break;
+                int ls = h + headBlock.Length;
+                if (cur.Length - ls >= lastOld.Length &&
+                    string.CompareOrdinal(cur, ls, lastOld, 0, lastOld.Length) == 0)
+                { lineStart = ls; break; }
+                from = h - 1;
+            }
+        }
+        if (lineStart < 0)
+        {
+            // 單行錨點退路：最後一個「行首以 lastOld 開頭」的位置
+            int p = cur.LastIndexOf("\n" + lastOld, StringComparison.Ordinal);
+            if (p >= 0) lineStart = p + 1;
+            else if (cur.StartsWith(lastOld, StringComparison.Ordinal)) lineStart = 0;
+            else return null;
+        }
+        int lineEnd = cur.IndexOf('\n', lineStart);
+        string lineNow = lineEnd < 0 ? cur[lineStart..] : cur[lineStart..lineEnd];
+        if (lineNow == lastOld)   // 錨點行沒變 → 新輸出從下一行開始
+            return lineEnd < 0 ? "" : cur[(lineEnd + 1)..];
+        return cur[lineStart..];  // 行變長（prompt 上打了指令）→ 含此行一起推
     }
 
     /// <summary>從畫面文字解析選擇題選項（「N. 文字」行；需有選單導航列才視為選單）。</summary>
@@ -633,7 +704,7 @@ public sealed class TelegramRemote
         await Task.Delay(150);
         _host.SendKeyToTab(_currentTabId, "enter");
         await SendAsync($"已選擇 {optNum}。");
-        if (_follow) { await Task.Delay(900); await SendLast(15); }
+        if (_follow) { await Task.Delay(900); await SendLast(15, incremental: true); }
         return true;
     }
 

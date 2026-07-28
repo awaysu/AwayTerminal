@@ -73,7 +73,7 @@ public static class Loc
         ["tb.ssh"] = ("SSH/Telnet", "SSH/Telnet"),
         ["tb.com"] = ("連接埠", "COM"),
         ["tb.copy"] = ("複製", "Copy"),
-        ["tb.paste"] = ("貼上", "Paste"),
+        ["tb.paste"] = ("純文字貼上", "Paste as text"),
         ["tb.copyall"] = ("複製全部", "Copy All"),
         ["tb.clear"] = ("清除畫面", "Clear"),
         ["tb.prompt"] = ("常用字串", "Snippets"),
@@ -94,7 +94,7 @@ public static class Loc
         ["tip.ssh"] = ("開 SSH / Telnet", "Open SSH / Telnet"),
         ["tip.com"] = ("開 COM 埠", "Open COM port"),
         ["tip.copy"] = ("複製選取的文字", "Copy selection"),
-        ["tip.paste"] = ("貼上", "Paste"),
+        ["tip.paste"] = ("把剪貼簿內容以純文字貼進終端機", "Paste clipboard as plain text"),
         ["tip.copyall"] = ("複製全部緩衝文字", "Copy all buffer text"),
         ["tip.clear"] = ("清除畫面", "Clear screen"),
         ["tip.prompt"] = ("常用字串", "Common strings"),
@@ -183,6 +183,8 @@ public static class Loc
         ["ctx.paste"] = ("純文字貼上", "Paste as plain text"),
         ["ctx.selectAll"] = ("全選", "Select all"),
         ["ctx.search"] = ("搜尋", "Find"),
+        ["ctx.copyAllFile"] = ("複製全部至檔案", "Copy all to file"),
+        ["msg.saveFail"] = ("存檔失敗", "Save failed"),
 
         // 連線視窗
         ["conn.title"] = ("開 SSH / Telnet", "Open SSH / Telnet"),

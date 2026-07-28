@@ -337,6 +337,7 @@
       var r2 = terms[id2]; if (!r2) return;
       var text = (qk === "all") ? r2.ser.serialize()
                : (qk === "text") ? lastPlainText(r2.term, 400)
+               : (qk === "file") ? lastPlainText(r2.term, 1000000)   // 複製全部至檔案：整個 buffer 純文字（無 ANSI）
                : r2.term.getSelection();
       ws.postMessage("a" + id2 + US + qk + US + text);
     } else if (kind === "A") {
