@@ -49,6 +49,9 @@ public sealed class TerminalTab : INotifyPropertyChanged
     /// <summary>重建此分頁所需的連線資訊（關閉時存檔、下次開啟恢復；斷線自動重連也用它）。</summary>
     public SavedTab? Restore { get; set; }
 
+    /// <summary>啟動時的工作目錄（視窗標題後援：claude/自訂等沒有提示行的分頁顯示這個）。</summary>
+    public string WorkDir { get; set; } = "";
+
     /// <summary>SSH/Telnet/COM：session 結束時自動重連（開啟時從設定帶入）。</summary>
     public bool AutoReconnect { get; set; }
     /// <summary>連續重連次數（退避延遲用；一收到輸出就歸零）。</summary>

@@ -287,6 +287,7 @@ public partial class MainWindow : Window, IRemoteHost
             var s = new ConPtySession { GracefulExitBytes = closeBytes };
             var tab = StartTab(TermKind.PowerShell, title, s, () => s.Start("powershell.exe", _lastCols, _lastRows, dir));
             if (tab == null) return;
+            if (dir != null) { tab.WorkDir = dir; SetTitlePath(dir); }
             // 等尺寸就緒後才把指令打進 PowerShell（避免以 80 欄啟動）；1 秒後保險送出
             tab.PendingCommand = $"& \"{path}\"{args}";
             var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
@@ -304,7 +305,8 @@ public partial class MainWindow : Window, IRemoteHost
         else
         {
             var s = new ConPtySession { GracefulExitBytes = closeBytes };
-            StartTab(TermKind.Custom, title, s, () => s.Start($"\"{path}\"{args}", _lastCols, _lastRows, dir));
+            var tab = StartTab(TermKind.Custom, title, s, () => s.Start($"\"{path}\"{args}", _lastCols, _lastRows, dir));
+            if (tab != null && dir != null) { tab.WorkDir = dir; SetTitlePath(dir); }
         }
         AddHistory(new SavedTab
         {
@@ -751,7 +753,7 @@ public partial class MainWindow : Window, IRemoteHost
     {
         var s = new ConPtySession();
         var tab = StartTab(TermKind.PowerShell, title, s, () => s.Start("powershell.exe", _lastCols, _lastRows, dir));
-        if (tab != null) tab.Restore = new SavedTab { Type = "ps", Title = title, Dir = dir };
+        if (tab != null) { tab.Restore = new SavedTab { Type = "ps", Title = title, Dir = dir }; tab.WorkDir = dir; SetTitlePath(dir); }
         AddHistory(new SavedTab { Type = "ps", Title = title, Dir = dir });
     }
 
@@ -820,7 +822,7 @@ public partial class MainWindow : Window, IRemoteHost
     private void SelectTab(TerminalTab tab)
     {
         _active = tab;
-        SetTitlePath("");   // 切分頁先清掉舊路徑，下次輪詢（0.6s 內）填新分頁的
+        SetTitlePath(tab.WorkDir);   // 先用啟動目錄墊底（claude/自訂沒提示行就顯示它）；有提示行的分頁 0.6s 內被解析值蓋掉
         foreach (var t in Tabs) t.IsActive = (t == tab);
         PostToWeb("s" + tab.Id);
         Web.Focus();
@@ -1117,6 +1119,7 @@ public partial class MainWindow : Window, IRemoteHost
             var s = new ConPtySession();
             var tab = StartTab(TermKind.PowerShell, title, s, () => s.Start("powershell.exe", _lastCols, _lastRows, dir));
             if (tab == null) return;
+            tab.WorkDir = dir; SetTitlePath(dir);
             tab.Restore = new SavedTab { Type = "claude", Title = title, Dir = dir };
             AddHistory(new SavedTab { Type = "claude", Title = title, Dir = dir });
             // 等尺寸就緒後才把指令打進 PowerShell，避免 claude 以 80 欄啟動；1 秒後保險送出
@@ -1139,7 +1142,7 @@ public partial class MainWindow : Window, IRemoteHost
             var s = new ConPtySession(); // 預設 GracefulExitBytes = Ctrl+C ×3
             var tab = StartTab(TermKind.Claude, title, s,
                 () => s.Start($"\"{path}\"{args}", _lastCols, _lastRows, dir));
-            if (tab != null) tab.Restore = new SavedTab { Type = "claude", Title = title, Dir = dir };
+            if (tab != null) { tab.Restore = new SavedTab { Type = "claude", Title = title, Dir = dir }; tab.WorkDir = dir; SetTitlePath(dir); }
             AddHistory(new SavedTab { Type = "claude", Title = title, Dir = dir });
         }
     }
@@ -1335,9 +1338,12 @@ public partial class MainWindow : Window, IRemoteHost
     // 註：PowerShell 的 Set-Location 不會同步行程 CWD，讀 PEB 拿到的會是啟動目錄，故改用提示行解析。
     private static readonly System.Text.RegularExpressions.Regex[] CwdRes =
     {
-        new(@"^PS\s+(?<p>[A-Za-z]:\\.*?|/.*?)\s*>"),           // PowerShell：PS C:\path>
-        new(@"^(?<p>[A-Za-z]:\\[^>]*?)\s*>"),                   // cmd：C:\path>
-        new(@"^[^@\s]+@[^:\s]+:\s*(?<p>[^\s$#]+)\s*[$#]"),      // bash/zsh（SSH）：user@host:~/path$
+        new(@"^PS\s+(?<p>[A-Za-z]:\\.*?|/.*?)\s*>"),               // PowerShell：PS C:\path>
+        new(@"^(?<p>[A-Za-z]:\\[^>]*?)\s*>"),                       // cmd：C:\path>
+        new(@"^[^@\s]+@[^:\s]+:\s*(?<p>[^\s$#%]+)\s*[$#%]"),        // bash/zsh：user@host:~/path$（zsh 提示常用 %）
+        new(@"^\[[^@\s\]]+@[^\s\]]+\s+(?<p>[^\]]+)\]\s*[$#]"),      // RHEL/CentOS：[user@host ~]#
+        new(@"^[\w.-]+:(?<p>/[^\s$#]*)\s*[$#]"),                    // Android adb：davinci:/data $
+        new(@"^[^@\s]+@[^\s:]+\s+(?<p>[/~][^\s>$#%]*)\s*[>$#%]"),   // fish 等：user@host /path>
     };
 
     private string _titlePath = "";
