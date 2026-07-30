@@ -6,9 +6,9 @@
 //               a{id}US{kind}US{text} 查詢回覆、p{id} 選取某 pane、
 //               k{id1},{id2},... 拖曳後的新順序、z{size} Ctrl+滾輪縮放後的字級、ready
 //   C# -> JS :  o{id}US{base64} 輸出、n{id}US{title} 建立、t{id}US{title} 改名、
-//               s{id} 選取、x{id} 關閉、c{id} 清畫面、L{tab|split} 切換模式、
+//               s{id} 選取、x{id} 關閉、c{id} 清畫面、L{tab|split} 切換模式、q{id}US{sel|all|text|file|cwd}、
 //               T{json} 套用字型顏色、P{id}US{fg}US{bg} 單一分頁配色（空=回設定預設）、
-//               A{id} 全選、F 開搜尋列
+//               A{id} 全選、F 開搜尋列、v{id}US{base64} 貼上（走 xterm.paste，支援 bracketed paste）
 (function () {
   "use strict";
   var ws = window.chrome.webview;
@@ -75,6 +75,21 @@
     term.loadAddon(ser);
     term.open(body);
     term.onData(function (d) { ws.postMessage("i" + id + US + d); });
+
+    // 組字預覽去殘影：微軟注音每個按鍵會先回報「原始英文鍵值」（h=ㄏ）再更新成注音，
+    // xterm 把每次回報都畫進 .composition-view 就會閃出英文字。
+    // 只動顯示層（不碰輸入流）：內容一變先藏 30ms 吸收閃爍；內容含英文字母＝鍵值殘影，
+    // 持續隱藏等下一次更新。注音組字不會有英文字母；若日後改用拼音輸入法需拿掉字母過濾。
+    var compView = body.querySelector(".composition-view");
+    if (compView) {
+      var compTimer = null;
+      new MutationObserver(function () {
+        compView.style.visibility = "hidden";
+        clearTimeout(compTimer);
+        if (/[A-Za-z]/.test(compView.textContent || "")) return;
+        compTimer = setTimeout(function () { compView.style.visibility = ""; }, 30);
+      }).observe(compView, { characterData: true, childList: true, subtree: true });
+    }
 
     // Ctrl+F：在 xterm 處理前攔截 → 開搜尋列（回 false 不送進終端機）
     term.attachCustomKeyEventHandler(function (e) {
@@ -291,6 +306,19 @@
   document.getElementById("search-next").addEventListener("click", function () { gotoHit(1); });
   document.getElementById("search-close").addEventListener("click", closeSearch);
 
+  // 標題列目前路徑用（q…cwd）：從游標所在行往上找第一個非空行＝提示字元行，C# 端再解析路徑
+  function promptLine(term) {
+    var buf = term.buffer.active;
+    var start = buf.baseY + buf.cursorY;
+    for (var i = start; i >= 0 && i > start - 30; i--) {
+      var line = buf.getLine(i);
+      if (!line) continue;
+      var s = line.translateToString(true).trim();
+      if (s) return s;
+    }
+    return "";
+  }
+
   ws.addEventListener("message", function (e) {
     var msg = e.data;
     if (typeof msg !== "string" || !msg.length) return;
@@ -338,8 +366,19 @@
       var text = (qk === "all") ? r2.ser.serialize()
                : (qk === "text") ? lastPlainText(r2.term, 400)
                : (qk === "file") ? lastPlainText(r2.term, 1000000)   // 複製全部至檔案：整個 buffer 純文字（無 ANSI）
+               : (qk === "cwd") ? promptLine(r2.term)                // 標題列目前路徑
                : r2.term.getSelection();
       ws.postMessage("a" + id2 + US + qk + US + text);
+    } else if (kind === "v") {
+      // 貼上：交給 xterm.paste() —— 它會把 \r\n 正規化成 \r，並在程式啟用 bracketed paste
+      // (DECSET 2004，如 claude/vim/新版 PSReadLine) 時包上 ESC[200~ / ESC[201~，
+      // 多行才不會被逐行當成 Enter 送出（只剩最後一行）。之後照常經 onData 回送 i…
+      i = rest.indexOf(US); id = rest.slice(0, i);
+      var rv = terms[id]; if (!rv) return;
+      var vbin = atob(rest.slice(i + 1));
+      var vbytes = new Uint8Array(vbin.length);
+      for (var vj = 0; vj < vbin.length; vj++) vbytes[vj] = vbin.charCodeAt(vj);
+      rv.term.paste(new TextDecoder().decode(vbytes));
     } else if (kind === "A") {
       var ra = terms[rest]; if (ra) { ra.term.focus(); ra.term.selectAll(); }
     } else if (kind === "F") {

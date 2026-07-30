@@ -26,7 +26,7 @@ dotnet build                                     # 建置（會自動簽章 exe�
   `p{id}`(點選 pane)、`k{id1,id2,...}`(拖曳後新順序)、`z{size}`(Ctrl+滾輪縮放後字級)、`ready`
 - C#→JS：`o{id}{US}{base64}`(輸出)、`n{id}{US}{title}`(建立)、`t{id}{US}{title}`(改名)、
   `s{id}`/`x{id}`/`c{id}`/`f{id}`(顯示/關閉/清除/聚焦)、`L{tab|split|columns}`(模式)、
-  `q{id}{US}{sel|all|text|file}`(查詢文字；text=遠端用、渲染後純文字最後 400 行；file=整個 buffer 純文字、回覆後存檔)、`T{json}`(全域字型/顏色)、`P{id}{US}{fg}{US}{bg}`(單一分頁配色；空=回設定預設)、`A{id}`(全選)、`F`(開 Ctrl+F 搜尋列)
+  `q{id}{US}{sel|all|text|file}`(查詢文字；text=遠端用、渲染後純文字最後 400 行；file=整個 buffer 純文字、回覆後存檔)、`T{json}`(全域字型/顏色)、`P{id}{US}{fg}{US}{bg}`(單一分頁配色；空=回設定預設)、`A{id}`(全選)、`F`(開 Ctrl+F 搜尋列)、`v{id}{US}{base64}`(貼上→`term.paste()`)
 - 改協定時 **C# 與 `web/terminal.js` 必須同步**。
 
 ## 關鍵檔案
@@ -48,7 +48,8 @@ dotnet build                                     # 建置（會自動簽章 exe�
 | `app.ico` | 由 `icon/app-icon.png` 產生（PNG 內嵌 ICO）|
 
 ## 慣例
-- **版本**：每交付一次 `<Version>` +0.0.1（「關於」顯示）。目前 **1.0.5**（1.0.0=2026-07-27 里程碑、repo 重建＋安裝檔發佈；1.0.4 起「關於」email=weisu.tech@gmail.com、仍為圖片渲染；1.0.5 起最下方顯示「編譯時間: yyyy/M/d HH:mm:ss」＝exe 檔案寫入時間，複製/安裝會保留時間戳）。「關於」是自訂深色小視窗（非 MessageBox）、內容置左：標題/版本、作者行 `Awaysu (awaysu@gmail.com)` **以執行期渲染的圖片顯示**（`RenderTextImage`，依 DPI 畫、防文字收集）、Source Code 可點連結開 GitHub。
+- **視窗標題**：`AwayTerminal - 目前路徑`（v1.0.6）。路徑由**提示字元行解析**（`q…cwd` 查游標所在提示行 → `CwdRes` 三組 regex：PowerShell / cmd / bash-ssh），狀態輪詢每 0.6s 更新；解析不到就保留上次值（打字中不閃動），切分頁先清空、無分頁時只顯示程式名。**註：不能讀行程 PEB 的 CWD**——PowerShell 的 `Set-Location` 不會同步行程工作目錄，讀到的永遠是啟動目錄。
+- **版本**：每交付一次 `<Version>` +0.0.1（「關於」顯示）。目前 **1.0.8**（1.0.0=2026-07-27 里程碑、repo 重建＋安裝檔發佈；1.0.4 起「關於」email=weisu.tech@gmail.com、仍為圖片渲染；1.0.5 起最下方顯示「編譯時間: yyyy/M/d HH:mm:ss」＝exe 檔案寫入時間，複製/安裝會保留時間戳）。「關於」是自訂深色小視窗（非 MessageBox）、內容置左：標題/版本、作者行 `Awaysu (awaysu@gmail.com)` **以執行期渲染的圖片顯示**（`RenderTextImage`，依 DPI 畫、防文字收集）、Source Code 可點連結開 GitHub。
 - **i18n**：使用者可見字串走 `Loc.T`；工具列文字：新連接(New) / 紀錄 / 複製 / 純文字貼上 / 複製全部 / 清除畫面 / 視窗分割 / 功能列 / 常用字串 / 遠端設定 / 設定 / 關於。
 - **設定持久化**：記住值都進 `AppSettings.Current` + `.Save()`。
 - **分頁命名**：`NextName(prefix)` → 「型態(數字)」，例 PowerShell(1)、ADB(1)、自訂用「名稱(數字)」；跳過已存在名稱。
@@ -75,7 +76,7 @@ dotnet build                                     # 建置（會自動簽章 exe�
 - **遠端控制（Telegram，v0.9.74~76 新增）**：一台 PC 一個 bot（@BotFather 申請 token），`RemoteDialog` 設定 Bot Token / 允許的 Chat ID（一鍵抓）/ 推播開關（`AppSettings.RemoteEnabled/TelegramBotToken/TelegramChatId/RemoteNotify`）。**多開防護（v1.0.1，雙實例實測過）**：具名 Mutex `Local\AwayTerminal.TelegramRemote` 保證同機只有第一個實例啟動遠端（同 token 兩個 long polling 會 409+搶訊息）；其餘實例跳過並在遠端設定顯示橘字提示，關掉持有者後回來按「儲存」即可接手（AbandonedMutex 也視為取得）。**一個 token 只能一台裝置 poll**：第二台電腦要另申請 bot（chat id 可同一個）。`TelegramRemote` 自寫 HttpClient long polling（無第三方套件），啟動時 PrimeOffset 跳過舊訊息、只認設定的 chat_id。指令：`/list` `/goto <n>` `/new`（**每種連線只列一個**：PowerShell(桌面)/SSH/Telnet/COM/ADB/未隱藏自訂各一，**不列 History**；回數字開啟+自動附著；PowerShell 與 PickDir 自訂一律以桌面為工作目錄）`/ssh [user@]主機[:埠]`／`/telnet [主機[:埠]]`（不帶參數用上次主機；ssh 帶 user@ 直接連、否則走 login as: 回覆帳號）`/history`（只顯示最近 10 筆；`/history <n>` 才用該筆開新連線——**刻意不吃純數字回覆**，數字留給終端機輸入/選單應答；PickDir 者以桌面開）`/shot`（畫面截圖）純文字=打字+Enter `/key <ctrl-c|ctrl-d|esc|tab|enter|方向>` `/stop` `/last [n]` `/more`（上一則輸出往前翻頁，約 3000 字/頁；緩衝=瘦身後的最近 400 行）`/close [n]`（真正關閉分頁，走優雅結束、不跳 PC 確認框；無參數=關附著的）`/where` `/follow` `/notify` `/exit`（只離開檢視不關分頁；**附著後閒置 10 分鐘自動離開**，9 分鐘先警告，計時只算手機來訊）`/help`；啟動時自動 `setMyCommands` 註冊指令選單（手機有 Menu 鈕）。**follow/完成推播＝只推新輸出（v1.0.3，e2e 驗證過）**：`_baseline` 記每分頁上次推播（或 /goto 附著）當下的原始渲染文字，`DiffNew` 用「基準尾端連續 3 行錨點」（前幾行完整比對＋最後一行前綴比對，prompt 打字後原行變長仍能對上；錨點必須連續取、含中間空行）找出新增行；比對不到（清屏/TUI 大改）自動退回「最後 n 行快照」，`/last` 指令固定快照語意。同分頁連打兩個指令，第二次推播不再包含第一次輸出。其他分頁推一行閒置通知（notify 開時）。輸出來源=**xterm 渲染後文字**（`q…text` 協定），再經 `TidyForPhone` 過濾 TUI 雜訊行、取行數、3500 字截斷、`<pre>` 送出。**選擇題**：claude 跳選單時（轉閒推播會帶出題目+選項，`│` 框內的問句/選項行剝框保留），手機**直接回數字** → 遠端偵測畫面有「❯ N.」選單就自動換算成 ↑/↓ 導航+Enter（claude 選單不吃數字鍵，2026-07-27 實測傳 3 正確選中第 3 項）。**inline 按鈕（v0.9.82）**：`/list`（點按=goto）、`/new`、`/history` 清單附按鈕（每列 2 顆），選擇題推播偵測到選單自動附選項按鈕（callback `opt:{tabId}:{n}`、跨分頁拒答），`/close` 一律先出「✅ 確定關閉／✖ 取消」按鈕；long polling 認 `callback_query`（同樣驗 chat id）→ `answerCallbackQuery` 停轉圈，打字流程全數保留。
 - **保持連線（v0.9.83~84）**：SSH/Telnet 連線視窗「保持連線」**下拉** 0/1/3/5/10/15/30/60 分鐘（`AppSettings.KeepAliveMins`，預設 10、記憶；0=關）。SSH=`ssh.exe -o ServerAliveInterval={分×60} -o ServerAliveCountMax=3`（`SshCommand()` 集中組指令，四個啟動點共用）；Telnet=`TelnetSession.KeepAliveMins` 計時器送 IAC NOP（**直接寫串流，勿走 `Write()`——它會把 0xFF 轉義成資料**）。
 - **斷線自動重連（v0.9.82）**：SSH/Telnet/COM 連線視窗有「斷線自動重連」勾選（`AppSettings.AutoReconnect`，**預設不勾**（0.9.85 改）、記憶）。session Exited 且分頁還在（非使用者關閉）→ 依 `Restore` 重建 session（同分頁），退避 3,6,9…最多 30 秒，一收到輸出歸零；使用者打 exit 登出也會重連（要停就關分頁）。SSH 重連=重跑 ssh.exe（密碼會再問）。
-- **終端機右鍵選單＋Ctrl+F 搜尋（v0.9.82，1.0.2 改版）**：`ContextMenuRequested` 取代 Edge 預設選單 → **搜尋/複製/複製全部/複製全部至檔案/純文字貼上**（`q…file` 協定=整個 buffer 純文字→`SaveBufferToFile` 存檔對話框；工具列「貼上」也改名「純文字貼上」；JS 端 `A`(全選) 協定保留未用）。搜尋列是 **HTML 內的浮動列**（避開 airspace），Ctrl+F 由 `attachCustomKeyEventHandler` 攔截；vendor 無 search addon → 自製 buffer 掃描（translateToString 快篩＋命中行逐 cell 對映欄位處理中文寬字），Enter/Shift+Enter 上下一筆、Esc 關閉、命中行置中＋選取標示。
+- **終端機右鍵選單＋Ctrl+F 搜尋（v0.9.82，1.0.2 改版）**：`ContextMenuRequested` 取代 Edge 預設選單 → **貼上/複製/複製全部/複製全部存至檔案/分隔線/搜尋**（1.0.6 定版順序；`q…file` 協定=整個 buffer 純文字→`SaveBufferToFile` 存檔對話框；工具列該鈕仍叫「純文字貼上」、右鍵選單叫「貼上」，行為相同；JS 端 `A`(全選) 協定保留未用）。搜尋列是 **HTML 內的浮動列**（避開 airspace），Ctrl+F 由 `attachCustomKeyEventHandler` 攔截；vendor 無 search addon → 自製 buffer 掃描（translateToString 快篩＋命中行逐 cell 對映欄位處理中文寬字），Enter/Shift+Enter 上下一筆、Esc 關閉、命中行置中＋選取標示。
 
 ## 數位簽章 / 安裝檔
 - **自簽章（本機用）**：`sign.ps1` build 後自動簽 exe（csproj `SignOutput` target；找不到憑證安靜略過）。憑證 `CN=AwayTerminal (awaysu)` 在 `CurrentUser\My`（含私鑰）。`trust-cert.ps1` 使用者跑一次加入本機信任。
@@ -84,6 +85,9 @@ dotnet build                                     # 建置（會自動簽章 exe�
   - **限制**：自簽憑證只在「裝過此憑證」的電腦被信任；**安裝檔本身第一次執行仍會跳 SmartScreen「不明發行者」**（裝完後程式本體才不被擋）。要連安裝檔都免警告需付費 CA（OV/EV）憑證。
 
 ## 踩雷紀錄（重要）
+- **多行貼上必須走 `xterm.paste()`（v1.0.7 修）**：舊版把剪貼簿文字直接 `Session.WriteText`，每個換行都被當 Enter 送出 → 前面幾行被執行掉、**只剩最後一行留在輸入框**（claude 尤其明顯）。正解＝新增 `v{id}{US}{base64}` 協定交給 JS 呼叫 `term.paste()`，由它負責 `\r\n`→`\r` 正規化，並在程式啟用 bracketed paste（DECSET 2004）時包上 `ESC[200~/201~`；之後照常經 `onData`→`i…` 回送。工具列「純文字貼上」、右鍵「貼上」、常用字串抽屜、PromptDialog 全部走 `PasteToActive()`。註：Windows PowerShell 5.1 內建的 PSReadLine 較舊、未必啟用 bracketed paste，該情況下多行仍會逐行執行（Windows Terminal 亦同）；claude/vim/bash 則正常。
+- **注音組字閃英文字（v1.0.8 修，只動顯示層）**：微軟注音每鍵先回報原始鍵值（h=ㄏ）再更新成注音，xterm 的 `.composition-view` 忠實畫出就閃英文字。修法＝`MutationObserver` 監看該元素：內容一變先藏 30ms、含英文字母（＝鍵值殘影）持續隱藏。**不碰輸入流**（BEL 那次的教訓）；若日後改用拼音輸入法需拿掉字母過濾（拼音組字本來就是英文字母）。
+- **UI 自動化測試的座標會漂移**：`ui.ps1` 用**螢幕絕對座標**，必須每次先截圖取 `GetWindowRect` 原點、再把影像座標加上原點；沿用上一張截圖的座標會誤點到標題列的最小化/關閉鈕（2026-07-30 就這樣誤觸關閉→ExitDialog 被確認→程式結束，一度誤判成防毒問題）。**使用者正在操作電腦時不要跑侵入式點擊**（視窗會被移動/最小化，兩邊互相干擾）。判斷是否為誤觸：`settings.json` 寫入時間若剛好早於程式結束 1 秒＝走了正常關閉流程，不是當機。
 - **WebView2 airspace**：WPF 內容**無法可靠疊在 WebView2 上**（複製提示 `CopyPopup` 才用 Popup）。故「快速輸入抽屜」做在終端機**右側欄**（黃框外）、不覆蓋畫面；小箭頭放在 root Grid 工具列右端。
 - **COM 輸出慢**：`SerialPort.DataReceived` 有延遲 → 改**專用執行緒 blocking `BaseStream.Read`**（同 ConPTY 讀取迴圈），資料一到立即送畫面。勿改回 DataReceived。
 - **WebView2 快取**：改了 `web/` 檔卻「看起來沒變」→ 已用 `WebResourceRequested` 自行伺服＋no-cache 解決；勿移除。

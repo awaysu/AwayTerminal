@@ -181,10 +181,10 @@ public static class Loc
         // 終端機右鍵選單
         ["ctx.cut"] = ("剪下", "Cut"),
         ["ctx.copy"] = ("複製", "Copy"),
-        ["ctx.paste"] = ("純文字貼上", "Paste as plain text"),
+        ["ctx.paste"] = ("貼上", "Paste"),
         ["ctx.selectAll"] = ("全選", "Select all"),
         ["ctx.search"] = ("搜尋", "Find"),
-        ["ctx.copyAllFile"] = ("複製全部至檔案", "Copy all to file"),
+        ["ctx.copyAllFile"] = ("複製全部存至檔案", "Copy all to file"),
         ["msg.saveFail"] = ("存檔失敗", "Save failed"),
 
         // 連線視窗

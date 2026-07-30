@@ -153,7 +153,7 @@ public partial class MainWindow : Window, IRemoteHost
 
     private void ApplyLoc()
     {
-        Title = Loc.T("app.name"); // 視窗/工作列標題：中文=艾維終端機、英文=AwayTerminal
+        Title = string.IsNullOrEmpty(_titlePath) ? Loc.T("app.name") : $"{Loc.T("app.name")} - {_titlePath}";
         BtnNew.Content = Loc.T("tb.new"); BtnNew.ToolTip = Loc.T("tip.new");
         BtnHistory.Content = Loc.T("tb.history"); BtnHistory.ToolTip = Loc.T("tip.history");
         BtnCopy.Content = Loc.T("tb.copy"); BtnCopy.ToolTip = Loc.T("tip.copy");
@@ -374,8 +374,8 @@ public partial class MainWindow : Window, IRemoteHost
     private void QuickSend_Click(object sender, RoutedEventArgs e)
     {
         string content = QuickContentBox.Text;
-        if (string.IsNullOrWhiteSpace(content) || _active?.Session == null) return;
-        _active.Session.WriteText(content);
+        if (string.IsNullOrWhiteSpace(content)) return;
+        PasteToActive(content);   // 常用字串常含多行 → 同樣走 bracketed paste
         Web.Focus();
     }
 
@@ -664,6 +664,7 @@ public partial class MainWindow : Window, IRemoteHost
                 string text = rest.Substring(p2 + 1);
                 if (qk == "text") { _remoteTextTcs?.TrySetResult(text); _remoteTextTcs = null; break; } // 遠端查詢，不進剪貼簿
                 if (qk == "file") { SaveBufferToFile(rest.Substring(0, p1), text); break; }             // 複製全部至檔案
+                if (qk == "cwd") { UpdateTitlePath(rest.Substring(0, p1), text); break; }               // 標題列目前路徑
                 var target = qk == "all" ? (FrameworkElement)BtnCopyAll : BtnCopy;
                 if (string.IsNullOrEmpty(text)) { ShowCopyFeedback(target, Loc.T("toast.noSelection")); break; }
                 try { Clipboard.SetText(text); ShowCopyFeedback(target, Loc.T(qk == "all" ? "toast.copiedAll" : "toast.copied")); } catch { }
@@ -819,6 +820,7 @@ public partial class MainWindow : Window, IRemoteHost
     private void SelectTab(TerminalTab tab)
     {
         _active = tab;
+        SetTitlePath("");   // 切分頁先清掉舊路徑，下次輪詢（0.6s 內）填新分頁的
         foreach (var t in Tabs) t.IsActive = (t == tab);
         PostToWeb("s" + tab.Id);
         Web.Focus();
@@ -1021,7 +1023,9 @@ public partial class MainWindow : Window, IRemoteHost
     // ---------- 綠 / 橘狀態輪詢 ----------
     private void UpdateStatuses(object? sender, EventArgs e)
     {
-        if (Tabs.Count == 0) { Taskbar.Overlay = null; return; } // 沒有分頁 → 不顯示圓點
+        if (Tabs.Count == 0) { Taskbar.Overlay = null; SetTitlePath(""); return; } // 沒有分頁 → 不顯示圓點、標題回程式名
+        // 標題列目前路徑：向作用中分頁查提示字元行（回覆走 a…cwd）
+        if (_webReady && _active != null) PostToWeb("q" + _active.Id + US + "cwd");
         HashSet<int> busyParents;
         try { busyParents = ProcessTree.ParentsWithChildren(); }
         catch { return; }
@@ -1316,14 +1320,46 @@ public partial class MainWindow : Window, IRemoteHost
             mi.Click += (_, _) => act();
             return mi;
         }
-        menu.Items.Add(Item("ctx.search", () => PostToWeb("F")));
+        menu.Items.Add(Item("ctx.paste", () => Paste_Click(this, new RoutedEventArgs())));
         menu.Items.Add(Item("ctx.copy", () => { if (_active != null) PostToWeb("q" + _active.Id + US + "sel"); }));
         menu.Items.Add(Item("tb.copyall", () => { if (_active != null) PostToWeb("q" + _active.Id + US + "all"); }));
         menu.Items.Add(Item("ctx.copyAllFile", () => { if (_active != null) PostToWeb("q" + _active.Id + US + "file"); }));
-        menu.Items.Add(Item("ctx.paste", () => Paste_Click(this, new RoutedEventArgs())));
+        menu.Items.Add(new Separator());
+        menu.Items.Add(Item("ctx.search", () => PostToWeb("F")));
         menu.PlacementTarget = Web;
         menu.Placement = System.Windows.Controls.Primitives.PlacementMode.MousePoint;
         menu.IsOpen = true;
+    }
+
+    // 標題列「程式名稱 - 目前路徑」：由提示字元行解析（PowerShell/cmd/bash-ssh）。
+    // 註：PowerShell 的 Set-Location 不會同步行程 CWD，讀 PEB 拿到的會是啟動目錄，故改用提示行解析。
+    private static readonly System.Text.RegularExpressions.Regex[] CwdRes =
+    {
+        new(@"^PS\s+(?<p>[A-Za-z]:\\.*?|/.*?)\s*>"),           // PowerShell：PS C:\path>
+        new(@"^(?<p>[A-Za-z]:\\[^>]*?)\s*>"),                   // cmd：C:\path>
+        new(@"^[^@\s]+@[^:\s]+:\s*(?<p>[^\s$#]+)\s*[$#]"),      // bash/zsh（SSH）：user@host:~/path$
+    };
+
+    private string _titlePath = "";
+
+    /// <summary>依提示字元行更新標題（解析不到就保留上次的，避免打字過程閃動）。</summary>
+    private void UpdateTitlePath(string idStr, string promptLine)
+    {
+        if (_active == null || _active.Id.ToString() != idStr) return;   // 已切換分頁 → 丟棄過期回覆
+        foreach (var re in CwdRes)
+        {
+            var m = re.Match(promptLine);
+            if (!m.Success) continue;
+            SetTitlePath(m.Groups["p"].Value.Trim());
+            return;
+        }
+    }
+
+    private void SetTitlePath(string path)
+    {
+        if (_titlePath == path) return;
+        _titlePath = path;
+        Title = string.IsNullOrEmpty(path) ? Loc.T("app.name") : $"{Loc.T("app.name")} - {path}";
     }
 
     /// <summary>「複製全部至檔案」：把整個 buffer 的純文字存檔（q…file 的回覆）。</summary>
@@ -1359,11 +1395,18 @@ public partial class MainWindow : Window, IRemoteHost
 
     private void Paste_Click(object sender, RoutedEventArgs e)
     {
-        if (_active?.Session == null) return;
         string text = "";
         try { text = Clipboard.GetText(); } catch { }
-        if (!string.IsNullOrEmpty(text)) _active.Session.WriteText(text);
+        PasteToActive(text);
         Web.Focus();
+    }
+
+    /// <summary>把文字「貼」進作用中分頁：走 xterm.paste（v 協定）而非直接寫 session——
+    /// 多行文字才會依程式的 bracketed paste 設定正確處理，不會被逐行當成 Enter 送出。</summary>
+    private void PasteToActive(string text)
+    {
+        if (string.IsNullOrEmpty(text) || _active == null || !_webReady) return;
+        PostToWeb("v" + _active.Id + US + Convert.ToBase64String(Encoding.UTF8.GetBytes(text)));
     }
 
     private async void Clear_Click(object sender, RoutedEventArgs e)
@@ -1389,9 +1432,9 @@ public partial class MainWindow : Window, IRemoteHost
     private void Prompt_Click(object sender, RoutedEventArgs e)
     {
         var dlg = new PromptDialog { Owner = this };
-        if (dlg.ShowDialog() == true && dlg.ContentToSend != null && _active?.Session != null)
+        if (dlg.ShowDialog() == true && dlg.ContentToSend != null)
         {
-            _active.Session.WriteText(dlg.ContentToSend);
+            PasteToActive(dlg.ContentToSend);
             Web.Focus();
         }
     }
