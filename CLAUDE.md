@@ -24,9 +24,9 @@ dotnet build                                     # 建置（會自動簽章 exe�
 ### C# ↔ JS 訊息協定（字串；分隔字元 US = ``）
 - JS→C#：`i{id}{US}{text}`(輸入)、`r{id}{US}{cols},{rows}`(尺寸)、`a{id}{US}{kind}{US}{text}`(查詢回覆)、
   `p{id}`(點選 pane)、`k{id1,id2,...}`(拖曳後新順序)、`z{size}`(Ctrl+滾輪縮放後字級)、`ready`
-- C#→JS：`o{id}{US}{base64}`(輸出)、`n{id}{US}{title}`(建立)、`t{id}{US}{title}`(改名)、
+- C#→JS：`o{id}{US}{base64}`(輸出)、`n{id}{US}{title}[{US}{flags}]`(建立；flags `c`=claude 貼上走 ESC+CR)、`t{id}{US}{title}`(改名)、
   `s{id}`/`x{id}`/`c{id}`/`f{id}`(顯示/關閉/清除/聚焦)、`L{tab|split|columns}`(模式)、
-  `q{id}{US}{sel|all|text|file}`(查詢文字；text=遠端用、渲染後純文字最後 400 行；file=整個 buffer 純文字、回覆後存檔)、`T{json}`(全域字型/顏色)、`P{id}{US}{fg}{US}{bg}`(單一分頁配色；空=回設定預設)、`A{id}`(全選)、`F`(開 Ctrl+F 搜尋列)、`v{id}{US}{base64}`(貼上→`term.paste()`)
+  `q{id}{US}{sel|all|text|file}`(查詢文字；text=遠端用、渲染後純文字最後 400 行；file=整個 buffer 純文字、回覆後存檔)、`T{json}`(全域字型/顏色)、`P{id}{US}{fg}{US}{bg}`(單一分頁配色；空=回設定預設)、`A{id}`(全選)、`F`(開 Ctrl+F 搜尋列)、`v{id}{US}{base64}`(貼上→JS `doPaste`：一般=`term.paste()`、claude=ESC+CR)
 - 改協定時 **C# 與 `web/terminal.js` 必須同步**。
 
 ## 關鍵檔案
@@ -49,7 +49,7 @@ dotnet build                                     # 建置（會自動簽章 exe�
 
 ## 慣例
 - **視窗標題**：`AwayTerminal - 目前路徑`（v1.0.6，1.0.9 擴充）。路徑由**提示字元行解析**（`q…cwd` 查游標所在提示行 → `CwdRes` 六組 regex：PowerShell / cmd / bash-zsh / RHEL `[user@host ~]#` / Android adb `host:/path $` / fish `user@host /path>`），狀態輪詢每 0.6s 更新；解析不到就保留上次值（打字中不閃動）。**沒有提示行的分頁（claude/自訂）用 `TerminalTab.WorkDir`（啟動目錄）墊底**，切分頁以 WorkDir 起始、無分頁時只顯示程式名。**註：不能讀行程 PEB 的 CWD**——PowerShell 的 `Set-Location` 不會同步行程工作目錄，讀到的永遠是啟動目錄。
-- **版本**：每交付一次 `<Version>` +0.0.1（「關於」顯示）。目前 **1.0.9**（1.0.0=2026-07-27 里程碑、repo 重建＋安裝檔發佈；1.0.4 起「關於」email=weisu.tech@gmail.com、仍為圖片渲染；1.0.5 起最下方顯示「編譯時間: yyyy/M/d HH:mm:ss」＝exe 檔案寫入時間，複製/安裝會保留時間戳）。「關於」是自訂深色小視窗（非 MessageBox）、內容置左：標題/版本、作者行 `Awaysu (awaysu@gmail.com)` **以執行期渲染的圖片顯示**（`RenderTextImage`，依 DPI 畫、防文字收集）、Source Code 可點連結開 GitHub。
+- **版本**：每交付一次 `<Version>` +0.0.1（「關於」顯示）。目前 **1.0.10**（claude 分頁貼上改 ESC+CR）（1.0.0=2026-07-27 里程碑、repo 重建＋安裝檔發佈；1.0.4 起「關於」email=weisu.tech@gmail.com、仍為圖片渲染；1.0.5 起最下方顯示「編譯時間: yyyy/M/d HH:mm:ss」＝exe 檔案寫入時間，複製/安裝會保留時間戳）。「關於」是自訂深色小視窗（非 MessageBox）、內容置左：標題/版本、作者行 `Awaysu (awaysu@gmail.com)` **以執行期渲染的圖片顯示**（`RenderTextImage`，依 DPI 畫、防文字收集）、Source Code 可點連結開 GitHub。
 - **i18n**：使用者可見字串走 `Loc.T`；工具列文字：新連接(New) / 紀錄 / 複製 / 純文字貼上 / 複製全部 / 清除畫面 / 視窗分割 / 功能列 / 常用字串 / 遠端設定 / 設定 / 關於。
 - **設定持久化**：記住值都進 `AppSettings.Current` + `.Save()`。
 - **分頁命名**：`NextName(prefix)` → 「型態(數字)」，例 PowerShell(1)、ADB(1)、自訂用「名稱(數字)」；跳過已存在名稱。
@@ -85,7 +85,8 @@ dotnet build                                     # 建置（會自動簽章 exe�
   - **限制**：自簽憑證只在「裝過此憑證」的電腦被信任；**安裝檔本身第一次執行仍會跳 SmartScreen「不明發行者」**（裝完後程式本體才不被擋）。要連安裝檔都免警告需付費 CA（OV/EV）憑證。
 
 ## 踩雷紀錄（重要）
-- **多行貼上必須走 `xterm.paste()`（v1.0.7 修）**：舊版把剪貼簿文字直接 `Session.WriteText`，每個換行都被當 Enter 送出 → 前面幾行被執行掉、**只剩最後一行留在輸入框**（claude 尤其明顯）。正解＝新增 `v{id}{US}{base64}` 協定交給 JS 呼叫 `term.paste()`，由它負責 `\r\n`→`\r` 正規化，並在程式啟用 bracketed paste（DECSET 2004）時包上 `ESC[200~/201~`；之後照常經 `onData`→`i…` 回送。工具列「純文字貼上」、右鍵「貼上」、常用字串抽屜、PromptDialog 全部走 `PasteToActive()`。註：Windows PowerShell 5.1 內建的 PSReadLine 較舊、未必啟用 bracketed paste，該情況下多行仍會逐行執行（Windows Terminal 亦同）；claude/vim/bash 則正常。
+- **多行貼上必須走 `xterm.paste()`（v1.0.7 修）**：舊版把剪貼簿文字直接 `Session.WriteText`，每個換行都被當 Enter 送出 → 前面幾行被執行掉、**只剩最後一行留在輸入框**（claude 尤其明顯）。正解＝新增 `v{id}{US}{base64}` 協定交給 JS 呼叫 `term.paste()`，由它負責 `\r\n`→`\r` 正規化，並在程式啟用 bracketed paste（DECSET 2004）時包上 `ESC[200~/201~`；之後照常經 `onData`→`i…` 回送。工具列「純文字貼上」、右鍵「貼上」、常用字串抽屜、PromptDialog 全部走 `PasteToActive()`。註：Windows PowerShell 5.1 內建的 PSReadLine 較舊、未必啟用 bracketed paste，該情況下多行仍會逐行執行（Windows Terminal 亦同）；vim/bash 則正常。
+- **claude 分頁多行貼上「有時候分開貼上」（v1.0.10 修）**：實測（ConPTY harness + stdindump/claude 2.1.220）**Win10 19045 conhost 會把輸入流的 `ESC[200~`/`ESC[201~` 整組丟棄**（位元組數正好少 12；win32-input-mode 序列同樣被吃），claude 收不到 bracketed paste 標記、只能靠「輸入叢發時序」猜；而 conhost 轉譯分塊時序不穩（第一行永遠先單獨到、其餘隔 10~175ms、14KB 拆 7 塊）→ 4KB 以上必分裂（碎片留輸入框+「paste again to expand」）、小貼上看時機。正解＝claude 分頁貼上**不走 bracketed paste，改把每個換行送成 `ESC+CR`**（claude 的 Shift+Enter 軟換行鍵，實測可完整穿透 ConPTY、200 行不裂不誤送）：`n` 協定第三欄 flags `c`（AddTab `claudePaste`；Kind=Claude 自動、Custom/PowerShell 依 `IsClaudeExe` 檔名含 claude），JS `doPaste` 統一入口（`v` 協定與 pane 上 capture 階段攔截的原生 Ctrl+V 都走它）。Win11 conhost 若不吃標記也不受影響（claude 分頁一律 ESC+CR，跨版本行為一致）。測試工具在 scratchpad `pastetest/`（pastehost+stdindump，防毒會擋 Start-Process → 用 .NET Process API + CreateNoWindow）。
 - **注音組字閃英文字（v1.0.8 修，只動顯示層）**：微軟注音每鍵先回報原始鍵值（h=ㄏ）再更新成注音，xterm 的 `.composition-view` 忠實畫出就閃英文字。修法＝`MutationObserver` 監看該元素：內容一變先藏 30ms、含英文字母（＝鍵值殘影）持續隱藏。**不碰輸入流**（BEL 那次的教訓）；若日後改用拼音輸入法需拿掉字母過濾（拼音組字本來就是英文字母）。
 - **UI 自動化測試的座標會漂移**：`ui.ps1` 用**螢幕絕對座標**，必須每次先截圖取 `GetWindowRect` 原點、再把影像座標加上原點；沿用上一張截圖的座標會誤點到標題列的最小化/關閉鈕（2026-07-30 就這樣誤觸關閉→ExitDialog 被確認→程式結束，一度誤判成防毒問題）。**使用者正在操作電腦時不要跑侵入式點擊**（視窗會被移動/最小化，兩邊互相干擾）。判斷是否為誤觸：`settings.json` 寫入時間若剛好早於程式結束 1 秒＝走了正常關閉流程，不是當機。
 - **WebView2 airspace**：WPF 內容**無法可靠疊在 WebView2 上**（複製提示 `CopyPopup` 才用 Popup）。故「快速輸入抽屜」做在終端機**右側欄**（黃框外）、不覆蓋畫面；小箭頭放在 root Grid 工具列右端。

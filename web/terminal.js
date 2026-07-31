@@ -5,7 +5,7 @@
 //   JS -> C# :  i{id}US{text} 輸入、r{id}US{cols},{rows} 尺寸、
 //               a{id}US{kind}US{text} 查詢回覆、p{id} 選取某 pane、
 //               k{id1},{id2},... 拖曳後的新順序、z{size} Ctrl+滾輪縮放後的字級、ready
-//   C# -> JS :  o{id}US{base64} 輸出、n{id}US{title} 建立、t{id}US{title} 改名、
+//   C# -> JS :  o{id}US{base64} 輸出、n{id}US{title}[US{flags}] 建立（flags 含 c=claude 貼上）、t{id}US{title} 改名、
 //               s{id} 選取、x{id} 關閉、c{id} 清畫面、L{tab|split} 切換模式、q{id}US{sel|all|text|file|cwd}、
 //               T{json} 套用字型顏色、P{id}US{fg}US{bg} 單一分頁配色（空=回設定預設）、
 //               A{id} 全選、F 開搜尋列、v{id}US{base64} 貼上（走 xterm.paste，支援 bracketed paste）
@@ -41,7 +41,7 @@
     document.body.style.background = abg;
   }
 
-  function makeTerm(id, title) {
+  function makeTerm(id, title, flags) {
     if (terms[id]) return terms[id];
     var el = document.createElement("div");
     el.className = "term";
@@ -120,9 +120,39 @@
       e.preventDefault(); el.classList.remove("drag-over"); onDrop(id);
     });
 
-    terms[id] = { term: term, fit: fit, ser: ser, el: el, body: body, titleSpan: titleSpan, title: title || ("#" + id) };
+    terms[id] = { term: term, fit: fit, ser: ser, el: el, body: body, titleSpan: titleSpan, title: title || ("#" + id),
+                  claudePaste: !!(flags && flags.indexOf("c") >= 0) };
+
+    // claude 分頁：瀏覽器原生貼上（Ctrl+V）也要走 doPaste（capture 階段先於 xterm 的 textarea 監聽）。
+    // 搜尋列在 document 層級、不在 el 內，不受影響。
+    el.addEventListener("paste", function (e) {
+      var rp = terms[id];
+      if (!rp || !rp.claudePaste) return; // 非 claude 分頁照舊交給 xterm
+      e.preventDefault(); e.stopPropagation();
+      var txt = "";
+      try { txt = e.clipboardData.getData("text/plain") || ""; } catch (_) {}
+      if (txt) doPaste(id, txt);
+    }, true);
+
     layout();
     return terms[id];
+  }
+
+  // 統一貼上入口。claude 分頁不能靠 bracketed paste：Win10 conhost 會把 ESC[200~/201~
+  // 從輸入流整組丟棄（實測 19045），claude 只能用「輸入叢發時序」猜是不是貼上，
+  // 而 ConPTY 轉譯分塊時序不穩 → 多行有時被拆開/提前送出。
+  // 改送 claude 自己的軟換行鍵 ESC+CR（= Shift+Enter，/terminal-setup 同款），
+  // 每個換行都確定「插入新行、不送出」，不受分塊影響（ESC+CR 實測可完整穿透 ConPTY）。
+  // 其餘分頁維持 xterm.paste()（\r\n 正規化 + 依程式的 bracketed paste 設定包 ESC[200~/201~）。
+  function doPaste(id, text) {
+    var rec = terms[id];
+    if (!rec || !text) return;
+    if (rec.claudePaste) {
+      var t = text.replace(/\r\n/g, "\r").replace(/\n/g, "\r").replace(/\r/g, "\x1b\r");
+      ws.postMessage("i" + id + US + t);
+    } else {
+      rec.term.paste(text);
+    }
   }
 
   function selectId(id) {
@@ -336,7 +366,11 @@
     } else if (kind === "n") {
       i = rest.indexOf(US);
       if (i < 0) makeTerm(rest, null);
-      else makeTerm(rest.slice(0, i), rest.slice(i + 1));
+      else {
+        var nid = rest.slice(0, i), nrest = rest.slice(i + 1), nj = nrest.indexOf(US);
+        if (nj < 0) makeTerm(nid, nrest);
+        else makeTerm(nid, nrest.slice(0, nj), nrest.slice(nj + 1));
+      }
     } else if (kind === "t") {
       i = rest.indexOf(US); id = rest.slice(0, i);
       var rt = terms[id]; if (rt) { rt.title = rest.slice(i + 1); rt.titleSpan.textContent = rt.title; }
@@ -370,15 +404,13 @@
                : r2.term.getSelection();
       ws.postMessage("a" + id2 + US + qk + US + text);
     } else if (kind === "v") {
-      // 貼上：交給 xterm.paste() —— 它會把 \r\n 正規化成 \r，並在程式啟用 bracketed paste
-      // (DECSET 2004，如 claude/vim/新版 PSReadLine) 時包上 ESC[200~ / ESC[201~，
-      // 多行才不會被逐行當成 Enter 送出（只剩最後一行）。之後照常經 onData 回送 i…
+      // 貼上：統一走 doPaste（一般分頁=xterm.paste；claude 分頁=ESC+CR 軟換行，見 doPaste 註解）
       i = rest.indexOf(US); id = rest.slice(0, i);
-      var rv = terms[id]; if (!rv) return;
+      if (!terms[id]) return;
       var vbin = atob(rest.slice(i + 1));
       var vbytes = new Uint8Array(vbin.length);
       for (var vj = 0; vj < vbin.length; vj++) vbytes[vj] = vbin.charCodeAt(vj);
-      rv.term.paste(new TextDecoder().decode(vbytes));
+      doPaste(id, new TextDecoder().decode(vbytes));
     } else if (kind === "A") {
       var ra = terms[rest]; if (ra) { ra.term.focus(); ra.term.selectAll(); }
     } else if (kind === "F") {

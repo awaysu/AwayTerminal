@@ -6,6 +6,9 @@
 installer/dist/
 installer/MicrosoftEdgeWebview2Setup.exe
 
+# WPF build 產生的暫存專案檔
+*_wpftmp.csproj
+
 # ---- IDE / user ----
 .vs/
 *.user

@@ -285,7 +285,8 @@ public partial class MainWindow : Window, IRemoteHost
         if (viaPs)
         {
             var s = new ConPtySession { GracefulExitBytes = closeBytes };
-            var tab = StartTab(TermKind.PowerShell, title, s, () => s.Start("powershell.exe", _lastCols, _lastRows, dir));
+            var tab = StartTab(TermKind.PowerShell, title, s, () => s.Start("powershell.exe", _lastCols, _lastRows, dir),
+                claudePaste: IsClaudeExe(path));
             if (tab == null) return;
             if (dir != null) { tab.WorkDir = dir; SetTitlePath(dir); }
             // 等尺寸就緒後才把指令打進 PowerShell（避免以 80 欄啟動）；1 秒後保險送出
@@ -305,7 +306,8 @@ public partial class MainWindow : Window, IRemoteHost
         else
         {
             var s = new ConPtySession { GracefulExitBytes = closeBytes };
-            var tab = StartTab(TermKind.Custom, title, s, () => s.Start($"\"{path}\"{args}", _lastCols, _lastRows, dir));
+            var tab = StartTab(TermKind.Custom, title, s, () => s.Start($"\"{path}\"{args}", _lastCols, _lastRows, dir),
+                claudePaste: IsClaudeExe(path));
             if (tab != null && dir != null) { tab.WorkDir = dir; SetTitlePath(dir); }
         }
         AddHistory(new SavedTab
@@ -718,21 +720,29 @@ public partial class MainWindow : Window, IRemoteHost
         return null;
     }
 
-    private TerminalTab AddTab(TermKind kind, string title)
+    private TerminalTab AddTab(TermKind kind, string title, bool claudePaste = false)
     {
         int id = _nextId++;
         var tab = new TerminalTab(id, kind, title) { Cols = _lastCols, Rows = _lastRows };
         Tabs.Add(tab);
-        PostToWeb("n" + id + US + title);
+        // 第三欄 flags：c=claude 分頁 → JS 端多行貼上改送 ESC+CR 軟換行（terminal.js doPaste）
+        PostToWeb("n" + id + US + title + US + (claudePaste || kind == TermKind.Claude ? "c" : ""));
         SelectTab(tab);
         return tab;
     }
 
+    /// <summary>執行檔名含 claude → 貼上需走 ESC+CR 軟換行（AddTab 的 claudePaste 旗標）。</summary>
+    private static bool IsClaudeExe(string path)
+    {
+        try { return Path.GetFileNameWithoutExtension(path).Contains("claude", StringComparison.OrdinalIgnoreCase); }
+        catch { return false; }
+    }
+
     /// <summary>建立分頁、掛好輸出/結束事件，再啟動連線（先掛事件再 start，避免漏掉開頭輸出）。</summary>
-    private TerminalTab? StartTab(TermKind kind, string title, ITerminalSession session, Action start)
+    private TerminalTab? StartTab(TermKind kind, string title, ITerminalSession session, Action start, bool claudePaste = false)
     {
         if (!_webReady) return null;
-        var tab = AddTab(kind, title);
+        var tab = AddTab(kind, title, claudePaste);
         tab.Session = session;
         if (kind is TermKind.Ssh or TermKind.Telnet or TermKind.Com)
             tab.AutoReconnect = AppSettings.Current.AutoReconnect;   // 斷線自動重連（連線視窗勾選）
@@ -1117,7 +1127,8 @@ public partial class MainWindow : Window, IRemoteHost
         if (viaPs)
         {
             var s = new ConPtySession();
-            var tab = StartTab(TermKind.PowerShell, title, s, () => s.Start("powershell.exe", _lastCols, _lastRows, dir));
+            var tab = StartTab(TermKind.PowerShell, title, s, () => s.Start("powershell.exe", _lastCols, _lastRows, dir),
+                claudePaste: true);
             if (tab == null) return;
             tab.WorkDir = dir; SetTitlePath(dir);
             tab.Restore = new SavedTab { Type = "claude", Title = title, Dir = dir };

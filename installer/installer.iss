@@ -4,7 +4,7 @@
 ; and installs the WebView2 runtime if it is missing.
 
 #define AppName "AwayTerminal"
-#define AppVersion "1.0.9"
+#define AppVersion "1.0.10"
 #define AppPublisher "awaysu@gmail.com"
 #define AppExe "AwayTerminal.exe"
 
