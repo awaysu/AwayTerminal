@@ -6,7 +6,8 @@
 //               a{id}US{kind}US{text} 查詢回覆、p{id} 選取某 pane、
 //               k{id1},{id2},... 拖曳後的新順序、z{size} Ctrl+滾輪縮放後的字級、ready
 //   C# -> JS :  o{id}US{base64} 輸出、n{id}US{title}[US{flags}] 建立（flags 含 c=claude 貼上）、t{id}US{title} 改名、
-//               s{id} 選取、x{id} 關閉、c{id} 清畫面、L{tab|split} 切換模式、q{id}US{sel|all|text|file|cwd}、
+//               s{id} 選取、x{id} 關閉、c{id} 清畫面、L{tab|split} 切換模式、
+//               q{id}US{sel|selpaste|all|text|file|cwd}（selpaste 與 sel 同樣回選取文字，C# 端多做一次貼回）、
 //               T{json} 套用字型顏色、P{id}US{fg}US{bg} 單一分頁配色（空=回設定預設）、
 //               A{id} 全選、F 開搜尋列、v{id}US{base64} 貼上（走 xterm.paste，支援 bracketed paste）
 (function () {
@@ -397,6 +398,7 @@
     } else if (kind === "q") {
       var k2 = rest.indexOf(US); var id2 = rest.slice(0, k2); var qk = rest.slice(k2 + 1);
       var r2 = terms[id2]; if (!r2) return;
+      // 注意：未列出的種類（如 selpaste）一律回傳選取文字，由 C# 端決定後續處理
       var text = (qk === "all") ? r2.ser.serialize()
                : (qk === "text") ? lastPlainText(r2.term, 400)
                : (qk === "file") ? lastPlainText(r2.term, 1000000)   // 複製全部至檔案：整個 buffer 純文字（無 ANSI）

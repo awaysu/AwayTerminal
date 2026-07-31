@@ -671,7 +671,16 @@ public partial class MainWindow : Window, IRemoteHost
                 if (qk == "cwd") { UpdateTitlePath(rest.Substring(0, p1), text); break; }               // 標題列目前路徑
                 var target = qk == "all" ? (FrameworkElement)BtnCopyAll : BtnCopy;
                 if (string.IsNullOrEmpty(text)) { ShowCopyFeedback(target, Loc.T("toast.noSelection")); break; }
-                try { Clipboard.SetText(text); ShowCopyFeedback(target, Loc.T(qk == "all" ? "toast.copiedAll" : "toast.copied")); } catch { }
+                try { Clipboard.SetText(text); } catch { }
+                // 複製且貼上：進剪貼簿後再貼回原分頁（走 v 協定，claude 分頁自動用 ESC+CR）
+                if (qk == "selpaste")
+                {
+                    var srcTab = FindTab(rest.Substring(0, p1));
+                    if (srcTab != null) PasteToTab(srcTab.Id, text);
+                    ShowCopyFeedback(target, Loc.T("toast.copiedPasted"));
+                    break;
+                }
+                ShowCopyFeedback(target, Loc.T(qk == "all" ? "toast.copiedAll" : "toast.copied"));
                 break;
             }
             case 'p': // 使用者在分割模式點了某 pane → 設為 active（不回送避免迴圈）
@@ -1336,6 +1345,8 @@ public partial class MainWindow : Window, IRemoteHost
         }
         menu.Items.Add(Item("ctx.paste", () => Paste_Click(this, new RoutedEventArgs())));
         menu.Items.Add(Item("ctx.copy", () => { if (_active != null) PostToWeb("q" + _active.Id + US + "sel"); }));
+        // 複製且貼上：選取的文字進剪貼簿後，直接貼回終端機（省去「複製→再貼上」兩步）
+        menu.Items.Add(Item("ctx.copyPaste", () => { if (_active != null) PostToWeb("q" + _active.Id + US + "selpaste"); }));
         menu.Items.Add(Item("tb.copyall", () => { if (_active != null) PostToWeb("q" + _active.Id + US + "all"); }));
         menu.Items.Add(Item("ctx.copyAllFile", () => { if (_active != null) PostToWeb("q" + _active.Id + US + "file"); }));
         menu.Items.Add(new Separator());
@@ -1422,8 +1433,16 @@ public partial class MainWindow : Window, IRemoteHost
     /// 多行文字才會依程式的 bracketed paste 設定正確處理，不會被逐行當成 Enter 送出。</summary>
     private void PasteToActive(string text)
     {
-        if (string.IsNullOrEmpty(text) || _active == null || !_webReady) return;
-        PostToWeb("v" + _active.Id + US + Convert.ToBase64String(Encoding.UTF8.GetBytes(text)));
+        if (_active == null) return;
+        PasteToTab(_active.Id, text);
+    }
+
+    /// <summary>把文字「貼」進指定分頁（同 PasteToActive，但指定 id——查詢回覆時用，
+    /// 避免查詢送出到回覆之間使用者切了分頁而貼錯地方）。</summary>
+    private void PasteToTab(int id, string text)
+    {
+        if (string.IsNullOrEmpty(text) || !_webReady) return;
+        PostToWeb("v" + id + US + Convert.ToBase64String(Encoding.UTF8.GetBytes(text)));
     }
 
     private async void Clear_Click(object sender, RoutedEventArgs e)

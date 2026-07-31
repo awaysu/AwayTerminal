@@ -142,6 +142,7 @@ public static class Loc
 
         // 浮動提示
         ["toast.copied"] = ("複製成功", "Copied"),
+        ["toast.copiedPasted"] = ("已複製並貼上", "Copied and pasted"),
         ["toast.copiedAll"] = ("已複製全部文字", "All text copied"),
         ["toast.noSelection"] = ("沒有選取文字", "Nothing selected"),
 
@@ -181,6 +182,7 @@ public static class Loc
         // 終端機右鍵選單
         ["ctx.cut"] = ("剪下", "Cut"),
         ["ctx.copy"] = ("複製", "Copy"),
+        ["ctx.copyPaste"] = ("複製且貼上", "Copy and paste"),
         ["ctx.paste"] = ("貼上", "Paste"),
         ["ctx.selectAll"] = ("全選", "Select all"),
         ["ctx.search"] = ("搜尋", "Find"),
