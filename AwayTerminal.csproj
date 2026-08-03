@@ -10,7 +10,7 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>app.ico</ApplicationIcon>
     <!-- 版本：每交付一版 +0.0.1（顯示在「關於」）。P0=0.0.1 … P4=0.0.4，微調=0.0.5 -->
-    <Version>1.0.11</Version>
+    <Version>1.0.13</Version>
     <AssemblyTitle>AwayTerminal</AssemblyTitle>
     <Company>awaysu@gmail.com</Company>
   </PropertyGroup>
@@ -33,16 +33,23 @@
     </Content>
   </ItemGroup>
 
-  <!-- 內建打包 adb（adb.exe + 相依 DLL）→ 使用者不必自行選 adb 路徑 -->
-  <ItemGroup>
-    <Content Include="tools\adb\**\*.*">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-  </ItemGroup>
+  <!-- v1.0.13 起不再打包 Google 的 adb（見 AppSettings.ResolveAdbPath 與
+       THIRD-PARTY-NOTICES.md）：Android SDK 條款 §3.4 禁止轉散布，與 §3.5 的
+       開源元件例外界線不明，上架 Store 需對散布內容有明確權利。改為搜尋使用者
+       既有的 platform-tools 安裝。 -->
 
   <!-- 工具列 / 視窗 icon 內嵌為 WPF 資源 -->
   <ItemGroup>
     <Resource Include="icon\*.png" Exclude="icon\png-preview.png" />
+  </ItemGroup>
+
+  <!-- 授權聲明隨程式一起發佈：MIT 等授權要求「所有副本」都要附上聲明，
+       只放在 repo 不算數。放進輸出目錄後，Inno 安裝檔（打包 bin\publish\*）
+       與 MSIX（複製 bin\publish\*）兩邊都會自動含入，不必各自維護。 -->
+  <ItemGroup>
+    <Content Include="LICENSE;THIRD-PARTY-NOTICES.md">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
 
   <!-- build 後自動用自簽憑證簽章 exe（找不到憑證會安靜略過，不中斷 build）-->

@@ -1,10 +1,13 @@
 ; AwayTerminal installer (Inno Setup)
-; Installs the app (self-contained .NET), imports the self-signed certificate into the
-; machine's Trusted Root + Trusted Publisher stores so the app signature is trusted,
-; and installs the WebView2 runtime if it is missing.
+; Installs the app (self-contained .NET) and the WebView2 runtime if it is missing.
+;
+; Setup does NOT touch the machine's certificate stores. Up to 1.0.11 it silently
+; imported the self-signed certificate into Trusted Root + Trusted Publisher; that was
+; removed in 1.0.12 (see the [Run] section for the reasoning). Trusting the publisher
+; is now opt-in and per-user via {app}\trust-publisher.ps1.
 
 #define AppName "AwayTerminal"
-#define AppVersion "1.0.11"
+#define AppVersion "1.0.12"
 #define AppPublisher "awaysu@gmail.com"
 #define AppExe "AwayTerminal.exe"
 
@@ -35,7 +38,11 @@ Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription:
 
 [Files]
 Source: "..\bin\publish\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
-Source: "AwayTerminal.cer"; DestDir: "{tmp}"; Flags: deleteafterinstall
+; The public certificate and an opt-in trust script ship into the app folder.
+; They are NOT applied during setup - the user runs the script only if they want
+; the publisher name shown in UAC. See [Run] for why setup no longer does this.
+Source: "AwayTerminal.cer"; DestDir: "{app}"
+Source: "trust-publisher.ps1"; DestDir: "{app}"
 Source: "MicrosoftEdgeWebview2Setup.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall
 
 [Icons]
@@ -43,9 +50,20 @@ Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExe}"
 Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; Tasks: desktopicon
 
 [Run]
-; Trust the self-signed certificate (so the app's Authenticode signature is valid on this PC)
-Filename: "certutil.exe"; Parameters: "-addstore -f Root ""{tmp}\AwayTerminal.cer"""; Flags: runhidden; StatusMsg: "Installing certificate (Trusted Root)..."
-Filename: "certutil.exe"; Parameters: "-addstore -f TrustedPublisher ""{tmp}\AwayTerminal.cer"""; Flags: runhidden; StatusMsg: "Installing certificate (Trusted Publisher)..."
+; NOTE: setup deliberately no longer installs the publisher certificate into the
+; machine's Trusted Root store. A silent, hidden "certutil -addstore -f Root" run
+; with admin rights is indistinguishable from MITRE ATT&CK T1553.004 (Subvert Trust
+; Controls: Install Root Certificate) and is a likely cause of antivirus detections.
+; It also asked every user to trust a root CA whose private key lives on a dev box.
+; Users who want the publisher name in UAC run {app}\trust-publisher.ps1 themselves,
+; which imports into their own CurrentUser stores instead of machine-wide.
+;
+; One-time cleanup: remove the machine-wide certificate that setup versions up to
+; 1.0.11 installed. This only touches LocalMachine, so it never undoes a user's own
+; opt-in via trust-publisher.ps1 (that writes to CurrentUser).
+; A non-zero exit (certificate not present, i.e. a clean install) is ignored by Inno.
+Filename: "certutil.exe"; Parameters: "-delstore Root ""AwayTerminal (awaysu)"""; Flags: runhidden
+Filename: "certutil.exe"; Parameters: "-delstore TrustedPublisher ""AwayTerminal (awaysu)"""; Flags: runhidden
 ; Install the WebView2 runtime only if it is not present (idempotent bootstrapper)
 Filename: "{tmp}\MicrosoftEdgeWebview2Setup.exe"; Parameters: "/silent /install"; Check: WebView2Missing; Flags: runhidden waituntilterminated; StatusMsg: "Installing WebView2 runtime..."
 ; Offer to launch after install

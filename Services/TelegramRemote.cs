@@ -97,7 +97,8 @@ public sealed class TelegramRemote
     public void OnTabIdle(int tabId, string title)
     {
         if (_cts == null) return;
-        if (tabId == _currentTabId && _follow) { _ = SendLast(30, $"🟢 {title} 完成", incremental: true); return; }
+        // auto:true → 算不出新輸出時整則不送（自動推播不需要「（尚無新輸出）」這種空訊息）
+        if (tabId == _currentTabId && _follow) { _ = SendLast(30, $"🟢 {title} 完成", incremental: true, auto: true); return; }
         if (_notify) _ = SendAsync($"🟢 {title} 閒置（完成）");
     }
 
@@ -429,9 +430,15 @@ public sealed class TelegramRemote
     /// <summary>推畫面給手機。incremental=true（follow/完成推播）：只推「上次推播基準」之後的新輸出，
     /// 比對不到基準（清屏/TUI 大改/首次）自動退回快照；false（/last 指令）：固定「最後 n 行」快照。
     /// 兩種模式推完都把基準更新到現在，之後的推播不會重複舊內容。</summary>
-    private async Task SendLast(int lines, string? header = null, bool incremental = false)
+    /// <param name="auto">true＝自動推播（忙轉閒），沒有新輸出就完全不送，避免手機收到空訊息。
+    /// false＝使用者主動要（/last、送鍵後回傳），即使沒有新輸出也要回一句，否則看起來像壞了。</param>
+    private async Task SendLast(int lines, string? header = null, bool incremental = false, bool auto = false)
     {
-        if (_currentTabId == 0) { await SendAsync("尚未選擇分頁。先 /goto。"); return; }
+        if (_currentTabId == 0)
+        {
+            if (!auto) await SendAsync("尚未選擇分頁。先 /goto。");
+            return;
+        }
         string raw = _host.GetRecentText(_currentTabId, 400);
         string? diff = incremental && _baseline.TryGetValue(_currentTabId, out var b) ? DiffNew(b, raw) : null;
         _baseline[_currentTabId] = raw;
@@ -441,6 +448,9 @@ public sealed class TelegramRemote
         string body = diff != null ? TidyForPhone(diff) : allFull;
         if (string.IsNullOrWhiteSpace(body))
         {
+            // 自動推播（忙轉閒）沒有新輸出 → 整則不送。舊版會送出只有「🟢 xxx 完成」
+            // 而沒有內容的空訊息，是手機端噪音的主要來源之一。
+            if (auto) return;
             if (diff != null) { await SendAsync(header ?? "（尚無新輸出）"); return; }
             await SendAsync(header ?? "（暫無輸出）"); _moreBuf = ""; return;
         }

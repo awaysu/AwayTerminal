@@ -6,6 +6,10 @@
 installer/dist/
 installer/MicrosoftEdgeWebview2Setup.exe
 
+# ---- MSIX build artifacts (layout 是 publish 的副本、out 是 76MB 套件) ----
+msix/layout/
+msix/out/
+
 # WPF build 產生的暫存專案檔
 *_wpftmp.csproj
 

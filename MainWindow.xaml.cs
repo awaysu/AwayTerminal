@@ -486,9 +486,8 @@ public partial class MainWindow : Window, IRemoteHost
             case "com": OpenComDirect(e.ComPort, e.Baud, e.DataBits, e.Parity, e.StopBits, e.Flow); break;
             case "adb":
             {
-                string adb = AppSettings.BundledAdbPath;
-                if (!File.Exists(adb))
-                { MessageBox.Show(this, Loc.T("adb.noPath"), "AwayTerminal", MessageBoxButton.OK, MessageBoxImage.Warning); break; }
+                string? adb = AppSettings.ResolveAdbPath();
+                if (adb == null) { PromptInstallAdb(); break; }
                 OpenAdbShell(adb, string.IsNullOrEmpty(e.AdbSerial) ? null : e.AdbSerial, NextName("ADB"));
                 break;
             }
@@ -629,6 +628,7 @@ public partial class MainWindow : Window, IRemoteHost
                 if (tab != null)
                 {
                     string text = rest.Substring(p + 1);
+                    tab.LastInputUtc = DateTime.UtcNow;  // 使用者實際按鍵／貼上（遠端推播用來排除打字回顯）
                     if (tab.Session == null && tab.LoginBuffer != null)
                         HandleLoginInput(tab, text); // SSH「login as:」中
                     else
@@ -1083,7 +1083,15 @@ public partial class MainWindow : Window, IRemoteHost
                 if (busy && prev != TermStatus.Busy) _busySince[t.Id] = now;
                 else if (!busy && prev == TermStatus.Busy)
                 {
-                    if (_busySince.TryGetValue(t.Id, out var since) && (now - since).TotalSeconds >= 3)
+                    // 打字不算「程式做完事」：每個按鍵的回顯都在更新 LastOutputUtc，所以打一句話
+                    // （超過 3 秒很常見）整段都會被判定為忙，停手約 0.5~1.5 秒後翻閒 → 舊版就推播了。
+                    // 真正的工作是「送出指令後輸出持續數秒」，此時最後一次按鍵離轉閒至少有那段時間；
+                    // 打字則永遠只差一個「輸出靜默門檻」。用 2.5 秒把兩者分開。
+                    // 註：遠端自己送進去的指令走 SendInputToTab、不經 i 協定，不會更新 LastInputUtc，
+                    // 所以從手機下的指令依然會正常回推結果。
+                    bool echoFromTyping = (now - t.LastInputUtc).TotalSeconds < 2.5;
+                    if (!echoFromTyping &&
+                        _busySince.TryGetValue(t.Id, out var since) && (now - since).TotalSeconds >= 3)
                         _remote.OnTabIdle(t.Id, t.Title);
                     _busySince.Remove(t.Id);
                 }
@@ -1773,19 +1781,28 @@ public partial class MainWindow : Window, IRemoteHost
         if (dlg.ShowDialog() == true) { PostTheme(); ApplyWebDefaultBg(); }
     }
 
+    /// <summary>找不到 adb：說明並詢問是否開啟官方 platform-tools 下載頁。</summary>
+    private void PromptInstallAdb()
+    {
+        var r = MessageBox.Show(this, Loc.T("adb.notInstalled"), "AwayTerminal",
+            MessageBoxButton.YesNo, MessageBoxImage.Information);
+        if (r != MessageBoxResult.Yes) return;
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            { FileName = AppSettings.AdbDownloadUrl, UseShellExecute = true });
+        }
+        catch { }
+    }
+
     // ---------- 工具列：ADB ----------
     private void OpenAdb_Click(object sender, RoutedEventArgs e)
     {
         if (!_webReady) return;
 
-        // 一律使用內建打包的 adb（隨程式發佈）；理論上一定存在
-        string adb = AppSettings.BundledAdbPath;
-        if (!File.Exists(adb))
-        {
-            MessageBox.Show(this, Loc.T("adb.noPath"), "AwayTerminal",
-                MessageBoxButton.OK, MessageBoxImage.Warning);
-            return;
-        }
+        // 搜尋這台電腦上的 adb（PATH / Android SDK 位置 / 設定裡指定的路徑）
+        string? adb = AppSettings.ResolveAdbPath();
+        if (adb == null) { PromptInstallAdb(); return; }
 
         List<string> devices;
         try { devices = AdbDevices(adb); }

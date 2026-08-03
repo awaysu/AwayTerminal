@@ -43,8 +43,9 @@ dotnet build                                     # 建置（會自動簽章 exe�
 | `Localization/Loc.cs` | 中/英字串表 + `LocProxy`（XAML 綁定動態換語言）|
 | `Logging/` `Macros/` | log 記錄（時間戳 `[yy-MM-dd HH:mm:ss]`）/ TTL 巨集直譯器 |
 | `web/` | 前端（`terminal.js` + `vendor/` xterm）；`icon/` 工具列與圖示 PNG（WPF Resource）|
-| `tools/adb/` | **內建打包的 adb**（adb.exe + AdbWinApi/AdbWinUsbApi/libwinpthread dll），隨 build 複製到輸出，ADB 一律用它 |
-| `installer/` | Inno Setup 安裝腳本 `installer.iss` + 公開憑證 `AwayTerminal.cer`（見「數位簽章 / 安裝檔」）|
+| `LICENSE` / `THIRD-PARTY-NOTICES.md` | MIT（`Copyright (c) 2026 Awaysu`）＋第三方聲明。**由 csproj 的 `Content` 複製進發佈輸出**，安裝檔與 MSIX 兩邊自動含入（MIT 要求「所有副本」都附聲明，只放 repo 不算數）|
+| `installer/` | Inno Setup 安裝腳本 `installer.iss` + 公開憑證 `AwayTerminal.cer` + 使用者選擇性信任腳本 `trust-publisher.ps1`（見「數位簽章 / 安裝檔」）|
+| `msix/` | MSIX 打包（上架 Microsoft Store 用）：`AppxManifest.xml` + `build-msix.ps1` + `make-images.ps1` + `Images/`；`layout/` `out/` 為產出，已 gitignore |
 | `app.ico` | 由 `icon/app-icon.png` 產生（PNG 內嵌 ICO）|
 
 ## 慣例
@@ -60,7 +61,9 @@ dotnet build                                     # 建置（會自動簽章 exe�
 - **New（新連接）下拉**（工具列最左）：PowerShell → SSH/Telnet → 連接埠 → ADB → 分隔線 → 你的自訂連線 → 「自訂…」(開管理視窗)。項目為圖示+文字。
 - **Claude Code**：不再是內建按鈕，已**遷移成一筆自訂連線「ClaudeCode」**（`EnsureDefaults` 只做一次、以 `ClaudeMigratedToCustom` 旗標記住）。**直接以 ConPTY 執行 claude.exe（不經 PowerShell）**：claude 即主行程、一開始就用目前尺寸建立，**已移除舊的「等尺寸才送指令」hack**；勾「使用 PowerShell」或路徑是 .cmd/.bat（npm 版）時才走 PowerShell。
 - **自訂連線**（`CustomConnDialog`）：左清單（可收合）+ 底部「自動偵測 / ＋新增 / －刪除」+ 右編輯（圖示下拉 32×32 無字 / 名稱 / 執行檔+瀏覽 / 參數 / 關閉按鍵〔無·Ctrl+C·Ctrl+D〕×〔x1~x5〕/ 隱藏 / 啟動前選擇資料夾 / 使用 PowerShell）+ 「儲存 / 返回」。髒資料追蹤、切換/關閉/刪除前提示。**自動偵測**：在 PATH 與常見位置找 claude/wsl/opencode/gemini/aider 加入。「隱藏」= 不列在 New 下拉。自訂分頁**不做開機還原**。
-- **ADB**：**內建 adb**（`AppSettings.BundledAdbPath`，`tools/adb/adb.exe`），不需設路徑。按下先 `adb devices`：0 台提示、1 台直接開、2 台以上跳選單選序號；直接以 ConPTY 跑 `adb shell`。
+- **ADB**：**v1.0.13 起不再內建 adb**（授權原因見下），改用 `AppSettings.ResolveAdbPath()` 搜尋使用者既有安裝——順序：設定裡指定的 `AdbPath` → `PATH` → `ANDROID_HOME`/`ANDROID_SDK_ROOT` → Android Studio 預設位置 → **舊版殘留的 `tools\adb\adb.exe`**（1.0.12 以前裝過的機器照樣能用，升級不會突然壞掉）。找不到 → `PromptInstallAdb()` 說明並詢問是否開啟官方下載頁。找到後行為不變：先 `adb devices`，0 台提示、1 台直接開、2 台以上跳選單，再以 ConPTY 跑 `adb shell`。
+  - **為何移除**：Android SDK 條款 §3.4 禁止轉散布 SDK，與 §3.5「另有授權的開源元件」的界線不明確；上架 Store 需對散布內容擁有明確權利。且會用 ADB 的人幾乎都已安裝 platform-tools，為少數人背 8.5MB 與法律模糊地帶不划算。**另有一個確定的缺失**：原本只複製了 4 個二進位檔，沒有帶 Google platform-tools 內的 `NOTICE.txt`，那是 Apache-2.0 §4(d) 明文要求的——不散布之後這個義務一併消失。
+  - **踩雷**：`CopyToOutputDirectory` **不會刪除已從專案移除的檔案**，`bin\publish` 會留著上一次的 `tools\adb\`。移除打包內容後必須**先刪 `bin\publish` 再重跑 publish**，否則安裝檔照樣把 adb 包進去（2026-08-04 實際踩到）。
 - **紀錄按鈕**（New 右邊，icon `history.png`）：下拉列最近 10 次連線（圖示+標籤），點選以相同設定重開。每次開連線都記錄（最新在前、去重、上限 20），存於 `AppSettings.History`。開啟邏輯抽成 `OpenPowerShellDirect`/`OpenTelnetDirect`/`OpenSshLoginAs`/`OpenComDirect`/`OpenAdbShell`/`OpenCustom` 共用。
 - **常用字串**（`PromptDialog`，原「Prompt」）：風格同自訂連線。**群組（方式 B）**：`PromptItem.Group`；左清單依群組顯示**可收合標題**，群組標題**右鍵可改名/刪群組**（刪群組問：連字串刪 / 移到未分組 / 取消）。編輯區有「群組」可編輯下拉。**備份/載入 XML**（左下兩鈕；載入取代目前清單）。
 - **快速輸入抽屜**：工具列（關於那列）**最右端有小箭頭 ▼**（貼近黃框上緣），按下右側浮出約 1/5 寬面板（群組 / 標題 / 內容 / 送出）；再按 ▲ 收合。**放在終端機右側欄、不疊在 WebView2 上**（避免 airspace，見踩雷）。
@@ -74,15 +77,38 @@ dotnet build                                     # 建置（會自動簽章 exe�
 - **字型/顏色**：`設定`(SettingsDialog) 用 GroupBox 分「語言 / 字體背景顏色」；**Ctrl+滾輪**縮放字級（全域、記憶、`z` 協定）；**分頁右鍵「配色」**逐分頁套色（5 組預設 + 回設定預設，`P` 協定）。
 - **記錄 log**：視窗按鈕「開始記錄」；時間戳 `[yy-MM-dd HH:mm:ss]`。
 - **遠端控制（Telegram，v0.9.74~76 新增）**：一台 PC 一個 bot（@BotFather 申請 token），`RemoteDialog` 設定 Bot Token / 允許的 Chat ID（一鍵抓）/ 推播開關（`AppSettings.RemoteEnabled/TelegramBotToken/TelegramChatId/RemoteNotify`）。**多開防護（v1.0.1，雙實例實測過）**：具名 Mutex `Local\AwayTerminal.TelegramRemote` 保證同機只有第一個實例啟動遠端（同 token 兩個 long polling 會 409+搶訊息）；其餘實例跳過並在遠端設定顯示橘字提示，關掉持有者後回來按「儲存」即可接手（AbandonedMutex 也視為取得）。**一個 token 只能一台裝置 poll**：第二台電腦要另申請 bot（chat id 可同一個）。`TelegramRemote` 自寫 HttpClient long polling（無第三方套件），啟動時 PrimeOffset 跳過舊訊息、只認設定的 chat_id。指令：`/list` `/goto <n>` `/new`（**每種連線只列一個**：PowerShell(桌面)/SSH/Telnet/COM/ADB/未隱藏自訂各一，**不列 History**；回數字開啟+自動附著；PowerShell 與 PickDir 自訂一律以桌面為工作目錄）`/ssh [user@]主機[:埠]`／`/telnet [主機[:埠]]`（不帶參數用上次主機；ssh 帶 user@ 直接連、否則走 login as: 回覆帳號）`/history`（只顯示最近 10 筆；`/history <n>` 才用該筆開新連線——**刻意不吃純數字回覆**，數字留給終端機輸入/選單應答；PickDir 者以桌面開）`/shot`（畫面截圖）純文字=打字+Enter `/key <ctrl-c|ctrl-d|esc|tab|enter|方向>` `/stop` `/last [n]` `/more`（上一則輸出往前翻頁，約 3000 字/頁；緩衝=瘦身後的最近 400 行）`/close [n]`（真正關閉分頁，走優雅結束、不跳 PC 確認框；無參數=關附著的）`/where` `/follow` `/notify` `/exit`（只離開檢視不關分頁；**附著後閒置 10 分鐘自動離開**，9 分鐘先警告，計時只算手機來訊）`/help`；啟動時自動 `setMyCommands` 註冊指令選單（手機有 Menu 鈕）。**follow/完成推播＝只推新輸出（v1.0.3，e2e 驗證過）**：`_baseline` 記每分頁上次推播（或 /goto 附著）當下的原始渲染文字，`DiffNew` 用「基準尾端連續 3 行錨點」（前幾行完整比對＋最後一行前綴比對，prompt 打字後原行變長仍能對上；錨點必須連續取、含中間空行）找出新增行；比對不到（清屏/TUI 大改）自動退回「最後 n 行快照」，`/last` 指令固定快照語意。同分頁連打兩個指令，第二次推播不再包含第一次輸出。其他分頁推一行閒置通知（notify 開時）。輸出來源=**xterm 渲染後文字**（`q…text` 協定），再經 `TidyForPhone` 過濾 TUI 雜訊行、取行數、3500 字截斷、`<pre>` 送出。**選擇題**：claude 跳選單時（轉閒推播會帶出題目+選項，`│` 框內的問句/選項行剝框保留），手機**直接回數字** → 遠端偵測畫面有「❯ N.」選單就自動換算成 ↑/↓ 導航+Enter（claude 選單不吃數字鍵，2026-07-27 實測傳 3 正確選中第 3 項）。**inline 按鈕（v0.9.82）**：`/list`（點按=goto）、`/new`、`/history` 清單附按鈕（每列 2 顆），選擇題推播偵測到選單自動附選項按鈕（callback `opt:{tabId}:{n}`、跨分頁拒答），`/close` 一律先出「✅ 確定關閉／✖ 取消」按鈕；long polling 認 `callback_query`（同樣驗 chat id）→ `answerCallbackQuery` 停轉圈，打字流程全數保留。
+- **推播噪音修正（v1.0.13）**：使用者回報「在輸入框打字也會推播到手機」。根因＝**打字的按鍵回顯會一直更新 `LastOutputUtc`**，所以打一句話（很容易超過原本的 3 秒忙碌門檻）整段都被判定為忙，停手後 0.5~1.5s 翻閒 → 觸發「完成」推播。修法＝`TerminalTab.LastInputUtc`（只在 JS 的 `i` 協定更新，即真正的鍵盤／貼上），轉閒時若距最後一次按鍵 < 2.5s 就視為打字回顯、不推播；真正的工作是「送出指令後輸出持續數秒」，最後一次按鍵離轉閒必然超過這個距離。**遠端自己送的指令走 `SendInputToTab`、不經 `i` 協定**，所以從手機下指令仍會正常回推結果。第二個噪音來源＝`SendLast` 在增量模式算不出新輸出時仍會送出「只有標題沒有內容」的空訊息 → 新增 `auto` 參數，自動推播（僅 `OnTabIdle`）無新輸出時整則不送；使用者主動要的（/last、送鍵後回傳、開連線推開場）仍會回一句，否則看起來像壞了。
 - **保持連線（v0.9.83~84）**：SSH/Telnet 連線視窗「保持連線」**下拉** 0/1/3/5/10/15/30/60 分鐘（`AppSettings.KeepAliveMins`，預設 10、記憶；0=關）。SSH=`ssh.exe -o ServerAliveInterval={分×60} -o ServerAliveCountMax=3`（`SshCommand()` 集中組指令，四個啟動點共用）；Telnet=`TelnetSession.KeepAliveMins` 計時器送 IAC NOP（**直接寫串流，勿走 `Write()`——它會把 0xFF 轉義成資料**）。
 - **斷線自動重連（v0.9.82）**：SSH/Telnet/COM 連線視窗有「斷線自動重連」勾選（`AppSettings.AutoReconnect`，**預設不勾**（0.9.85 改）、記憶）。session Exited 且分頁還在（非使用者關閉）→ 依 `Restore` 重建 session（同分頁），退避 3,6,9…最多 30 秒，一收到輸出歸零；使用者打 exit 登出也會重連（要停就關分頁）。SSH 重連=重跑 ssh.exe（密碼會再問）。
 - **終端機右鍵選單＋Ctrl+F 搜尋（v0.9.82，1.0.2 改版）**：`ContextMenuRequested` 取代 Edge 預設選單 → **貼上/複製/複製且貼上/複製全部/複製全部存至檔案/分隔線/搜尋**（1.0.11 於「複製」下加入「複製且貼上」＝選取文字進剪貼簿後直接貼回原分頁，走 `q…selpaste`；`q…file` 協定=整個 buffer 純文字→`SaveBufferToFile` 存檔對話框；工具列該鈕仍叫「純文字貼上」、右鍵選單叫「貼上」，行為相同；JS 端 `A`(全選) 協定保留未用）。搜尋列是 **HTML 內的浮動列**（避開 airspace），Ctrl+F 由 `attachCustomKeyEventHandler` 攔截；vendor 無 search addon → 自製 buffer 掃描（translateToString 快篩＋命中行逐 cell 對映欄位處理中文寬字），Enter/Shift+Enter 上下一筆、Esc 關閉、命中行置中＋選取標示。
 
 ## 數位簽章 / 安裝檔
-- **自簽章（本機用）**：`sign.ps1` build 後自動簽 exe（csproj `SignOutput` target；找不到憑證安靜略過）。憑證 `CN=AwayTerminal (awaysu)` 在 `CurrentUser\My`（含私鑰）。`trust-cert.ps1` 使用者跑一次加入本機信任。
-- **安裝檔（Inno Setup）**：`installer/installer.iss`。流程：`dotnet publish -c Release -r win-x64 --self-contained` → 簽章發佈的 exe → 匯出 `AwayTerminal.cer`（公開）→ ISCC 編譯。安裝時（系統管理員）把憑證匯入「受信任的根 + 受信任的發行者」、必要時裝 WebView2（內含 bootstrapper）、建捷徑。
+- **自簽章（本機用）**：`sign.ps1` build 後自動簽 exe（csproj `SignOutput` target；找不到憑證安靜略過）。憑證 `CN=AwayTerminal (awaysu)` 在 `CurrentUser\My`（含私鑰）。目前指紋 `7B11D2A5062A07C5BDD440A8C6B34FD3D7E5719D`（2026-07-21 ~ 2031-07-21）。
+- **私鑰刻意不做任何備份**（2026-08-03 決定）：**不進 git、不放雲端**。理由：(1) 推上 git 不可逆——歷史永久保存、GitHub 未被引用的物件無法可靠刪除；(2) private repo 防的是路人，防不了真正的威脅——本機 gh token（repo 權限、存在 keyring）本身就能 clone，等於在憑證存放區之外多一份可被同一個威脅取得的副本；(3) 這把金鑰是 `AllowPlaintextExport`（可明文匯出），且 1.0.11 以前的安裝檔曾把它塞進使用者的**機器層級**受信任根，一旦外流，用它簽的惡意程式在每台跑過安裝檔的電腦上都自動受信任；(4) 產業方向相反——CA/B Forum 自 2023-06 起要求簽章私鑰must放在 FIPS 認證硬體。
+  - **遺失時的重建程序**（成本近乎零，故不需備份）：① 跑 `trust-cert.ps1`（找不到憑證時會自動 `New-SelfSignedCertificate` 建新的）② 重新 build/publish 讓 `sign.ps1` 以新憑證簽章 ③ **重新匯出 `installer/AwayTerminal.cer`**（安裝檔流程裡那一步）④ 更新本檔與下載頁公布的指紋 ⑤ 通知已執行過 `trust-publisher.ps1` 的使用者重跑一次（舊憑證的信任不會自動轉移）。
+  - **注意**：舊憑證簽過的已發佈安裝檔不受影響（有 DigiCert 時間戳，簽章仍有效），重建只影響之後的版本。**`trust-cert.ps1` 是開發用**（找不到憑證會**建立新的自簽憑證**，絕不可給使用者跑）；給使用者的是 `installer/trust-publisher.ps1`（只匯入公開 .cer、只寫 `CurrentUser`、支援 `-Remove`、會印指紋供核對）。
+- **⚠️ publish 出來的 exe 不會自動簽章**：`SignOutput` target 掛在 `AfterTargets="Build"`，`dotnet publish` 會覆蓋掉已簽的檔案 → 出安裝檔時必須**手動**對 `bin\publish\AwayTerminal.exe` 與編譯完的 `AwayTerminal-Setup-*.exe` 各跑一次 `sign.ps1`。
+- **安裝檔（Inno Setup）**：`installer/installer.iss`。流程：`dotnet publish -c Release -r win-x64 --self-contained` → 簽章發佈的 exe → 匯出 `AwayTerminal.cer`（公開）→ ISCC 編譯。安裝時必要時裝 WebView2（內含 bootstrapper）、建捷徑。
+  - **v1.0.12 起安裝檔不再碰憑證存放區**（原本 `[Run]` 有兩行 `certutil -addstore -f Root/TrustedPublisher`，`runhidden` + 管理員權限）。移除原因：這個組合等同 **MITRE ATT&CK T1553.004（Install Root Certificate）**，MITRE 頁面舉的惡意程式範例指令幾乎一模一樣，`certutil` 本身又是知名 LOLBin，**極可能是 PC-cillin 誤判的主因**；且它要求每位使用者信任一張私鑰放在開發機上的根憑證（Superfish／eDellRoot 前例）。改為 `AwayTerminal.cer` + `trust-publisher.ps1` 裝進 `{app}`，**使用者自行決定**是否執行。
+  - **兩者刻意分屬不同存放區、不會互相干擾**：舊的壞行為寫 `LocalMachine`（全機器、需管理員），新的 opt-in 寫 `CurrentUser`（僅自己、免管理員）。`[Run]` 保留兩行 `-delstore`**只清 LocalMachine**，讓 1.0.11 以前裝過的機器升級時自動清乾淨，不會洗掉使用者自己的選擇。
+  - **踩雷**：`Cert:\CurrentUser\Root` 的檢視是「使用者 ∪ 機器」存放區的**聯集**，直接 `Remove-Item` 會刪到機器層級那張並拿到 Access denied（`trust-publisher.ps1 -Remove` 已逐張 try/catch 並分開提示）。
   - ISCC 路徑：`%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe`。
-  - **限制**：自簽憑證只在「裝過此憑證」的電腦被信任；**安裝檔本身第一次執行仍會跳 SmartScreen「不明發行者」**（裝完後程式本體才不被擋）。要連安裝檔都免警告需付費 CA（OV/EV）憑證。
+  - **限制（2026-08 查證後大幅修正）**：使用者遇到的其實是**三個獨立機制**——瀏覽器下載警告、SmartScreen 執行警告（前兩者只看**信譽**）、UAC「不明發行者」（只看**簽章身分**）。**憑證只解決第三個。**
+    - **「買 OV/EV 就免警告」已不成立**：微軟 2024 年移除了 EV 的 SmartScreen 即時信譽特權（[code-signing-options](https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/code-signing-options)：「EV certificates previously bypassed SmartScreen entirely on first download... That behavior was removed in 2024」），現在 OV 與 EV 同級，**不要買 EV**。SmartScreen **沒有白名單管道**（微軟明文 "no need (or mechanism)"），只能靠下載量累積。
+    - **自簽在 SmartScreen 眼中等同未簽**，且信譽**無法跨版本累積**（每個新 hash 從零開始）——四天發十二版的節奏在數學上永遠累積不到。憑證的真正價值是讓信譽掛在同一個發行者身分下累積。
+    - **Smart App Control（Win11 22H2+ 全新安裝）直接封鎖**自簽／未簽執行檔，且不限有 MOTW 的檔案，只認受信任根計畫內 CA 簽發的憑證。
+    - **選項成本**：個人買不到 OV（需法人），對應產品是 **IV**。台灣可行的最便宜是 Certum 開源憑證雲端版 **€49/年**（免硬體 token）；SSL.com IV $129/年＋eSigner $20/月。**Azure Artifact Signing（$9.99/月）個人限美加，台灣不適用**。SignPath Foundation 對開源免費但憑證掛他們的名字，且要求「可驗證地從原始碼建置」——**原本 `tools/adb/` 的 Google 預編譯檔是疑慮點，v1.0.13 移除後此障礙已消失**（加上 1.0.13 已補 MIT LICENSE，SignPath 的兩項前置條件都滿足了）。**Microsoft Store 是唯一真正零警告**的通路（個人註冊費已取消），但要改包 MSIX。
+    - **winget 有效但只限該通路**：社群來源被標記為 Trusted，下載的檔案拿到 `ZoneId=2` 而非 `ZoneId=3`（本機實測），SmartScreen 因此不觸發；但從 GitHub Releases 直載的人不受惠，SAC 與防毒也不受影響。註：本機用 `winget install --manifest` 測試走的是**非信任路徑**，會看到真實使用者不會遇到的警告（別被誤導）。
+
+## MSIX / Microsoft Store（v1.0.12 起）
+- **打包**：`msix\build-msix.ps1`（`-Publish` 重跑 publish、`-NoSign` 產生未簽章套件供上架）。產出 `msix\out\AwayTerminal-<四段版本>.msix`，約 76MB（MSIX 壓縮比 Inno 好，安裝檔是 55.6MB 但解開後 180MB）。圖示由 `make-images.ps1` 從 `icon\app-icon.png` 產生 11 種尺寸。
+- **必須是全信任桌面應用**：`EntryPoint="Windows.FullTrustApplication"` + `rescap:runFullTrust`。**絕不可做成 UWP/AppContainer**——子行程會繼承容器，ConPTY 開的 powershell/ssh/adb 全部失去檔案系統與網路存取，程式等於報廢。
+- **兩大風險已實測排除（2026-08-03，Win10 19045）**：
+  1. **ConPTY 在 `C:\Program Files\WindowsApps\...` 長路徑下正常**——側載後子行程樹確實出現 `conhost.exe` + `powershell.exe`（曾擔心 terminal#16860 的 `CreatePseudoConsole` MAX_PATH 崩潰，未重現）。
+  2. **內建 `adb.exe` 可執行**（WindowsAppSDK #4651 的 ACCESS_DENIED 未重現）。注意：**外部行程跑 WindowsApps 裡的 adb 會 Access denied**（ACL 只允許套件自己），這是正常的、不是 bug；要驗證得用 `Invoke-CommandInDesktopPackage -PackageFamilyName ... -AppId AwayTerminal` 以套件身分執行。
+- **設定不會沿用（重要）**：封裝後 `%LOCALAPPDATA%` 被重導到 `%LOCALAPPDATA%\Packages\<PFN>\LocalCache\Local\AwayTerminal\settings.json`，**沒有 read-through 回退**——實測封裝版讀不到原本的 3 筆自訂連線／16 筆歷史／Telegram token，等於全新設定。要沿用需宣告 `rescap:unvirtualizedResources`（受限能力，上架要向微軟說明理由；Windows Terminal 就是這樣做的）或在程式內做一次性匯入。
+- **上架前置（需使用者操作）**：① 到 **`storedeveloper.microsoft.com`** 註冊個人帳號（費用已取消；從 Partner Center 或 VS 進去會走到舊的 19 美元流程）② 保留應用程式名稱 → 取得 `Identity Name` 與 `Publisher=CN=<GUID>`，同步改進 `AppxManifest.xml` ③ 用 `-NoSign` 產生套件（微軟會以你的發行者身分重簽）④ **隱私權政策是硬性要求**（政策 10.5.1，桌面橋接產品必備）⑤ **Telegram 遠端控制是最大的審查風險**（長輪詢外部伺服器＋執行指令＋截圖，形同 RAT），建議預設關閉並在提交表單誠實說明。
+- **簽章與 Identity 必須完全一致**：`AppxManifest.xml` 的 `Publisher` 與簽章憑證主體不符時，makeappx 打包會過但安裝會被判 identity 不符而失敗（`build-msix.ps1` 已在簽章前先擋下並印出兩者差異）。
 
 ## 踩雷紀錄（重要）
 - **多行貼上必須走 `xterm.paste()`（v1.0.7 修）**：舊版把剪貼簿文字直接 `Session.WriteText`，每個換行都被當 Enter 送出 → 前面幾行被執行掉、**只剩最後一行留在輸入框**（claude 尤其明顯）。正解＝新增 `v{id}{US}{base64}` 協定交給 JS 呼叫 `term.paste()`，由它負責 `\r\n`→`\r` 正規化，並在程式啟用 bracketed paste（DECSET 2004）時包上 `ESC[200~/201~`；之後照常經 `onData`→`i…` 回送。工具列「純文字貼上」、右鍵「貼上」、常用字串抽屜、PromptDialog 全部走 `PasteToActive()`。註：Windows PowerShell 5.1 內建的 PSReadLine 較舊、未必啟用 bracketed paste，該情況下多行仍會逐行執行（Windows Terminal 亦同）；vim/bash 則正常。
@@ -118,7 +144,7 @@ dotnet build                                     # 建置（會自動簽章 exe�
 
 ## 待辦（遠端 Telegram，接續）
 1. ~~過濾殘留~~ **已驗收完成（2026-07-27 情境1 tt1 網頁貪食蛇 + 情境2 tt2 C++ 貪食蛇+MSVC 編譯，端到端全通過）**：主回覆完全乾淨。過濾手段=`NoiseLineRes` 規則行過濾（spinner/狀態列/方框/碎片）+ **前綴去重**（空白正規化後某行是較長行前綴 = TUI 截斷殘影）。若日後 claude 換 spinner 字形/statusline 格式再漏，補 `TelegramRemote.NoiseLineRes` 即可。
-2. 手機端 adb 截圖驗證：手機有指紋鎖，adb 無法解鎖，**待使用者解鎖後補驗**（`tools\adb\adb.exe shell screencap -p /sdcard/x.png` + pull；`exec-out >` 會被 PowerShell 弄壞二進位）。
+2. 手機端 adb 截圖驗證：手機有指紋鎖，adb 無法解鎖，**待使用者解鎖後補驗**（`adb shell screencap -p /sdcard/x.png` + pull；`exec-out >` 會被 PowerShell 弄壞二進位。註：1.0.13 起已不內建 adb，測試請用系統上的 platform-tools）。
 3. ~~`/new` / `setMyCommands` / `/shot`~~ **已完成並實測（2026-07-27）**：`/new` v0.9.77 改版=**每種連線只列一個**（不列 History；PowerShell/PickDir 自訂以桌面為工作目錄、不跳資料夾框）、開完自動附著、非 SSH 且 follow 開時 1.5s 後自動推開場畫面；`setMyCommands`=服務啟動時自動註冊（手機出現 Menu 鈕）；`/shot`=WebView2 `CapturePreviewAsync` PNG + sendPhoto（附著分頁未顯示會先切前景）。
 3a. **SSH/Telnet 遠端登入（v0.9.77~78）**：`/new` 選 SSH → 開「login as:」分頁並提示回覆帳號；`SendInputToTab` 在 `Session==null && LoginBuffer!=null` 時轉 `HandleLoginInput`（修掉遠端打不進 login as: 的問題），密碼走一般文字輸入（送出後 0.7s 自動回傳畫面）。Telnet 直接開，登入提示由開場畫面推播帶出。0.9.78 加專屬指令 `/ssh [user@]主機[:埠]`、`/telnet [主機[:埠]]`（`ParseHostPort` 解析；不帶參數用 `LastHost`＋`LastSshPort`/`LastTelnetPort`；ssh 帶 user@ 走直啟路徑 `IRemoteHost.OpenSsh`、跳過 login as:）。**尚未實機驗**（需使用者手機測 SSH 帳密流程）。
 4. ~~`/close`、`/more`、10 分鐘閒置自動 `/exit`~~ **已做（v0.9.81，未實測）**。規格內尚未做：`/clear`、選配 `/arm` PIN、非附著分頁選擇題通知帶內容。

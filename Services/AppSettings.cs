@@ -108,14 +108,57 @@ public sealed class AppSettings
     // 啟用 Claude 按鈕（勾了工具列才顯示 ClaudeCode）；預設不勾
     public bool ClaudeEnabled { get; set; } = false;
 
-    // adb.exe 路徑（保留欄位相容舊 JSON；已改用內建打包的 adb，不再讀此值）
+    // adb.exe 路徑：使用者在設定裡指定時優先採用（空=自動搜尋，見 ResolveAdbPath）
     public string AdbPath { get; set; } = "";
     // 啟用 ADB 按鈕（勾了 New 下拉才會出現 ADB）；預設不勾
     public bool AdbEnabled { get; set; } = false;
 
-    /// <summary>內建打包的 adb（隨程式一起發佈，位於輸出目錄 tools\adb\adb.exe）。ADB 一律用它。</summary>
-    public static string BundledAdbPath =>
-        Path.Combine(AppContext.BaseDirectory, "tools", "adb", "adb.exe");
+    /// <summary>官方 platform-tools 下載頁（找不到 adb 時提示使用者自行安裝）。</summary>
+    public const string AdbDownloadUrl = "https://developer.android.com/tools/releases/platform-tools";
+
+    /// <summary>找出這台電腦上的 adb.exe，找不到回 null。
+    /// v1.0.13 起**不再隨程式打包 Google 的 adb**——Android SDK 條款 §3.4 禁止轉散布 SDK，
+    /// 與 §3.5「另有授權的開源元件」的界線並不明確，且上架 Store 需對散布內容擁有明確權利。
+    /// 會用到 ADB 的人幾乎都已安裝 platform-tools，故改為搜尋既有安裝。
+    /// 順序：使用者指定 → PATH → 常見 SDK 位置 → 舊版殘留的 tools\adb（升級者不會突然壞掉）。</summary>
+    public static string? ResolveAdbPath()
+    {
+        var cfg = Current;
+        if (!string.IsNullOrWhiteSpace(cfg.AdbPath) && File.Exists(cfg.AdbPath)) return cfg.AdbPath;
+
+        foreach (var p in AdbCandidates())
+            if (!string.IsNullOrWhiteSpace(p) && File.Exists(p)) return p;
+
+        return null;
+    }
+
+    private static IEnumerable<string> AdbCandidates()
+    {
+        // PATH
+        string pathEnv = Environment.GetEnvironmentVariable("PATH") ?? "";
+        foreach (var dir in pathEnv.Split(Path.PathSeparator))
+        {
+            string d = dir.Trim().Trim('"');
+            if (d.Length > 0) yield return Path.Combine(d, "adb.exe");
+        }
+
+        // Android SDK 環境變數（Android Studio / CI 常設）
+        foreach (var varName in new[] { "ANDROID_HOME", "ANDROID_SDK_ROOT" })
+        {
+            string? root = Environment.GetEnvironmentVariable(varName);
+            if (!string.IsNullOrWhiteSpace(root)) yield return Path.Combine(root, "platform-tools", "adb.exe");
+        }
+
+        // Android Studio 預設安裝位置
+        string localApp = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        yield return Path.Combine(localApp, "Android", "Sdk", "platform-tools", "adb.exe");
+        foreach (var pf in new[] { Environment.SpecialFolder.ProgramFiles, Environment.SpecialFolder.ProgramFilesX86 })
+            yield return Path.Combine(Environment.GetFolderPath(pf), "Android", "android-sdk", "platform-tools", "adb.exe");
+
+        // 1.0.12 以前的安裝會在程式目錄留下 tools\adb\adb.exe——已存在於使用者電腦上的
+        // 副本可以照用（我們不再散布它），升級者的 ADB 功能不會突然失效。
+        yield return Path.Combine(AppContext.BaseDirectory, "tools", "adb", "adb.exe");
+    }
 
     // 自訂新連接清單（New 下拉的自訂項目）
     public List<CustomConn> CustomConns { get; set; } = new();

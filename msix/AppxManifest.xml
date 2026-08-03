@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  AwayTerminal MSIX 資訊清單（全信任桌面應用）。
+
+  重點：EntryPoint 必須是 Windows.FullTrustApplication + rescap:runFullTrust。
+  絕對不要做成 UWP/AppContainer —— 子行程會繼承容器，ConPTY 開的 powershell.exe /
+  ssh.exe / adb.exe 全部會失去檔案系統與網路存取能力，整個程式等於報廢。
+
+  Identity 的 Name / Publisher 由 Partner Center「保留應用程式名稱」後決定：
+    Name      = 微軟配發的套件識別名稱（例如 12345Awaysu.AwayTerminal）
+    Publisher = CN=<你的發行者 ID GUID>
+  在拿到之前，這裡先用可側載測試的預留值；Publisher 必須與簽章憑證主體「完全一致」，
+  否則 makeappx 打包得出來但 signtool 簽完會被系統判定 identity 不符而無法安裝。
+  改這兩個值時，msix\build-msix.ps1 的 -Publisher 參數要同步。
+-->
+<Package
+    xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+    xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+    xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+    IgnorableNamespaces="uap rescap">
+
+  <Identity
+      Name="AwaysuTech.AwayTerminal"
+      Publisher="CN=AwayTerminal (awaysu), O=AwayTerminal, C=TW"
+      Version="1.0.12.0"
+      ProcessorArchitecture="x64" />
+
+  <Properties>
+    <DisplayName>AwayTerminal</DisplayName>
+    <PublisherDisplayName>Awaysu</PublisherDisplayName>
+    <Logo>Images\StoreLogo.png</Logo>
+  </Properties>
+
+  <Dependencies>
+    <!-- 19041 = Windows 10 2004。ConPTY 與 WebView2 在此之後行為穩定 -->
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.19041.0" MaxVersionTested="10.0.26100.0" />
+  </Dependencies>
+
+  <Resources>
+    <Resource Language="zh-TW" />
+    <Resource Language="en-US" />
+  </Resources>
+
+  <Applications>
+    <Application Id="AwayTerminal" Executable="AwayTerminal.exe" EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements
+          DisplayName="AwayTerminal"
+          Description="Windows terminal emulator with PowerShell, SSH, Telnet, serial port and ADB support."
+          BackgroundColor="transparent"
+          Square150x150Logo="Images\Square150x150Logo.png"
+          Square44x44Logo="Images\Square44x44Logo.png">
+        <uap:DefaultTile
+            Wide310x150Logo="Images\Wide310x150Logo.png"
+            Square71x71Logo="Images\Square71x71Logo.png"
+            Square310x310Logo="Images\Square310x310Logo.png" />
+        <uap:SplashScreen Image="Images\SplashScreen.png" BackgroundColor="transparent" />
+      </uap:VisualElements>
+    </Application>
+  </Applications>
+
+  <Capabilities>
+    <!-- 全信任桌面應用；上架時必須在提交表單裡說明用途 -->
+    <rescap:Capability Name="runFullTrust" />
+  </Capabilities>
+
+</Package>

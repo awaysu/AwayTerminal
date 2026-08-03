@@ -23,6 +23,13 @@ public static class Loc
         ["tb.adb"] = ("ADB", "ADB"),
         ["tip.adb"] = ("開 ADB shell", "Open ADB shell"),
         ["adb.noPath"] = ("請先到「設定」設定 adb 路徑。", "Please set the adb path in Settings first."),
+        ["adb.notInstalled"] = (
+            "找不到 adb。AwayTerminal 不再內建 adb，請自行安裝 Android SDK Platform Tools\n" +
+            "（或在「設定」中指定 adb.exe 路徑）。\n\n已搜尋：PATH、ANDROID_HOME / ANDROID_SDK_ROOT、Android Studio 預設位置。\n\n" +
+            "要開啟官方下載頁嗎？",
+            "adb was not found. AwayTerminal no longer bundles adb - please install the Android SDK " +
+            "Platform Tools (or set the path to adb.exe in Settings).\n\nSearched: PATH, ANDROID_HOME / " +
+            "ANDROID_SDK_ROOT, and the default Android Studio location.\n\nOpen the official download page?"),
         ["adb.noDevice"] = ("沒有偵測到 adb 裝置。", "No adb device detected."),
         ["adb.pickDevice"] = ("選擇裝置", "Pick a device"),
         ["settings.adbPath"] = ("adb 路徑", "adb path"),

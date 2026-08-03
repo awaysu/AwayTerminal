@@ -20,6 +20,11 @@ public sealed class TerminalTab : INotifyPropertyChanged
     /// <summary>最後一次收到輸出的時間（遠端連線判斷忙碌用）。</summary>
     public DateTime LastOutputUtc { get; set; }
 
+    /// <summary>最後一次「使用者從鍵盤／貼上」送入的時間（只記 JS 的 i 協定，不含程式自動送的指令）。
+    /// 用途：打字時每個按鍵的回顯都會更新 LastOutputUtc，分頁會一路被判定為忙，停手後才翻閒——
+    /// 若不分辨就會把「打字」誤當成「程式跑完」而推播到手機。見 MainWindow.UpdateStatuses。</summary>
+    public DateTime LastInputUtc { get; set; }
+
     /// <summary>分頁建立時間（tooltip 顯示已啟動時長用）。</summary>
     public DateTime StartUtc { get; } = DateTime.UtcNow;
 
