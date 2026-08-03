@@ -17,7 +17,10 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $root      = Resolve-Path (Join-Path $PSScriptRoot '..')
-$publishIn = Join-Path $root 'bin\publish'
+# MSIX 用「自帶執行環境」的獨立輸出目錄，與 Inno 安裝檔的框架相依輸出（bin\publish）分開。
+# MSIX 無法像 Inno 那樣偵測並安裝 .NET Desktop Runtime，Store 端也沒有桌面 .NET 的
+# framework package，所以 Store 版必須自帶。兩者共用同一個目錄會互相覆蓋。
+$publishIn = Join-Path $root 'bin\publish-msix'
 $layout    = Join-Path $PSScriptRoot 'layout'
 $outDir    = Join-Path $PSScriptRoot 'out'
 
@@ -34,12 +37,14 @@ Write-Host "SDK: $($sdkDir.Name)"
 
 # ---- 1. publish ----
 if ($Publish -or -not (Test-Path (Join-Path $publishIn 'AwayTerminal.exe'))) {
-    Write-Host "`n[1/5] dotnet publish ..."
-    & dotnet publish (Join-Path $root 'AwayTerminal.csproj') -c Release -r win-x64 --self-contained `
+    Write-Host "`n[1/5] dotnet publish（自帶執行環境）..."
+    # 先清空：CopyToOutputDirectory 不會刪除已從專案移除的檔案，殘留物會被打包進去
+    if (Test-Path $publishIn) { Remove-Item $publishIn -Recurse -Force }
+    & dotnet publish (Join-Path $root 'AwayTerminal.csproj') -c Release -r win-x64 --self-contained true `
         -o $publishIn -v q --nologo
     if ($LASTEXITCODE -ne 0) { throw "dotnet publish 失敗" }
 } else {
-    Write-Host "`n[1/5] 沿用現有 bin\publish（要重建請加 -Publish）"
+    Write-Host "`n[1/5] 沿用現有 bin\publish-msix（要重建請加 -Publish）"
 }
 
 # ---- 2. 組 layout ----

@@ -88,7 +88,16 @@ dotnet build                                     # 建置（會自動簽章 exe�
   - **遺失時的重建程序**（成本近乎零，故不需備份）：① 跑 `trust-cert.ps1`（找不到憑證時會自動 `New-SelfSignedCertificate` 建新的）② 重新 build/publish 讓 `sign.ps1` 以新憑證簽章 ③ **重新匯出 `installer/AwayTerminal.cer`**（安裝檔流程裡那一步）④ 更新本檔與下載頁公布的指紋 ⑤ 通知已執行過 `trust-publisher.ps1` 的使用者重跑一次（舊憑證的信任不會自動轉移）。
   - **注意**：舊憑證簽過的已發佈安裝檔不受影響（有 DigiCert 時間戳，簽章仍有效），重建只影響之後的版本。**`trust-cert.ps1` 是開發用**（找不到憑證會**建立新的自簽憑證**，絕不可給使用者跑）；給使用者的是 `installer/trust-publisher.ps1`（只匯入公開 .cer、只寫 `CurrentUser`、支援 `-Remove`、會印指紋供核對）。
 - **⚠️ publish 出來的 exe 不會自動簽章**：`SignOutput` target 掛在 `AfterTargets="Build"`，`dotnet publish` 會覆蓋掉已簽的檔案 → 出安裝檔時必須**手動**對 `bin\publish\AwayTerminal.exe` 與編譯完的 `AwayTerminal-Setup-*.exe` 各跑一次 `sign.ps1`。
-- **安裝檔（Inno Setup）**：`installer/installer.iss`。流程：`dotnet publish -c Release -r win-x64 --self-contained` → 簽章發佈的 exe → 匯出 `AwayTerminal.cer`（公開）→ ISCC 編譯。安裝時必要時裝 WebView2（內含 bootstrapper）、建捷徑。
+- **兩條產線，發佈方式不同（v1.0.13 起）**——**目錄不可共用**，否則後跑的會覆蓋前者（`CopyToOutputDirectory` 不刪舊檔，正是 adb 那次踩到的陷阱）：
+  | 通路 | 發佈方式 | 輸出目錄 | 大小 |
+  |---|---|---|---|
+  | Inno 安裝檔 | `--self-contained false`（框架相依） | `bin\publish` | 24 檔 / 3.2 MB |
+  | MSIX / Store | `--self-contained true`（自帶） | `bin\publish-msix` | 488 檔 / 171.6 MB |
+  - **Store 版必須自帶**：MSIX 無法像 Inno 那樣偵測並安裝 .NET Desktop Runtime，Store 也沒有桌面 .NET 的 framework package。
+  - **安裝檔內含 .NET 9 Desktop Runtime 安裝程式**（`installer/windowsdesktop-runtime-win-x64.exe`，58MB，已 gitignore；`DesktopRuntimeMissing` 為真才執行）。**偵測用資料夾掃描不用註冊表**——`HKLM\SOFTWARE\dotnet\Setup\InstalledVersions\x64\sharedfx` 在 Win10 19045 實測**不存在**（即使 runtime 已裝），改掃 `{commonpf64}\dotnet\shared\Microsoft.WindowsDesktop.App\9.*`。
+  - **安裝檔反而變大**：61.8MB（自帶版是 55.6MB）——runtime 安裝程式本身已壓縮、Inno 壓不動，而自帶的 172MB 散檔能壓到 55MB。換到的是**安裝後磁碟 184.8MB → 7.4MB**，且 runtime 由微軟經 Windows Update 修補（自帶＝.NET 安全更新變成你的責任）。
+  - **`[InstallDelete] Type: filesandordirs; Name: "{app}\*"` 不可移除**：Inno 就地升級**不會刪除舊版裝過、新版已不含的檔案**。沒有這段，從 ≤1.0.12 升級會留下 ~172MB 孤兒 runtime 檔＋`tools\adb`，框架相依省的空間完全沒實現（實測升級後仍是 184.8MB，加了之後降到 7.4MB）。{app} 內無使用者資料（設定在 `%LOCALAPPDATA%`、log 在文件夾），清空安全。
+- **安裝檔（Inno Setup）**：`installer/installer.iss`。流程：`dotnet publish -c Release -r win-x64 --self-contained false` → 簽章發佈的 exe → 匯出 `AwayTerminal.cer`（公開）→ ISCC 編譯 → **再簽 setup exe**。安裝時必要時裝 WebView2（內含 bootstrapper）、建捷徑。
   - **v1.0.12 起安裝檔不再碰憑證存放區**（原本 `[Run]` 有兩行 `certutil -addstore -f Root/TrustedPublisher`，`runhidden` + 管理員權限）。移除原因：這個組合等同 **MITRE ATT&CK T1553.004（Install Root Certificate）**，MITRE 頁面舉的惡意程式範例指令幾乎一模一樣，`certutil` 本身又是知名 LOLBin，**極可能是 PC-cillin 誤判的主因**；且它要求每位使用者信任一張私鑰放在開發機上的根憑證（Superfish／eDellRoot 前例）。改為 `AwayTerminal.cer` + `trust-publisher.ps1` 裝進 `{app}`，**使用者自行決定**是否執行。
   - **兩者刻意分屬不同存放區、不會互相干擾**：舊的壞行為寫 `LocalMachine`（全機器、需管理員），新的 opt-in 寫 `CurrentUser`（僅自己、免管理員）。`[Run]` 保留兩行 `-delstore`**只清 LocalMachine**，讓 1.0.11 以前裝過的機器升級時自動清乾淨，不會洗掉使用者自己的選擇。
   - **踩雷**：`Cert:\CurrentUser\Root` 的檢視是「使用者 ∪ 機器」存放區的**聯集**，直接 `Remove-Item` 會刪到機器層級那張並拿到 Access denied（`trust-publisher.ps1 -Remove` 已逐張 try/catch 並分開提示）。
@@ -131,7 +140,9 @@ dotnet build                                     # 建置（會自動簽章 exe�
 - **DPI 髮絲線**：Window `UseLayoutRounding` + `SnapsToDevicePixels` 已開。
 - **深色對話框的 ComboBox 灰字**：視窗層級的灰字 `TextBlock` 隱式樣式會**滲入 ComboBox 模板**（TextBlock 非 Control、隱式樣式穿越 template 邊界），下拉白底配灰字看不清。解法=在 ComboBox 隱式樣式的 `Style.Resources` 放一個黑字 TextBlock 樣式蓋掉（ConnectDialog/ComDialog 已加）；新增深色對話框時記得照做。
 - **防毒**：PC-cillin 誤判（ConPTY 開 shell）；專案資料夾已加例外。
-- **`.ps1` 有中文必須 UTF-8 BOM**；`.iss` 有中文亦需 UTF-8 BOM（故 installer.iss 用英文）；`.reg` 有中文必須 UTF-16 LE。
+- **`.ps1` 有中文必須 UTF-8 BOM**；`.iss` 有中文亦需 UTF-8 BOM（故 installer.iss **一律用英文**，檔頭已註明）；`.reg` 有中文必須 UTF-16 LE。**2026-08-04 又踩一次**：在 installer.iss 加了中文註解後用 `Set-Content -Encoding utf8` 改版號，註解變亂碼並與程式行黏在一起（`Source:` 被吃進註解、`function` 宣告被吃掉），ISCC 報 line 106 錯誤。改動 .iss 請用 Edit 工具逐段改，勿整檔重新編碼。
+- **`Get-AuthenticodeSignature` 回 `UnknownError` 不一定是壞事**：訊息若為「terminated in a root certificate which is not trusted」，代表自簽根憑證不在信任存放區——**1.0.12 起安裝檔會主動移除機器層級根憑證，所以這是預期結果**，程式照樣能執行。別誤判成防毒攔截或簽章失敗（2026-08-04 一度誤判）。
+- **`[Diagnostics.Process]::Start` 在此環境啟動 Program Files 的 exe 會回 "Access is denied"**，但同一支程式用 Bash 工具 `./AwayTerminal.exe &` 或 `cmd /c` 都能正常啟動。這是工具環境的怪癖，不是防毒也不是程式問題——驗證安裝版時請用 Bash 啟動。
 - **憑證私鑰不進 git**（在 Windows 憑證存放區）；`settings.json` 在 `%LOCALAPPDATA%`（不在專案內）；`.gitignore` 排除 `bin/ obj/ installer/dist/ installer/MicrosoftEdgeWebview2Setup.exe`。
 - **安裝版舊 exe 與開發版共用 settings.json 會「剝欄位」**：Program Files 的 v0.9.73 安裝版一存檔就把它不認識的新欄位（遠端 token/chatId/RemoteEnabled）整組洗掉——2026-07-27 中招，遠端靜默 3 小時才發現（診斷法：對 bot token 打 `getUpdates`，409=有人在 poll、200=服務沒起來）。對策（v0.9.82 起）：`AppSettings` 加 `[JsonExtensionData] ExtraFields` 保留未知欄位、`Save()` 改 tmp+`File.Move` 原子替換（防強殺留半截檔）、`Load()` 解析失敗先備份 `settings.json.bad` 再退預設。**在裝過安裝版的機器測新功能前，先確認沒誤開 Program Files 的舊版**；新功能穩定後盡快重出安裝檔。
 - **遠端 /last 絕不能用「原始位元組流去 ANSI」**：claude 等 TUI 用游標定位原地重繪，去 ANSI 直接串接會把幾百次重繪黏成 `Inferring…Inferring…` 洪流；逐格差分重繪還會產生 `oing`/`✣ Bi` 碎片。正解=向 xterm 查渲染後文字（`q…text`→`a…text`，JS `lastPlainText()` 接回 isWrapped 邏輯行），xterm 已把重繪合成完畢。位元組流緩衝（`TerminalTab.RemoteRecent`）僅當 JS 逾時未回的備援。

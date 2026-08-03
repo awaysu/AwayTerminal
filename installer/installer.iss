@@ -1,13 +1,18 @@
 ; AwayTerminal installer (Inno Setup)
-; Installs the app (self-contained .NET) and the WebView2 runtime if it is missing.
+; Installs the app (framework-dependent .NET), plus the .NET Desktop Runtime and the
+; WebView2 runtime when either is missing. The MSIX/Store build stays self-contained -
+; see msix\build-msix.ps1 - because a package cannot install the .NET runtime itself.
 ;
 ; Setup does NOT touch the machine's certificate stores. Up to 1.0.11 it silently
 ; imported the self-signed certificate into Trusted Root + Trusted Publisher; that was
 ; removed in 1.0.12 (see the [Run] section for the reasoning). Trusting the publisher
 ; is now opt-in and per-user via {app}\trust-publisher.ps1.
+;
+; NOTE: keep this file ASCII-only. A .iss containing non-ASCII text needs a UTF-8 BOM,
+; and re-encoding it with Set-Content has already corrupted the comments once.
 
 #define AppName "AwayTerminal"
-#define AppVersion "1.0.12"
+#define AppVersion "1.0.13"
 #define AppPublisher "awaysu@gmail.com"
 #define AppExe "AwayTerminal.exe"
 
@@ -36,6 +41,16 @@ Name: "en"; MessagesFile: "compiler:Default.isl"
 [Tasks]
 Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Shortcuts:"
 
+; Wipe the install folder before copying. Inno upgrades in place and never removes
+; files that a previous version installed but the new one no longer ships, so without
+; this an upgrade from <=1.0.12 keeps ~172 MB of orphaned self-contained .NET runtime
+; files plus the bundled tools\adb - exactly the space the move to a framework-dependent
+; build was meant to reclaim. Nothing user-generated lives here (settings are in
+; %LOCALAPPDATA%, logs in Documents), so a clean slate is safe.
+; InstallDelete runs before [Files], so the app's own files are restored immediately.
+[InstallDelete]
+Type: filesandordirs; Name: "{app}\*"
+
 [Files]
 Source: "..\bin\publish\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
 ; The public certificate and an opt-in trust script ship into the app folder.
@@ -44,6 +59,8 @@ Source: "..\bin\publish\*"; DestDir: "{app}"; Flags: recursesubdirs createallsub
 Source: "AwayTerminal.cer"; DestDir: "{app}"
 Source: "trust-publisher.ps1"; DestDir: "{app}"
 Source: "MicrosoftEdgeWebview2Setup.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall
+; .NET 9 Desktop Runtime - only run when no 9.x is present (see Check in [Run])
+Source: "windowsdesktop-runtime-win-x64.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall
 
 [Icons]
 Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExe}"
@@ -64,6 +81,12 @@ Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; Tasks: desktopico
 ; A non-zero exit (certificate not present, i.e. a clean install) is ignored by Inno.
 Filename: "certutil.exe"; Parameters: "-delstore Root ""AwayTerminal (awaysu)"""; Flags: runhidden
 Filename: "certutil.exe"; Parameters: "-delstore TrustedPublisher ""AwayTerminal (awaysu)"""; Flags: runhidden
+; Install the .NET Desktop Runtime only when no 9.x is present.
+; The app is published framework-dependent (3 MB instead of 172 MB), so the shared
+; runtime is required. Bundling the official installer keeps setup usable offline;
+; once installed, Microsoft services the runtime through Windows Update instead of
+; users waiting for an AwayTerminal release to pick up a .NET security fix.
+Filename: "{tmp}\windowsdesktop-runtime-win-x64.exe"; Parameters: "/install /quiet /norestart"; Check: DesktopRuntimeMissing; Flags: runhidden waituntilterminated; StatusMsg: "Installing .NET Desktop Runtime..."
 ; Install the WebView2 runtime only if it is not present (idempotent bootstrapper)
 Filename: "{tmp}\MicrosoftEdgeWebview2Setup.exe"; Parameters: "/silent /install"; Check: WebView2Missing; Flags: runhidden waituntilterminated; StatusMsg: "Installing WebView2 runtime..."
 ; Offer to launch after install
@@ -87,4 +110,39 @@ end;
 function WebView2Missing: Boolean;
 begin
   Result := not WebView2Installed;
+end;
+
+// Detect the .NET Desktop Runtime by scanning
+// %ProgramFiles%\dotnet\shared\Microsoft.WindowsDesktop.App for a 9.* version folder.
+// Deliberately NOT a registry check: HKLM\SOFTWARE\dotnet\Setup\InstalledVersions\x64\sharedfx
+// does not exist on the tested Win10 19045 machine even though the runtime is installed,
+// so the folder scan is the reliable test.
+function DesktopRuntimeInstalled: Boolean;
+var
+  base: String;
+  fr: TFindRec;
+begin
+  Result := False;
+  base := ExpandConstant('{commonpf64}\dotnet\shared\Microsoft.WindowsDesktop.App');
+  if not DirExists(base) then Exit;
+  if FindFirst(base + '\*', fr) then
+  begin
+    try
+      repeat
+        if (fr.Attributes and FILE_ATTRIBUTE_DIRECTORY) <> 0 then
+          if Copy(fr.Name, 1, 2) = '9.' then
+          begin
+            Result := True;
+            Exit;
+          end;
+      until not FindNext(fr);
+    finally
+      FindClose(fr);
+    end;
+  end;
+end;
+
+function DesktopRuntimeMissing: Boolean;
+begin
+  Result := not DesktopRuntimeInstalled;
 end;
