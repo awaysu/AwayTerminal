@@ -38,6 +38,10 @@ public partial class CustomConnDialog : Window
         new("OpenCode",   new[] { "opencode.exe", "opencode.cmd" }, "", "opencode", true),
         new("Gemini",     new[] { "gemini.exe", "gemini.cmd" }, "", "run", true),
         new("Aider",      new[] { "aider.exe", "aider.cmd" }, "", "run", true),
+        // ADB：v1.0.18 起不再是內建選單項目，改成一般自訂連線。參數固定 shell；
+        // 若機器上接了兩台以上裝置，MainWindow.OpenCustom 會偵測到執行檔是 adb 而
+        // 先跑 adb devices 讓使用者選序號（見 IsAdbExe），所以裝置選單不會流失。
+        new("ADB",        new[] { "adb.exe" }, "shell", "adb", false),
     };
 
     /// <summary>圖示下拉的資料項（用 DataTemplate 顯示，避免直接把 UIElement 當內容導致共享視覺問題）。</summary>

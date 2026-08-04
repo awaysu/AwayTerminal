@@ -246,23 +246,10 @@ public sealed class AppSettings
             if (string.IsNullOrWhiteSpace(ClaudePath)) ClaudePath = TryResolveOnPath("claude.cmd");
         }
 
-        // 舊版 ClaudeCode 設定 → 轉成一筆自訂連線「ClaudeCode」，功能不流失（只做一次；之後刪掉不會又被加回）
-        if (!ClaudeMigratedToCustom)
-        {
-            ClaudeMigratedToCustom = true;
-            if (!string.IsNullOrWhiteSpace(ClaudePath))
-                CustomConns.Add(new CustomConn
-                {
-                    Name = "ClaudeCode",
-                    Path = ClaudePath,
-                    Args = string.IsNullOrWhiteSpace(ClaudeArgs) ? DefaultClaudeArgs : ClaudeArgs,
-                    Icon = "claude-code",
-                    PickDir = true,                   // 沿用舊行為：啟動前選工作目錄
-                    Hidden = false,
-                    ViaPowerShell = ClaudeViaPowerShell
-                });
-            Save(); // 立即持久化旗標與遷移結果
-        }
+        // v1.0.18 起**不再自動建立任何自訂連線**：全新安裝的自訂清單是空的，
+        // 使用者自己用「新連接 → 自訂… → 自動偵測」一鍵加入想要的工具（ClaudeCode / ADB / WSL…）。
+        // 舊的 ClaudeCode 自動遷移已移除——它會讓「我明明全部刪掉了」的清單又冒出東西。
+        // ClaudeMigratedToCustom 旗標保留於 JSON（相容舊檔），不再使用。
     }
 
     /// <summary>在 PATH 各目錄尋找可執行檔的完整路徑；找不到回傳空字串。</summary>

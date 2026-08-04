@@ -44,14 +44,8 @@ public static class Loc
         ["settings.groupClaude"] = ("Claude", "Claude"),
         ["settings.groupAdb"] = ("adb", "adb"),
         ["settings.claudeEnable"] = ("使用 Claude（工具列顯示按鈕）", "Use Claude (show toolbar button)"),
-        ["settings.adbEnable"] = ("在「新連接」選單顯示 ADB", "Show ADB in the New menu"),
-        // v1.0.13 起不再內建 adb（授權原因）→ 改為自動偵測，此欄留空即可
-        // 註：settings.adbPath 已定義於上方（第 35 行附近），勿重複加入——字典初始化重複鍵會在執行期丟例外
-        ["common.browse"] = ("瀏覽…", "Browse…"),
-        ["settings.adbUsing"] =("留空＝自動偵測。目前使用：", "Leave empty to auto-detect. Currently using:"),
-        ["settings.adbNotFound"] = (
-            "留空＝自動偵測。目前找不到 adb（已搜尋 PATH、ANDROID_HOME / ANDROID_SDK_ROOT、Android Studio 預設位置）。",
-            "Leave empty to auto-detect. No adb found (searched PATH, ANDROID_HOME / ANDROID_SDK_ROOT, and the default Android Studio location)."),
+        // 註：ADB 的設定字串（groupAdb / adbEnable / adbPath）自 v1.0.18 起在設定視窗已不使用——
+        // ADB 改由「新連接 → 自訂…」管理。保留鍵值以免其他地方漏改時直接 KeyNotFound。
         // 分頁右鍵：配色
         ["menu.color"] = ("配色", "Colors"),
         ["menu.colorDefault"] = ("預設（設定顏色）", "Default (settings colors)"),

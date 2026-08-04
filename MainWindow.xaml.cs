@@ -174,7 +174,8 @@ public partial class MainWindow : Window, IRemoteHost
 
     /// <summary>「New」按鈕：下拉選單（圖示＋文字）。
     /// 預設區＝AwayTerminal 自己實作的連線：PowerShell / SSH-Telnet / 連接埠。
-    /// 分隔線後＝依賴外部程式的項目：ADB 與自訂連線（ClaudeCode 等），再一條分隔線接「自訂…」管理。</summary>
+    /// 分隔線後＝使用者自訂的連線（ClaudeCode / ADB / WSL…，全新安裝為空），
+    /// 再一條分隔線接「自訂…」管理視窗。</summary>
     private void New_Click(object sender, RoutedEventArgs e)
     {
         var menu = new ContextMenu();
@@ -182,10 +183,8 @@ public partial class MainWindow : Window, IRemoteHost
         menu.Items.Add(MakeNewItem("tb.ssh", "ssh-telnet.png", OpenSsh_Click));
         menu.Items.Add(MakeNewItem("tb.com", "com.png", OpenCom_Click));
 
-        // ADB 自 1.0.13 起不再內建 adb.exe，改用機器上既有的 platform-tools，性質與
-        // 自訂連線相同（都依賴外部安裝的程式），故 1.0.15 起移到分隔線之後、與 ClaudeCode 同區。
-        // 刻意不轉成 CustomConn：一般自訂連線只會跑「exe + 參數」，會失去 adb devices
-        // 偵測與多裝置選單，所以保留專屬的 OpenAdb_Click。
+        // 分隔線後＝使用者自己管理的自訂連線。ADB 也在其中（v1.0.18 起不再內建），
+        // 所以刪光自訂連線後這一區就是空的。
         menu.Items.Add(new Separator());
 
         // 自訂連線（未勾「不顯示」者）→ 點擊直接開
@@ -200,10 +199,8 @@ public partial class MainWindow : Window, IRemoteHost
             menu.Items.Add(mi);
         }
 
-        // ADB 排在自訂連線之後（第二區最後一項）。它是內建項目而非自訂連線，
-        // 刪光自訂連線也不會消失 → 用設定裡的勾選框控制顯示與否。
-        if (AppSettings.Current.AdbEnabled)
-            menu.Items.Add(MakeNewItem("tb.adb", "adb.png", OpenAdb_Click));
+        // 註：ADB 自 v1.0.18 起**不再是內建項目**，改由自訂連線決定（自訂視窗的
+        // 「自動偵測」可一鍵加入）。刪光自訂連線後這一區就是空的，符合預期。
         // 「自訂…」上方一律加分隔線 → 開管理視窗
         menu.Items.Add(new Separator());
         var manage = MakeNewItemRaw(Loc.T("menu.custom"), "settings.png");
@@ -253,10 +250,22 @@ public partial class MainWindow : Window, IRemoteHost
 
     /// <summary>開一筆自訂連線。ViaPowerShell 或 .cmd/.bat → 走 PowerShell；否則直接以 ConPTY 執行。
     /// forcedDir：直接指定工作目錄並略過「啟動前選擇資料夾」（遠端開啟用）。</summary>
+    /// <summary>執行檔是不是 adb（自訂連線指向 adb 時要走裝置偵測流程，而非直接啟動）。</summary>
+    private static bool IsAdbExe(string path)
+    {
+        try { return string.Equals(Path.GetFileNameWithoutExtension(path), "adb", StringComparison.OrdinalIgnoreCase); }
+        catch { return false; }
+    }
+
     private void OpenCustom(CustomConn conn, string? forcedDir = null)
     {
         if (!_webReady) return;
         string path = conn.Path;
+
+        // 指向 adb 的自訂連線改走專屬流程：先 adb devices，0 台提示、1 台直接開、
+        // 2 台以上跳選單選序號。否則會直接跑「adb shell」，接多台時只會噴錯。
+        if (!conn.ViaPowerShell && IsAdbExe(path)) { OpenAdbFlow(path); return; }
+
         bool viaPs = conn.ViaPowerShell
             || path.EndsWith(".cmd", StringComparison.OrdinalIgnoreCase)
             || path.EndsWith(".bat", StringComparison.OrdinalIgnoreCase);
@@ -1804,13 +1813,15 @@ public partial class MainWindow : Window, IRemoteHost
         catch { }
     }
 
-    // ---------- 工具列：ADB ----------
-    private void OpenAdb_Click(object sender, RoutedEventArgs e)
+    // ---------- ADB（由指向 adb 的自訂連線觸發；1.0.18 起不再是內建選單項目）----------
+    /// <summary>ADB 開啟流程：adb devices → 0 台提示 / 1 台直接開 / 2 台以上選裝置。</summary>
+    private void OpenAdbFlow(string? adbPath = null)
     {
         if (!_webReady) return;
 
-        // 搜尋這台電腦上的 adb（PATH / Android SDK 位置 / 設定裡指定的路徑）
-        string? adb = AppSettings.ResolveAdbPath();
+        // 自訂連線指定的路徑優先；沒有就搜尋這台電腦（PATH / Android SDK 位置）
+        string? adb = !string.IsNullOrWhiteSpace(adbPath) && File.Exists(adbPath)
+            ? adbPath : AppSettings.ResolveAdbPath();
         if (adb == null) { PromptInstallAdb(); return; }
 
         List<string> devices;
