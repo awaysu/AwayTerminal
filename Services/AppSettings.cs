@@ -238,10 +238,8 @@ public sealed class AppSettings
                 Prompts.Add(new PromptItem { Group = "Linux", Title = "看檔案目錄", Content = "ls" });
                 Prompts.Add(new PromptItem { Group = "Linux", Title = "看linux版本", Content = "cat /proc/version" });
                 Prompts.Add(new PromptItem { Group = "常用Prompt", Title = "編譯器位置說明", Content = @"NDK/SDK編譯器在C:\CrossCompilerWin" });
-                // 刻意用佔位值：這是所有使用者都會拿到的內建範例，寫成看似真實的
-                // 主機／帳號／密碼會讓人分不出真假（也容易被照抄）。使用者自己的設定檔
-                // 裡填真實值即可，那不會進版控。
-                Prompts.Add(new PromptItem { Group = "常用Prompt", Title = "ssh登入", Content = "ssh ip是192.168.x.x,帳號是user,密碼是****" });
+                // 註：此為作者指定的範例內容，主機／帳號／密碼皆為虛構的示範值（非真實憑證）。
+                Prompts.Add(new PromptItem { Group = "常用Prompt", Title = "ssh登入", Content = "ssh ip是192.168.50.100,帳號是user1,密碼是1234" });
             }
 
             if (DirBookmarks.Count == 0)
