@@ -173,29 +173,32 @@ public partial class MainWindow : Window, IRemoteHost
     }
 
     /// <summary>「New」按鈕：下拉選單（圖示＋文字）。
-    /// 內建：PowerShell / SSH-Telnet / 連接埠 / ADB；分隔線後接自訂連線與「自訂…」管理。</summary>
+    /// 預設區＝AwayTerminal 自己實作的連線：PowerShell / SSH-Telnet / 連接埠。
+    /// 分隔線後＝依賴外部程式的項目：ADB 與自訂連線（ClaudeCode 等），再一條分隔線接「自訂…」管理。</summary>
     private void New_Click(object sender, RoutedEventArgs e)
     {
         var menu = new ContextMenu();
         menu.Items.Add(MakeNewItem("tb.powershell", "powershell.png", OpenPowerShell_Click));
         menu.Items.Add(MakeNewItem("tb.ssh", "ssh-telnet.png", OpenSsh_Click));
         menu.Items.Add(MakeNewItem("tb.com", "com.png", OpenCom_Click));
+
+        // ADB 自 1.0.13 起不再內建 adb.exe，改用機器上既有的 platform-tools，性質與
+        // 自訂連線相同（都依賴外部安裝的程式），故 1.0.15 起移到分隔線之後、與 ClaudeCode 同區。
+        // 刻意不轉成 CustomConn：一般自訂連線只會跑「exe + 參數」，會失去 adb devices
+        // 偵測與多裝置選單，所以保留專屬的 OpenAdb_Click。
+        menu.Items.Add(new Separator());
         menu.Items.Add(MakeNewItem("tb.adb", "adb.png", OpenAdb_Click));
 
-        // 自訂連線（未勾「不顯示」者）→ 點擊直接開；有項目時才加分隔線群組
+        // 自訂連線（未勾「不顯示」者）→ 點擊直接開
         var customs = AppSettings.Current.CustomConns
             .Where(c => !c.Hidden && !string.IsNullOrWhiteSpace(c.Name)).ToList();
-        if (customs.Count > 0)
+        foreach (var c in customs)
         {
-            menu.Items.Add(new Separator());
-            foreach (var c in customs)
-            {
-                var conn = c;
-                string iconFile = string.IsNullOrWhiteSpace(conn.Icon) ? "run.png" : conn.Icon + ".png";
-                var mi = MakeNewItemRaw(conn.Name, iconFile);
-                mi.Click += (_, _) => OpenCustom(conn);
-                menu.Items.Add(mi);
-            }
+            var conn = c;
+            string iconFile = string.IsNullOrWhiteSpace(conn.Icon) ? "run.png" : conn.Icon + ".png";
+            var mi = MakeNewItemRaw(conn.Name, iconFile);
+            mi.Click += (_, _) => OpenCustom(conn);
+            menu.Items.Add(mi);
         }
         // 「自訂…」上方一律加分隔線 → 開管理視窗
         menu.Items.Add(new Separator());

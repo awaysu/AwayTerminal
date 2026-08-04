@@ -58,7 +58,9 @@ dotnet build                                     # 建置（會自動簽章 exe�
 - **強調色**：`#FDFFB0` 淡黃（作用中分頁框、終端機外框、分割 pane 框、快速輸入面板框）。作用中分頁上方開口與外框融合（tab 往上 -1px 蓋線）。
 
 ## 主要功能行為
-- **New（新連接）下拉**（工具列最左）：PowerShell → SSH/Telnet → 連接埠 → ADB → 分隔線 → 你的自訂連線 → 「自訂…」(開管理視窗)。項目為圖示+文字。
+- **New（新連接）下拉**（工具列最左）：PowerShell → SSH/Telnet → 連接埠 → **分隔線** → ADB → 你的自訂連線（ClaudeCode 等）→ 分隔線 → 「自訂…」(開管理視窗)。項目為圖示+文字。
+  - **分組原則（v1.0.15 定）**：第一區＝**AwayTerminal 自己實作**的連線（ConPTY／Telnet／序列埠，不依賴外部程式）；第二區＝**依賴機器上已安裝的外部程式**。ADB 自 1.0.13 起不再內建 adb.exe，性質與自訂連線相同，故移入第二區。
+  - **ADB 刻意不轉成 `CustomConn`**（與 ClaudeCode 的作法不同）：一般自訂連線只會執行「exe + 參數」，轉過去會失去 `adb devices` 偵測與多裝置選擇，故保留專屬的 `OpenAdb_Click`，只改選單位置。
 - **Claude Code**：不再是內建按鈕，已**遷移成一筆自訂連線「ClaudeCode」**（`EnsureDefaults` 只做一次、以 `ClaudeMigratedToCustom` 旗標記住）。**直接以 ConPTY 執行 claude.exe（不經 PowerShell）**：claude 即主行程、一開始就用目前尺寸建立，**已移除舊的「等尺寸才送指令」hack**；勾「使用 PowerShell」或路徑是 .cmd/.bat（npm 版）時才走 PowerShell。
 - **自訂連線**（`CustomConnDialog`）：左清單（可收合）+ 底部「自動偵測 / ＋新增 / －刪除」+ 右編輯（圖示下拉 32×32 無字 / 名稱 / 執行檔+瀏覽 / 參數 / 關閉按鍵〔無·Ctrl+C·Ctrl+D〕×〔x1~x5〕/ 隱藏 / 啟動前選擇資料夾 / 使用 PowerShell）+ 「儲存 / 返回」。髒資料追蹤、切換/關閉/刪除前提示。**自動偵測**：在 PATH 與常見位置找 claude/wsl/opencode/gemini/aider 加入。「隱藏」= 不列在 New 下拉。自訂分頁**不做開機還原**。
 - **ADB**：**v1.0.13 起不再內建 adb**（授權原因見下），改用 `AppSettings.ResolveAdbPath()` 搜尋使用者既有安裝——順序：設定裡指定的 `AdbPath` → `PATH` → `ANDROID_HOME`/`ANDROID_SDK_ROOT` → Android Studio 預設位置 → **舊版殘留的 `tools\adb\adb.exe`**（1.0.12 以前裝過的機器照樣能用，升級不會突然壞掉）。找不到 → `PromptInstallAdb()` 說明並詢問是否開啟官方下載頁。**設定視窗有「ADB / adb 路徑」欄位**（v1.0.14 補；`SettingsDialog` 第三個 GroupBox，含瀏覽鈕），**留空＝自動偵測**，提示行會即時顯示目前實際會用到哪一支 adb（或找不到），讓「留空」不是黑箱。找到後行為不變：先 `adb devices`，0 台提示、1 台直接開、2 台以上跳選單，再以 ConPTY 跑 `adb shell`。
