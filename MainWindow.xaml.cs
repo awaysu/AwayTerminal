@@ -187,7 +187,6 @@ public partial class MainWindow : Window, IRemoteHost
         // 刻意不轉成 CustomConn：一般自訂連線只會跑「exe + 參數」，會失去 adb devices
         // 偵測與多裝置選單，所以保留專屬的 OpenAdb_Click。
         menu.Items.Add(new Separator());
-        menu.Items.Add(MakeNewItem("tb.adb", "adb.png", OpenAdb_Click));
 
         // 自訂連線（未勾「不顯示」者）→ 點擊直接開
         var customs = AppSettings.Current.CustomConns
@@ -200,6 +199,9 @@ public partial class MainWindow : Window, IRemoteHost
             mi.Click += (_, _) => OpenCustom(conn);
             menu.Items.Add(mi);
         }
+
+        // ADB 排在自訂連線之後（第二區最後一項）
+        menu.Items.Add(MakeNewItem("tb.adb", "adb.png", OpenAdb_Click));
         // 「自訂…」上方一律加分隔線 → 開管理視窗
         menu.Items.Add(new Separator());
         var manage = MakeNewItemRaw(Loc.T("menu.custom"), "settings.png");
@@ -1105,7 +1107,7 @@ public partial class MainWindow : Window, IRemoteHost
     }
 
     // ---------- 工具列：連線群組 ----------
-    /// <summary>資料夾選擇（PowerShell / ClaudeCode 共用）；取消回傳 null。</summary>
+    /// <summary>資料夾選擇（PowerShell / ClaudeCode 等 PickDir 自訂連線共用）；取消回傳 null。</summary>
     private string? PickWorkDir(string title)
     {
         using var fbd = new System.Windows.Forms.FolderBrowserDialog
@@ -1116,7 +1118,9 @@ public partial class MainWindow : Window, IRemoteHost
         };
         var last = AppSettings.Current.LastDir;
         if (!string.IsNullOrWhiteSpace(last) && Directory.Exists(last)) fbd.SelectedPath = last;
-        if (fbd.ShowDialog() != System.Windows.Forms.DialogResult.OK) return null;
+
+        // 必須指定擁有者，否則對話框可能開在主視窗後面＝「點了沒反應」（見 Win32Owner 註解）
+        if (fbd.ShowDialog(Win32Owner.Of(this)) != System.Windows.Forms.DialogResult.OK) return null;
         AppSettings.Current.LastDir = fbd.SelectedPath;
         AppSettings.Current.Save();
         return fbd.SelectedPath;

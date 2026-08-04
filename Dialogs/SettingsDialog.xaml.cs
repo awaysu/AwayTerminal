@@ -70,7 +70,8 @@ public partial class SettingsDialog : Window
         {
             try { d.InitialDirectory = System.IO.Path.GetDirectoryName(AdbBox.Text.Trim()); } catch { }
         }
-        if (d.ShowDialog() == System.Windows.Forms.DialogResult.OK) AdbBox.Text = d.FileName;
+        // 指定擁有者，否則對話框可能開在後面（見 Win32Owner）
+        if (d.ShowDialog(Win32Owner.Of(this)) == System.Windows.Forms.DialogResult.OK) AdbBox.Text = d.FileName;
     }
 
     private void Fg_Changed(object sender, TextChangedEventArgs e) => UpdatePreview(FgBox, FgPreview);
@@ -78,7 +79,7 @@ public partial class SettingsDialog : Window
     private void FgPreview_Click(object sender, MouseButtonEventArgs e) => PickColor(FgBox);
     private void BgPreview_Click(object sender, MouseButtonEventArgs e) => PickColor(BgBox);
 
-    private static void PickColor(TextBox box)
+    private void PickColor(TextBox box)
     {
         using var cd = new System.Windows.Forms.ColorDialog { FullOpen = true, AnyColor = true };
         try
@@ -87,7 +88,7 @@ public partial class SettingsDialog : Window
             cd.Color = System.Drawing.Color.FromArgb(c.R, c.G, c.B);
         }
         catch { }
-        if (cd.ShowDialog() == System.Windows.Forms.DialogResult.OK)
+        if (cd.ShowDialog(Win32Owner.Of(this)) == System.Windows.Forms.DialogResult.OK)
         {
             var c = cd.Color;
             box.Text = $"#{c.R:X2}{c.G:X2}{c.B:X2}";

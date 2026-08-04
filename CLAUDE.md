@@ -58,7 +58,7 @@ dotnet build                                     # 建置（會自動簽章 exe�
 - **強調色**：`#FDFFB0` 淡黃（作用中分頁框、終端機外框、分割 pane 框、快速輸入面板框）。作用中分頁上方開口與外框融合（tab 往上 -1px 蓋線）。
 
 ## 主要功能行為
-- **New（新連接）下拉**（工具列最左）：PowerShell → SSH/Telnet → 連接埠 → **分隔線** → ADB → 你的自訂連線（ClaudeCode 等）→ 分隔線 → 「自訂…」(開管理視窗)。項目為圖示+文字。
+- **New（新連接）下拉**（工具列最左）：PowerShell → SSH/Telnet → 連接埠 → **分隔線** → 你的自訂連線（ClaudeCode、opencode…）→ **ADB**（第二區最後一項）→ 分隔線 → 「自訂…」(開管理視窗)。項目為圖示+文字。
   - **分組原則（v1.0.15 定）**：第一區＝**AwayTerminal 自己實作**的連線（ConPTY／Telnet／序列埠，不依賴外部程式）；第二區＝**依賴機器上已安裝的外部程式**。ADB 自 1.0.13 起不再內建 adb.exe，性質與自訂連線相同，故移入第二區。
   - **ADB 刻意不轉成 `CustomConn`**（與 ClaudeCode 的作法不同）：一般自訂連線只會執行「exe + 參數」，轉過去會失去 `adb devices` 偵測與多裝置選擇，故保留專屬的 `OpenAdb_Click`，只改選單位置。
 - **Claude Code**：不再是內建按鈕，已**遷移成一筆自訂連線「ClaudeCode」**（`EnsureDefaults` 只做一次、以 `ClaudeMigratedToCustom` 旗標記住）。**直接以 ConPTY 執行 claude.exe（不經 PowerShell）**：claude 即主行程、一開始就用目前尺寸建立，**已移除舊的「等尺寸才送指令」hack**；勾「使用 PowerShell」或路徑是 .cmd/.bat（npm 版）時才走 PowerShell。
@@ -138,6 +138,7 @@ dotnet build                                     # 建置（會自動簽章 exe�
 - **初始尺寸**：新 session 用 `_lastCols/_lastRows`，勿寫死 80×24。
 - **控制字元常值**：`US = ''`、DEL 用 `''`——勿貼不可見原始字元（CS1011）。
 - **WinForms**（ColorDialog/FolderBrowserDialog 用）：csproj `Using Remove` System.Windows.Forms/System.Drawing，該命名空間型別一律全名呼叫。
+- **WinForms 對話框一定要傳 owner（v1.0.16 修）**：使用者回報「執行 ClaudeCode 有時沒反應、沒跳出資料夾選擇」。根因＝`ShowDialog()` 未指定擁有者時，WinForms 以 `GetActiveWindow()` 猜，在 WPF 程式裡可能猜不到主視窗，**對話框就開在主視窗後面**——現象正是「點了沒反應」。從 ContextMenu（New 下拉）觸發時特別容易中，因為選單剛關閉的瞬間作用中視窗未必是主視窗。解法＝`Services/Win32Owner.cs` 包成 `IWin32Window`，一律 `ShowDialog(Win32Owner.Of(this))`。**新增任何 WinForms 對話框都要照做**（目前 `PickWorkDir`、SettingsDialog 的 adb 瀏覽與色彩選擇皆已修）。
 - **清除畫面**（PowerShell/SSH）：Esc → 延遲 ~60ms → Ctrl+L；黏著送會被 PSReadLine 當 escape 序列。
 - **DPI 髮絲線**：Window `UseLayoutRounding` + `SnapsToDevicePixels` 已開。
 - **深色對話框的 ComboBox 灰字**：視窗層級的灰字 `TextBlock` 隱式樣式會**滲入 ComboBox 模板**（TextBlock 非 Control、隱式樣式穿越 template 邊界），下拉白底配灰字看不清。解法=在 ComboBox 隱式樣式的 `Style.Resources` 放一個黑字 TextBlock 樣式蓋掉（ConnectDialog/ComDialog 已加）；新增深色對話框時記得照做。
