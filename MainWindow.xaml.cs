@@ -200,8 +200,10 @@ public partial class MainWindow : Window, IRemoteHost
             menu.Items.Add(mi);
         }
 
-        // ADB 排在自訂連線之後（第二區最後一項）
-        menu.Items.Add(MakeNewItem("tb.adb", "adb.png", OpenAdb_Click));
+        // ADB 排在自訂連線之後（第二區最後一項）。它是內建項目而非自訂連線，
+        // 刪光自訂連線也不會消失 → 用設定裡的勾選框控制顯示與否。
+        if (AppSettings.Current.AdbEnabled)
+            menu.Items.Add(MakeNewItem("tb.adb", "adb.png", OpenAdb_Click));
         // 「自訂…」上方一律加分隔線 → 開管理視窗
         menu.Items.Add(new Separator());
         var manage = MakeNewItemRaw(Loc.T("menu.custom"), "settings.png");

@@ -78,14 +78,18 @@
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
 
-                <TextBlock Grid.Row="0" Grid.Column="0" x:Name="AdbLabel" Text="adb 路徑" Margin="0,0,10,0" />
-                <TextBox Grid.Row="0" Grid.Column="1" x:Name="AdbBox" Margin="0,4" />
-                <Button Grid.Row="0" Grid.Column="2" x:Name="AdbBrowseBtn" Content="…" Width="30" Height="24"
+                <CheckBox Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="3" x:Name="AdbShowChk"
+                          Foreground="#E0E0E0" Margin="0,0,0,6" />
+
+                <TextBlock Grid.Row="1" Grid.Column="0" x:Name="AdbLabel" Text="adb 路徑" Margin="0,0,10,0" />
+                <TextBox Grid.Row="1" Grid.Column="1" x:Name="AdbBox" Margin="0,4" />
+                <Button Grid.Row="1" Grid.Column="2" x:Name="AdbBrowseBtn" Content="…" Width="30" Height="24"
                         Margin="8,4,0,4" Click="AdbBrowse_Click" Cursor="Hand" />
 
-                <TextBlock Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" x:Name="AdbHint"
+                <TextBlock Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" x:Name="AdbHint"
                            TextWrapping="Wrap" FontSize="11" Foreground="#9A9A9A" Margin="0,2,0,0" />
             </Grid>
         </GroupBox>

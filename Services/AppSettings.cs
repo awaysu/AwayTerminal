@@ -110,8 +110,11 @@ public sealed class AppSettings
 
     // adb.exe 路徑：使用者在設定裡指定時優先採用（空=自動搜尋，見 ResolveAdbPath）
     public string AdbPath { get; set; } = "";
-    // 啟用 ADB 按鈕（勾了 New 下拉才會出現 ADB）；預設不勾
-    public bool AdbEnabled { get; set; } = false;
+    /// <summary>New 下拉是否顯示 ADB（設定 → ADB 的勾選框）。
+    /// ADB 是內建項目、不是自訂連線，刪光自訂連線也不會消失，所以要有這個開關才能隱藏它。
+    /// 註：1.0.16 以前這個旗標存在但**選單完全沒理會**、設定也沒有 UI，等同無效欄位；
+    /// 1.0.17 起接上並改為預設顯示（原本預設 false，若沿用會讓全新安裝看不到 ADB）。</summary>
+    public bool AdbEnabled { get; set; } = true;
 
     /// <summary>官方 platform-tools 下載頁（找不到 adb 時提示使用者自行安裝）。</summary>
     public const string AdbDownloadUrl = "https://developer.android.com/tools/releases/platform-tools";

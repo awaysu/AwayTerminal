@@ -28,6 +28,7 @@ public partial class SettingsDialog : Window
 
         // ADB 路徑（留空＝自動偵測）。提示行直接顯示目前實際會用到哪一支，
         // 使用者不必猜自動偵測有沒有找到東西。
+        AdbShowChk.IsChecked = s.AdbEnabled;
         AdbBox.Text = s.AdbPath;
         RefreshAdbHint();
 
@@ -36,6 +37,7 @@ public partial class SettingsDialog : Window
         LangGroup.Header = Loc.T("settings.groupLang");
         FontGroup.Header = Loc.T("settings.groupFont");
         AdbGroup.Header = Loc.T("settings.groupAdb");
+        AdbShowChk.Content = Loc.T("settings.adbEnable");
         AdbLabel.Text = Loc.T("settings.adbPath");
         AdbBrowseBtn.ToolTip = Loc.T("common.browse");
         FamilyLabel.Text = Loc.T("font.family");
@@ -120,6 +122,7 @@ public partial class SettingsDialog : Window
         s.FontSize = int.TryParse(SizeCombo.Text, out int sz) && sz is >= 6 and <= 72 ? sz : 14;
         s.Foreground = ValidColor(FgBox.Text, "#E0E0E0");
         s.Background = ValidColor(BgBox.Text, "#1E1E1E");
+        s.AdbEnabled = AdbShowChk.IsChecked == true;
         s.AdbPath = AdbBox.Text.Trim();   // 空字串＝自動偵測
         s.Save();
 
