@@ -26,10 +26,18 @@ public partial class SettingsDialog : Window
         FgBox.Text = s.Foreground;
         BgBox.Text = s.Background;
 
+        // ADB 路徑（留空＝自動偵測）。提示行直接顯示目前實際會用到哪一支，
+        // 使用者不必猜自動偵測有沒有找到東西。
+        AdbBox.Text = s.AdbPath;
+        RefreshAdbHint();
+
         // 本地化
         Title = Loc.T("settings.title");
         LangGroup.Header = Loc.T("settings.groupLang");
         FontGroup.Header = Loc.T("settings.groupFont");
+        AdbGroup.Header = Loc.T("settings.groupAdb");
+        AdbLabel.Text = Loc.T("settings.adbPath");
+        AdbBrowseBtn.ToolTip = Loc.T("common.browse");
         FamilyLabel.Text = Loc.T("font.family");
         SizeLabel.Text = Loc.T("font.size");
         FgLabel.Text = Loc.T("font.fg");
@@ -39,6 +47,30 @@ public partial class SettingsDialog : Window
         ResetBtn.Content = Loc.T("common.reset");
         OkBtn.Content = Loc.T("common.ok");
         CancelBtn.Content = Loc.T("common.cancel");
+    }
+
+    /// <summary>提示行：顯示自動偵測到的 adb（或找不到），讓「留空」不是黑箱。</summary>
+    private void RefreshAdbHint()
+    {
+        string? found = AppSettings.ResolveAdbPath();
+        AdbHint.Text = found == null
+            ? Loc.T("settings.adbNotFound")
+            : Loc.T("settings.adbUsing") + " " + found;
+    }
+
+    private void AdbBrowse_Click(object sender, RoutedEventArgs e)
+    {
+        using var d = new System.Windows.Forms.OpenFileDialog
+        {
+            Title = Loc.T("settings.adbPath"),
+            Filter = "adb.exe|adb.exe|*.exe|*.exe",
+            CheckFileExists = true
+        };
+        if (!string.IsNullOrWhiteSpace(AdbBox.Text))
+        {
+            try { d.InitialDirectory = System.IO.Path.GetDirectoryName(AdbBox.Text.Trim()); } catch { }
+        }
+        if (d.ShowDialog() == System.Windows.Forms.DialogResult.OK) AdbBox.Text = d.FileName;
     }
 
     private void Fg_Changed(object sender, TextChangedEventArgs e) => UpdatePreview(FgBox, FgPreview);
@@ -74,6 +106,8 @@ public partial class SettingsDialog : Window
         SizeCombo.Text = "14";
         FgBox.Text = "#E0E0E0";
         BgBox.Text = "#1E1E1E";
+        AdbBox.Text = "";       // 回到自動偵測
+        RefreshAdbHint();
     }
 
     private void Ok_Click(object sender, RoutedEventArgs e)
@@ -85,6 +119,7 @@ public partial class SettingsDialog : Window
         s.FontSize = int.TryParse(SizeCombo.Text, out int sz) && sz is >= 6 and <= 72 ? sz : 14;
         s.Foreground = ValidColor(FgBox.Text, "#E0E0E0");
         s.Background = ValidColor(BgBox.Text, "#1E1E1E");
+        s.AdbPath = AdbBox.Text.Trim();   // 空字串＝自動偵測
         s.Save();
 
         Loc.SetLang(lang);

@@ -66,6 +66,30 @@
             </Grid>
         </GroupBox>
 
+        <!-- ADB：留空＝自動偵測（PATH / ANDROID_HOME / Android Studio 預設位置）。
+             v1.0.13 起不再內建 adb，需要指到非標準位置時才填這一欄。 -->
+        <GroupBox x:Name="AdbGroup" Header="ADB">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <TextBlock Grid.Row="0" Grid.Column="0" x:Name="AdbLabel" Text="adb 路徑" Margin="0,0,10,0" />
+                <TextBox Grid.Row="0" Grid.Column="1" x:Name="AdbBox" Margin="0,4" />
+                <Button Grid.Row="0" Grid.Column="2" x:Name="AdbBrowseBtn" Content="…" Width="30" Height="24"
+                        Margin="8,4,0,4" Click="AdbBrowse_Click" Cursor="Hand" />
+
+                <TextBlock Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" x:Name="AdbHint"
+                           TextWrapping="Wrap" FontSize="11" Foreground="#9A9A9A" Margin="0,2,0,0" />
+            </Grid>
+        </GroupBox>
+
         <DockPanel>
             <Button x:Name="ResetBtn" DockPanel.Dock="Left" Content="回到預設" Width="100" Height="26"
                     HorizontalAlignment="Left" Click="Reset_Click" />

@@ -45,7 +45,13 @@ public static class Loc
         ["settings.groupAdb"] = ("adb", "adb"),
         ["settings.claudeEnable"] = ("使用 Claude（工具列顯示按鈕）", "Use Claude (show toolbar button)"),
         ["settings.adbEnable"] = ("使用 ADB（工具列顯示按鈕）", "Use ADB (show toolbar button)"),
-        ["settings.adbBundledHint"] = ("使用內建 adb，不需另外設定。", "Uses the bundled adb; no setup needed."),
+        // v1.0.13 起不再內建 adb（授權原因）→ 改為自動偵測，此欄留空即可
+        // 註：settings.adbPath 已定義於上方（第 35 行附近），勿重複加入——字典初始化重複鍵會在執行期丟例外
+        ["common.browse"] = ("瀏覽…", "Browse…"),
+        ["settings.adbUsing"] =("留空＝自動偵測。目前使用：", "Leave empty to auto-detect. Currently using:"),
+        ["settings.adbNotFound"] = (
+            "留空＝自動偵測。目前找不到 adb（已搜尋 PATH、ANDROID_HOME / ANDROID_SDK_ROOT、Android Studio 預設位置）。",
+            "Leave empty to auto-detect. No adb found (searched PATH, ANDROID_HOME / ANDROID_SDK_ROOT, and the default Android Studio location)."),
         // 分頁右鍵：配色
         ["menu.color"] = ("配色", "Colors"),
         ["menu.colorDefault"] = ("預設（設定顏色）", "Default (settings colors)"),
