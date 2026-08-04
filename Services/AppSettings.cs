@@ -165,8 +165,11 @@ public sealed class AppSettings
 
     // 自訂新連接清單（New 下拉的自訂項目）
     public List<CustomConn> CustomConns { get; set; } = new();
-    // 舊 ClaudeCode 設定是否已遷移成自訂連線（只做一次，之後刪掉不會又被加回）
+    // 舊 ClaudeCode 設定是否已遷移成自訂連線（v1.0.18 起不再使用，保留以相容舊 JSON）
     public bool ClaudeMigratedToCustom { get; set; } = false;
+
+    /// <summary>常用字串／資料夾書籤的範例是否已放過（只做一次；刪光不會再長回來）。</summary>
+    public bool SeededSamples { get; set; } = false;
 
     // 關閉視窗兩個勾選的記憶
     public bool ExitRestoreTabs { get; set; } = true;
@@ -223,17 +226,31 @@ public sealed class AppSettings
         if (string.IsNullOrWhiteSpace(LogDir))
             LogDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "AwayTerminalLogs");
 
-        if (Prompts.Count == 0)
+        // 常用字串 / 資料夾書籤：**只在第一次建立設定檔時**放入範例。
+        // 舊寫法是 `if (Count == 0)`，等於「清單一空就補回來」——使用者把範例全刪掉，
+        // 下次啟動又長回來（與自訂連線那個困擾同一類）。改用一次性旗標後刪掉就是刪掉。
+        if (!SeededSamples)
         {
-            Prompts.Add(new PromptItem { Title = "解釋程式碼", Content = "解釋這段程式碼在做什麼，並指出潛在問題。" });
-            Prompts.Add(new PromptItem { Title = "產生 commit message", Content = "幫我把剛剛的變更整理成一則清楚的 git commit message。" });
-            Prompts.Add(new PromptItem { Title = "找 bug", Content = "檢查這個檔案有沒有 bug、edge case 或漏掉的錯誤處理。" });
-        }
+            SeededSamples = true;
 
-        if (DirBookmarks.Count == 0)
-        {
-            DirBookmarks.Add(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory));
-            DirBookmarks.Add(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
+            if (Prompts.Count == 0)
+            {
+                Prompts.Add(new PromptItem { Group = "Linux", Title = "看檔案目錄", Content = "ls" });
+                Prompts.Add(new PromptItem { Group = "Linux", Title = "看linux版本", Content = "cat /proc/version" });
+                Prompts.Add(new PromptItem { Group = "常用Prompt", Title = "編譯器位置說明", Content = @"NDK/SDK編譯器在C:\CrossCompilerWin" });
+                // 刻意用佔位值：這是所有使用者都會拿到的內建範例，寫成看似真實的
+                // 主機／帳號／密碼會讓人分不出真假（也容易被照抄）。使用者自己的設定檔
+                // 裡填真實值即可，那不會進版控。
+                Prompts.Add(new PromptItem { Group = "常用Prompt", Title = "ssh登入", Content = "ssh ip是192.168.x.x,帳號是user,密碼是****" });
+            }
+
+            if (DirBookmarks.Count == 0)
+            {
+                DirBookmarks.Add(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory));
+                DirBookmarks.Add(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
+            }
+
+            Save();   // 立即持久化旗標，避免下次啟動又判定成「第一次」
         }
 
         if (string.IsNullOrWhiteSpace(LastDir))

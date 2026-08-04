@@ -53,6 +53,8 @@ dotnet build                                     # 建置（會自動簽章 exe�
 - **版本**：每交付一次 `<Version>` +0.0.1（「關於」顯示）。目前 **1.0.11**（右鍵「複製且貼上」；1.0.10=claude 分頁貼上改 ESC+CR）（1.0.0=2026-07-27 里程碑、repo 重建＋安裝檔發佈；1.0.4 起「關於」email=weisu.tech@gmail.com、仍為圖片渲染；1.0.5 起最下方顯示「編譯時間: yyyy/M/d HH:mm:ss」＝exe 檔案寫入時間，複製/安裝會保留時間戳）。「關於」是自訂深色小視窗（非 MessageBox）、內容置左：標題/版本、作者行 `Awaysu (awaysu@gmail.com)` **以執行期渲染的圖片顯示**（`RenderTextImage`，依 DPI 畫、防文字收集）、Source Code 可點連結開 GitHub。
 - **i18n**：使用者可見字串走 `Loc.T`；工具列文字：新連接(New) / 紀錄 / 複製 / 純文字貼上 / 複製全部 / 清除畫面 / 視窗分割 / 功能列 / 常用字串 / 遠端設定 / 設定 / 關於。
 - **設定持久化**：記住值都進 `AppSettings.Current` + `.Save()`。
+- **範例資料只放一次（v1.0.19）**：常用字串與資料夾書籤的預設範例改由 `SeededSamples` 旗標控制，**只在第一次建立設定檔時放入**。舊寫法 `if (Count == 0)` 等於「清單一空就補回來」，使用者全刪掉、下次啟動又長回來（與自訂連線同一類困擾）。自訂連線則完全不給預設（見「主要功能行為」）。
+  - **測試「全新安裝」的方法**：`Environment.GetFolderPath(LocalApplicationData)` 走 shell folder API、**不讀 `LOCALAPPDATA` 環境變數**，所以無法用改環境變數來隔離。實測要「備份 → 把 `settings.json` 移開 → 啟動 → 檢查 → 移回」。
 - **分頁命名**：`NextName(prefix)` → 「型態(數字)」，例 PowerShell(1)、ADB(1)、自訂用「名稱(數字)」；跳過已存在名稱。
 - **狀態圓點**（分頁左側）：綠=可輸入、橘=忙，純活動偵測（已移除 BEL 那套）。**工作列 icon 右下**另有 overlay 圓點：全部閒置=綠、有忙=橘、無分頁=無（`TaskbarItemInfo.Overlay`）。
 - **強調色**：`#FDFFB0` 淡黃（作用中分頁框、終端機外框、分割 pane 框、快速輸入面板框）。作用中分頁上方開口與外框融合（tab 往上 -1px 蓋線）。
@@ -147,7 +149,7 @@ dotnet build                                     # 建置（會自動簽章 exe�
 - **防毒**：PC-cillin 誤判（ConPTY 開 shell）；專案資料夾已加例外。
 - **`.ps1` 有中文必須 UTF-8 BOM**；`.iss` 有中文亦需 UTF-8 BOM（故 installer.iss **一律用英文**，檔頭已註明）；`.reg` 有中文必須 UTF-16 LE。**2026-08-04 又踩一次**：在 installer.iss 加了中文註解後用 `Set-Content -Encoding utf8` 改版號，註解變亂碼並與程式行黏在一起（`Source:` 被吃進註解、`function` 宣告被吃掉），ISCC 報 line 106 錯誤。改動 .iss 請用 Edit 工具逐段改，勿整檔重新編碼。
 - **`Get-AuthenticodeSignature` 回 `UnknownError` 不一定是壞事**：訊息若為「terminated in a root certificate which is not trusted」，代表自簽根憑證不在信任存放區——**1.0.12 起安裝檔會主動移除機器層級根憑證，所以這是預期結果**，程式照樣能執行。別誤判成防毒攔截或簽章失敗（2026-08-04 一度誤判）。
-- **`[Diagnostics.Process]::Start` 在此環境啟動 Program Files 的 exe 會回 "Access is denied"**，但同一支程式用 Bash 工具 `./AwayTerminal.exe &` 或 `cmd /c` 都能正常啟動。這是工具環境的怪癖，不是防毒也不是程式問題——驗證安裝版時請用 Bash 啟動。
+- **`[Diagnostics.Process]::Start` 啟動剛建置／剛安裝的 exe 會回 "Access is denied" ——這是 PC-cillin 擋的**（使用者確認）。同一支程式用 Bash 工具 `./AwayTerminal.exe &` 或 `cmd /c` 卻能啟動，所以**別把它誤判成程式壞掉或簽章問題**；驗證時改用 Bash 啟動即可。（2026-08-04 一度誤記為「工具環境怪癖」，已更正。）
 - **憑證私鑰不進 git**（在 Windows 憑證存放區）；`settings.json` 在 `%LOCALAPPDATA%`（不在專案內）；`.gitignore` 排除 `bin/ obj/ installer/dist/ installer/MicrosoftEdgeWebview2Setup.exe`。
 - **安裝版舊 exe 與開發版共用 settings.json 會「剝欄位」**：Program Files 的 v0.9.73 安裝版一存檔就把它不認識的新欄位（遠端 token/chatId/RemoteEnabled）整組洗掉——2026-07-27 中招，遠端靜默 3 小時才發現（診斷法：對 bot token 打 `getUpdates`，409=有人在 poll、200=服務沒起來）。對策（v0.9.82 起）：`AppSettings` 加 `[JsonExtensionData] ExtraFields` 保留未知欄位、`Save()` 改 tmp+`File.Move` 原子替換（防強殺留半截檔）、`Load()` 解析失敗先備份 `settings.json.bad` 再退預設。**在裝過安裝版的機器測新功能前，先確認沒誤開 Program Files 的舊版**；新功能穩定後盡快重出安裝檔。
 - **遠端 /last 絕不能用「原始位元組流去 ANSI」**：claude 等 TUI 用游標定位原地重繪，去 ANSI 直接串接會把幾百次重繪黏成 `Inferring…Inferring…` 洪流；逐格差分重繪還會產生 `oing`/`✣ Bi` 碎片。正解=向 xterm 查渲染後文字（`q…text`→`a…text`，JS `lastPlainText()` 接回 isWrapped 邏輯行），xterm 已把重繪合成完畢。位元組流緩衝（`TerminalTab.RemoteRecent`）僅當 JS 逾時未回的備援。
