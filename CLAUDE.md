@@ -50,7 +50,7 @@ dotnet build                                     # 建置（會自動簽章 exe�
 
 ## 慣例
 - **視窗標題**：`AwayTerminal - 目前路徑`（v1.0.6，1.0.9 擴充）。路徑由**提示字元行解析**（`q…cwd` 查游標所在提示行 → `CwdRes` 六組 regex：PowerShell / cmd / bash-zsh / RHEL `[user@host ~]#` / Android adb `host:/path $` / fish `user@host /path>`），狀態輪詢每 0.6s 更新；解析不到就保留上次值（打字中不閃動）。**沒有提示行的分頁（claude/自訂）用 `TerminalTab.WorkDir`（啟動目錄）墊底**，切分頁以 WorkDir 起始、無分頁時只顯示程式名。**註：不能讀行程 PEB 的 CWD**——PowerShell 的 `Set-Location` 不會同步行程工作目錄，讀到的永遠是啟動目錄。
-- **版本**：每交付一次 `<Version>` +0.0.1（「關於」顯示）。目前 **1.0.11**（右鍵「複製且貼上」；1.0.10=claude 分頁貼上改 ESC+CR）（1.0.0=2026-07-27 里程碑、repo 重建＋安裝檔發佈；1.0.4 起「關於」email=weisu.tech@gmail.com、仍為圖片渲染；1.0.5 起最下方顯示「編譯時間: yyyy/M/d HH:mm:ss」＝exe 檔案寫入時間，複製/安裝會保留時間戳）。「關於」是自訂深色小視窗（非 MessageBox）、內容置左：標題/版本、作者行 `Awaysu (awaysu@gmail.com)` **以執行期渲染的圖片顯示**（`RenderTextImage`，依 DPI 畫、防文字收集）、Source Code 可點連結開 GitHub。
+- **版本**：每交付一次 `<Version>` +0.0.1（「關於」顯示）。目前 **1.0.20**（1.0.20/1.0.19=常用字串新預設＋範例只放一次；1.0.18=ADB 改為一般自訂連線、預設自訂清單為空；1.0.16=WinForms 對話框補 owner；1.0.13=不再打包 adb、安裝檔改框架相依、MIT 授權、遠端推播降噪；1.0.12=安裝檔不再匯入根憑證；1.0.11=右鍵「複製且貼上」；1.0.10=claude 分頁貼上改 ESC+CR）（1.0.0=2026-07-27 里程碑、repo 重建＋安裝檔發佈；1.0.4 起「關於」email=weisu.tech@gmail.com、仍為圖片渲染；1.0.5 起最下方顯示「編譯時間: yyyy/M/d HH:mm:ss」＝exe 檔案寫入時間，複製/安裝會保留時間戳）。「關於」是自訂深色小視窗（非 MessageBox）、內容置左：標題/版本、作者行 `Awaysu (awaysu@gmail.com)` **以執行期渲染的圖片顯示**（`RenderTextImage`，依 DPI 畫、防文字收集）、Source Code 可點連結開 GitHub。
 - **i18n**：使用者可見字串走 `Loc.T`；工具列文字：新連接(New) / 紀錄 / 複製 / 純文字貼上 / 複製全部 / 清除畫面 / 視窗分割 / 功能列 / 常用字串 / 遠端設定 / 設定 / 關於。
 - **設定持久化**：記住值都進 `AppSettings.Current` + `.Save()`。
 - **範例資料只放一次（v1.0.19）**：常用字串與資料夾書籤的預設範例改由 `SeededSamples` 旗標控制，**只在第一次建立設定檔時放入**。舊寫法 `if (Count == 0)` 等於「清單一空就補回來」，使用者全刪掉、下次啟動又長回來（與自訂連線同一類困擾）。自訂連線則完全不給預設（見「主要功能行為」）。

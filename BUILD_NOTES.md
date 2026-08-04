@@ -7,16 +7,17 @@
 ## 如何建置與執行
 
 ```powershell
-cd C:\Users\AwayWork\Desktop\WORKSPACE\AwayTerminal
+cd <專案資料夾>
 dotnet build                       # 建置
 .\bin\Debug\net9.0-windows\AwayTerminal.exe   # 執行
 ```
 
-> ⚠️ **防毒**：PC-cillin 會誤判（因為程式會用 ConPTY 開 PowerShell）。已請你把專案資料夾
-> `C:\Users\AwayWork\Desktop\WORKSPACE\AwayTerminal` 加入 PC-cillin 例外。若重建後又被殺，
-> 確認例外還在。長期解法是日後對 exe 做數位簽章。
+> ⚠️ **防毒**：PC-cillin 等防毒會誤判（因為程式會用 ConPTY 開 PowerShell，且每次改版都是全新
+> 雜湊、信譽從零開始）。請把**專案資料夾**加入防毒例外；若重建後又被殺，確認例外還在。
+> 註：連 `[Diagnostics.Process]::Start` 啟動剛建置的 exe 都可能被擋（回 "Access is denied"），
+> 這時改用 `cmd /c` 或 shell 直接執行即可，不是程式壞了。
 
-- 需求：.NET 9 SDK、WebView2 Runtime（Win10/11 內建）。皆已在你機器上確認。
+- 需求：.NET 9 SDK、WebView2 Runtime（Win10/11 多半已內建，安裝檔亦含 bootstrapper）。
 - 設定 / 歷史存於：`%LOCALAPPDATA%\AwayTerminal\settings.json`
 - 版本號在 `AwayTerminal.csproj` 的 `<Version>`；每交付一版 +0.0.1（顯示在「關於」）。
 
