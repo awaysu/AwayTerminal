@@ -31,6 +31,11 @@ public sealed class TerminalTab : INotifyPropertyChanged
     /// <summary>收到終端機鈴聲後、等待使用者輸入中（Claude 完成）→ 強制綠燈。</summary>
     public bool WaitingForUser { get; set; }
 
+    /// <summary>claude 型分頁（Kind=Claude 或執行檔名含 claude）：貼上走 ESC+CR；
+    /// 關閉程式時「更新 CLAUDE.md」也以此判斷——自訂連線開的 ClaudeCode 沒有 Restore，
+    /// 不能再用 Restore.Type == "claude" 找。</summary>
+    public bool ClaudePaste { get; set; }
+
     /// <summary>最後回報的終端機尺寸（session 延後啟動時使用）。</summary>
     public int Cols { get; set; } = 80;
     public int Rows { get; set; } = 24;
@@ -45,6 +50,10 @@ public sealed class TerminalTab : INotifyPropertyChanged
     /// <summary>遠端 /last 用：ANSI 去除後的近期可讀文字（有上限，超過從前面截；以 RemoteLock 保護）。</summary>
     public readonly object RemoteLock = new();
     public System.Text.StringBuilder RemoteRecent { get; } = new();
+
+    /// <summary>遠端緩衝的 UTF-8 解碼器：保留跨 chunk 狀態（中文字被讀取邊界切開時不會變 �）。
+    /// 只在 session 的輸出執行緒使用（同一時間僅一條）。</summary>
+    public System.Text.Decoder RemoteDecoder { get; } = System.Text.Encoding.UTF8.GetDecoder();
 
     /// <summary>SSH「login as:」狀態：非 null = 等待使用者輸入帳號後才啟動 ssh。</summary>
     public System.Text.StringBuilder? LoginBuffer { get; set; }

@@ -51,6 +51,9 @@ public partial class ExitDialog : Window
             UpdateMdCheck.IsEnabled = false;
             try { await UpdateAction(); } catch { }
         }
-        DialogResult = true;
+        // 等待期間使用者可能按標題列 X 關掉本視窗（Cancel 鈕雖停用、X 沒擋）——
+        // 視窗已離開 ShowDialog 狀態時設 DialogResult 會丟 InvalidOperationException，
+        // 在 async void 裡等於整個程式 crash，所以先確認還開著。
+        if (IsVisible) DialogResult = true;
     }
 }

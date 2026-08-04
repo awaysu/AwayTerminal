@@ -29,6 +29,8 @@ public sealed partial class MacroRunner
     private readonly CancellationTokenSource _cts = new();
     private readonly StringBuilder _buf = new();
     private readonly object _bufLock = new();
+    // 跨 chunk 保留 UTF-8 狀態：中文提示被讀取邊界切開時，一次性 GetString 會變 � → wait 比對不到
+    private readonly Decoder _utf8 = Encoding.UTF8.GetDecoder();
 
     private readonly Dictionary<string, int> _labels = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, object> _vars = new(StringComparer.OrdinalIgnoreCase);
@@ -69,7 +71,9 @@ public sealed partial class MacroRunner
 
     private void OnOutput(byte[] data)
     {
-        string t = AnsiRegex().Replace(Encoding.UTF8.GetString(data), "");
+        var chars = new char[_utf8.GetCharCount(data, 0, data.Length, false)];
+        _utf8.GetChars(data, 0, data.Length, chars, 0, false);
+        string t = AnsiRegex().Replace(new string(chars), "");
         lock (_bufLock)
         {
             _buf.Append(t);

@@ -98,7 +98,11 @@ public sealed class TelegramRemote
     {
         if (_cts == null) return;
         // auto:true → 算不出新輸出時整則不送（自動推播不需要「（尚無新輸出）」這種空訊息）
-        if (tabId == _currentTabId && _follow) { _ = SendLast(30, $"🟢 {title} 完成", incremental: true, auto: true); return; }
+        // 註：一定要丟到執行緒池——SendLast 在第一個 await 前會同步呼叫 GetRecentText，
+        // 它內部以 tcs.Task.Wait 等 WebView2 的 a…text 回覆；本方法由 UI 執行緒（狀態輪詢）呼叫，
+        // 直接跑會把 UI 卡住 1.5 秒、回覆又需要 UI 執行緒處理 → 必逾時退回劣化的位元組流備援。
+        if (tabId == _currentTabId && _follow)
+        { _ = Task.Run(() => SendLast(30, $"🟢 {title} 完成", incremental: true, auto: true)); return; }
         if (_notify) _ = SendAsync($"🟢 {title} 閒置（完成）");
     }
 

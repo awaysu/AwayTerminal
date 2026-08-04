@@ -97,7 +97,9 @@ public partial class MainWindow : Window, IRemoteHost
         e.Cancel = true; // 先攔下，改由自訂視窗決定
 
         var dlg = new ExitDialog { Owner = this };
-        dlg.SetClaudeAvailable(Tabs.Any(t => t.Restore?.Type == "claude" && t.Session != null));
+        // 以 ClaudePaste 找 claude 分頁——自訂連線開的 ClaudeCode 沒有 Restore，
+        // 用 Restore.Type == "claude" 只會找到舊紀錄恢復的 legacy 分頁（v1.0.18 後等於永遠 false）
+        dlg.SetClaudeAvailable(Tabs.Any(t => t.ClaudePaste && t.Session != null));
         dlg.UpdateAction = UpdateClaudeMdAsync;
         if (dlg.ShowDialog() != true) return; // 取消 → 不關
 
@@ -131,7 +133,7 @@ public partial class MainWindow : Window, IRemoteHost
     /// <summary>請每個 Claude Code 分頁更新 CLAUDE.md，並等到它們都閒置（或逾時）。</summary>
     private async Task UpdateClaudeMdAsync()
     {
-        var claudeTabs = Tabs.Where(t => t.Restore?.Type == "claude" && t.Session != null).ToList();
+        var claudeTabs = Tabs.Where(t => t.ClaudePaste && t.Session != null).ToList();
         if (claudeTabs.Count == 0) return;
 
         string prompt = Loc.T("exit.mdPrompt");
@@ -748,10 +750,11 @@ public partial class MainWindow : Window, IRemoteHost
     private TerminalTab AddTab(TermKind kind, string title, bool claudePaste = false)
     {
         int id = _nextId++;
-        var tab = new TerminalTab(id, kind, title) { Cols = _lastCols, Rows = _lastRows };
+        var tab = new TerminalTab(id, kind, title)
+        { Cols = _lastCols, Rows = _lastRows, ClaudePaste = claudePaste || kind == TermKind.Claude };
         Tabs.Add(tab);
         // 第三欄 flags：c=claude 分頁 → JS 端多行貼上改送 ESC+CR 軟換行（terminal.js doPaste）
-        PostToWeb("n" + id + US + title + US + (claudePaste || kind == TermKind.Claude ? "c" : ""));
+        PostToWeb("n" + id + US + title + US + (tab.ClaudePaste ? "c" : ""));
         SelectTab(tab);
         return tab;
     }
@@ -772,7 +775,7 @@ public partial class MainWindow : Window, IRemoteHost
         if (kind is TermKind.Ssh or TermKind.Telnet or TermKind.Com)
             tab.AutoReconnect = AppSettings.Current.AutoReconnect;   // 斷線自動重連（連線視窗勾選）
         session.Output += data => OnSessionOutput(tab, data);
-        session.Exited += () => OnSessionExited(tab.Id);
+        session.Exited += () => OnSessionExited(tab, session);
         try { start(); }
         catch (Exception ex)
         {
@@ -923,18 +926,25 @@ public partial class MainWindow : Window, IRemoteHost
             PostToWeb("o" + tab.Id + US + Convert.ToBase64String(chunk));
     }
 
-    private void OnSessionExited(int id)
+    private void OnSessionExited(TerminalTab tab, ITerminalSession session)
     {
-        string bye = "o" + id + US + Convert.ToBase64String(
-            Encoding.UTF8.GetBytes("\r\n\x1b[90m" + Loc.T("term.exited") + "\x1b[0m\r\n"));
         Dispatcher.InvokeAsync(() =>
         {
-            PostToWeb(bye);
-            // 斷線自動重連：分頁還在（非使用者關閉）且勾了自動重連 → 排程重連
-            var tab = FindTab(id);
-            if (tab == null || !tab.AutoReconnect || tab.Restore == null) return;
+            // 過期事件防護：分頁已被使用者關閉、或已重連成新 session（SerialSession.Dispose
+            // 會再發一次 Exited）→ 一律忽略，否則會把活的新 session 誤判成已結束。
+            if (FindTab(tab.Id) == null || !ReferenceEquals(tab.Session, session)) return;
+
+            // 舊 session 一定要 Dispose：自動重連只換新不釋放的話，Telnet 的 keepalive
+            // Timer/TcpClient 與 ConPTY 的 HPCON/行程 handle 會隨每次斷線累積。
+            tab.Session = null;
+            _ = System.Threading.Tasks.Task.Run(() => { try { session.Dispose(); } catch { } });
+
+            PostToWeb("o" + tab.Id + US + Convert.ToBase64String(
+                Encoding.UTF8.GetBytes("\r\n\x1b[90m" + Loc.T("term.exited") + "\x1b[0m\r\n")));
+
+            // 斷線自動重連：勾了自動重連才排程
+            if (!tab.AutoReconnect || tab.Restore == null) return;
             if (tab.Kind is not (TermKind.Ssh or TermKind.Telnet or TermKind.Com)) return;
-            tab.Session = null;   // 舊 session 已結束
             ScheduleReconnect(tab);
         });
     }
@@ -970,7 +980,7 @@ public partial class MainWindow : Window, IRemoteHost
                     var s = new ConPtySession { GracefulExitBytes = new byte[] { 0x04, 0x04, 0x04 } };
                     tab.Session = s;
                     s.Output += data => OnSessionOutput(tab, data);
-                    s.Exited += () => OnSessionExited(tab.Id);
+                    s.Exited += () => OnSessionExited(tab, s);
                     s.Start(SshCommand(st.Host, st.Port), tab.Cols, tab.Rows, null);
                     break;
                 }
@@ -979,7 +989,7 @@ public partial class MainWindow : Window, IRemoteHost
                     var s = new TelnetSession { KeepAliveMins = AppSettings.Current.KeepAliveMins };
                     tab.Session = s;
                     s.Output += data => OnSessionOutput(tab, data);
-                    s.Exited += () => OnSessionExited(tab.Id);
+                    s.Exited += () => OnSessionExited(tab, s);
                     s.Start(st.Host, st.Port);
                     break;
                 }
@@ -988,7 +998,7 @@ public partial class MainWindow : Window, IRemoteHost
                     var s = new SerialSession();
                     tab.Session = s;
                     s.Output += data => OnSessionOutput(tab, data);
-                    s.Exited += () => OnSessionExited(tab.Id);
+                    s.Exited += () => OnSessionExited(tab, s);
                     s.Start(st.ComPort, st.Baud, st.DataBits,
                         Enum.Parse<System.IO.Ports.Parity>(st.Parity),
                         Enum.Parse<System.IO.Ports.StopBits>(st.StopBits),
@@ -1000,7 +1010,10 @@ public partial class MainWindow : Window, IRemoteHost
         }
         catch
         {
+            // 開失敗的 session 也要釋放（先取下再 Dispose，Serial 的 Exited 重發會被過期防護擋掉）
+            var dead = tab.Session;
             tab.Session = null;
+            if (dead != null) _ = System.Threading.Tasks.Task.Run(() => { try { dead.Dispose(); } catch { } });
             ScheduleReconnect(tab);   // 連不上（埠不存在/主機不通）→ 退避後再試
         }
     }
@@ -1255,7 +1268,7 @@ public partial class MainWindow : Window, IRemoteHost
                 tab.Session = s;
                 tab.AutoReconnect = AppSettings.Current.AutoReconnect;   // login as: 路徑不經 StartTab，這裡補旗標
                 s.Output += d => OnSessionOutput(tab, d);
-                s.Exited += () => OnSessionExited(tab.Id);
+                s.Exited += () => OnSessionExited(tab, s);
                 try { s.Start(SshCommand(target, tab.PendingPort), tab.Cols, tab.Rows, null); }
                 catch (Exception ex)
                 {
@@ -1561,7 +1574,15 @@ public partial class MainWindow : Window, IRemoteHost
     private void AppendRemoteRecent(TerminalTab tab, byte[] data)
     {
         string s;
-        try { s = Encoding.UTF8.GetString(data); } catch { return; }
+        try
+        {
+            // 用分頁自己的 Decoder 保留跨 chunk 狀態：中文字被 64KB 讀取邊界切開時，
+            // 一次性 GetString 會把前後半各解成 �（畫面沒事——xterm 有 streaming decoder）
+            var chars = new char[tab.RemoteDecoder.GetCharCount(data, 0, data.Length, false)];
+            tab.RemoteDecoder.GetChars(data, 0, data.Length, chars, 0, false);
+            s = new string(chars);
+        }
+        catch { return; }
         s = s.Replace("\r\n", "\n");            // 正常換行先收斂，避免下面把 \r 當成重繪換行時翻倍
         s = CursorMoveRe.Replace(s, "\n");
         s = AnsiRe.Replace(s, "");

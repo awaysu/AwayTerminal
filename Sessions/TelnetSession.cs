@@ -10,7 +10,7 @@ namespace AwayTerminal.Sessions;
 public sealed class TelnetSession : ITerminalSession
 {
     private TcpClient? _client;
-    private NetworkStream? _stream;
+    private volatile NetworkStream? _stream;   // 背景執行緒連上後才設定；UI 執行緒的 Write 讀它
     private readonly CancellationTokenSource _cts = new();
     private bool _disposed;
 
@@ -25,17 +25,37 @@ public sealed class TelnetSession : ITerminalSession
     public int KeepAliveMins { get; set; }
     private Timer? _keepAlive;
 
+    /// <summary>啟動連線。連線移到背景執行緒——同步 Connect 在主機不通時會阻塞到
+    /// TCP 逾時（約 20 秒），從 UI 執行緒呼叫（開連線／自動重連的 DispatcherTimer）會凍結整個視窗。
+    /// 連不上改以紅字輸出錯誤並觸發 Exited（自動重連有勾就會接手退避重試）。</summary>
     public void Start(string host, int port)
     {
         _client = new TcpClient { NoDelay = true };
-        _client.Connect(host, port); // 連不上會丟例外，由呼叫端處理
-        _stream = _client.GetStream();
-        _ = Task.Run(ReadLoopAsync);
-        if (KeepAliveMins > 0)
+        _ = Task.Run(() => ConnectAndReadAsync(host, port));
+    }
+
+    private async Task ConnectAndReadAsync(string host, int port)
+    {
+        try
         {
-            var t = TimeSpan.FromMinutes(KeepAliveMins);
-            _keepAlive = new Timer(_ => SendNop(), null, t, t);
+            await _client!.ConnectAsync(host, port, _cts.Token).ConfigureAwait(false);
+            _stream = _client.GetStream();
+            if (KeepAliveMins > 0 && !_disposed)
+            {
+                var t = TimeSpan.FromMinutes(KeepAliveMins);
+                _keepAlive = new Timer(_ => SendNop(), null, t, t);
+            }
         }
+        catch (Exception ex)
+        {
+            if (!_disposed)
+            {
+                try { Output?.Invoke(Encoding.UTF8.GetBytes($"\r\n\x1b[31m{ex.Message}\x1b[0m\r\n")); } catch { }
+                try { Exited?.Invoke(); } catch { }
+            }
+            return;
+        }
+        await ReadLoopAsync().ConfigureAwait(false);
     }
 
     /// <summary>IAC NOP 直接寫串流——不能走 Write()（它會把 0xFF 轉義成資料位元組）。</summary>

@@ -12,6 +12,8 @@ public sealed partial class SessionLogger : IDisposable
     private bool _atLineStart = true;
     private readonly object _lock = new();
     private bool _disposed;
+    // 跨 chunk 保留 UTF-8 狀態：中文字被讀取邊界切開時，一次性 GetString 會寫出 �
+    private readonly Decoder _utf8 = Encoding.UTF8.GetDecoder();
 
     public string FilePath { get; }
 
@@ -33,7 +35,9 @@ public sealed partial class SessionLogger : IDisposable
     public void Write(byte[] data)
     {
         if (_disposed) return;
-        string text = Encoding.UTF8.GetString(data);
+        var chars = new char[_utf8.GetCharCount(data, 0, data.Length, false)];
+        _utf8.GetChars(data, 0, data.Length, chars, 0, false);
+        string text = new string(chars);
         text = AnsiRegex().Replace(text, "");
         text = text.Replace("\r\n", "\n");
         text = CtrlRegex().Replace(text, ""); // 去掉殘餘控制碼（保留 \n \t）

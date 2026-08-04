@@ -55,6 +55,12 @@ public sealed class SerialSession : ITerminalSession
             }
         }
         catch { /* 關閉 port 時 Read 會丟例外 → 正常結束 */ }
+        finally
+        {
+            // 非使用者關閉（拔線／裝置消失）也要發 Exited，自動重連才會接手；
+            // 使用者關閉走 Dispose（_disposed=true），由 Dispose 自己發。
+            if (!_disposed) { try { Exited?.Invoke(); } catch { } }
+        }
     }
 
     public void Write(ReadOnlySpan<byte> data)
