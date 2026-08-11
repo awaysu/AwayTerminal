@@ -84,6 +84,16 @@ public partial class PromptDialog : Window
     }
 
     // ---------- 編輯區載入 / 讀取 ----------
+    private string _loadedGroup = "", _loadedTitle = "", _loadedContent = "";
+
+    /// <summary>記住目前編輯區內容作為「乾淨」基準（MarkDirty 以此比對）。</summary>
+    private void SnapshotEditor()
+    {
+        _loadedGroup = GroupCombo.Text ?? "";
+        _loadedTitle = TitleBox.Text;
+        _loadedContent = ContentBox.Text;
+    }
+
     private void LoadEditor(PromptItem? p)
     {
         _suppress = true;
@@ -91,6 +101,7 @@ public partial class PromptDialog : Window
         TitleBox.Text = p?.Title ?? "";
         ContentBox.Text = p?.Content ?? "";
         _suppress = false;
+        SnapshotEditor();
         _dirty = false;
         UpdateButtons();
     }
@@ -116,7 +127,13 @@ public partial class PromptDialog : Window
     private void MarkDirty()
     {
         if (_suppress) return;
-        _dirty = true;
+        // 不能「有 TextChanged 就算髒」：editable ComboBox（群組）的內部文字框在視窗
+        // 第一次顯示、模板套用時才建立，屆時會把建構式載入的 Text 補推進去、補發一次
+        // 值沒變的 TextChanged——只是開來看看就被判髒、切換清單狂蹦「尚未存檔」。
+        // 改成與載入基準實際比對；順帶「改了又改回原樣」也不再算髒。
+        _dirty = (GroupCombo.Text ?? "") != _loadedGroup
+              || TitleBox.Text != _loadedTitle
+              || ContentBox.Text != _loadedContent;
         UpdateButtons();
     }
 
@@ -280,6 +297,7 @@ public partial class PromptDialog : Window
         _switching = false;
 
         Persist();
+        SnapshotEditor(); // 存檔後目前內容即新基準，之後的比對才不會誤髒
         _dirty = false;
         UpdateButtons();
         return true;
@@ -386,7 +404,8 @@ public partial class PromptDialog : Window
             MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
         if (r == MessageBoxResult.Cancel) return false;
         if (r == MessageBoxResult.Yes) return DoSave();
-        _dirty = false; // No → 放棄變更
+        SnapshotEditor(); // No → 放棄變更：目前內容視為乾淨，直到下次 LoadEditor 換基準
+        _dirty = false;
         return true;
     }
 
