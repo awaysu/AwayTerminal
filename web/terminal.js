@@ -7,6 +7,7 @@
 //               k{id1},{id2},... 拖曳後的新順序、z{size} Ctrl+滾輪縮放後的字級、ready
 //   C# -> JS :  o{id}US{base64} 輸出、n{id}US{title}[US{flags}] 建立（flags 含 c=claude 貼上）、t{id}US{title} 改名、
 //               s{id} 選取、x{id} 關閉、c{id} 清畫面、L{tab|split} 切換模式、
+//               S{id}US{up|down|top|bottom} 捲動檢視（工具列「翻頁」；不送輸入）、
 //               q{id}US{sel|selpaste|all|text|file|cwd}（selpaste 與 sel 同樣回選取文字，C# 端多做一次貼回）、
 //               T{json} 套用字型顏色、P{id}US{fg}US{bg} 單一分頁配色（空=回設定預設）、
 //               A{id} 全選、F 開搜尋列、v{id}US{base64} 貼上（走 xterm.paste，支援 bracketed paste）
@@ -418,6 +419,16 @@
       var vbytes = new Uint8Array(vbin.length);
       for (var vj = 0; vj < vbin.length; vj++) vbytes[vj] = vbin.charCodeAt(vj);
       doPaste(id, new TextDecoder().decode(vbytes));
+    } else if (kind === "S") {
+      // 捲動檢視：S{id}US{up|down|top|bottom}（工具列「翻頁」用；只動視窗、不送任何輸入）
+      i = rest.indexOf(US); id = rest.slice(0, i);
+      var rs = terms[id]; if (!rs) return;
+      var act = rest.slice(i + 1);
+      if (act === "up") rs.term.scrollPages(-1);
+      else if (act === "down") rs.term.scrollPages(1);
+      else if (act === "top") rs.term.scrollToTop();
+      else if (act === "bottom") rs.term.scrollToBottom();
+      rs.term.focus();
     } else if (kind === "A") {
       var ra = terms[rest]; if (ra) { ra.term.focus(); ra.term.selectAll(); }
     } else if (kind === "F") {

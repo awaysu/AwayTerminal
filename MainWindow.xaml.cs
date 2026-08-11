@@ -176,6 +176,7 @@ public partial class MainWindow : Window, IRemoteHost
         BtnPaste.Content = Loc.T("tb.paste"); BtnPaste.ToolTip = Loc.T("tip.paste");
         BtnCopyAll.Content = Loc.T("tb.copyall"); BtnCopyAll.ToolTip = Loc.T("tip.copyall");
         BtnClear.Content = Loc.T("tb.clear"); BtnClear.ToolTip = Loc.T("tip.clear");
+        BtnPage.Content = Loc.T("tb.page"); BtnPage.ToolTip = Loc.T("tip.page");
         BtnPrompt.Content = Loc.T("tb.prompt"); BtnPrompt.ToolTip = Loc.T("tip.prompt");
         BtnRemote.Content = Loc.T("tb.remote"); BtnRemote.ToolTip = Loc.T("tip.remote");
         BtnSettings.Content = Loc.T("tb.settings"); BtnSettings.ToolTip = Loc.T("tip.settings");
@@ -1550,8 +1551,20 @@ public partial class MainWindow : Window, IRemoteHost
     private async void Clear_Click(object sender, RoutedEventArgs e)
     {
         if (_active == null) return;
-        var session = _active.Session;
-        if (_active.Kind == TermKind.PowerShell || _active.Kind == TermKind.Ssh)
+
+        // 先確認再清：誤按的代價在 Telnet / COM 特別高——那條路走 term.clear()，
+        // 整個 scrollback 會被洗掉、救不回來（PowerShell / SSH 只是 shell 重畫，捲得回去）。
+        var tab = _active;
+        if (MessageBox.Show(this, string.Format(Loc.T("msg.clearConfirm"), tab.Title),
+                Loc.T("msg.clearTitle"), MessageBoxButton.YesNo, MessageBoxImage.Question)
+            != MessageBoxResult.Yes)
+        {
+            Web.Focus();
+            return;
+        }
+        // 對話框期間可能被切分頁 → 一律清當初按下時的那一頁
+        var session = tab.Session;
+        if (tab.Kind == TermKind.PowerShell || tab.Kind == TermKind.Ssh)
         {
             // 先送 Esc 清掉還沒送出的輸入，隔一小段再送 Ctrl+L 清畫面。
             // 若兩者黏在一起送，PSReadLine 會當成 escape 序列而兩者都失效。
@@ -1561,8 +1574,44 @@ public partial class MainWindow : Window, IRemoteHost
         }
         else
         {
-            PostToWeb("c" + _active.Id); // Telnet / COM：直接清 xterm 緩衝
+            PostToWeb("c" + tab.Id); // Telnet / COM：直接清 xterm 緩衝
         }
+        Web.Focus();
+    }
+
+    /// <summary>「翻頁」按鈕：下拉選單捲動作用中分頁的畫面（走 S 協定交給 xterm，不動輸入流）。</summary>
+    private void Page_Click(object sender, RoutedEventArgs e)
+    {
+        var menu = new ContextMenu();
+        menu.Items.Add(MakeScrollItem("page.up", "up"));
+        menu.Items.Add(MakeScrollItem("page.down", "down"));
+        menu.Items.Add(new Separator());
+        menu.Items.Add(MakeScrollItem("page.top", "top"));
+        menu.Items.Add(MakeScrollItem("page.bottom", "bottom"));
+
+        bool right = AppSettings.Current.ToolbarPosition == "right";
+        menu.PlacementTarget = (UIElement)sender;
+        menu.Placement = right
+            ? System.Windows.Controls.Primitives.PlacementMode.Right
+            : System.Windows.Controls.Primitives.PlacementMode.Bottom;
+        menu.IsOpen = true;
+    }
+
+    private MenuItem MakeScrollItem(string locKey, string action)
+    {
+        var mi = new MenuItem
+        {
+            Header = new TextBlock { Text = Loc.T(locKey), FontSize = 11 }, // 字級同 New 下拉
+        };
+        mi.Click += (_, _) => ScrollActive(action);
+        return mi;
+    }
+
+    /// <summary>捲動作用中分頁的檢視。捲完把焦點還給終端機，讓使用者能直接繼續打字。</summary>
+    private void ScrollActive(string action)
+    {
+        if (_active == null) return;
+        PostToWeb("S" + _active.Id + US + action);
         Web.Focus();
     }
 

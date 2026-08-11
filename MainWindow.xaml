@@ -72,6 +72,7 @@
                 <Button x:Name="BtnPaste" Style="{StaticResource ToolBtn}" Click="Paste_Click" Tag="pack://application:,,,/icon/paste.png">貼上</Button>
                 <Button x:Name="BtnCopyAll" Style="{StaticResource ToolBtn}" Click="CopyAll_Click" Tag="pack://application:,,,/icon/copy-all.png">複製全部</Button>
                 <Button x:Name="BtnClear" Style="{StaticResource ToolBtn}" Click="Clear_Click" Tag="pack://application:,,,/icon/clear.png">清畫面</Button>
+                <Button x:Name="BtnPage" Style="{StaticResource ToolBtn}" Click="Page_Click" Tag="pack://application:,,,/icon/page-scroll.png">翻頁</Button>
                 <Rectangle Style="{StaticResource Sep}" />
                 <Button x:Name="BtnSplit" Style="{StaticResource ToolBtn}" Click="Split_Click" Tag="pack://application:,,,/icon/arrange.png">分割</Button>
                 <Button x:Name="BtnTaskbar" Style="{StaticResource ToolBtn}" Click="TaskbarToggle_Click" Tag="pack://application:,,,/icon/taskbar-change.png">功能列</Button>
