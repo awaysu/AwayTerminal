@@ -77,18 +77,23 @@
     term.open(body);
     term.onData(function (d) { ws.postMessage("i" + id + US + d); });
 
-    // 組字預覽去殘影：微軟注音每個按鍵會先回報「原始英文鍵值」（h=ㄏ）再更新成注音，
-    // xterm 把每次回報都畫進 .composition-view 就會閃出英文字。
-    // 只動顯示層（不碰輸入流）：內容一變先藏 30ms 吸收閃爍；內容含英文字母＝鍵值殘影，
-    // 持續隱藏等下一次更新。注音組字不會有英文字母；若日後改用拼音輸入法需拿掉字母過濾。
+    // 組字預覽去殘影：微軟注音每個按鍵會先回報「原始鍵值」（h=ㄏ、8=ㄚ）再更新成注音，
+    // xterm 把每次回報都畫進 .composition-view 就會閃出英數字。只動顯示層（不碰輸入流）。
+    // v1.0.22 改法：依「目前內容」決定顯示——內容含英數字＝鍵值殘影 → 隱藏等轉換；
+    // 純注音/中文 → 立刻顯示。舊法「每次變動先藏 30ms」讓預覽在打字時不斷閃爍消失；
+    // 「含字母就永久隱藏」則讓英數組字（嘸蝦米/倉頡/拼音、注音內嵌英文）整段看不見。
+    // 補一個 250ms 後備顯示：殘影必在幾 ms 內被轉換蓋掉，過了 250ms 還在的英數字＝真的內容。
     var compView = body.querySelector(".composition-view");
     if (compView) {
       var compTimer = null;
       new MutationObserver(function () {
-        compView.style.visibility = "hidden";
         clearTimeout(compTimer);
-        if (/[A-Za-z]/.test(compView.textContent || "")) return;
-        compTimer = setTimeout(function () { compView.style.visibility = ""; }, 30);
+        if (/[A-Za-z0-9]/.test(compView.textContent || "")) {
+          compView.style.visibility = "hidden";
+          compTimer = setTimeout(function () { compView.style.visibility = ""; }, 250);
+        } else {
+          compView.style.visibility = "";
+        }
       }).observe(compView, { characterData: true, childList: true, subtree: true });
     }
 

@@ -26,6 +26,21 @@ public partial class RemoteDialog : Window
         HintText.Text = Loc.T("remote.hint");
         OkBtn.Content = Loc.T("common.save");
         CancelBtn.Content = Loc.T("common.cancel");
+
+        // 未勾「啟用」時下面的設定全部鎖住（灰色不可改）
+        EnableChk.Checked += (_, _) => UpdateEnabledUI();
+        EnableChk.Unchecked += (_, _) => UpdateEnabledUI();
+        UpdateEnabledUI();
+    }
+
+    private void UpdateEnabledUI()
+    {
+        bool on = EnableChk.IsChecked == true;
+        TokenBox.IsEnabled = ChatBox.IsEnabled = GetIdBtn.IsEnabled = NotifyChk.IsEnabled = on;
+        // TextBlock 不是 Control、IsEnabled 不會讓它變灰；CheckBox 的深色前景是寫死的 #E0E0E0，
+        // 停用觸發器也蓋不掉 → 一律用透明度呈現停用感
+        double op = on ? 1.0 : 0.45;
+        TokenLabel.Opacity = ChatLabel.Opacity = HintText.Opacity = NotifyChk.Opacity = op;
     }
 
     private async void GetId_Click(object sender, RoutedEventArgs e)
@@ -40,7 +55,7 @@ public partial class RemoteDialog : Window
             ChatBox.Text = id.Value.ToString();
             MessageBox.Show(this, string.Format(Loc.T("remote.gotChatId"), id.Value), "AwayTerminal");
         }
-        finally { GetIdBtn.IsEnabled = true; }
+        finally { GetIdBtn.IsEnabled = EnableChk.IsChecked == true; } // 查詢期間若取消勾選，仍要維持灰色
     }
 
     private void Ok_Click(object sender, RoutedEventArgs e)

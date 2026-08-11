@@ -1134,14 +1134,27 @@ public partial class MainWindow : Window, IRemoteHost
     /// <summary>資料夾選擇（PowerShell / ClaudeCode 等 PickDir 自訂連線共用）；取消回傳 null。</summary>
     private string? PickWorkDir(string title)
     {
+        // 從 New 下拉的 MenuItem.Click 進來時選單還在收合中，先把佇列裡的關閉/焦點還原跑完，
+        // 再確保主視窗是前景視窗——否則對話框可能開出來卻不在最前面＝「點了沒反應」。
+        Dispatcher.Invoke(() => { }, DispatcherPriority.ContextIdle);
+        Activate();
+
         using var fbd = new System.Windows.Forms.FolderBrowserDialog
         {
             Description = title,
             UseDescriptionForTitle = true,
             ShowNewFolderButton = true
         };
+        // LastDir 在休眠中的硬碟或斷線的網路磁碟上時，Directory.Exists 會把 UI 卡住好幾秒，
+        // 對話框遲遲蹦不出來（使用者等到放棄＝「沒有出來」）。改丟背景執行緒查、最多等 300ms；
+        // 逾時就不預選資料夾，讓對話框立刻開（代價只是這次從預設位置開始瀏覽）。
         var last = AppSettings.Current.LastDir;
-        if (!string.IsNullOrWhiteSpace(last) && Directory.Exists(last)) fbd.SelectedPath = last;
+        if (!string.IsNullOrWhiteSpace(last))
+        {
+            var probe = Task.Run(() =>
+            { try { return Directory.Exists(last); } catch { return false; } });
+            if (probe.Wait(300) && probe.Result) fbd.SelectedPath = last;
+        }
 
         // 必須指定擁有者，否則對話框可能開在主視窗後面＝「點了沒反應」（見 Win32Owner 註解）
         if (fbd.ShowDialog(Win32Owner.Of(this)) != System.Windows.Forms.DialogResult.OK) return null;
