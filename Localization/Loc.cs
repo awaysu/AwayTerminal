@@ -226,6 +226,7 @@ public static class Loc
         ["prompt.clear"] = ("取消/清空", "Clear"),
         ["prompt.header"] = ("標題", "Title"),
         ["prompt.content"] = ("內容", "Content"),
+        ["prompt.sendEnter"] = ("送出後送 Enter", "Send Enter after submit"),
         ["prompt.group"] = ("群組", "Group"),
         ["prompt.backup"] = ("備份", "Backup"),
         ["prompt.load"] = ("載入", "Load"),

@@ -413,7 +413,10 @@ public partial class MainWindow : Window, IRemoteHost
     {
         string content = QuickContentBox.Text;
         if (string.IsNullOrWhiteSpace(content)) return;
-        PasteToActive(content);   // 常用字串常含多行 → 同樣走 bracketed paste
+        // 依所選項目的「送出後送 Enter」決定要不要補 Enter（內容照抽屜文字框、可臨時改過再送）
+        int i = QuickTitleCombo.SelectedIndex;
+        bool sendEnter = i >= 0 && i < _quickItems.Count && _quickItems[i].SendEnter;
+        SendSnippet(content, sendEnter);   // 常用字串常含多行 → 同樣走 bracketed paste
         Web.Focus();
     }
 
@@ -1518,6 +1521,24 @@ public partial class MainWindow : Window, IRemoteHost
         PasteToTab(_active.Id, text);
     }
 
+    /// <summary>送出常用字串；sendEnter=true 時內容貼上後補送 Enter 直接執行。
+    /// Enter 不能併進貼上內容（claude 分頁會把內容裡的換行轉成 ESC+CR 軟換行、bracketed paste
+    /// 下換行也只是插入，都不會送出）→ 等貼上經 JS 往返寫進 session 後，再直接對 session 送 CR。</summary>
+    private void SendSnippet(string content, bool sendEnter)
+    {
+        var tab = _active;
+        if (tab == null || string.IsNullOrEmpty(content)) return;
+        PasteToTab(tab.Id, content);
+        if (!sendEnter) return;
+        var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(200) };
+        timer.Tick += (_, _) =>
+        {
+            timer.Stop();
+            tab.Session?.WriteText("\r"); // 固定送到當初的分頁，期間切分頁也不會送錯
+        };
+        timer.Start();
+    }
+
     /// <summary>把文字「貼」進指定分頁（同 PasteToActive，但指定 id——查詢回覆時用，
     /// 避免查詢送出到回覆之間使用者切了分頁而貼錯地方）。</summary>
     private void PasteToTab(int id, string text)
@@ -1551,7 +1572,7 @@ public partial class MainWindow : Window, IRemoteHost
         var dlg = new PromptDialog { Owner = this };
         if (dlg.ShowDialog() == true && dlg.ContentToSend != null)
         {
-            PasteToActive(dlg.ContentToSend);
+            SendSnippet(dlg.ContentToSend, dlg.SendEnterToSend);
             Web.Focus();
         }
     }

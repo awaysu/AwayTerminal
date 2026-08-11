@@ -9,6 +9,7 @@ public sealed class PromptItem
     public string Title { get; set; } = "";
     public string Content { get; set; } = "";
     public string Group { get; set; } = "";   // 群組名稱（空＝未分組）
+    public bool SendEnter { get; set; }        // 送出後補送 Enter（指令直接執行；新項目預設不勾）
 }
 
 /// <summary>一筆自訂新連接（New 下拉的自訂項目 / 自訂管理視窗用）。</summary>
@@ -235,8 +236,8 @@ public sealed class AppSettings
 
             if (Prompts.Count == 0)
             {
-                Prompts.Add(new PromptItem { Group = "Linux", Title = "看檔案目錄", Content = "ls" });
-                Prompts.Add(new PromptItem { Group = "Linux", Title = "看linux版本", Content = "cat /proc/version" });
+                Prompts.Add(new PromptItem { Group = "Linux", Title = "看檔案目錄", Content = "ls", SendEnter = true });
+                Prompts.Add(new PromptItem { Group = "Linux", Title = "看linux版本", Content = "cat /proc/version", SendEnter = true });
                 Prompts.Add(new PromptItem { Group = "常用Prompt", Title = "編譯器位置說明", Content = @"NDK/SDK編譯器在C:\CrossCompilerWin" });
                 // 註：此為作者指定的範例內容，主機／帳號／密碼皆為虛構的示範值（非真實憑證）。
                 Prompts.Add(new PromptItem { Group = "常用Prompt", Title = "ssh登入", Content = "ssh ip是192.168.50.100,帳號是user1,密碼是1234" });

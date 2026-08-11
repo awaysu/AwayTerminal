@@ -34,6 +34,9 @@ public partial class PromptDialog : Window
     /// <summary>按「送出」後要送到分頁的內容（null = 未送出）。</summary>
     public string? ContentToSend { get; private set; }
 
+    /// <summary>按「送出」當下「送出後送 Enter」是否勾選（內容貼上後補送 Enter 直接執行）。</summary>
+    public bool SendEnterToSend { get; private set; }
+
     public PromptDialog()
     {
         InitializeComponent();
@@ -42,6 +45,7 @@ public partial class PromptDialog : Window
         Title = Loc.T("prompt.title");
         GroupLabel.Text = Loc.T("prompt.group");
         TitleLabel.Text = Loc.T("prompt.header");
+        EnterChk.Content = Loc.T("prompt.sendEnter");
         ContentLabel.Text = Loc.T("prompt.content");
         AddBtn.Content = Loc.T("custom.add");
         DeleteBtn.Content = Loc.T("custom.delBtn");
@@ -54,12 +58,14 @@ public partial class PromptDialog : Window
         // 編輯區變更 → 標記 dirty
         TitleBox.TextChanged += (_, _) => MarkDirty();
         ContentBox.TextChanged += (_, _) => { MarkDirty(); UpdateButtons(); };
+        EnterChk.Checked += (_, _) => MarkDirty();
+        EnterChk.Unchecked += (_, _) => MarkDirty();
         GroupCombo.AddHandler(System.Windows.Controls.Primitives.TextBoxBase.TextChangedEvent,
             new TextChangedEventHandler((_, _) => MarkDirty()));
 
         // 載入現有清單的副本（未按儲存前不動到設定）
         foreach (var p in AppSettings.Current.Prompts)
-            _items.Add(new PromptItem { Title = p.Title, Content = p.Content, Group = p.Group });
+            _items.Add(new PromptItem { Title = p.Title, Content = p.Content, Group = p.Group, SendEnter = p.SendEnter });
 
         // 依群組分組顯示
         var view = CollectionViewSource.GetDefaultView(_items);
@@ -85,6 +91,7 @@ public partial class PromptDialog : Window
 
     // ---------- 編輯區載入 / 讀取 ----------
     private string _loadedGroup = "", _loadedTitle = "", _loadedContent = "";
+    private bool _loadedSendEnter;
 
     /// <summary>記住目前編輯區內容作為「乾淨」基準（MarkDirty 以此比對）。</summary>
     private void SnapshotEditor()
@@ -92,6 +99,7 @@ public partial class PromptDialog : Window
         _loadedGroup = GroupCombo.Text ?? "";
         _loadedTitle = TitleBox.Text;
         _loadedContent = ContentBox.Text;
+        _loadedSendEnter = EnterChk.IsChecked == true;
     }
 
     private void LoadEditor(PromptItem? p)
@@ -99,6 +107,7 @@ public partial class PromptDialog : Window
         _suppress = true;
         GroupCombo.Text = p?.Group ?? "";
         TitleBox.Text = p?.Title ?? "";
+        EnterChk.IsChecked = p?.SendEnter == true; // 新增（p=null）預設不勾
         ContentBox.Text = p?.Content ?? "";
         _suppress = false;
         SnapshotEditor();
@@ -111,6 +120,7 @@ public partial class PromptDialog : Window
         p.Group = (GroupCombo.Text ?? "").Trim();
         p.Title = TitleBox.Text.Trim();
         p.Content = ContentBox.Text;
+        p.SendEnter = EnterChk.IsChecked == true;
     }
 
     private void EnterNewMode()
@@ -133,7 +143,8 @@ public partial class PromptDialog : Window
         // 改成與載入基準實際比對；順帶「改了又改回原樣」也不再算髒。
         _dirty = (GroupCombo.Text ?? "") != _loadedGroup
               || TitleBox.Text != _loadedTitle
-              || ContentBox.Text != _loadedContent;
+              || ContentBox.Text != _loadedContent
+              || (EnterChk.IsChecked == true) != _loadedSendEnter;
         UpdateButtons();
     }
 
@@ -193,6 +204,7 @@ public partial class PromptDialog : Window
             return;
         }
         ContentToSend = content;
+        SendEnterToSend = EnterChk.IsChecked == true; // 以按下當下的勾選狀態為準（未儲存也算）
         DialogResult = true;
     }
 
@@ -212,7 +224,7 @@ public partial class PromptDialog : Window
         try
         {
             var list = _items.Where(p => !string.IsNullOrWhiteSpace(p.Title))
-                .Select(p => new PromptItem { Title = p.Title, Content = p.Content, Group = p.Group })
+                .Select(p => new PromptItem { Title = p.Title, Content = p.Content, Group = p.Group, SendEnter = p.SendEnter })
                 .ToList();
             var ser = new System.Xml.Serialization.XmlSerializer(typeof(System.Collections.Generic.List<PromptItem>));
             using var fs = System.IO.File.Create(dlg.FileName);
@@ -253,7 +265,7 @@ public partial class PromptDialog : Window
 
         _items.Clear();
         foreach (var p in loaded)
-            _items.Add(new PromptItem { Title = p.Title ?? "", Content = p.Content ?? "", Group = p.Group ?? "" });
+            _items.Add(new PromptItem { Title = p.Title ?? "", Content = p.Content ?? "", Group = p.Group ?? "", SendEnter = p.SendEnter });
         _editing = null;
         RefreshView();
         RefreshGroupChoices();
@@ -413,7 +425,7 @@ public partial class PromptDialog : Window
     {
         AppSettings.Current.Prompts = _items
             .Where(p => !string.IsNullOrWhiteSpace(p.Title))
-            .Select(p => new PromptItem { Title = p.Title, Content = p.Content, Group = p.Group })
+            .Select(p => new PromptItem { Title = p.Title, Content = p.Content, Group = p.Group, SendEnter = p.SendEnter })
             .ToList();
         AppSettings.Current.Save();
     }

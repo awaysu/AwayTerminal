@@ -87,14 +87,16 @@
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
                     <RowDefinition Height="*" />
                 </Grid.RowDefinitions>
                 <TextBlock Grid.Row="0" x:Name="GroupLabel" Text="群組" />
                 <ComboBox Grid.Row="1" x:Name="GroupCombo" IsEditable="True" Height="27" Margin="0,4,0,12" />
                 <TextBlock Grid.Row="2" x:Name="TitleLabel" Text="標題" />
                 <TextBox Grid.Row="3" x:Name="TitleBox" Height="27" Margin="0,4,0,12" />
-                <TextBlock Grid.Row="4" x:Name="ContentLabel" Text="內容" />
-                <TextBox Grid.Row="5" x:Name="ContentBox" Margin="0,4,0,0"
+                <CheckBox Grid.Row="4" x:Name="EnterChk" Content="送出後送 Enter" Foreground="#E0E0E0" Margin="0,0,0,8" />
+                <TextBlock Grid.Row="5" x:Name="ContentLabel" Text="內容" />
+                <TextBox Grid.Row="6" x:Name="ContentBox" Margin="0,4,0,0"
                          AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"
                          VerticalContentAlignment="Top" />
             </Grid>
