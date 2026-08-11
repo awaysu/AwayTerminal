@@ -261,6 +261,8 @@ public partial class MainWindow : Window, IRemoteHost
 
     private void OpenCustom(CustomConn conn, string? forcedDir = null)
     {
+        // 診斷點：與 PickWorkDir 的 log 對照可分辨「點了沒進 handler」vs「進了卡在哪一步」
+        Diag.Log($"OpenCustom '{conn.Name}' pickDir={conn.PickDir} webReady={_webReady}");
         if (!_webReady) return;
         string path = conn.Path;
 
@@ -1134,10 +1136,12 @@ public partial class MainWindow : Window, IRemoteHost
     /// <summary>資料夾選擇（PowerShell / ClaudeCode 等 PickDir 自訂連線共用）；取消回傳 null。</summary>
     private string? PickWorkDir(string title)
     {
-        // 從 New 下拉的 MenuItem.Click 進來時選單還在收合中，先把佇列裡的關閉/焦點還原跑完，
-        // 再確保主視窗是前景視窗——否則對話框可能開出來卻不在最前面＝「點了沒反應」。
-        Dispatcher.Invoke(() => { }, DispatcherPriority.ContextIdle);
-        Activate();
+        // ⚠️ 這裡絕不可等待 idle 類優先權（1.0.22 曾加 Dispatcher.Invoke(空, ContextIdle) 想等
+        // 選單收合，1.0.23 期實際害死一次）：ContextIdle 沒有完成時間上限，使用者「怎麼沒反應？」
+        // 時會晃滑鼠/連點，輸入訊息讓佇列一直不閒，Invoke 永不返回＝對話框永遠不開，
+        // 而 UI 其他部分照常運作、完全看不出卡住。對話框有 owner、z 順序有保障，不需要那步。
+        Diag.Log($"PickWorkDir enter '{title}'");
+        Activate(); // 拉回前景，讓 owned 對話框跟著到最前面
 
         using var fbd = new System.Windows.Forms.FolderBrowserDialog
         {
@@ -1151,13 +1155,19 @@ public partial class MainWindow : Window, IRemoteHost
         var last = AppSettings.Current.LastDir;
         if (!string.IsNullOrWhiteSpace(last))
         {
+            var swProbe = Stopwatch.StartNew();
             var probe = Task.Run(() =>
             { try { return Directory.Exists(last); } catch { return false; } });
-            if (probe.Wait(300) && probe.Result) fbd.SelectedPath = last;
+            bool hit = probe.Wait(300) && probe.Result;
+            Diag.Log($"PickWorkDir probe={(hit ? "ok" : "skip")} {swProbe.ElapsedMilliseconds}ms '{last}'");
+            if (hit) fbd.SelectedPath = last;
         }
 
         // 必須指定擁有者，否則對話框可能開在主視窗後面＝「點了沒反應」（見 Win32Owner 註解）
-        if (fbd.ShowDialog(Win32Owner.Of(this)) != System.Windows.Forms.DialogResult.OK) return null;
+        var swDlg = Stopwatch.StartNew();
+        var result = fbd.ShowDialog(Win32Owner.Of(this));
+        Diag.Log($"PickWorkDir ShowDialog={result} {swDlg.ElapsedMilliseconds}ms");
+        if (result != System.Windows.Forms.DialogResult.OK) return null;
         AppSettings.Current.LastDir = fbd.SelectedPath;
         AppSettings.Current.Save();
         return fbd.SelectedPath;
