@@ -35,6 +35,20 @@ public partial class MainWindow : Window, IRemoteHost
     private TerminalTab? _active;
     private int _nextId = 1;
     private bool _webReady;
+
+    /// <summary>WebView2 ready 前使用者點的開連線動作（ready 後補執行；一格、後點的蓋前面的）。</summary>
+    private Action? _pendingReadyAction;
+
+    /// <summary>WebView2 尚未 ready 時把動作排隊並回傳 true（呼叫端直接 return）。
+    /// 啟動後頭幾秒點「New→…」原本被 `if (!_webReady) return` 靜默吞掉＝「點了沒反應、
+    /// 對話框沒蹦出來」（diag.log 2026-08-11 實錄 webReady=False）；排隊後 ready 一到就補執行。</summary>
+    private bool DeferUntilWebReady(Action action, string what)
+    {
+        if (_webReady) return false;
+        Diag.Log($"defer until web ready: {what}");
+        _pendingReadyAction = action;
+        return true;
+    }
     private string _viewMode = "tab"; // tab | split | columns
     private bool _splitMode => _viewMode != "tab"; // 分割或分欄時終端機外框讓給各 pane
     private string _webRoot = "";
@@ -263,7 +277,7 @@ public partial class MainWindow : Window, IRemoteHost
     {
         // 診斷點：與 PickWorkDir 的 log 對照可分辨「點了沒進 handler」vs「進了卡在哪一步」
         Diag.Log($"OpenCustom '{conn.Name}' pickDir={conn.PickDir} webReady={_webReady}");
-        if (!_webReady) return;
+        if (DeferUntilWebReady(() => OpenCustom(conn, forcedDir), $"OpenCustom {conn.Name}")) return;
         string path = conn.Path;
 
         // 指向 adb 的自訂連線改走專屬流程：先 adb devices，0 台提示、1 台直接開、
@@ -495,7 +509,7 @@ public partial class MainWindow : Window, IRemoteHost
 
     private void ReopenHistory(SavedTab e)
     {
-        if (!_webReady) return;
+        if (DeferUntilWebReady(() => ReopenHistory(e), $"ReopenHistory {e.Type}")) return;
         string deskDir() => Directory.Exists(e.Dir) ? e.Dir : Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
         switch (e.Type)
         {
@@ -629,10 +643,15 @@ public partial class MainWindow : Window, IRemoteHost
         if (msg == "ready")
         {
             _webReady = true;
+            Diag.Log("web ready");
             PostTheme();
             // 只恢復上次存下的分頁；沒有就保持空白（不再硬開一個預設 PowerShell）
             var saved = AppSettings.Current.SavedTabs;
             if (saved is { Count: > 0 }) RestoreTabs(saved);
+            // ready 前被排隊的使用者動作（見 DeferUntilWebReady）→ 現在補執行
+            var pending = _pendingReadyAction;
+            _pendingReadyAction = null;
+            if (pending != null) { Diag.Log("running deferred action"); pending(); }
             return;
         }
 
@@ -1175,7 +1194,7 @@ public partial class MainWindow : Window, IRemoteHost
 
     private void OpenPowerShell_Click(object sender, RoutedEventArgs e)
     {
-        if (!_webReady) return;
+        if (DeferUntilWebReady(() => OpenPowerShell_Click(sender, e), "OpenPowerShell")) return;
         string? dir = PickWorkDir(Loc.T("dlg.pickDirPs"));
         if (dir != null) OpenPowerShellDirect(dir, NextName("PowerShell"));
     }
@@ -1231,7 +1250,7 @@ public partial class MainWindow : Window, IRemoteHost
 
     private void OpenSsh_Click(object sender, RoutedEventArgs e)
     {
-        if (!_webReady) return;
+        if (DeferUntilWebReady(() => OpenSsh_Click(sender, e), "OpenSsh")) return;
         var dlg = new ConnectDialog { Owner = this };
         if (dlg.ShowDialog() != true) return;
 
@@ -1318,7 +1337,7 @@ public partial class MainWindow : Window, IRemoteHost
 
     private void OpenCom_Click(object sender, RoutedEventArgs e)
     {
-        if (!_webReady) return;
+        if (DeferUntilWebReady(() => OpenCom_Click(sender, e), "OpenCom")) return;
         var dlg = new ComDialog { Owner = this };
         if (dlg.ShowDialog() != true) return;
         OpenComDirect(dlg.PortName, dlg.Baud, dlg.DataBits,
@@ -1861,7 +1880,7 @@ public partial class MainWindow : Window, IRemoteHost
     /// <summary>ADB 開啟流程：adb devices → 0 台提示 / 1 台直接開 / 2 台以上選裝置。</summary>
     private void OpenAdbFlow(string? adbPath = null)
     {
-        if (!_webReady) return;
+        if (DeferUntilWebReady(() => OpenAdbFlow(adbPath), "OpenAdbFlow")) return;
 
         // 自訂連線指定的路徑優先；沒有就搜尋這台電腦（PATH / Android SDK 位置）
         string? adb = !string.IsNullOrWhiteSpace(adbPath) && File.Exists(adbPath)
