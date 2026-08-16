@@ -12,7 +12,7 @@
 ; and re-encoding it with Set-Content has already corrupted the comments once.
 
 #define AppName "AwayTerminal"
-#define AppVersion "1.0.27"
+#define AppVersion "1.0.28"
 #define AppPublisher "awaysu@gmail.com"
 #define AppExe "AwayTerminal.exe"
 

@@ -1,7 +1,8 @@
 ﻿param([string]$Path)
 # build 後自動簽章用（由 csproj 的 SignOutput target 呼叫）。找不到憑證就安靜略過。
 if (-not $Path -or -not (Test-Path $Path)) { exit 0 }
-$subject = "CN=AwayTerminal (awaysu), O=AwayTerminal, C=TW"
+# 2026-08-13 起改用跨程式共用的「Awaysu」憑證（舊的 AwayTerminal 專用憑證已刪除）
+$subject = "CN=Awaysu, O=Awaysu, C=TW"
 $cert = Get-ChildItem Cert:\CurrentUser\My |
     Where-Object { $_.Subject -eq $subject -and $_.HasPrivateKey } |
     Select-Object -First 1

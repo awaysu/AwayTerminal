@@ -1,7 +1,7 @@
 ﻿# AwayTerminal —— 選擇性信任發行者憑證（**不需要**執行這個程式也能正常使用）
 #
 # 用途：AwayTerminal 使用自簽憑證簽章，Windows 預設不認得，因此執行時 UAC 會顯示
-#       「不明的發行者」。跑過這個腳本之後，UAC 會改為顯示「AwayTerminal (awaysu)」。
+#       「不明的發行者」。跑過這個腳本之後，UAC 會改為顯示「Awaysu」。
 #
 # 這個腳本只匯入「公開憑證」（不含私鑰），而且只寫進**你自己的**憑證存放區
 # （CurrentUser），不影響這台電腦的其他使用者，也不需要系統管理員權限。
@@ -15,7 +15,8 @@
 param([switch]$Remove)
 
 $ErrorActionPreference = 'Stop'
-$subject = 'CN=AwayTerminal (awaysu), O=AwayTerminal, C=TW'
+# 2026-08-13 起改用跨程式共用的「Awaysu」憑證（舊安裝檔簽的 AwayTerminal 憑證仍可由 -Remove 段清除）
+$subject = 'CN=Awaysu, O=Awaysu, C=TW'
 $stores  = @('Cert:\CurrentUser\Root', 'Cert:\CurrentUser\TrustedPublisher')
 
 if ($Remove) {
@@ -61,5 +62,5 @@ if ($c.Subject -ne $subject) {
 
 foreach ($s in $stores) { Import-Certificate -FilePath $cer -CertStoreLocation $s | Out-Null }
 
-Write-Host "完成。之後執行 AwayTerminal 時，UAC 會顯示「AwayTerminal (awaysu)」而非「不明的發行者」。"
+Write-Host "完成。之後執行 AwayTerminal 時，UAC 會顯示「Awaysu」而非「不明的發行者」。"
 Write-Host "注意：這不會消除 SmartScreen 的「Windows 已保護你的電腦」提示——那取決於下載量累積的信譽，與憑證無關。"

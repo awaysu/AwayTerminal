@@ -27,6 +27,11 @@
     fontFamily: '"Cascadia Mono", Consolas, "Microsoft JhengHei", "微軟正黑體", monospace',
     fontSize: 14, foreground: "#e0e0e0", background: "#1e1e1e"
   };
+  // IME 診斷開關（追注音輸入問題用；D 協定 → C# Diag → diag.log。平時關閉）
+  var IMEDBG = false;
+  function dbgLog(id, s) {
+    try { ws.postMessage("D[" + id + " " + (Math.round(performance.now()) % 1000000) + "] " + s); } catch (_) {}
+  }
   function themeOf() {
     return { background: cfg.background, foreground: cfg.foreground, cursor: "#ffffff", selectionBackground: "#264f78" };
   }
@@ -76,7 +81,39 @@
     var ser = new SerializeAddon.SerializeAddon();
     term.loadAddon(ser);
     term.open(body);
-    term.onData(function (d) { ws.postMessage("i" + id + US + d); });
+    term.onData(function (d) {
+      if (IMEDBG) dbgLog(id, "onData " + JSON.stringify(d));
+      var rec0 = terms[id];
+      if (rec0 && rec0.claudePaste) sendTyped(rec0, id, d);
+      else ws.postMessage("i" + id + US + d);
+    });
+
+    // ── IME 診斷（IMEDBG=true 時）：組字/輸入事件送 C# 寫 diag.log，追注音重複問題 ──
+    if (IMEDBG) (function () {
+      var ta = body.querySelector(".xterm-helper-textarea");
+      if (!ta) return;
+      function tail(s) { s = s || ""; return s.length > 24 ? "…" + s.slice(-24) : s; }
+      ["compositionstart", "compositionupdate", "compositionend"].forEach(function (ev) {
+        ta.addEventListener(ev, function (e) {
+          dbgLog(id, ev + " data=" + JSON.stringify(e.data == null ? null : String(e.data)) +
+                     " val=" + JSON.stringify(tail(ta.value)));
+        }, true);
+      });
+      ["beforeinput", "input"].forEach(function (ev) {
+        ta.addEventListener(ev, function (e) {
+          dbgLog(id, ev + " it=" + e.inputType + " data=" + JSON.stringify(e.data == null ? null : String(e.data)) +
+                     " comp=" + !!e.isComposing + " val=" + JSON.stringify(tail(ta.value)));
+        }, true);
+      });
+      ["keydown", "keyup"].forEach(function (ev) {
+        ta.addEventListener(ev, function (e) {
+          dbgLog(id, ev + " key=" + JSON.stringify(e.key) + " kc=" + e.keyCode + " comp=" + !!e.isComposing);
+        }, true);
+      });
+      ["focus", "blur"].forEach(function (ev) {
+        ta.addEventListener(ev, function () { dbgLog(id, ev + " val=" + JSON.stringify(tail(ta.value))); }, true);
+      });
+    })();
 
     // 組字預覽去殘影：微軟注音每個按鍵會先回報「原始鍵值」（h=ㄏ、8=ㄚ）再更新成注音，
     // xterm 把每次回報都畫進 .composition-view 就會閃出英數字。只動顯示層（不碰輸入流）。
@@ -128,7 +165,8 @@
     });
 
     terms[id] = { term: term, fit: fit, ser: ser, el: el, body: body, titleSpan: titleSpan, title: title || ("#" + id),
-                  claudePaste: !!(flags && flags.indexOf("c") >= 0) };
+                  claudePaste: !!(flags && flags.indexOf("c") >= 0),
+                  sendQ: [], sending: false };
 
     // claude 分頁：瀏覽器原生貼上（Ctrl+V）也要走 doPaste（capture 階段先於 xterm 的 textarea 監聽）。
     // 搜尋列在 document 層級、不在 el 內，不受影響。
@@ -145,18 +183,67 @@
     return terms[id];
   }
 
+  // ── claude 分頁輸入佇列（v1.0.28，注音輸入修正）──
+  // 問題：IME 片語提交（注音一次送出「一二三」）到達 claude 是「一個多字元塊」，
+  // claude 的按鍵解析把整塊當成單一事件——若前面有懸置的 ESC（按過 Esc）或 Ctrl+C 待確認
+  // 等「等下一個按鍵」的狀態，整句會被當成未知跳脫序列整段吞掉；建議文字顯示中的重繪
+  // 忙碌時也會出現重複／亂碼（ConPTY harness 實測：大塊+ESC=全滅、逐字=只丟第一字、
+  // NUL 前導+逐字=一字不丟且 NUL 平時無害）。
+  // 修法：打字產生的「純文字提交」（多字元、或含非 ASCII＝IME 提交）改為
+  //   ① 先送一個 focus-in 回報 ESC[I ——若 claude 有懸置的 ESC/Ctrl+C 狀態就由它犧牲吸收；
+  //      沒有狀態時它是合法的終端機事件（claude 有開 DECSET 1004）、no-op，
+  //      不會像 NUL 一樣被插進輸入框變成隱形字元格（實測 NUL 會佔一格，已棄用）。
+  //   ② 再「逐字、每 25ms」送出——與 Windows Terminal 的逐鍵行為一致。
+  // 所有輸入（含貼上）都走同一佇列保持順序，避免緊接的 Enter 超車先到。
+  // 單一 ASCII 按鍵／控制鍵／方向鍵等照舊即時送（延遲 0、仍循佇列排序）。
+  var PACE_MS = 25;
+  function isTypedText(d) {
+    if (!d.length) return false;
+    var nonAscii = false;
+    for (var i = 0; i < d.length; i++) {
+      var c = d.charCodeAt(i);
+      if (c < 0x20 || c === 0x7f) return false; // 控制字元＝按鍵/序列，不是 IME 文字
+      if (c > 0x7f) nonAscii = true;
+    }
+    return d.length > 1 || nonAscii;
+  }
+  function qPush(rec, id, data, delay) {
+    rec.sendQ.push({ d: data, t: delay });
+    if (rec.sending) return;
+    rec.sending = true;
+    (function step() {
+      var it = rec.sendQ.shift();
+      if (!it) { rec.sending = false; return; }
+      ws.postMessage("i" + id + US + it.d);
+      if (it.t > 0) setTimeout(step, it.t);
+      else step();
+    })();
+  }
+  function sendTyped(rec, id, d) {
+    if (isTypedText(d)) {
+      qPush(rec, id, "\x1b[I", PACE_MS);               // 犧牲事件：吸收懸置的 ESC / 待確認狀態
+      var cps = Array.from(d);                          // 依 code point 切（surrogate pair 不拆半）
+      for (var i = 0; i < cps.length; i++) qPush(rec, id, cps[i], PACE_MS);
+    } else {
+      qPush(rec, id, d, 0);
+    }
+  }
+
   // 統一貼上入口。claude 分頁不能靠 bracketed paste：Win10 conhost 會把 ESC[200~/201~
   // 從輸入流整組丟棄（實測 19045），claude 只能用「輸入叢發時序」猜是不是貼上，
   // 而 ConPTY 轉譯分塊時序不穩 → 多行有時被拆開/提前送出。
   // 改送 claude 自己的軟換行鍵 ESC+CR（= Shift+Enter，/terminal-setup 同款），
   // 每個換行都確定「插入新行、不送出」，不受分塊影響（ESC+CR 實測可完整穿透 ConPTY）。
   // 其餘分頁維持 xterm.paste()（\r\n 正規化 + 依程式的 bracketed paste 設定包 ESC[200~/201~）。
+  // 貼上走佇列但整段原樣一次送（delay 0）：大量文字逐字送會拖數十秒，且貼上塊
+  // 由 claude 的貼上偵測處理、實測正常，不套逐字節流。
   function doPaste(id, text) {
     var rec = terms[id];
     if (!rec || !text) return;
     if (rec.claudePaste) {
       var t = text.replace(/\r\n/g, "\r").replace(/\n/g, "\r").replace(/\r/g, "\x1b\r");
-      ws.postMessage("i" + id + US + t);
+      qPush(rec, id, "\x1b[I", PACE_MS); // 同樣先吸收懸置狀態（Ctrl+C 待確認時貼上整段被吞，實測）
+      qPush(rec, id, t, 0);
     } else {
       rec.term.paste(text);
     }

@@ -663,6 +663,9 @@ public partial class MainWindow : Window, IRemoteHost
         string rest = msg.Substring(1);
         switch (kind)
         {
+            case 'D': // JS 端 IME 診斷（terminal.js IMEDBG）
+                Diag.Log("js" + rest);
+                return;
             case 'i': // 輸入： id US text
             {
                 int p = rest.IndexOf(US);
