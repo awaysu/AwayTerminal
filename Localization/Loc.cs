@@ -120,6 +120,9 @@ public static class Loc
         ["about.author"] = ("作者", "Author"),
         ["about.version"] = ("版本", "Version"),
         ["about.buildTime"] = ("編譯時間", "Build time"),
+        ["about.download"] = ("下載", "Download"),
+        ["about.license"] = ("授權", "License"),
+        ["about.thirdParty"] = ("第三方元件", "Third-party components"),
 
         ["settings.title"] = ("設定", "Settings"),
         ["settings.language"] = ("語言 / Language", "語言 / Language"),

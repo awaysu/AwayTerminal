@@ -12,8 +12,9 @@
 ; and re-encoding it with Set-Content has already corrupted the comments once.
 
 #define AppName "AwayTerminal"
-#define AppVersion "1.0.28"
-#define AppPublisher "awaysu@gmail.com"
+#define AppVersion "1.0.29"
+#define AppPublisher "Chih-Wei Su (Awaysu)"
+#define AppCopyright "Copyright (c) 2026 Chih-Wei Su (Awaysu)"
 #define AppExe "AwayTerminal.exe"
 
 [Setup]
@@ -21,6 +22,9 @@ AppId={{A8F5C3B1-9D2E-4F6A-B7C8-1234567890AB}
 AppName={#AppName}
 AppVersion={#AppVersion}
 AppPublisher={#AppPublisher}
+; Shown on the setup wizard and copied into the generated Setup exe's version info
+AppCopyright={#AppCopyright}
+VersionInfoCopyright={#AppCopyright}
 DefaultDirName={autopf}\{#AppName}
 DefaultGroupName={#AppName}
 DisableProgramGroupPage=yes

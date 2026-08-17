@@ -78,4 +78,4 @@ dotnet publish -c Release -r win-x64 --self-contained false
 
 ## 授權
 
-本專案採用 MIT License。第三方元件授權請參考 `THIRD-PARTY-NOTICES.md`。
+本專案採用 [MIT License](LICENSE) — Copyright (c) 2026, Chih-Wei Su (Awaysu)。第三方元件授權請參考 `THIRD-PARTY-NOTICES.md`。

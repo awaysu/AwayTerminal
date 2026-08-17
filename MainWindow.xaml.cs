@@ -2041,45 +2041,6 @@ public partial class MainWindow : Window, IRemoteHost
         var gray = new System.Windows.Media.SolidColorBrush(
             (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#E0E0E0"));
 
-        var panel = new StackPanel { Margin = new Thickness(24, 18, 24, 14) };   // 內容一律置左
-        panel.Children.Add(new TextBlock
-        {
-            Text = "AwayTerminal", FontSize = 18, FontWeight = FontWeights.Bold,
-            Foreground = System.Windows.Media.Brushes.White
-        });
-        panel.Children.Add(new TextBlock
-        { Text = $"{Loc.T("about.version")} v{v}", Foreground = gray, Margin = new Thickness(0, 6, 0, 0) });
-
-        panel.Children.Add(new TextBlock
-        { Text = Loc.T("about.author") + ":", Foreground = gray, Margin = new Thickness(0, 14, 0, 0) });
-        // 作者行以圖片顯示（執行期渲染，畫面上沒有可複製/可被爬的 email 文字）
-        panel.Children.Add(new Image
-        {
-            Source = RenderTextImage("Awaysu (weisu.tech" + "@" + "gmail.com)"),
-            Stretch = System.Windows.Media.Stretch.None,
-            HorizontalAlignment = HorizontalAlignment.Left,
-            Margin = new Thickness(0, 2, 0, 0)
-        });
-
-        panel.Children.Add(new TextBlock
-        { Text = "Source Code:", Foreground = gray, Margin = new Thickness(0, 14, 0, 0) });
-        var link = new System.Windows.Documents.Hyperlink(
-            new System.Windows.Documents.Run("https://github.com/awaysu/AwayTerminal"))
-        { Foreground = new System.Windows.Media.SolidColorBrush(
-            (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#4FC1FF")) };
-        link.Click += (_, _) =>
-        {
-            try
-            {
-                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(
-                    "https://github.com/awaysu/AwayTerminal") { UseShellExecute = true });
-            }
-            catch { }
-        };
-        var linkText = new TextBlock { Margin = new Thickness(0, 2, 0, 0) };
-        linkText.Inlines.Add(link);
-        panel.Children.Add(linkText);
-
         // 編譯時間＝本 exe 的檔案寫入時間（build 當下寫檔；複製/安裝都會保留原時間戳）
         string built;
         try
@@ -2088,8 +2049,70 @@ public partial class MainWindow : Window, IRemoteHost
                 .ToString("yyyy/M/d HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture);
         }
         catch { built = "-"; }
+
+        // 可點連結（開預設瀏覽器）
+        TextBlock MakeLink(string url)
+        {
+            var link = new System.Windows.Documents.Hyperlink(new System.Windows.Documents.Run(url))
+            { Foreground = new System.Windows.Media.SolidColorBrush(
+                (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#4FC1FF")) };
+            link.Click += (_, _) =>
+            {
+                try
+                {
+                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url)
+                    { UseShellExecute = true });
+                }
+                catch { }
+            };
+            var tb = new TextBlock { Margin = new Thickness(0, 2, 0, 0) };
+            tb.Inlines.Add(link);
+            return tb;
+        }
+
+        // 版式與 AwayPhotoRawEditor 的「關於」一致：
+        // 標題 / 版本 / 編譯時間 / 作者 / 下載 / Source Code / 授權 / 第三方元件
+        //（無「二次開發說明」——本專案為 MIT、無 LGPL 元件，沒有替換重連結義務要告知）
+        var panel = new StackPanel { Margin = new Thickness(24, 18, 24, 14) };   // 內容一律置左
         panel.Children.Add(new TextBlock
-        { Text = $"{Loc.T("about.buildTime")}: {built}", Foreground = gray, Margin = new Thickness(0, 14, 0, 0) });
+        {
+            Text = "AwayTerminal", FontSize = 18, FontWeight = FontWeights.Bold,
+            Foreground = System.Windows.Media.Brushes.White
+        });
+        panel.Children.Add(new TextBlock
+        { Text = $"{Loc.T("about.version")}: v{v}", Foreground = gray, Margin = new Thickness(0, 8, 0, 0) });
+        panel.Children.Add(new TextBlock
+        { Text = $"{Loc.T("about.buildTime")}: {built}", Foreground = gray, Margin = new Thickness(0, 4, 0, 0) });
+
+        // 作者：標籤與名字同一行；名字以圖片顯示（執行期渲染，畫面上沒有可複製/可被爬的 email 文字）
+        var authorRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 4, 0, 0) };
+        authorRow.Children.Add(new TextBlock
+        { Text = Loc.T("about.author") + ": ", Foreground = gray, VerticalAlignment = VerticalAlignment.Center });
+        authorRow.Children.Add(new Image
+        {
+            Source = RenderTextImage("Awaysu (awaysu" + "@" + "gmail.com)"),
+            Stretch = System.Windows.Media.Stretch.None,
+            VerticalAlignment = VerticalAlignment.Center
+        });
+        panel.Children.Add(authorRow);
+
+        panel.Children.Add(new TextBlock
+        { Text = Loc.T("about.download") + ":", Foreground = gray, Margin = new Thickness(0, 14, 0, 0) });
+        panel.Children.Add(MakeLink("https://www.awaysu.cc/software/awayterminal"));
+
+        panel.Children.Add(new TextBlock
+        { Text = "Source Code:", Foreground = gray, Margin = new Thickness(0, 14, 0, 0) });
+        panel.Children.Add(MakeLink("https://github.com/awaysu/AwayTerminal"));
+
+        panel.Children.Add(new TextBlock
+        { Text = $"{Loc.T("about.license")}: MIT　© 2026 Chih-Wei Su (Awaysu)", Foreground = gray, Margin = new Thickness(0, 14, 0, 0) });
+
+        panel.Children.Add(new TextBlock
+        { Text = Loc.T("about.thirdParty") + ":", Foreground = gray, Margin = new Thickness(0, 14, 0, 0) });
+        panel.Children.Add(new TextBlock
+        { Text = "xterm.js 5.5.0 (MIT)", Foreground = gray, Margin = new Thickness(0, 2, 0, 0) });
+        panel.Children.Add(new TextBlock
+        { Text = ".NET Runtime 9 (MIT)／Microsoft Edge WebView2", Foreground = gray, Margin = new Thickness(0, 2, 0, 0) });
 
         var ok = new Button
         { Content = "OK", Width = 76, Height = 26, Margin = new Thickness(0, 18, 0, 0), HorizontalAlignment = HorizontalAlignment.Right, IsDefault = true, IsCancel = true };

@@ -1,6 +1,7 @@
 # Third-Party Notices
 
-AwayTerminal is licensed under the MIT License (see [LICENSE](./LICENSE)).
+AwayTerminal is licensed under the MIT License (see [LICENSE](./LICENSE)) —
+Copyright (c) 2026 Chih-Wei Su (Awaysu).
 
 It bundles and redistributes the third-party components listed below, each under
 its own licence. The notices reproduced here are provided to satisfy those
