@@ -31,7 +31,7 @@
             <TextBox x:Name="ChatBox" />
         </DockPanel>
 
-        <CheckBox x:Name="NotifyChk" Content="忙碌完成時推播通知" Foreground="#E0E0E0" Margin="0,0,0,12" />
+        <CheckBox x:Name="NotifyChk" Content="其他（未進入的）分頁完成也推播通知" Foreground="#E0E0E0" Margin="0,0,0,12" />
 
         <TextBlock x:Name="TakenHint" TextWrapping="Wrap" Foreground="#FF9800" Margin="0,0,0,10"
                    Visibility="Collapsed" Text="遠端已由另一個 AwayTerminal 視窗使用中" />

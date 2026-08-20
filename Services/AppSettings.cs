@@ -42,7 +42,10 @@ public sealed class SavedTab
     public string Flow { get; set; } = "None";
     // adb / custom 重開用
     public string AdbSerial { get; set; } = "";
-    public string Path { get; set; } = "";
+    /// <summary>自訂連線的「連線名稱」（Title 在關閉存檔時會被改成分頁標題「名稱(1)」，恢復時
+    /// 不能再拿它當名稱——否則會變成「名稱(1)(1)」）。舊紀錄沒有此欄 → 退回 Title。</summary>
+    public string Name { get; set; } = "";
+    public string Path { get; set; } = "";             // custom：執行檔；adb：當初用的 adb.exe
     public string Args { get; set; } = "";
     public string Icon { get; set; } = "";
     public bool PickDir { get; set; }
@@ -176,6 +179,9 @@ public sealed class AppSettings
     public bool ExitRestoreTabs { get; set; } = true;
     public bool ExitUpdateMd { get; set; } = false;
 
+    // 分頁列最左「…」輸入框：「送出後送 Enter」勾選的記憶
+    public bool ComposeSendEnter { get; set; } = true;
+
     // 關閉時儲存的分頁（下次開啟恢復）
     public List<SavedTab> SavedTabs { get; set; } = new();
 
@@ -186,7 +192,7 @@ public sealed class AppSettings
     public bool RemoteEnabled { get; set; } = false;
     public string TelegramBotToken { get; set; } = "";  // 向 @BotFather 申請
     public long TelegramChatId { get; set; } = 0;        // 允許的 chat id（0=未設，服務不啟動）
-    public bool RemoteNotify { get; set; } = true;       // 分頁忙→閒 推播
+    public bool RemoteNotify { get; set; } = false;      // 其他（未 /goto 進入的）分頁完成也推播；預設關＝「goto 後才收訊息」（1.0.33）
 
     /// <summary>未知欄位保留區：讀到「更新版本寫的設定」時，不認識的欄位存這裡、存檔時原樣寫回。
     /// 防「舊版存檔把新版欄位剝掉」——2026-07-27 安裝版 0.9.73 存檔就把遠端 token 整組洗掉過。</summary>

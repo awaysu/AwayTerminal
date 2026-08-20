@@ -31,6 +31,9 @@ public interface IRemoteHost
     Task<byte[]?> CaptureTabPngAsync(int tabId);
     /// <summary>/close 用：真正關閉分頁（走既有優雅結束流程；不跳 PC 端確認框）。分頁不存在回 false。</summary>
     bool CloseTab(int tabId);
+    /// <summary>附著分頁的最近活動時間 = max(最後輸出, 最後鍵盤輸入)。用於閒置判斷：在電腦上對該分頁
+    /// 打字或它持續輸出時，不應被「手機沒動作」判成閒置而自動離開。分頁不存在回 DateTime.MinValue。</summary>
+    DateTime GetTabActivityUtc(int tabId);
 }
 
 /// <summary>分頁快照（給遠端列表/狀態用）。</summary>
@@ -54,6 +57,8 @@ public sealed class TelegramRemote
     // 目前附著的分頁 id（/goto 設定；0=未選）；_follow：送指令後與分頁完成時自動回傳輸出
     private int _currentTabId;
     private bool _follow = true;
+    private bool _plain;   // /plain：手機提問附加「不要用表格」提示，讓 AI 直接純文字回答（預設關；表格另有攤平處理）
+    private const string PlainSuffix = "（回答請用純文字條列，不要使用表格）";
     private int _newPendingCount;   // /new 列表待選中（>0 = 下一個純數字是選連線，值=清單長度）
 
     // /more 翻頁：上次 SendLast 的瘦身後全文＋「已顯示區段」起點（往前翻頁用）
@@ -64,6 +69,9 @@ public sealed class TelegramRemote
     // 「只推新輸出」基準：每個分頁上次推播（或附著）當下的原始渲染文字；
     // follow/完成推播只推基準之後的新行，比對不到（清屏/TUI 重繪）退回快照。
     private readonly Dictionary<int, string> _baseline = new();
+    // 每個分頁上次「自動推播」送出的內容（空白正規化）＋時間——用來擋忙→閒連兩次/快照退回造成的重送；
+    // 只在短時間窗內去重，隔一段時間又問一樣的東西（答案相同）照樣送。
+    private readonly Dictionary<int, (string Sig, DateTime Time)> _lastSent = new();
 
     // 10 分鐘閒置自動離開分頁檢視（只離開檢視，分頁照跑；9 分鐘先警告一次）
     private DateTime _lastUserMsgUtc = DateTime.UtcNow;
@@ -91,9 +99,31 @@ public sealed class TelegramRemote
         _cts = null;
     }
 
+    /// <summary>程式關閉前：同步（阻塞、短逾時）送一則「遠端已離線」給手機，讓使用者知道之後下指令
+    /// 不會有回應（程式沒開＝沒有東西 poll bot）。只有遠端在跑時才送；強殺／當機收不到屬預期。
+    /// 由關閉流程在 Stop()／Environment.Exit 之前呼叫（用獨立 HttpClient，不受 poll 迴圈取消影響）。</summary>
+    public void NotifyOfflineBlocking(int timeoutMs = 2000)
+    {
+        if (_cts == null) return;                                    // 遠端沒在跑就不送
+        if (string.IsNullOrEmpty(_token) || _chatId == 0) return;
+        try
+        {
+            var payload = new Dictionary<string, object>
+            {
+                ["chat_id"] = _chatId,
+                ["text"] = "🔴 AwayTerminal 已關閉，遠端離線中——指令暫時不會有回應，重新開啟程式後恢復。"
+            };
+            string body = JsonSerializer.Serialize(payload);
+            using var content = new StringContent(body, Encoding.UTF8, "application/json");
+            using var http = new HttpClient { Timeout = TimeSpan.FromMilliseconds(timeoutMs) };
+            http.PostAsync($"https://api.telegram.org/bot{_token}/sendMessage", content).Wait(timeoutMs);
+        }
+        catch { }
+    }
+
     /// <summary>分頁忙→閒事件（由 UI 執行緒呼叫，fire-and-forget）。
-    /// 附著中的分頁：follow 開啟時直接推最終輸出（例如 claude 做完的回覆）；
-    /// 其他分頁：notify 開啟時推一行閒置通知。</summary>
+    /// **附著中的分頁**（已 /goto 進入）：follow 開啟時推最終輸出（claude 做完的回覆）——這是「進入分頁後才收到訊息」的來源。
+    /// **其他分頁**：只有 /notify 開（預設關）才推一行閒置通知；預設下不會打擾，符合「預設不主動丟訊息、goto 後才收」。</summary>
     public void OnTabIdle(int tabId, string title)
     {
         if (_cts == null) return;
@@ -102,7 +132,14 @@ public sealed class TelegramRemote
         // 它內部以 tcs.Task.Wait 等 WebView2 的 a…text 回覆；本方法由 UI 執行緒（狀態輪詢）呼叫，
         // 直接跑會把 UI 卡住 1.5 秒、回覆又需要 UI 執行緒處理 → 必逾時退回劣化的位元組流備援。
         if (tabId == _currentTabId && _follow)
-        { _ = Task.Run(() => SendLast(30, $"🟢 {title} 完成", incremental: true, auto: true)); return; }
+        {
+            // 附著分頁完成了一件真工作＝算「活動」，重置閒置計時：在電腦上持續工作時手機會一直收到，
+            // 不會因為「手機本身 10 分鐘沒動作」就被自動離開（使用者實測回報）。真的都沒動靜才會逾時離開。
+            _lastUserMsgUtc = DateTime.UtcNow;
+            _idleWarned = false;
+            _ = Task.Run(() => SendLast(30, $"🟢 {title} 完成", incremental: true, auto: true));
+            return;
+        }
         if (_notify) _ = SendAsync($"🟢 {title} 閒置（完成）");
     }
 
@@ -111,7 +148,8 @@ public sealed class TelegramRemote
     {
         await PrimeOffset(ct);                       // 跳過啟動前累積的舊訊息，避免重播
         await RegisterCommandsAsync(ct);             // 註冊原生 / 指令選單
-        await SendAsync("AwayTerminal 遠端已連線 ✅  /help 看指令");
+        // 上線通知（1.0.36）：與關閉時的「🔴 離線」成對——開啟時告知手機遠端可用。
+        await SendAsync("🟢 AwayTerminal 已開啟，遠端上線——可以開始下指令了。/goto 選分頁、/help 看指令。");
         while (!ct.IsCancellationRequested)
         {
             try
@@ -243,17 +281,23 @@ public sealed class TelegramRemote
                 { await OpenFromList(ni, _newPendingCount); return; }
                 _newPendingCount = 0;
 
-                if (_currentTabId == 0) { await SendAsync("尚未選擇分頁。先 /list 看分頁，再 /goto <編號>，或 /new 開新連線。"); return; }
+                if (_currentTabId == 0) { await SendAsync("尚未選擇分頁。用 /goto 選分頁，或 /new 開新連線。"); return; }
 
                 // 選擇題應答：畫面上是「❯ N. 選項」選單 → 純數字自動換算成 ↑/↓+Enter（也可點推播附的按鈕）
                 if (int.TryParse(text, out int optNum) && optNum >= 1 && optNum <= 9 &&
                     await TryAnswerMenu(optNum))
                     return;
 
-                // 純文字 = 送到目前分頁
-                if (!_host.SendInputToTab(_currentTabId, text, true))
+                // 純文字 = 送到目前分頁；/plain 開時，較長的提問（≥8 字、非純數字）附加「不要用表格」提示，
+                // 讓 AI 直接以純文字回答（手機更好讀）。短答/選單數字不加，避免干擾。
+                string toSend = text;
+                if (_plain && text.Trim().Length >= 8 && !int.TryParse(text.Trim(), out _))
+                    toSend = text + PlainSuffix;
+                if (!_host.SendInputToTab(_currentTabId, toSend, true))
                 { await SendAsync("分頁已關閉或尚未就緒，請重新 /goto。"); _currentTabId = 0; return; }
-                if (_follow) { await Task.Delay(700); await SendLast(15, incremental: true); }
+                // 不再做「送出後 700ms 即時回推」——它是固定延遲、常抓到半成品（如 ~\Desktop 這種
+                // cwd 殘影），又會和完成推播重複（使用者實測一次 hi 收到三則）。改為只靠完成推播
+                // （OnTabIdle）：已送出的指令一定會經「忙→靜止 1.2s→閒」翻閒，連快答也會觸發、只送一則。
                 return;
             }
 
@@ -283,10 +327,14 @@ public sealed class TelegramRemote
                 case "stop": await DoKey("ctrl-c"); break;
                 case "notify":
                     _notify = arg.Equals("on", StringComparison.OrdinalIgnoreCase) || arg == "1";
-                    await SendAsync("通知：" + (_notify ? "開" : "關")); break;
+                    await SendAsync("其他分頁完成通知：" + (_notify ? "開" : "關")); break;
                 case "follow":
                     _follow = !arg.Equals("off", StringComparison.OrdinalIgnoreCase) && arg != "0";
                     await SendAsync("自動回傳輸出：" + (_follow ? "開" : "關")); break;
+                case "plain":
+                    _plain = arg.Equals("on", StringComparison.OrdinalIgnoreCase) || arg == "1";
+                    await SendAsync("提問附加「不要用表格」：" + (_plain ? "開" : "關") +
+                        (_plain ? "（提問時會請 AI 用純文字回答）" : "（表格仍會自動攤平成純文字）")); break;
                 default: await SendAsync("未知指令。/help 看全部。"); break;
             }
         }
@@ -412,9 +460,10 @@ public sealed class TelegramRemote
     private async Task DoGoto(string arg)
     {
         var tabs = _host.SnapshotTabs();
-        if (tabs.Count == 0) { await SendAsync("目前沒有開啟的分頁。"); return; }
+        if (tabs.Count == 0) { await SendAsync("目前沒有開啟的分頁。/new 開新連線。"); return; }
+        // 不帶編號（或編號無效）→ 直接顯示分頁清單＋每頁一顆按鈕，點按鈕即進入（取代舊 /list）
         if (!int.TryParse(arg, out int idx) || idx < 1 || idx > tabs.Count)
-        { await SendAsync("用法：/goto <編號>\n\n" + TabListText()); return; }
+        { await SendTabList(); return; }
         var tab = tabs[idx - 1];
         _currentTabId = tab.Id;
         _baseline[tab.Id] = _host.GetRecentText(tab.Id, 400);   // 附著即定基準：之後只推新輸出
@@ -467,6 +516,13 @@ public sealed class TelegramRemote
             txt = string.Join("\n", arr, start, arr.Length - start);
         }
         string sent = Clip(txt, 3500);
+        // 內容去重：忙→閒可能連續觸發兩次（答案後又更新狀態列），或 DiffNew 錨點對不上退回快照而重送
+        // 同一段內容。自動推播時，若本次內容與上次送給本分頁的相同（空白正規化後）且在 8 秒內 → 不送；
+        // 隔久一點再問一樣的東西（答案相同）不受影響。
+        string sig = System.Text.RegularExpressions.Regex.Replace(sent.Trim(), @"\s+", " ");
+        if (auto && _lastSent.TryGetValue(_currentTabId, out var prev) &&
+            prev.Sig == sig && (DateTime.UtcNow - prev.Time).TotalSeconds < 8) return;
+        _lastSent[_currentTabId] = (sig, DateTime.UtcNow);
         // /more 翻頁狀態：以全文為緩衝；sent 是全文尾端（增量的瘦身結果與全文瘦身可能微差 → 取 max 保護）
         _moreBuf = allFull; _moreTabId = _currentTabId; _morePos = Math.Max(0, allFull.Length - sent.Length);
         string head = header == null ? "" : EscHtml(header) + "\n";
@@ -571,7 +627,7 @@ public sealed class TelegramRemote
         if (int.TryParse(arg, out int idx))
         {
             if (tabs.Count == 0) { await SendAsync("目前沒有開啟的分頁。"); return; }
-            if (idx < 1 || idx > tabs.Count) { await SendAsync($"編號要在 1~{tabs.Count} 之間。/list 看編號。"); return; }
+            if (idx < 1 || idx > tabs.Count) { await SendAsync($"編號要在 1~{tabs.Count} 之間。/goto 看編號。"); return; }
             targetId = tabs[idx - 1].Id; title = tabs[idx - 1].Title;
         }
         else
@@ -591,11 +647,15 @@ public sealed class TelegramRemote
     private async Task CheckIdleAsync()
     {
         if (_currentTabId == 0) return;
-        var idle = DateTime.UtcNow - _lastUserMsgUtc;
+        // 閒置＝距最近活動的時間；活動取「手機來訊」與「附著分頁最近動作（輸出/打字）」的較晚者，
+        // 這樣在電腦上對該分頁持續工作（打字或它一直輸出）時不會被手機沒動作判成閒置而離開。
+        var lastActive = _lastUserMsgUtc;
+        try { var ta = _host.GetTabActivityUtc(_currentTabId); if (ta > lastActive) lastActive = ta; } catch { }
+        var idle = DateTime.UtcNow - lastActive;
         if (idle >= TimeSpan.FromMinutes(10))
         {
+            // 使用者要求：10 分鐘到就「靜默」離開分頁檢視，不再推任何訊息（分頁照跑，/goto 可再進入）
             _currentTabId = 0; _idleWarned = false;
-            await SendAsync("閒置 10 分鐘，已自動離開分頁檢視（分頁仍在執行）。/list 或 /goto 可再進入。");
         }
         else if (idle >= TimeSpan.FromMinutes(9) && !_idleWarned)
         {
@@ -611,10 +671,16 @@ public sealed class TelegramRemote
         new(@"^⏵⏵ "),                                            // bypass permissions 狀態列
         new(@"^⧉"),                                              // artifact / desktop 提示列
         new(@"^❯\s*$"),                                          // 空的輸入提示符
+        new(@"^❯ (?![0-9]+[.．])"),                               // 輸入提示回顯（❯ 這是測試）——但保留選單選項（❯ 1. Yes）
+        new(@"^/[A-Za-z]{1,5}$"),                                // 狀態列右側斜線碎片（/rc、/eff…單獨成行）
+        new(@"^~[\\/][^\s]*$"),                                  // cwd 路徑碎片單獨成行（~\Desktop、~/proj）
         new(@"^[·✢✣✤✥✳✶✻✽＊*+]+$"),                              // spinner 殘影（如 ✢*✶）
         new(@"^[·✢✣✤✥✳✶✻✽*+\s]*\S{1,30}…\s*(\(.*)?$"),           // spinner 動詞行（Inferring… / ✢ Inferring… (40s · ↓ 3.3…）
         new(@"^\(\d+s( ·.*)?$"),                                 // spinner 括號統計殘段（(40s · ↓ 3.3）
         new(@"^[·✢✣✤✥✳✶✻✽*+]\s?[A-Za-z()\[\]-]{0,15}$"),         // spinner 字形+短英文殘字（✣ Sock-hop / ✻ Sock- / * B）
+        new(@"^[·✢✣✤✥✳✶✻✽*+]\s?\S{1,20}$"),                      // spinner 字形+單一短 token（含重音/中文，如 ✻ Flambéi）
+        new(@"^(←\s*)?\d+ agents?$"),                            // 狀態列 agents 碎片（← 3 agents / 3 agents）
+        new(@"connecting…"),                                     // 連線中提示（/rc connecting…）
         new(@"^[a-z][a-z-]{0,5}$"),                              // 小寫短碎片（hopp / k-ho / illo / oing）
         new(@"^(Mon|Tue|Wed|Thu|Fri|Sat|Sun) (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) +\d"), // 狀態列日期
         new(@"^⎿\s+Tip: "),                                      // 小提示列
@@ -631,6 +697,7 @@ public sealed class TelegramRemote
         new(@"^│|│$"),                                           // 方框內容行（頭/尾帶 │ 邊框）
         new(@"[╭╮╰╯]"),                                          // 含方框角字元的行（歡迎框標題+邊線合併行）
         new(@"^Welcome back .{0,30}!$"),                         // claude 歡迎行
+        new(@"^[▀-▟]{2,}"),                            // claude 開場 logo banner（▐▛███▛█ Claude Code…）
         new(@"^[A-Za-z]$"),                                      // 單一字母殘字（F）
         new(@"^[一-鿿]$"),                               // 單一中文字殘字（選單導航動畫殘影）
         new(@"^[▀-▟\s]+$"),                            // 方塊字元行（claude logo 殘影）
@@ -648,21 +715,68 @@ public sealed class TelegramRemote
     private static readonly System.Text.RegularExpressions.Regex QuestionLineRe =
         new(@"^❯|^\d{1,2}\.\s|[?？]$", System.Text.RegularExpressions.RegexOptions.Compiled);
 
+    // 表格攤平（手機用）：claude 回答常是 box-drawing 表格（┌┬┐│├┼┤└┴┘─），
+    // 手機字型下 CJK 寬度對不齊＝整團亂，整段刪又會把「答案就是表格」的內容清光。
+    // 折衷＝把表格轉成每列一行的純文字「儲存格 | 儲存格 | 儲存格」：資訊全留、手機好讀。
+    // 表格「有邊框」偵測——真資料表（claude 一律畫成 box-drawing 格線）才有這些角框；
+    // 歡迎框/changelog 是「無邊框、中間一條 │ 分左右欄」的裝飾版面，不符合，故不會被當表格攤平（1.0.37 修）。
+    private static readonly System.Text.RegularExpressions.Regex TableTopRe =
+        new(@"^[┌╭][─┬┌┐╭╮\s]*[┐╮]$", System.Text.RegularExpressions.RegexOptions.Compiled);
+    private static readonly System.Text.RegularExpressions.Regex TableBottomRe =
+        new(@"^[└╰][─┴└┘╰╯\s]*[┘╯]$", System.Text.RegularExpressions.RegexOptions.Compiled);
+    private static readonly System.Text.RegularExpressions.Regex TableSepRe =
+        new(@"^[├][─┼├┤\s]*[┤]$", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    /// <summary>把表格內容列（│ a │ b │ c │）攤平成「a | b | c」。只在偵測到的表格區間內呼叫。</summary>
+    private static string FlattenRow(string t)
+    {
+        var list = new List<string>();
+        foreach (var c in t.Split('│', '｜')) list.Add(c.Trim());
+        while (list.Count > 0 && list[0].Length == 0) list.RemoveAt(0);
+        while (list.Count > 0 && list[^1].Length == 0) list.RemoveAt(list.Count - 1);
+        return string.Join(" | ", list);
+    }
+
+    private static string StripBullet(string bare)
+    {
+        // 去掉 claude 在框前的標記（● / ⎿ + 空白），供邊框偵測
+        if (bare.Length >= 2 && (bare[0] == '●' || bare[0] == '⎿') && bare[1] == ' ') return bare.Substring(2).Trim();
+        return bare;
+    }
+
     private static string TidyForPhone(string s)
     {
         var outLines = new List<string>();
         bool prevBlank = true;
+        bool inTable = false;   // 是否位於「有邊框的表格」區間內（只有這裡面的 │ 列才攤平）
         foreach (var raw in s.Replace("\r", "").Split('\n'))
         {
             string line = raw.TrimEnd();
             string bare = line.TrimStart();
-            // │ 邊框行：若內文是「問句/選項」（claude 選擇題）→ 剝框保留；其他（歡迎框等）走既有規則丟棄
+            string det = StripBullet(bare);
+
+            // ── 表格處理（只認有邊框的真資料表；歡迎/changelog 兩欄框沒邊框，不會進來）──
+            if (TableTopRe.IsMatch(det)) { inTable = true; continue; }          // 頂框 ┌──┬──┐ → 進表格、丟棄
+            if (inTable)
+            {
+                if (TableBottomRe.IsMatch(det)) { inTable = false; continue; }  // 底框 └──┴──┘ → 出表格、丟棄
+                if (TableSepRe.IsMatch(det)) continue;                          // 分隔列 ├──┼──┤ → 丟棄
+                if (det.IndexOf('│') >= 0 || det.IndexOf('｜') >= 0)
+                { string fr = FlattenRow(det); if (fr.Length > 0) { outLines.Add(fr); prevBlank = false; } continue; }
+                inTable = false;   // 沒有底框就離開了表格 → 這行照一般規則處理
+            }
+
+            // │ 邊框行：內文是「問句/選項」（claude 選擇題）→ 剝框保留；其他走既有規則
             if (bare.Length > 0 && (bare[0] == '│' || bare[^1] == '│'))
             {
                 string inner = bare.Trim('│', ' ');
                 if (inner.Length > 0 && QuestionLineRe.IsMatch(inner))
                 { outLines.Add("  " + inner); prevBlank = false; continue; }
             }
+            // 不在表格內、中間夾著 box 直線 │ 的行 = claude 歡迎/changelog 兩欄裝飾框 → 整行丟棄
+            // （真資料表已在上面處理；選擇題框走上一段；一般答覆文字用 ASCII | 不用 │，不受影響）
+            if (bare.IndexOf('│') >= 0) continue;
+
             if (bare.Length > 0 && Array.Exists(NoiseLineRes, re => re.IsMatch(bare))) continue;
             bool blank = line.Length == 0;
             if (blank && prevBlank) continue;
@@ -693,13 +807,13 @@ public sealed class TelegramRemote
 
     private async Task SendWhere()
     {
-        if (_currentTabId == 0) { await SendAsync("目前未選擇分頁。/list 看分頁。"); return; }
+        if (_currentTabId == 0) { await SendAsync("目前未選擇分頁。/goto 選分頁。"); return; }
         var tabs = _host.SnapshotTabs();
         for (int i = 0; i < tabs.Count; i++)
             if (tabs[i].Id == _currentTabId)
             { await SendAsync($"目前在 [{i + 1}] {tabs[i].Title} {(tabs[i].Busy ? "🟠忙" : "🟢閒")}"); return; }
         _currentTabId = 0;
-        await SendAsync("分頁已關閉。/list 重新選。");
+        await SendAsync("分頁已關閉。/goto 重新選。");
     }
 
     /// <summary>畫面上是「❯ N.」選單時把選擇換算成 ↑/↓+Enter（claude 選單不吃數字鍵）。不是選單回 false。</summary>
@@ -756,8 +870,7 @@ public sealed class TelegramRemote
 
     private static string HelpText() =>
         "AwayTerminal 遠端指令\n" +
-        "/list  列出分頁（🟢閒 🟠忙）\n" +
-        "/goto <n>  進入第 n 個分頁\n" +
+        "/goto [n]  進入第 n 個分頁；不帶編號＝列出分頁點按進入（🟢閒 🟠忙）\n" +
         "/new  開新連線（每種連線列一個，回覆數字開啟；SSH 開啟後回覆帳號、密碼登入）\n" +
         "/ssh [user@]主機[:埠]  開 SSH（不帶參數用上次主機；帶 user@ 直接連、免回帳號）\n" +
         "/telnet [主機[:埠]]  開 Telnet（不帶參數用上次主機）\n" +
@@ -768,11 +881,12 @@ public sealed class TelegramRemote
         "/stop  送 Ctrl+C\n" +
         "/last [n]  最後 n 行輸出（預設 20）\n" +
         "/more  上一則輸出再往前翻一頁\n" +
-        "/close [n]  真正關閉分頁（無參數=關目前附著的；/list 看編號）\n" +
+        "/close [n]  真正關閉分頁（無參數=關目前附著的；/goto 看編號）\n" +
         "/where  我在哪個分頁\n" +
-        "/follow on|off  送完自動回傳輸出\n" +
-        "/notify on|off  忙→閒推播\n" +
-        "/exit  離開分頁檢視（不關分頁；附著後閒置 10 分鐘也會自動離開）";
+        "/follow on|off  進入分頁後、完成時自動回傳輸出（預設開）\n" +
+        "/notify on|off  其他（未進入的）分頁完成也推播通知（預設關）\n" +
+        "/plain on|off  提問時請 AI 用純文字回答、不要表格（預設關；表格本來就會自動攤平）\n" +
+        "/exit  離開分頁檢視（不關分頁；附著後閒置 10 分鐘會靜默自動離開）";
 
     private static string Clip(string s, int max) => s.Length <= max ? s : s.Substring(s.Length - max);
 
@@ -797,8 +911,7 @@ public sealed class TelegramRemote
         {
             var cmds = new[]
             {
-                new { command = "list",   description = "列出分頁（🟢閒 🟠忙）" },
-                new { command = "goto",   description = "進入第 n 個分頁" },
+                new { command = "goto",   description = "進入分頁（不帶編號＝列出點選）" },
                 new { command = "new",    description = "開新連線（每種列一個，選數字）" },
                 new { command = "history", description = "最近連線紀錄（/history n 開新連線）" },
                 new { command = "ssh",    description = "開 SSH（可帶 user@主機:埠）" },
@@ -810,8 +923,9 @@ public sealed class TelegramRemote
                 new { command = "stop",   description = "送 Ctrl+C" },
                 new { command = "shot",   description = "終端機畫面截圖" },
                 new { command = "where",  description = "我在哪個分頁" },
-                new { command = "follow", description = "完成自動回傳輸出 on/off" },
-                new { command = "notify", description = "忙轉閒推播 on/off" },
+                new { command = "follow", description = "進入分頁後完成自動回傳 on/off（預設開）" },
+                new { command = "notify", description = "其他分頁完成也通知 on/off（預設關）" },
+                new { command = "plain",  description = "提問請 AI 純文字不用表格 on/off（預設關）" },
                 new { command = "exit",   description = "離開分頁檢視（不關分頁）" },
                 new { command = "help",   description = "完整指令說明" },
             };

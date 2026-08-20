@@ -25,6 +25,11 @@ public sealed class TerminalTab : INotifyPropertyChanged
     /// 若不分辨就會把「打字」誤當成「程式跑完」而推播到手機。見 MainWindow.UpdateStatuses。</summary>
     public DateTime LastInputUtc { get; set; }
 
+    /// <summary>最後一次「送出指令」（按 Enter／遠端 enter=true）的時間。用來把「真的送出跑東西」與
+    /// 「只是在輸入框打字」分開：在 App 打字送出、AI 很快回答時，光靠 LastInputUtc 會被誤判成打字回顯而
+    /// 不推播（使用者實測「改在 App 發問沒丟給手機」）；只要這段忙碌期間有送出過，就視為真工作、照推。</summary>
+    public DateTime LastSubmitUtc { get; set; }
+
     /// <summary>分頁建立時間（tooltip 顯示已啟動時長用）。</summary>
     public DateTime StartUtc { get; } = DateTime.UtcNow;
 
@@ -105,7 +110,7 @@ public sealed class TerminalTab : INotifyPropertyChanged
     /// <summary>供狀態輪詢定期呼叫，更新 tooltip 的已啟動時間。</summary>
     public void RefreshRuntime() => Raise(nameof(ToolTipText));
 
-    // 狀態方塊：Ready=綠(可輸入)、Busy=橘(跑程式)
+    // 狀態方塊：Ready=綠(可輸入)、Busy=紅(跑程式；1.0.42 由橘改紅，與工作列彈跳球同色)
     private TermStatus _status = TermStatus.Ready;
     public TermStatus Status
     {
@@ -153,7 +158,7 @@ public sealed class TerminalTab : INotifyPropertyChanged
     public Brush TitleBrush => _isActive ? ActiveTitleBrush : InactiveTitleBrush;
 
     private static readonly Brush ReadyBrush = Frozen("#4CAF50");
-    private static readonly Brush BusyBrush = Frozen("#FF9800");
+    private static readonly Brush BusyBrush = Frozen("#F44336");   // 紅（與工作列彈跳球 #F44336 同色）
     private static readonly Brush OffBrush = Frozen("#777777");
     private static readonly Brush LogOnBrush = Frozen("#2196F3");
     private static readonly Brush MacroOnBrush = Frozen("#9C27B0");

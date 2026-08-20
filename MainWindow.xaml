@@ -88,6 +88,11 @@
         <!-- 分頁列（顯示在終端機下方；ZIndex 高於終端機外框，讓作用中分頁能蓋掉底邊黃線形成缺口）-->
         <Border DockPanel.Dock="Bottom" Background="#1E1E1E" Padding="4,0,4,4" Panel.ZIndex="1">
             <DockPanel>
+            <!-- 最左「…」：先在輸入框把文字打好再送出（繞過 claude 逐鍵解析的重複／亂碼；見 Compose_Click）-->
+            <Button DockPanel.Dock="Left" Content="&#8230;" Click="Compose_Click"
+                    ToolTip="{Binding Path=[compose.tip], Source={x:Static loc:LocProxy.Instance}}"
+                    Width="22" Height="22" Margin="0,2,4,0" Padding="0,0,0,7" VerticalAlignment="Top"
+                    Background="#3A3A3D" Foreground="#CCCCCC" BorderThickness="0" Cursor="Hand" FontSize="14" FontWeight="Bold" />
             <Button DockPanel.Dock="Right" Content="&#9650;" Click="TabList_Click"
                     ToolTip="{Binding Path=[tip.tabList], Source={x:Static loc:LocProxy.Instance}}"
                     Width="22" Height="22" Margin="4,2,0,0" VerticalAlignment="Top"

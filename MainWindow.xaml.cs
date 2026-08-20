@@ -49,6 +49,7 @@ public partial class MainWindow : Window, IRemoteHost
         _pendingReadyAction = action;
         return true;
     }
+    private bool _exiting;            // OnClosingAsk 確認離開後為 true：session Exited 不再跳詢問框
     private string _viewMode = "tab"; // tab | split | columns
     private bool _splitMode => _viewMode != "tab"; // 分割或分欄時終端機外框讓給各 pane
     private string _webRoot = "";
@@ -128,7 +129,10 @@ public partial class MainWindow : Window, IRemoteHost
         AppSettings.Current.Save();
 
         // 快速收尾：終止子行程（不送 Ctrl+C、不等待），然後立即結束程式
+        _exiting = true;   // 之後 session 的 Exited 不再跳「要關閉分頁嗎」
         _statusTimer?.Stop();
+        _bounceTimer?.Stop();
+        _remote?.NotifyOfflineBlocking();   // 關閉前先告知手機「遠端離線」（使用者選項；只有遠端在跑才送）
         _remote?.Stop();
         foreach (var t in Tabs)
         {
@@ -274,11 +278,13 @@ public partial class MainWindow : Window, IRemoteHost
         catch { return false; }
     }
 
-    private void OpenCustom(CustomConn conn, string? forcedDir = null)
+    /// <param name="forcedDir">指定工作目錄（遠端/紀錄/恢復用）；null 且 PickDir 時跳資料夾框。</param>
+    /// <param name="restoreTitle">恢復分頁時沿用上次的分頁標題（名稱已被占用時退回 NextName）。</param>
+    private void OpenCustom(CustomConn conn, string? forcedDir = null, string? restoreTitle = null)
     {
         // 診斷點：與 PickWorkDir 的 log 對照可分辨「點了沒進 handler」vs「進了卡在哪一步」
         Diag.Log($"OpenCustom '{conn.Name}' pickDir={conn.PickDir} webReady={_webReady}");
-        if (DeferUntilWebReady(() => OpenCustom(conn, forcedDir), $"OpenCustom {conn.Name}")) return;
+        if (DeferUntilWebReady(() => OpenCustom(conn, forcedDir, restoreTitle), $"OpenCustom {conn.Name}")) return;
         string path = conn.Path;
 
         // 指向 adb 的自訂連線改走專屬流程：先 adb devices，0 台提示、1 台直接開、
@@ -304,7 +310,19 @@ public partial class MainWindow : Window, IRemoteHost
         }
 
         string args = string.IsNullOrWhiteSpace(conn.Args) ? "" : " " + conn.Args.Trim();
-        string title = NextName(string.IsNullOrWhiteSpace(conn.Name) ? "Custom" : conn.Name);
+        string title = !string.IsNullOrWhiteSpace(restoreTitle) && !Tabs.Any(t => t.Title == restoreTitle)
+            ? restoreTitle
+            : NextName(string.IsNullOrWhiteSpace(conn.Name) ? "Custom" : conn.Name);
+
+        // 開機恢復用的資訊（1.0.30 起自訂分頁也恢復）：Dir 存實際工作目錄，恢復時直接用、不再跳資料夾框；
+        // Name 存連線名稱（Title 在關閉時會被改成分頁標題，見 SavedTab.Name 註解）
+        var restore = new SavedTab
+        {
+            Type = "custom", Name = conn.Name, Title = title, Dir = dir ?? "",
+            Path = path, Args = conn.Args, Icon = conn.Icon,
+            PickDir = conn.PickDir, ViaPowerShell = conn.ViaPowerShell,
+            CloseKey = conn.CloseKey, CloseCount = conn.CloseCount
+        };
 
         // 關閉分頁時送的鍵：無 / Ctrl+C(0x03) / Ctrl+D(0x04) × 次數
         byte[] closeBytes;
@@ -323,6 +341,7 @@ public partial class MainWindow : Window, IRemoteHost
             var tab = StartTab(TermKind.PowerShell, title, s, () => s.Start("powershell.exe", _lastCols, _lastRows, dir),
                 claudePaste: IsClaudeExe(path));
             if (tab == null) return;
+            tab.Restore = restore;
             if (dir != null) { tab.WorkDir = dir; SetTitlePath(dir); }
             // 等尺寸就緒後才把指令打進 PowerShell（避免以 80 欄啟動）；1 秒後保險送出
             tab.PendingCommand = $"& \"{path}\"{args}";
@@ -343,15 +362,16 @@ public partial class MainWindow : Window, IRemoteHost
             var s = new ConPtySession { GracefulExitBytes = closeBytes };
             var tab = StartTab(TermKind.Custom, title, s, () => s.Start($"\"{path}\"{args}", _lastCols, _lastRows, dir),
                 claudePaste: IsClaudeExe(path));
-            if (tab != null && dir != null) { tab.WorkDir = dir; SetTitlePath(dir); }
+            if (tab == null) return;
+            tab.Restore = restore;
+            if (dir != null) { tab.WorkDir = dir; SetTitlePath(dir); }
         }
         AddHistory(new SavedTab
         {
-            Type = "custom", Title = conn.Name, Path = path, Args = conn.Args, Icon = conn.Icon,
+            Type = "custom", Name = conn.Name, Title = conn.Name, Path = path, Args = conn.Args, Icon = conn.Icon,
             PickDir = conn.PickDir, ViaPowerShell = conn.ViaPowerShell,
             CloseKey = conn.CloseKey, CloseCount = conn.CloseCount
         });
-        // 自訂分頁暫不做開機還原（不設 Restore）
     }
 
     private void Custom_Click(object sender, RoutedEventArgs e)
@@ -532,7 +552,7 @@ public partial class MainWindow : Window, IRemoteHost
             case "custom":
                 OpenCustom(new CustomConn
                 {
-                    Name = e.Title, Path = e.Path, Args = e.Args, Icon = e.Icon,
+                    Name = string.IsNullOrWhiteSpace(e.Name) ? e.Title : e.Name, Path = e.Path, Args = e.Args, Icon = e.Icon,
                     PickDir = e.PickDir, ViaPowerShell = e.ViaPowerShell,
                     CloseKey = e.CloseKey, CloseCount = e.CloseCount
                 }, string.IsNullOrWhiteSpace(e.Dir) ? null : e.Dir);   // 遠端開啟帶桌面目錄、不跳資料夾框
@@ -675,6 +695,8 @@ public partial class MainWindow : Window, IRemoteHost
                 {
                     string text = rest.Substring(p + 1);
                     tab.LastInputUtc = DateTime.UtcNow;  // 使用者實際按鍵／貼上（遠端推播用來排除打字回顯）
+                    if (text.IndexOf('\r') >= 0 || text.IndexOf('\n') >= 0)
+                        tab.LastSubmitUtc = DateTime.UtcNow;   // 含 Enter＝送出指令 → 完成後應推播
                     if (tab.Session == null && tab.LoginBuffer != null)
                         HandleLoginInput(tab, text); // SSH「login as:」中
                     else
@@ -879,6 +901,32 @@ public partial class MainWindow : Window, IRemoteHost
                         if (tab != null) tab.Restore = st;
                         break;
                     }
+                    case "custom":
+                    {
+                        // 自訂連線（ClaudeCode / opencode / wsl…）：1.0.30 起也恢復。
+                        // 工作目錄直接用上次的（不跳資料夾框卡住啟動）；目錄不在了且原本要選目錄 → 退回桌面。
+                        string? dir = null;
+                        if (!string.IsNullOrWhiteSpace(st.Dir) && Directory.Exists(st.Dir)) dir = st.Dir;
+                        else if (st.PickDir) dir = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
+                        OpenCustom(new CustomConn
+                        {
+                            Name = string.IsNullOrWhiteSpace(st.Name) ? st.Title : st.Name,
+                            Path = st.Path, Args = st.Args, Icon = st.Icon,
+                            PickDir = st.PickDir, ViaPowerShell = st.ViaPowerShell,
+                            CloseKey = st.CloseKey, CloseCount = st.CloseCount
+                        }, dir, st.Title);
+                        break;
+                    }
+                    case "adb":
+                    {
+                        // ADB：直接用上次的 adb.exe 與序號重開 adb shell（不再先跑 adb devices 選裝置——
+                        // 啟動時不能跳選單）。裝置不在時 adb 會自己報錯結束，交給「連線已結束→要關閉分頁嗎」處理。
+                        string? adb = !string.IsNullOrWhiteSpace(st.Path) && File.Exists(st.Path) ? st.Path : AppSettings.ResolveAdbPath();
+                        if (adb == null) break;
+                        string title = string.IsNullOrWhiteSpace(st.Title) || Tabs.Any(t => t.Title == st.Title) ? NextName("ADB") : st.Title;
+                        OpenAdbShell(adb, string.IsNullOrEmpty(st.AdbSerial) ? null : st.AdbSerial, title);
+                        break;
+                    }
                 }
             }
             catch { /* 個別分頁恢復失敗就跳過 */ }
@@ -971,10 +1019,27 @@ public partial class MainWindow : Window, IRemoteHost
                 Encoding.UTF8.GetBytes("\r\n\x1b[90m" + Loc.T("term.exited") + "\x1b[0m\r\n")));
 
             // 斷線自動重連：勾了自動重連才排程
-            if (!tab.AutoReconnect || tab.Restore == null) return;
-            if (tab.Kind is not (TermKind.Ssh or TermKind.Telnet or TermKind.Com)) return;
-            ScheduleReconnect(tab);
+            if (tab.AutoReconnect && tab.Restore != null && tab.Kind is (TermKind.Ssh or TermKind.Telnet or TermKind.Com))
+            {
+                ScheduleReconnect(tab);
+                return;
+            }
+
+            // claude / adb / 自訂 exe 結束（斷線、崩潰、/exit）→ 分頁只剩一行灰字沒人看得到，
+            // 改為跳出提示並詢問是否順手關掉（1.0.30，使用者要求）。程式關閉中不問。
+            if (!_exiting && tab.Kind is (TermKind.Claude or TermKind.Custom or TermKind.Adb))
+                AskCloseExitedTab(tab);
         });
+    }
+
+    /// <summary>session 結束後詢問是否關閉該分頁（Yes 才關；對話框期間分頁若已被關就略過）。</summary>
+    private void AskCloseExitedTab(TerminalTab tab)
+    {
+        var r = MessageBox.Show(this, string.Format(Loc.T("msg.exitedCloseAsk"), tab.Title),
+            Loc.T("msg.exitedTitle"), MessageBoxButton.YesNo, MessageBoxImage.Question);
+        if (r != MessageBoxResult.Yes) return;
+        if (FindTab(tab.Id) == null) return;   // 期間被遠端 /close 等關掉了
+        RemoveTabSilently(tab);
     }
 
     /// <summary>排程自動重連：退避 3,6,9…最多 30 秒（一收到輸出就歸零）。</summary>
@@ -1077,31 +1142,70 @@ public partial class MainWindow : Window, IRemoteHost
         try { Web.CoreWebView2?.PostWebMessageAsString(s); } catch { }
     }
 
-    // ---------- 工作列 icon 右下狀態圓點 ----------
-    private ImageSource? _greenDot, _orangeDot;
-    private ImageSource GreenDot => _greenDot ??= MakeDotOverlay(Color.FromRgb(0x4C, 0xAF, 0x50));
-    private ImageSource OrangeDot => _orangeDot ??= MakeDotOverlay(Color.FromRgb(0xFF, 0x98, 0x00));
+    // ---------- 工作列 icon 右下狀態球（1.0.30：閒置不顯示；有分頁忙碌＝紅球上下跳動）----------
+    // 原本綠=閒/橘=忙兩顆靜態圓點。改成「沒事就乾淨、有事才跳」：overlay 只能放 ImageSource，
+    // 動畫＝預先畫好一輪彈跳影格，忙碌時用計時器輪播；閒置或沒分頁就把 overlay 清掉、計時器停掉。
+    private const int BounceFrameCount = 12;
+    private ImageSource[]? _bounceFrames;
+    private int _bounceIdx;
+    private DispatcherTimer? _bounceTimer;
 
-    /// <summary>畫一個帶白邊的實心圓，作為工作列 icon 的 overlay。</summary>
-    private static ImageSource MakeDotOverlay(Color color)
+    private ImageSource[] BounceFrames => _bounceFrames ??= Enumerable.Range(0, BounceFrameCount).Select(MakeBounceFrame).ToArray();
+
+    /// <summary>第 k 格：紅球由底部彈到頂再落下（sin 曲線），落地附近略壓扁、頂點略拉長。
+    /// 1.0.41：球放大到接近填滿徽章（半徑占比 4/16→13/40）＝視覺上約 1.7 倍大（工作列 overlay 徽章本身
+    /// 由 Windows 固定成小尺寸、大點陣圖會被縮下去，故無法真的三倍，這是徽章內能放到的最大）。畫布 40×40
+    /// 高解析度讓縮放後仍平滑。</summary>
+    private static ImageSource MakeBounceFrame(int k)
     {
+        const double size = 40, r = 16.0, top = 18.0, bottom = 23.0;
+        double phase = Math.Sin(Math.PI * k / BounceFrameCount);   // 0→1→0：底 → 頂 → 底
+        double cy = bottom - (bottom - top) * phase;
+        double squash = 1 + 0.15 * Math.Max(0, 1 - phase * 5);   // 只在貼地那幾格壓扁（0.15 保證壓扁+描邊仍不出畫布）
         var dv = new DrawingVisual();
         using (var dc = dv.RenderOpen())
         {
-            const double size = 16, r = size / 2 - 1.5;
-            var c = new Point(size / 2, size / 2);
-            dc.DrawEllipse(new SolidColorBrush(color), new Pen(new SolidColorBrush(Colors.White), 1.5), c, r, r);
+            var fill = new SolidColorBrush(Color.FromRgb(0xF4, 0x43, 0x36));
+            var pen = new Pen(new SolidColorBrush(Colors.White), 1.8);
+            dc.DrawEllipse(fill, pen, new Point(size / 2, cy), r * squash, r / squash);
         }
-        var rtb = new RenderTargetBitmap(16, 16, 96, 96, PixelFormats.Pbgra32);
+        var rtb = new RenderTargetBitmap((int)size, (int)size, 96, 96, PixelFormats.Pbgra32);
         rtb.Render(dv);
         rtb.Freeze();
         return rtb;
     }
 
+    /// <summary>忙碌 → 開始（或維持）紅球跳動；閒置 → 清掉 overlay、停計時器。</summary>
+    private void SetTaskbarBusy(bool busy)
+    {
+        if (!busy)
+        {
+            _bounceTimer?.Stop();
+            if (Taskbar.Overlay != null) Taskbar.Overlay = null;
+            return;
+        }
+        if (_bounceTimer == null)
+        {
+            _bounceTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(60) };   // 12 格 × 60ms ≈ 0.7s 一跳
+            _bounceTimer.Tick += (_, _) =>
+            {
+                var frames = BounceFrames;
+                _bounceIdx = (_bounceIdx + 1) % frames.Length;
+                Taskbar.Overlay = frames[_bounceIdx];
+            };
+        }
+        if (!_bounceTimer.IsEnabled)
+        {
+            _bounceIdx = 0;
+            Taskbar.Overlay = BounceFrames[0];
+            _bounceTimer.Start();
+        }
+    }
+
     // ---------- 綠 / 橘狀態輪詢 ----------
     private void UpdateStatuses(object? sender, EventArgs e)
     {
-        if (Tabs.Count == 0) { Taskbar.Overlay = null; SetTitlePath(""); return; } // 沒有分頁 → 不顯示圓點、標題回程式名
+        if (Tabs.Count == 0) { SetTaskbarBusy(false); SetTitlePath(""); return; } // 沒有分頁 → 不顯示狀態球、標題回程式名
         // 標題列目前路徑：向作用中分頁查提示字元行（回覆走 a…cwd）
         if (_webReady && _active != null) PostToWeb("q" + _active.Id + US + "cwd");
         HashSet<int> busyParents;
@@ -1138,24 +1242,27 @@ public partial class MainWindow : Window, IRemoteHost
             if (_remote?.IsRunning == true)
             {
                 if (busy && prev != TermStatus.Busy) _busySince[t.Id] = now;
-                else if (!busy && prev == TermStatus.Busy)
+                else if (!busy && prev == TermStatus.Busy && _busySince.TryGetValue(t.Id, out var since))
                 {
-                    // 打字不算「程式做完事」：每個按鍵的回顯都在更新 LastOutputUtc，所以打一句話
-                    // （超過 3 秒很常見）整段都會被判定為忙，停手約 0.5~1.5 秒後翻閒 → 舊版就推播了。
-                    // 真正的工作是「送出指令後輸出持續數秒」，此時最後一次按鍵離轉閒至少有那段時間；
-                    // 打字則永遠只差一個「輸出靜默門檻」。用 2.5 秒把兩者分開。
-                    // 註：遠端自己送進去的指令走 SendInputToTab、不經 i 協定，不會更新 LastInputUtc，
-                    // 所以從手機下的指令依然會正常回推結果。
-                    bool echoFromTyping = (now - t.LastInputUtc).TotalSeconds < 2.5;
-                    if (!echoFromTyping &&
-                        _busySince.TryGetValue(t.Id, out var since) && (now - since).TotalSeconds >= 3)
+                    // 何時推播「完成」？區分「真的送出指令跑東西」與「只是在輸入框打字」。
+                    // 舊法只看「最後按鍵距轉閒 <2.5s＝打字回顯」，但在 App 打字送出、AI 很快回答時，
+                    // 轉閒也在 2.5s 內 → 被誤判成打字、不推（使用者實測「改在 App 發問沒丟給手機」）。
+                    // 改用「這段忙碌期間有沒有送出過（按 Enter / 遠端 enter=true → LastSubmitUtc）」判斷：
+                    //   有送出＝真工作 → 忙 ≥0.8s 就推（含 App 打字送出、遠端送出、快答）。
+                    //   沒送出＝純打字 → 維持 2.5s 打字回顯抑制 + 忙 ≥3s 門檻（擋輸入框打字噪音）。
+                    // 送出時間允許比忙碌起點早 2 秒（送出→開始輸出有延遲，尤其遠端），才不會漏判。
+                    double busyDur = (now - since).TotalSeconds;
+                    bool submittedThisBusy = t.LastSubmitUtc >= since.AddSeconds(-2);
+                    bool echoFromTyping = !submittedThisBusy && (now - t.LastInputUtc).TotalSeconds < 2.5;
+                    bool longEnough = submittedThisBusy ? busyDur >= 0.8 : busyDur >= 3;
+                    if (!echoFromTyping && longEnough)
                         _remote.OnTabIdle(t.Id, t.Title);
                     _busySince.Remove(t.Id);
                 }
             }
         }
-        // 工作列 icon 右下圓點：有分頁忙碌=橘、全部閒置=綠
-        Taskbar.Overlay = Tabs.Any(t => t.Status == TermStatus.Busy) ? OrangeDot : GreenDot;
+        // 工作列 icon 右下：有分頁忙碌=紅球跳動、全部閒置=不顯示
+        SetTaskbarBusy(Tabs.Any(t => t.Status == TermStatus.Busy));
     }
 
     // ---------- 工具列：連線群組 ----------
@@ -1377,6 +1484,24 @@ public partial class MainWindow : Window, IRemoteHost
     }
 
     /// <summary>分頁列尾端 ▲：上拉列出所有分頁供選擇。</summary>
+    /// <summary>分頁列最左「…」：開輸入框先把文字打好（IME 在一般 TextBox 裡組字、不經 xterm/ConPTY），
+    /// 按「送出」才整段貼進作用中分頁——繞過 claude 逐鍵解析造成的重複／亂碼。走 SendSnippet
+    /// （claude 分頁換行→ESC+CR 軟換行；勾「送出後送 Enter」則 200ms 後補 CR 直接送出）。</summary>
+    private void Compose_Click(object sender, RoutedEventArgs e)
+    {
+        if (_active == null)
+        {
+            ShowCopyFeedback((FrameworkElement)sender, Loc.T("compose.noTab"));   // 不無聲返回
+            return;
+        }
+        var dlg = new ComposeDialog(AppSettings.Current.ComposeSendEnter) { Owner = this };
+        if (dlg.ShowDialog() != true) return;
+        AppSettings.Current.ComposeSendEnter = dlg.SendEnter;
+        AppSettings.Current.Save();
+        SendSnippet(dlg.TextToSend, dlg.SendEnter);
+        Web.Focus();
+    }
+
     private void TabList_Click(object sender, RoutedEventArgs e)
     {
         if (Tabs.Count == 0) return;
@@ -1854,12 +1979,21 @@ public partial class MainWindow : Window, IRemoteHost
         => Dispatcher.Invoke(() => (IReadOnlyList<RemoteTabInfo>)Tabs.Select(
                t => new RemoteTabInfo(t.Id, t.Title, t.Status == TermStatus.Busy, t.Kind.ToString())).ToList());
 
+    DateTime IRemoteHost.GetTabActivityUtc(int tabId)
+        => Dispatcher.Invoke(() =>
+        {
+            var tab = FindTab(tabId);
+            if (tab == null) return DateTime.MinValue;
+            return tab.LastOutputUtc > tab.LastInputUtc ? tab.LastOutputUtc : tab.LastInputUtc;
+        });
+
     bool IRemoteHost.SendInputToTab(int tabId, string text, bool enter)
         => Dispatcher.Invoke(() =>
         {
             var tab = FindTab(tabId);
             if (tab == null) return false;
             string t = enter ? text + "\r" : text;
+            if (enter) tab.LastSubmitUtc = DateTime.UtcNow;   // 遠端送出的指令也算「送出」，完成後照推
             if (tab.Session == null && tab.LoginBuffer != null)
             { HandleLoginInput(tab, t); return true; }   // SSH「login as:」：帳號從遠端回覆也能登入
             if (tab.Session == null) return false;
@@ -2029,9 +2163,10 @@ public partial class MainWindow : Window, IRemoteHost
     {
         var s = new ConPtySession(); // 預設 GracefulExitBytes = Ctrl+C ×3
         string args = serial == null ? "shell" : $"-s {serial} shell";
-        StartTab(TermKind.Adb, title, s, () => s.Start($"\"{adb}\" {args}", _lastCols, _lastRows, null));
-        AddHistory(new SavedTab { Type = "adb", Title = title, AdbSerial = serial ?? "" });
-        // ADB 分頁不做開機還原（每次都需重新偵測裝置），故不設 Restore
+        var tab = StartTab(TermKind.Adb, title, s, () => s.Start($"\"{adb}\" {args}", _lastCols, _lastRows, null));
+        // 1.0.30 起 ADB 也做開機恢復：記住 adb.exe 與序號，RestoreTabs 直接重開（不再跑 adb devices）
+        if (tab != null) tab.Restore = new SavedTab { Type = "adb", Title = title, AdbSerial = serial ?? "", Path = adb };
+        AddHistory(new SavedTab { Type = "adb", Title = title, AdbSerial = serial ?? "", Path = adb });
     }
 
     private void About_Click(object sender, RoutedEventArgs e)

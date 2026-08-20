@@ -183,19 +183,22 @@
     return terms[id];
   }
 
-  // ── claude 分頁輸入佇列（v1.0.28，注音輸入修正）──
+  // ── claude 分頁輸入佇列（v1.0.28 建立、v1.0.32 改整段送）──
   // 問題：IME 片語提交（注音一次送出「一二三」）到達 claude 是「一個多字元塊」，
   // claude 的按鍵解析把整塊當成單一事件——若前面有懸置的 ESC（按過 Esc）或 Ctrl+C 待確認
-  // 等「等下一個按鍵」的狀態，整句會被當成未知跳脫序列整段吞掉；建議文字顯示中的重繪
-  // 忙碌時也會出現重複／亂碼（ConPTY harness 實測：大塊+ESC=全滅、逐字=只丟第一字、
-  // NUL 前導+逐字=一字不丟且 NUL 平時無害）。
-  // 修法：打字產生的「純文字提交」（多字元、或含非 ASCII＝IME 提交）改為
-  //   ① 先送一個 focus-in 回報 ESC[I ——若 claude 有懸置的 ESC/Ctrl+C 狀態就由它犧牲吸收；
-  //      沒有狀態時它是合法的終端機事件（claude 有開 DECSET 1004）、no-op，
-  //      不會像 NUL 一樣被插進輸入框變成隱形字元格（實測 NUL 會佔一格，已棄用）。
-  //   ② 再「逐字、每 25ms」送出——與 Windows Terminal 的逐鍵行為一致。
-  // 所有輸入（含貼上）都走同一佇列保持順序，避免緊接的 Enter 超車先到。
-  // 單一 ASCII 按鍵／控制鍵／方向鍵等照舊即時送（延遲 0、仍循佇列排序）。
+  // 等「等下一個按鍵」的狀態，整句會被當成未知跳脫序列整段吞掉。
+  // v1.0.28 為此改「逐字、每 25ms」送；但逐字有個新副作用（使用者 2026-08 回報並定位）：
+  //   **claude 每收一個字就重繪整條輸入列＋建議文字，逐字送等於把 claude 自身「輸入列回顯
+  //   off-by-one」那個暫時殘影一次拉長成好幾個可見畫格** → 累積型注音（一次組「一二三」再提交）
+  //   看起來就是「文字亂位」；單字即時上字只有一次重繪、太快看不到，所以不會發生（完全對上回報）。
+  // v1.0.32 修法＝**改回整段一次送**，但保留 ESC[I 犧牲事件擋懸置狀態：
+  //   ① 先送 focus-in 回報 ESC[I ——有懸置 ESC/Ctrl+C 就由它吸收；沒有時是合法 no-op
+  //      （claude 開了 DECSET 1004），不像 NUL 會佔一格。
+  //   ② 再把整個片語一次送出（delay 0）＝claude 只重繪一次，殘影太快看不到。
+  //   與已驗證正常的貼上路徑（doPaste）同款；claude 2.1.237 + headless xterm 重播實測
+  //   block/blockesc/char25 最終畫面都正確，但只有整段送不會在過程中攤開殘影
+  //   （scratchpad ptyprobe raw-*.bin 重播，2026-08-20）。
+  // 所有輸入（含貼上）走同一佇列保序，避免緊接的 Enter 超車；單一 ASCII 鍵／控制鍵即時送。
   var PACE_MS = 25;
   function isTypedText(d) {
     if (!d.length) return false;
@@ -221,9 +224,8 @@
   }
   function sendTyped(rec, id, d) {
     if (isTypedText(d)) {
-      qPush(rec, id, "\x1b[I", PACE_MS);               // 犧牲事件：吸收懸置的 ESC / 待確認狀態
-      var cps = Array.from(d);                          // 依 code point 切（surrogate pair 不拆半）
-      for (var i = 0; i < cps.length; i++) qPush(rec, id, cps[i], PACE_MS);
+      qPush(rec, id, "\x1b[I", PACE_MS);   // 犧牲事件：吸收懸置的 ESC / Ctrl+C 待確認狀態
+      qPush(rec, id, d, 0);                // 整個片語一次送（不再逐字，避免拉長 claude 回顯殘影）
     } else {
       qPush(rec, id, d, 0);
     }

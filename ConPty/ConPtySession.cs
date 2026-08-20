@@ -18,11 +18,17 @@ public sealed class ConPtySession : ITerminalSession
     private FileStream? _readStream;
     private readonly CancellationTokenSource _cts = new();
     private bool _disposed;
+    private int _exitRaised;                      // Exited 只發一次（行程等待與管線 EOF 兩條路都可能到）
+    private RegisteredWaitHandle? _procWait;      // 行程結束等待（threadpool 登記，不佔執行緒）
+    private ManualResetEvent? _procEvent;         // 包住 hProcess 的 WaitHandle（不擁有 handle）
 
     /// <summary>原始 UTF-8 位元組輸出（於背景執行緒觸發）。</summary>
     public event Action<byte[]>? Output;
 
-    /// <summary>子行程結束（輸出串流關閉）時觸發。</summary>
+    /// <summary>子行程結束時觸發（於背景執行緒）。
+    /// 1.0.30 起以「等待行程 handle」偵測——ConPTY 的 conhost 在子行程結束後**不會**關輸出管線
+    /// （要等我們 ClosePseudoConsole），所以光靠 ReadLoop 的 EOF 永遠等不到；實測 claude 按 Ctrl+C
+    /// 離開、powershell 打 exit 後分頁都毫無反應，就是這個原因（scratchpad ptyprobe 2026-08-20 驗證）。</summary>
     public event Action? Exited;
 
     public int ProcessId => _procInfo.dwProcessId;
@@ -50,6 +56,24 @@ public sealed class ConPtySession : ITerminalSession
         _outputPipe.WriteSide.Dispose();
 
         _ = Task.Run(ReadLoopAsync);
+
+        // 行程結束偵測（見 Exited 註解）。handle 由 Dispose 的 CloseHandle 負責，這裡不擁有；
+        // Dispose 會先 Unregister 再關 handle。觸發後稍等，讓 conhost 把最後一批輸出送完再通知。
+        _procEvent = new ManualResetEvent(false);
+        _procEvent.SafeWaitHandle = new Microsoft.Win32.SafeHandles.SafeWaitHandle(_procInfo.hProcess, ownsHandle: false);
+        _procWait = ThreadPool.RegisterWaitForSingleObject(_procEvent, (_, _) =>
+        {
+            if (_disposed) return;
+            Thread.Sleep(150);
+            RaiseExited();
+        }, null, Timeout.Infinite, executeOnlyOnce: true);
+    }
+
+    private void RaiseExited()
+    {
+        if (_disposed) return;
+        if (Interlocked.Exchange(ref _exitRaised, 1) != 0) return;
+        try { Exited?.Invoke(); } catch { }
     }
 
     private async Task ReadLoopAsync()
@@ -71,10 +95,7 @@ public sealed class ConPtySession : ITerminalSession
         catch (ObjectDisposedException) { }
         finally
         {
-            if (!_disposed)
-            {
-                try { Exited?.Invoke(); } catch { }
-            }
+            RaiseExited();   // 管線真的關了（例如 conhost 自己掛掉）也算結束；已發過就不重發
         }
     }
 
@@ -102,6 +123,10 @@ public sealed class ConPtySession : ITerminalSession
     {
         if (_disposed) return;
         _disposed = true;
+
+        // 先取消行程等待（之後 TerminateProcess 不會被當成「自然結束」發 Exited），handle 稍後才關
+        try { _procWait?.Unregister(null); } catch { }
+        _procWait = null;
 
         // 先一次送出「優雅結束」按鍵（PowerShell/claude=Ctrl+C×3、SSH=Ctrl+D×2），
         // 只短暫等待就往下強制收尾（快）。此方法在背景執行緒呼叫，不卡 UI。
@@ -132,6 +157,7 @@ public sealed class ConPtySession : ITerminalSession
 
         try { _inputPipe?.Dispose(); } catch { }
         try { _outputPipe?.Dispose(); } catch { }
+        try { _procEvent?.Dispose(); } catch { }   // 不擁有 hProcess，Dispose 只釋放包裝
         _cts.Dispose();
     }
 }

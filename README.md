@@ -23,6 +23,7 @@ Telegram 遠端設定，設定完成後可用手機檢視畫面、下指令與�
 - **多 Session 管理**：PowerShell、SSH、Telnet、COM Port、ADB、WSL 與自訂連線（Claude Code、Open Code…）皆以分頁集中管理
 - **AI Coding 友善**：Claude Code / Open Code 可直接以 ConPTY 執行，多行貼上、中文輸入與 scrollback 都已針對其 TUI 調校
 - **常用字串**：儲存常用指令與 AI Prompt，可分群組，點選即送入終端機（可設定送出後自動按 Enter）
+- **先打字再送出**：分頁列最左「…」開輸入框，中文、多行文字先在一般文字框打好再整段送進目前分頁（避開 AI TUI 逐鍵解析中文輸入的問題）
 - **Telegram 遠端控制**：手機端檢視畫面、下指令、截圖與完成通知
 - **檢視彈性**：分頁 / 分割 / 分欄三種模式，工具列可切換上方或右側
 - **可自訂**：字型、配色（可逐分頁）、Ctrl+滾輪縮放、連線歷史與開機恢復分頁

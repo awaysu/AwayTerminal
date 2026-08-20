@@ -1,0 +1,33 @@
+<Window x:Class="AwayTerminal.Dialogs.ComposeDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="AwayTerminal" Width="640" Height="380" MinWidth="480" MinHeight="260"
+        WindowStartupLocation="CenterOwner" ResizeMode="CanResizeWithGrip"
+        ShowInTaskbar="False" Background="#2D2D30">
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <TextBlock Grid.Row="0" x:Name="HintText" Foreground="#E0E0E0" Margin="0,0,0,8" TextWrapping="Wrap" />
+
+        <!-- 一般 TextBox：IME 在這裡組字、提交，完全不經 xterm／ConPTY／claude 的逐鍵解析 -->
+        <TextBox Grid.Row="1" x:Name="Input" AcceptsReturn="True" AcceptsTab="True" TextWrapping="Wrap"
+                 VerticalScrollBarVisibility="Auto" Padding="6" FontSize="14"
+                 FontFamily="Cascadia Mono, Consolas, Microsoft JhengHei, 微軟正黑體"
+                 Background="#1E1E1E" Foreground="#E0E0E0" BorderBrush="#555" CaretBrush="#E0E0E0" />
+
+        <DockPanel Grid.Row="2" Margin="0,12,0,0">
+            <CheckBox x:Name="SendEnterChk" DockPanel.Dock="Left" Foreground="#E0E0E0" VerticalAlignment="Center" />
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <!-- 清除＝整段刪掉（可復原）；復原＝還原上一步編輯（含清除；Ctrl+Z 同效） -->
+                <Button x:Name="ClearBtn" Width="76" Height="28" Click="Clear_Click" Margin="0,0,8,0" />
+                <Button x:Name="UndoBtn" Width="76" Height="28" Click="Undo_Click" Margin="0,0,20,0" />
+                <Button x:Name="BackBtn" Width="76" Height="28" IsCancel="True" Margin="0,0,8,0" />
+                <Button x:Name="SendBtn" Width="76" Height="28" Click="Send_Click" />
+            </StackPanel>
+        </DockPanel>
+    </Grid>
+</Window>

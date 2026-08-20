@@ -136,7 +136,7 @@ public static class Loc
         ["remote.token"] = ("Bot Token", "Bot Token"),
         ["remote.chatId"] = ("允許的 Chat ID", "Allowed Chat ID"),
         ["remote.getChatId"] = ("取得 chat id", "Get chat id"),
-        ["remote.notify"] = ("忙碌完成時推播通知", "Notify when a tab goes idle"),
+        ["remote.notify"] = ("其他（未進入的）分頁完成也推播通知", "Also notify for tabs you haven't entered"),
         ["remote.hint"] = ("向 @BotFather 申請 bot 取得 token；先用手機傳一則訊息給你的 bot，再按「取得 chat id」。",
                             "Create a bot via @BotFather for the token; send your bot a message first, then click \"Get chat id\"."),
         ["remote.needToken"] = ("請先填入 Bot Token。", "Please enter the Bot Token first."),
@@ -156,6 +156,16 @@ public static class Loc
         ["tip.tabClose"] = ("關閉", "Close"),
         ["tip.tabList"] = ("顯示所有分頁", "Show all tabs"),
 
+        // 分頁列最左「…」輸入框（先打好再送出）
+        ["compose.tip"] = ("輸入文字後送出到目前分頁", "Compose text, then send to the current tab"),
+        ["compose.title"] = ("輸入文字", "Compose"),
+        ["compose.hint"] = ("在此輸入要送到目前分頁的文字（可多行；Ctrl+Enter 送出）", "Type the text to send to the current tab (multi-line OK; Ctrl+Enter sends)"),
+        ["compose.send"] = ("送出", "Send"),
+        ["compose.back"] = ("返回", "Back"),
+        ["compose.clear"] = ("清除", "Clear"),
+        ["compose.undo"] = ("復原", "Undo"),
+        ["compose.noTab"] = ("沒有分頁可送", "No tab to send to"),
+
         // 浮動提示
         ["toast.copied"] = ("複製成功", "Copied"),
         ["toast.copiedPasted"] = ("已複製並貼上", "Copied and pasted"),
@@ -165,6 +175,8 @@ public static class Loc
         // MessageBox
         ["msg.closeTabConfirm"] = ("確定要關閉「{0}」？", "Close \"{0}\"?"),
         ["msg.closeTabTitle"] = ("關閉分頁", "Close Tab"),
+        ["msg.exitedCloseAsk"] = ("「{0}」的連線已結束（程式離開或斷線）。\n\n要關閉這個分頁嗎？", "\"{0}\" has ended (the program exited or the connection dropped).\n\nClose this tab?"),
+        ["msg.exitedTitle"] = ("連線已結束", "Session Ended"),
         ["msg.clearConfirm"] = ("確定要清除「{0}」的畫面嗎？", "Clear the screen of \"{0}\"?"),
         ["msg.clearTitle"] = ("清除畫面", "Clear Screen"),
         ["msg.connectFail"] = ("連線 / 啟動失敗：", "Connection / launch failed:"),
