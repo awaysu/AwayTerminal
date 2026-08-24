@@ -166,7 +166,7 @@
 
     terms[id] = { term: term, fit: fit, ser: ser, el: el, body: body, titleSpan: titleSpan, title: title || ("#" + id),
                   claudePaste: !!(flags && flags.indexOf("c") >= 0),
-                  sendQ: [], sending: false };
+                  sendQ: [], sending: false, lastOutMs: 0 };
 
     // claude 分頁：瀏覽器原生貼上（Ctrl+V）也要走 doPaste（capture 階段先於 xterm 的 textarea 監聽）。
     // 搜尋列在 document 層級、不在 el 內，不受影響。
@@ -199,7 +199,19 @@
   //   block/blockesc/char25 最終畫面都正確，但只有整段送不會在過程中攤開殘影
   //   （scratchpad ptyprobe raw-*.bin 重播，2026-08-20）。
   // 所有輸入（含貼上）走同一佇列保序，避免緊接的 Enter 超車；單一 ASCII 鍵／控制鍵即時送。
+  //
+  // v1.0.43 靜止閘門（quiet-gate）：實測與 diag/replay 證據都指出「二倍字串」與「半形+全形
+  //   backspace 游標偏／殘影」都在 claude 端重繪時發生——xterm 每次 compositionend 只發一次
+  //   onData（不重複），送進 ConPTY 的位元組重播出來最終畫面也正確。差別只在「送出的那一刻
+  //   claude 是否正在重繪上一筆輸入」：若在忙（agents 執行中、建議文字在跳）時插入下一筆，
+  //   claude 的差量渲染器偶爾會把剛插入的字複製一份或算錯跨全形/半形的游標欄位。
+  //   對策＝只 gate「容易撞重繪」的輸入（IME 整段、貼上、backspace），等 claude 輸出靜止
+  //   QUIET_MS 才送；但每筆從入列起最多等 QUIET_MAX_MS，claude 若持續重繪也不會卡死。
+  //   一般 ASCII 打字／Enter／Ctrl 鍵不 gate、維持即時（否則打字手感變鈍）。逐字節流的 ghost
+  //   教訓（v1.0.30→32）不適用：這裡仍是「整段一次送」，只是延後送出時機，不逐字。
   var PACE_MS = 25;
+  var QUIET_MS = 20;       // claude 輸出靜止這麼久＝視為畫完上一筆輸入（設定可調：AppSettings.ImeQuietMs；0=關閉閘門）
+  var QUIET_MAX_MS = 150;  // 入列後最多等這麼久就一定送（claude 持續重繪時的保險上限）
   function isTypedText(d) {
     if (!d.length) return false;
     var nonAscii = false;
@@ -210,13 +222,23 @@
     }
     return d.length > 1 || nonAscii;
   }
-  function qPush(rec, id, data, delay) {
-    rec.sendQ.push({ d: data, t: delay });
+  function qPush(rec, id, data, delay, gate) {
+    rec.sendQ.push({ d: data, t: delay, g: !!gate, enq: performance.now() });
     if (rec.sending) return;
     rec.sending = true;
     (function step() {
       var it = rec.sendQ.shift();
       if (!it) { rec.sending = false; return; }
+      // 靜止閘門：gate 的項目在 claude 仍在重繪（近 QUIET_MS 內有輸出）時先退回佇列稍等，
+      // 但從入列算起超過 QUIET_MAX_MS 就一定送出，避免 claude 持續重繪時卡死。保序：退回用 unshift。
+      if (it.g) {
+        var now = performance.now();
+        if ((now - rec.lastOutMs) < QUIET_MS && (now - it.enq) < QUIET_MAX_MS) {
+          rec.sendQ.unshift(it);
+          setTimeout(step, QUIET_MS);
+          return;
+        }
+      }
       ws.postMessage("i" + id + US + it.d);
       if (it.t > 0) setTimeout(step, it.t);
       else step();
@@ -224,10 +246,12 @@
   }
   function sendTyped(rec, id, d) {
     if (isTypedText(d)) {
-      qPush(rec, id, "\x1b[I", PACE_MS);   // 犧牲事件：吸收懸置的 ESC / Ctrl+C 待確認狀態
-      qPush(rec, id, d, 0);                // 整個片語一次送（不再逐字，避免拉長 claude 回顯殘影）
+      qPush(rec, id, "\x1b[I", PACE_MS, true);  // 犧牲事件：吸收懸置的 ESC / Ctrl+C 待確認狀態
+      qPush(rec, id, d, 0, true);               // 整個片語一次送（gate：等 claude 靜止再送，避免二倍/殘影）
+    } else if (d === "\x7f" || d === "\x08") {
+      qPush(rec, id, d, 0, true);               // backspace(DEL)／Ctrl+Backspace(BS)：跨全形/半形時 gate，等 claude 畫完上一格再刪
     } else {
-      qPush(rec, id, d, 0);
+      qPush(rec, id, d, 0, false);              // 一般 ASCII／控制鍵（含 Enter）：即時、不 gate
     }
   }
 
@@ -244,8 +268,8 @@
     if (!rec || !text) return;
     if (rec.claudePaste) {
       var t = text.replace(/\r\n/g, "\r").replace(/\n/g, "\r").replace(/\r/g, "\x1b\r");
-      qPush(rec, id, "\x1b[I", PACE_MS); // 同樣先吸收懸置狀態（Ctrl+C 待確認時貼上整段被吞，實測）
-      qPush(rec, id, t, 0);
+      qPush(rec, id, "\x1b[I", PACE_MS, true); // 同樣先吸收懸置狀態（Ctrl+C 待確認時貼上整段被吞，實測）
+      qPush(rec, id, t, 0, true);              // 貼上整段一次送（gate：等 claude 靜止再送）
     } else {
       rec.term.paste(text);
     }
@@ -459,6 +483,7 @@
       var bytes = new Uint8Array(bin.length);
       for (var j = 0; j < bin.length; j++) bytes[j] = bin.charCodeAt(j);
       rec.term.write(bytes);
+      rec.lastOutMs = performance.now(); // 靜止閘門用：記錄 claude 最後一次輸出（重繪）時間
     } else if (kind === "n") {
       i = rest.indexOf(US);
       if (i < 0) makeTerm(rest, null);
@@ -488,6 +513,8 @@
         if (t.fontSize) cfg.fontSize = t.fontSize;
         if (t.foreground) cfg.foreground = t.foreground;
         if (t.background) cfg.background = t.background;
+        // 靜止閘門門檻（設定可調；0=關閉閘門，立即送）。用 typeof 判斷，允許 0。
+        if (typeof t.imeQuietMs === "number" && t.imeQuietMs >= 0) QUIET_MS = t.imeQuietMs;
         applyTheme();
       } catch (e) {}
     } else if (kind === "q") {

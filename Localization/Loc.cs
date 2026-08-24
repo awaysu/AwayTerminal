@@ -44,6 +44,34 @@ public static class Loc
         ["settings.groupClaude"] = ("Claude", "Claude"),
         ["settings.groupAdb"] = ("adb", "adb"),
         ["settings.claudeEnable"] = ("使用 Claude（工具列顯示按鈕）", "Use Claude (show toolbar button)"),
+        // Claude 輸入送出：靜止閘門（1.0.43）
+        ["settings.groupIme"] = ("Claude 輸入送出", "Claude input timing"),
+        ["settings.imeQuiet"] = ("送出前等待靜止 (ms)", "Wait for quiet before send (ms)"),
+        ["settings.imeQuietHelpLink"] = ("這是什麼？", "What is this?"),
+        ["settings.imeQuietHelpTitle"] = ("送出前等待靜止 (ms)", "Wait for quiet before send (ms)"),
+        ["settings.imeQuietHelp"] = (
+            "此設定只作用於 Claude Code 分頁。\n\n" +
+            "打注音（整段送出）、貼上、或按 Backspace 時，若 Claude 正在重繪畫面（執行中、" +
+            "建議文字在跳），直接送出偶爾會讓 Claude 把剛輸入的字重複顯示成兩份，或在全形/半形" +
+            "混合時把游標位置算錯、少一格或留殘影。\n\n" +
+            "開啟後，這幾類輸入會等 Claude 畫面靜止「這麼多毫秒」才送出，避開重繪空檔、降低上述問題。\n\n" +
+            "• 只有 Claude 忙碌重繪時才會有這點延遲；停在提示列打字時 0 延遲。\n" +
+            "• 一般英數打字、Enter、Ctrl 鍵不受影響。\n" +
+            "• 數字越大越保守（較不易出錯，忙碌時延遲略增）；越小反應越快、保護越弱。\n" +
+            "• 設 0 = 關閉此功能（立即送出）。\n\n" +
+            "預設 20。這是降低問題頻率的緩解措施；根本原因在 Claude Code 端的畫面重繪。",
+            "This setting only affects Claude Code tabs.\n\n" +
+            "When you commit IME (Zhuyin) text, paste, or press Backspace while Claude is repainting " +
+            "(running, or the suggestion text is updating), sending immediately can occasionally make " +
+            "Claude echo the just-typed text twice, or miscompute the cursor column when full-width and " +
+            "half-width characters are mixed (a column short, or a leftover ghost).\n\n" +
+            "When enabled, these inputs wait until Claude's output has been quiet for this many " +
+            "milliseconds before being sent, avoiding the repaint window and reducing those problems.\n\n" +
+            "• The delay only applies while Claude is busy repainting; typing at an idle prompt has 0 delay.\n" +
+            "• Normal letters/digits, Enter and Ctrl keys are unaffected.\n" +
+            "• Higher = more conservative (fewer glitches, slightly more delay when busy); lower = snappier, weaker protection.\n" +
+            "• Set 0 to turn this off (send immediately).\n\n" +
+            "Default is 20. This is a mitigation that lowers the frequency; the root cause is Claude Code's own screen repaint."),
         // 註：ADB 的設定字串（groupAdb / adbEnable / adbPath）自 v1.0.18 起在設定視窗已不使用——
         // ADB 改由「新連接 → 自訂…」管理。保留鍵值以免其他地方漏改時直接 KeyNotFound。
         // 分頁右鍵：配色

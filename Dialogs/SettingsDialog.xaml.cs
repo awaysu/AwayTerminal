@@ -26,6 +26,9 @@ public partial class SettingsDialog : Window
         FgBox.Text = s.Foreground;
         BgBox.Text = s.Background;
 
+        // Claude 輸入送出：靜止閘門門檻
+        ImeQuietBox.Text = s.ImeQuietMs.ToString();
+
         // 本地化
         Title = Loc.T("settings.title");
         LangGroup.Header = Loc.T("settings.groupLang");
@@ -36,10 +39,18 @@ public partial class SettingsDialog : Window
         BgLabel.Text = Loc.T("font.bg");
         FgPreview.ToolTip = Loc.T("font.pick");
         BgPreview.ToolTip = Loc.T("font.pick");
+        ImeGroup.Header = Loc.T("settings.groupIme");
+        ImeQuietLabel.Text = Loc.T("settings.imeQuiet");
+        ImeHelpLink.Inlines.Clear();
+        ImeHelpLink.Inlines.Add(Loc.T("settings.imeQuietHelpLink"));
         ResetBtn.Content = Loc.T("common.reset");
         OkBtn.Content = Loc.T("common.ok");
         CancelBtn.Content = Loc.T("common.cancel");
     }
+
+    private void ImeHelp_Click(object sender, RoutedEventArgs e)
+        => MessageBox.Show(this, Loc.T("settings.imeQuietHelp"), Loc.T("settings.imeQuietHelpTitle"),
+                           MessageBoxButton.OK, MessageBoxImage.Information);
 
     private void Fg_Changed(object sender, TextChangedEventArgs e) => UpdatePreview(FgBox, FgPreview);
     private void Bg_Changed(object sender, TextChangedEventArgs e) => UpdatePreview(BgBox, BgPreview);
@@ -74,6 +85,7 @@ public partial class SettingsDialog : Window
         SizeCombo.Text = "14";
         FgBox.Text = "#E0E0E0";
         BgBox.Text = "#1E1E1E";
+        ImeQuietBox.Text = "20";
     }
 
     private void Ok_Click(object sender, RoutedEventArgs e)
@@ -85,6 +97,7 @@ public partial class SettingsDialog : Window
         s.FontSize = int.TryParse(SizeCombo.Text, out int sz) && sz is >= 6 and <= 72 ? sz : 14;
         s.Foreground = ValidColor(FgBox.Text, "#E0E0E0");
         s.Background = ValidColor(BgBox.Text, "#1E1E1E");
+        s.ImeQuietMs = int.TryParse(ImeQuietBox.Text, out int q) ? System.Math.Clamp(q, 0, 150) : 20;
         s.Save();
 
         Loc.SetLang(lang);

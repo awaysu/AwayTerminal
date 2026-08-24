@@ -617,7 +617,8 @@ public partial class MainWindow : Window, IRemoteHost
             fontFamily = family,
             fontSize = s.FontSize,
             foreground = s.Foreground,
-            background = s.Background
+            background = s.Background,
+            imeQuietMs = s.ImeQuietMs   // claude 分頁靜止閘門門檻（見 AppSettings.ImeQuietMs / terminal.js）
         });
         PostToWeb("T" + json);
     }

@@ -69,6 +69,23 @@
         <!-- 註：ADB 的設定已於 v1.0.18 移除。ADB 改由「新連接 → 自訂…」管理
              （自訂視窗的「自動偵測」可一鍵加入），路徑也由該筆自訂連線決定。 -->
 
+        <!-- Claude 分頁：注音/輸入送出的靜止閘門（1.0.43） -->
+        <GroupBox x:Name="ImeGroup" Header="Claude 輸入送出">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="60" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" x:Name="ImeQuietLabel" Text="送出前等待靜止 (ms)" Margin="0,0,10,0" />
+                <TextBox Grid.Column="1" x:Name="ImeQuietBox" MaxLength="3" />
+                <TextBlock Grid.Column="2" VerticalAlignment="Center" Margin="12,0,0,0">
+                    <Hyperlink x:Name="ImeHelpLink" Click="ImeHelp_Click" Foreground="#4EA6FF"
+                               TextDecorations="Underline">這是什麼？</Hyperlink>
+                </TextBlock>
+            </Grid>
+        </GroupBox>
+
         <DockPanel>
             <Button x:Name="ResetBtn" DockPanel.Dock="Left" Content="回到預設" Width="100" Height="26"
                     HorizontalAlignment="Left" Click="Reset_Click" />

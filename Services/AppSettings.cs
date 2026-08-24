@@ -90,6 +90,11 @@ public sealed class AppSettings
     public string Foreground { get; set; } = "#E0E0E0";
     public string Background { get; set; } = "#1E1E1E";
 
+    /// <summary>claude 分頁「注音整段／貼上／backspace」送出前，等 claude 輸出靜止的門檻（ms；1.0.43）。
+    /// 目的：別在 claude 正在重繪上一筆輸入時插入下一筆，降低「二倍字串」與 backspace 游標偏／殘影。
+    /// 只在 claude 忙碌重繪時才會延遲；閒置打字時 0 延遲。0=關閉閘門（立即送）。合理範圍 0~150。</summary>
+    public int ImeQuietMs { get; set; } = 20;
+
     // Log
     public string LogDir { get; set; } = "";
     public bool LogTimestamp { get; set; } = true;
