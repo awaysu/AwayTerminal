@@ -151,6 +151,18 @@ public static class Loc
         ["about.download"] = ("下載", "Download"),
         ["about.license"] = ("授權", "License"),
         ["about.thirdParty"] = ("第三方元件", "Third-party components"),
+        // 檢查更新（「關於」視窗底部按鈕；資料來自 awaysu.cc/software 的 check_update API）
+        ["update.check"] = ("檢查更新", "Check for updates"),
+        ["update.checking"] = ("檢查中…", "Checking..."),
+        ["update.latest"] = ("已是最新版本", "You are up to date"),
+        ["update.failed"] = ("檢查失敗（請確認網路後再試）", "Check failed (check your connection and try again)"),
+        ["update.title"] = ("檢查更新", "Check for updates"),
+        ["update.found"] = ("有新版本可用", "A new version is available"),
+        ["update.current"] = ("目前版本", "Current version"),
+        ["update.latestVer"] = ("最新版本", "Latest version"),
+        ["update.notes"] = ("更新內容", "What's new"),
+        ["update.goDownload"] = ("前往下載頁", "Open download page"),
+        ["update.close"] = ("關閉", "Close"),
 
         ["settings.title"] = ("設定", "Settings"),
         ["settings.language"] = ("語言 / Language", "語言 / Language"),

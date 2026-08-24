@@ -72,6 +72,47 @@ public partial class MainWindow : Window, IRemoteHost
         return name;
     }
 
+    /// <summary>分頁名稱最長字數（ClaudeCode / OpenCode 以資料夾命名時用）。</summary>
+    private const int DirTitleMax = 15;
+
+    /// <summary>ClaudeCode / OpenCode 分頁名稱＝工作目錄名稱（超過 15 字取前 15 字）。
+    /// 例：C:\Users\me\Desktop\WORKSPACE2\AwayTerminal → 「AwayTerminal」。
+    /// 同一資料夾再開一個 → 補「(2)」「(3)」；取不到目錄名（沒選資料夾）→ 退回 NextName(prefix)。</summary>
+    private string DirTabName(string? dir, string prefix)
+    {
+        string name = Truncate(ShortDir(dir ?? ""), DirTitleMax);
+        if (string.IsNullOrWhiteSpace(name))
+            return NextName(string.IsNullOrWhiteSpace(prefix) ? "Custom" : prefix);
+        if (!Tabs.Any(t => t.Title == name)) return name;
+        int n = 1;
+        string dup;
+        do { dup = $"{name}({++n})"; } while (Tabs.Any(t => t.Title == dup));
+        return dup;
+    }
+
+    /// <summary>取前 max 個字；剛好切在代理對（emoji 等）中間時退一格，不留半個字。</summary>
+    private static string Truncate(string s, int max)
+    {
+        if (string.IsNullOrEmpty(s) || s.Length <= max) return s ?? "";
+        if (char.IsHighSurrogate(s[max - 1])) max--;
+        return s.Substring(0, max);
+    }
+
+    /// <summary>這條連線是不是 ClaudeCode / OpenCode（分頁改用資料夾名稱，見 DirTabName）。
+    /// 先看圖示 key（「自動偵測」加入的就是 claude-code / opencode），使用者換過圖示或
+    /// 手動新增的則看執行檔名。其餘連線（PowerShell / WSL / ADB / Gemini…）維持原本命名。</summary>
+    private static bool UsesDirTitle(string path, string icon)
+    {
+        if (icon is "claude-code" or "opencode") return true;
+        try
+        {
+            string exe = Path.GetFileNameWithoutExtension(path);
+            return exe.Contains("claude", StringComparison.OrdinalIgnoreCase)
+                || exe.Contains("opencode", StringComparison.OrdinalIgnoreCase);
+        }
+        catch { return false; }
+    }
+
     // 在指定按鈕旁邊浮出提示（複製成功等）
     private void ShowCopyFeedback(FrameworkElement target, string msg)
     {
@@ -310,9 +351,13 @@ public partial class MainWindow : Window, IRemoteHost
         }
 
         string args = string.IsNullOrWhiteSpace(conn.Args) ? "" : " " + conn.Args.Trim();
+        // ClaudeCode / OpenCode → 分頁名稱用工作目錄名稱（例：AwayTerminal），其餘連線照舊「名稱(1)」。
+        // 恢復分頁時 restoreTitle 優先（沿用上次看到的名稱）。
         string title = !string.IsNullOrWhiteSpace(restoreTitle) && !Tabs.Any(t => t.Title == restoreTitle)
             ? restoreTitle
-            : NextName(string.IsNullOrWhiteSpace(conn.Name) ? "Custom" : conn.Name);
+            : UsesDirTitle(path, conn.Icon)
+                ? DirTabName(dir, conn.Name)
+                : NextName(string.IsNullOrWhiteSpace(conn.Name) ? "Custom" : conn.Name);
 
         // 開機恢復用的資訊（1.0.30 起自訂分頁也恢復）：Dir 存實際工作目錄，恢復時直接用、不再跳資料夾框；
         // Name 存連線名稱（Title 在關閉時會被改成分頁標題，見 SavedTab.Name 註解）
@@ -538,7 +583,7 @@ public partial class MainWindow : Window, IRemoteHost
         switch (e.Type)
         {
             case "ps": OpenPowerShellDirect(deskDir(), NextName("PowerShell")); break;
-            case "claude": OpenClaudeDirect(deskDir(), NextName("Claude")); break;
+            case "claude": { string d = deskDir(); OpenClaudeDirect(d, DirTabName(d, "Claude")); break; }
             case "ssh": OpenSshLoginAs(e.Host, e.Port); break;
             case "telnet": OpenTelnetDirect(e.Host, e.Port); break;
             case "com": OpenComDirect(e.ComPort, e.Baud, e.DataBits, e.Parity, e.StopBits, e.Flow); break;
@@ -861,10 +906,11 @@ public partial class MainWindow : Window, IRemoteHost
                             string.IsNullOrWhiteSpace(st.Title) ? NextName("PowerShell") : st.Title);
                         break;
                     case "claude":
-                        OpenClaudeDirect(
-                            Directory.Exists(st.Dir) ? st.Dir : Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory),
-                            string.IsNullOrWhiteSpace(st.Title) ? NextName("Claude") : st.Title);
+                    {
+                        string cdir = Directory.Exists(st.Dir) ? st.Dir : Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
+                        OpenClaudeDirect(cdir, string.IsNullOrWhiteSpace(st.Title) ? DirTabName(cdir, "Claude") : st.Title);
                         break;
+                    }
                     case "ssh":
                         if (st.Host.Contains('@'))
                         {
@@ -2250,9 +2296,22 @@ public partial class MainWindow : Window, IRemoteHost
         panel.Children.Add(new TextBlock
         { Text = ".NET Runtime 9 (MIT)／Microsoft Edge WebView2", Foreground = gray, Margin = new Thickness(0, 2, 0, 0) });
 
+        // 底部按鈕列：狀態文字（就地顯示檢查結果）＋「檢查更新」＋ OK
+        var status = new TextBlock
+        { Foreground = gray, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 10, 0) };
+        var check = new Button
+        { Content = Loc.T("update.check"), MinWidth = 96, Height = 26, Padding = new Thickness(8, 0, 8, 0), Margin = new Thickness(0, 0, 8, 0) };
         var ok = new Button
-        { Content = "OK", Width = 76, Height = 26, Margin = new Thickness(0, 18, 0, 0), HorizontalAlignment = HorizontalAlignment.Right, IsDefault = true, IsCancel = true };
-        panel.Children.Add(ok);
+        { Content = "OK", Width = 76, Height = 26, IsDefault = true, IsCancel = true };
+        var btnRow = new StackPanel
+        {
+            Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right,
+            Margin = new Thickness(0, 18, 0, 0)
+        };
+        btnRow.Children.Add(status);
+        btnRow.Children.Add(check);
+        btnRow.Children.Add(ok);
+        panel.Children.Add(btnRow);
 
         var win = new Window
         {
@@ -2267,6 +2326,95 @@ public partial class MainWindow : Window, IRemoteHost
             Content = panel
         };
         ok.Click += (_, _) => win.Close();
+        // 等 API 回來的這幾秒使用者可能已經把「關於」關掉 → 那時要改掛主視窗，
+        // 否則 Owner 指向已關閉的視窗會丟例外（async void 沒人接＝直接掛掉）。
+        bool aboutOpen = true;
+        win.Closed += (_, _) => aboutOpen = false;
+        // 檢查更新：呼叫網站 API（10 秒逾時），沒新版就在按鈕旁顯示一行結果，有新版才跳視窗
+        check.Click += async (_, _) =>
+        {
+            check.IsEnabled = false;
+            status.Text = Loc.T("update.checking");
+            var info = await UpdateChecker.CheckAsync(v);
+            check.IsEnabled = true;
+            if (info == null) { status.Text = Loc.T("update.failed"); return; }
+            if (!info.UpdateAvailable) { status.Text = $"{Loc.T("update.latest")} (v{info.LatestVersion})"; return; }
+            status.Text = "";
+            ShowUpdateDialog(aboutOpen ? win : this, v, info);
+        };
+        win.ShowDialog();
+    }
+
+    /// <summary>有新版時跳出：目前/最新版本、更新內容（可捲動），按鈕開軟體頁讓使用者自己選安裝版或免安裝版。</summary>
+    private static void ShowUpdateDialog(Window owner, string current, UpdateInfo info)
+    {
+        var gray = new System.Windows.Media.SolidColorBrush(
+            (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#E0E0E0"));
+        var panel = new StackPanel { Margin = new Thickness(24, 18, 24, 14), MaxWidth = 520 };
+        panel.Children.Add(new TextBlock
+        {
+            Text = Loc.T("update.found"), FontSize = 16, FontWeight = FontWeights.Bold,
+            Foreground = System.Windows.Media.Brushes.White
+        });
+        panel.Children.Add(new TextBlock
+        { Text = $"{Loc.T("update.current")}: v{current}", Foreground = gray, Margin = new Thickness(0, 10, 0, 0) });
+        panel.Children.Add(new TextBlock
+        { Text = $"{Loc.T("update.latestVer")}: v{info.LatestVersion}", Foreground = gray, Margin = new Thickness(0, 4, 0, 0) });
+
+        if (!string.IsNullOrWhiteSpace(info.ReleaseNotes))
+        {
+            panel.Children.Add(new TextBlock
+            { Text = Loc.T("update.notes") + ":", Foreground = gray, Margin = new Thickness(0, 14, 0, 0) });
+            panel.Children.Add(new ScrollViewer
+            {
+                MaxHeight = 260, Margin = new Thickness(0, 4, 0, 0),
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                Content = new TextBlock
+                {
+                    Text = info.ReleaseNotes.Trim(), Foreground = gray,
+                    TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 8, 0)
+                }
+            });
+        }
+
+        var go = new Button
+        { Content = Loc.T("update.goDownload"), MinWidth = 110, Height = 26, Padding = new Thickness(8, 0, 8, 0), Margin = new Thickness(0, 0, 8, 0), IsDefault = true };
+        var close = new Button
+        { Content = Loc.T("update.close"), Width = 76, Height = 26, IsCancel = true };
+        var row = new StackPanel
+        {
+            Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right,
+            Margin = new Thickness(0, 18, 0, 0)
+        };
+        row.Children.Add(go);
+        row.Children.Add(close);
+        panel.Children.Add(row);
+
+        var win = new Window
+        {
+            Title = Loc.T("update.title"),
+            SizeToContent = SizeToContent.WidthAndHeight,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            ResizeMode = ResizeMode.NoResize,
+            ShowInTaskbar = false,
+            Background = new System.Windows.Media.SolidColorBrush(
+                (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#2D2D30")),
+            Content = panel
+        };
+        try { win.Owner = owner; }
+        catch { win.WindowStartupLocation = WindowStartupLocation.CenterScreen; }
+        go.Click += (_, _) =>
+        {
+            try
+            {
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(info.PageUrl)
+                { UseShellExecute = true });
+            }
+            catch { }
+            win.Close();
+        };
+        close.Click += (_, _) => win.Close();
         win.ShowDialog();
     }
 
