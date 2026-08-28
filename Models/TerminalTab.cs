@@ -145,14 +145,12 @@ public sealed class TerminalTab : INotifyPropertyChanged
     public bool IsActive
     {
         get => _isActive;
-        set { if (_isActive != value) { _isActive = value; Raise(nameof(IsActive)); Raise(nameof(TabBackground)); Raise(nameof(TabBorder)); Raise(nameof(TabBorderThickness)); Raise(nameof(TabMargin)); Raise(nameof(TitleBrush)); } }
+        set { if (_isActive != value) { _isActive = value; Raise(nameof(IsActive)); Raise(nameof(TabBackground)); Raise(nameof(TabBorder)); Raise(nameof(TitleBrush)); } }
     }
+    // 1.1.0：分頁改為右側直列列表框，作用中＝黃框＋終端機同色底、非作用中＝灰底無框（邊框粗細/位移由 XAML 固定，
+    // 1.0.x 底部分頁列「上方開口與外框融合」的 TabBorderThickness/TabMargin 已移除）
     public Brush TabBackground => _isActive ? ActiveBg : InactiveBg;
     public Brush TabBorder => _isActive ? ActiveBorder : InactiveBg;
-    // 作用中：左/右/下細黃線、上方開口（分頁列在終端機下方，開口朝上相連）；非作用中：上方也不畫線（避免壓在外框黃線下形成暗線）
-    public Thickness TabBorderThickness => _isActive ? new Thickness(1, 0, 1, 1) : new Thickness(1, 0, 1, 1);
-    // 作用中分頁往上抬 1px，蓋掉終端機外框底邊的黃線 → 形成融合缺口
-    public Thickness TabMargin => _isActive ? new Thickness(0, -1, 4, 0) : new Thickness(0, 0, 4, 0);
 
     // 選中的標題亮、未選的標題淡灰
     public Brush TitleBrush => _isActive ? ActiveTitleBrush : InactiveTitleBrush;
@@ -162,7 +160,7 @@ public sealed class TerminalTab : INotifyPropertyChanged
     private static readonly Brush OffBrush = Frozen("#777777");
     private static readonly Brush LogOnBrush = Frozen("#2196F3");
     private static readonly Brush MacroOnBrush = Frozen("#9C27B0");
-    // 選中分頁背景 = 終端機背景(#1E1E1E)，視覺上與下方 terminal 連成一體；藍框標示作用中
+    // 選中分頁背景 = 終端機背景(#1E1E1E)；黃框標示作用中
     private static readonly Brush ActiveBg = Frozen("#1E1E1E");
     private static readonly Brush InactiveBg = Frozen("#333337");
     private static readonly Brush ActiveBorder = Frozen("#FDFFB0");

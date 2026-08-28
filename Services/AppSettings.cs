@@ -106,9 +106,6 @@ public sealed class AppSettings
     // 語言
     public string Language { get; set; } = "zh"; // zh | en
 
-    // 功能列位置：top（上方橫排）| right（右側直欄）
-    public string ToolbarPosition { get; set; } = "top";
-
     // Claude 路徑 / 參數（ClaudeCode 按鈕選完目錄後自動執行）
     public const string DefaultClaudeCommand = "claude.exe --dangerously-skip-permissions"; // 舊版相容用
     public string ClaudeCommand { get; set; } = DefaultClaudeCommand;                        // 已停用，保留避免舊 JSON 出錯
@@ -187,8 +184,12 @@ public sealed class AppSettings
     public bool ExitRestoreTabs { get; set; } = true;
     public bool ExitUpdateMd { get; set; } = false;
 
-    // 分頁列最左「…」輸入框：「送出後送 Enter」勾選的記憶
+    // 「輸入文字」視窗：「送出後送 Enter」勾選的記憶
     public bool ComposeSendEnter { get; set; } = true;
+
+    // 右側分頁列表框（1.1.0）：顯示／隱藏（右上 ▼/▲）與寬度（px，GridSplitter 拖完存）
+    public bool TabPanelVisible { get; set; } = true;
+    public double TabPanelWidth { get; set; } = 220;
 
     // 關閉時儲存的分頁（下次開啟恢復）
     public List<SavedTab> SavedTabs { get; set; } = new();

@@ -1,25 +1,54 @@
 <Window x:Class="AwayTerminal.Dialogs.ComposeDialog"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="AwayTerminal" Width="640" Height="380" MinWidth="480" MinHeight="260"
+        Title="AwayTerminal" Width="700" Height="440" MinWidth="560" MinHeight="320"
         WindowStartupLocation="CenterOwner" ResizeMode="CanResizeWithGrip"
         ShowInTaskbar="False" Background="#2D2D30">
     <Grid Margin="16">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
-            <RowDefinition Height="*" />
+            <RowDefinition Height="2*" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="3*" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <TextBlock Grid.Row="0" x:Name="HintText" Foreground="#E0E0E0" Margin="0,0,0,8" TextWrapping="Wrap" />
+        <!-- 常用字串（1.0.46，取代原本工具列右端的快速輸入抽屜）：群組／標題下拉＋「插入」（插進下方文字框游標處）
+             ＋「直接送出」（不經文字框、依該字串的「送出後送 Enter」設定立刻送到目前分頁，視窗留著可連送）；
+             下方唯讀 TextBox 顯示所選字串內容（可選取複製、不可改），與輸入框以 2:3 分高度（輸入框＝原本的 3/5）-->
+        <Grid Grid.Row="0" Margin="0,0,0,10">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="150" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <TextBlock Grid.Column="0" x:Name="GroupLabel" Foreground="#E0E0E0" VerticalAlignment="Center" Margin="0,0,6,0" />
+            <ComboBox Grid.Column="1" x:Name="GroupCombo" Height="26" SelectionChanged="Group_Changed" />
+            <TextBlock Grid.Column="2" x:Name="TitleLabel" Foreground="#E0E0E0" VerticalAlignment="Center" Margin="12,0,6,0" />
+            <ComboBox Grid.Column="3" x:Name="TitleCombo" Height="26" SelectionChanged="Title_Changed" />
+            <Button Grid.Column="4" x:Name="InsertBtn" Width="64" Height="26" Margin="10,0,0,0" Click="Insert_Click" />
+            <Button Grid.Column="5" x:Name="SendNowBtn" Width="88" Height="26" Margin="8,0,0,0" Click="SendNow_Click" />
+        </Grid>
+        <!-- 所選常用字串的內容預覽（唯讀、可選取複製）-->
+        <TextBox Grid.Row="1" x:Name="PreviewBox" IsReadOnly="True" IsReadOnlyCaretVisible="False"
+                 TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" Padding="6" FontSize="13"
+                 FontFamily="Cascadia Mono, Consolas, Microsoft JhengHei, 微軟正黑體"
+                 Background="#252528" Foreground="#C8C8C8" BorderBrush="#555" Margin="0,0,0,10" />
+        <Rectangle Grid.Row="2" Height="1" Fill="#555" Margin="0,0,0,10" />
+
+        <TextBlock Grid.Row="3" x:Name="HintText" Foreground="#E0E0E0" Margin="0,0,0,8" TextWrapping="Wrap" />
 
         <!-- 一般 TextBox：IME 在這裡組字、提交，完全不經 xterm／ConPTY／claude 的逐鍵解析 -->
-        <TextBox Grid.Row="1" x:Name="Input" AcceptsReturn="True" AcceptsTab="True" TextWrapping="Wrap"
+        <TextBox Grid.Row="4" x:Name="Input" AcceptsReturn="True" AcceptsTab="True" TextWrapping="Wrap"
                  VerticalScrollBarVisibility="Auto" Padding="6" FontSize="14"
                  FontFamily="Cascadia Mono, Consolas, Microsoft JhengHei, 微軟正黑體"
                  Background="#1E1E1E" Foreground="#E0E0E0" BorderBrush="#555" CaretBrush="#E0E0E0" />
 
-        <DockPanel Grid.Row="2" Margin="0,12,0,0">
+        <DockPanel Grid.Row="5" Margin="0,12,0,0">
             <CheckBox x:Name="SendEnterChk" DockPanel.Dock="Left" Foreground="#E0E0E0" VerticalAlignment="Center" />
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                 <!-- 清除＝整段刪掉（可復原）；復原＝還原上一步編輯（含清除；Ctrl+Z 同效） -->

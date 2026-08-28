@@ -56,7 +56,6 @@ public partial class MainWindow : Window, IRemoteHost
     private int _lastCols = 80, _lastRows = 24; // 前端最近回報的終端機尺寸（新分頁初始值用）
     private DispatcherTimer? _statusTimer;
     private DispatcherTimer? _copyPopupTimer;
-    private List<PromptItem> _quickItems = new(); // 快速輸入面板目前群組的字串
 
     // 遠端（Telegram）：服務 + 忙碌起始時間（用來過濾閃爍、只在忙碌≥3秒後推播閒置）
     private TelegramRemote? _remote;
@@ -144,12 +143,9 @@ public partial class MainWindow : Window, IRemoteHost
         Loc.Init(AppSettings.Current.Language);
         Loc.Changed += ApplyLoc;
         ApplyLoc();
-        ApplyToolbarPosition();   // 依上次記憶還原功能列位置
         Loaded += OnLoaded;
         Closing += OnClosingAsk;
         Closed += OnClosed;
-        // 快速輸入面板開啟時，視窗大小改變則同步調整寬度（1/5）
-        SizeChanged += (_, _) => { if (QuickPanel.Visibility == Visibility.Visible) QuickPanel.Width = Math.Max(200, ActualWidth / 5.0); };
     }
 
     /// <summary>關閉時彈自訂視窗；確認後交給 FinishExitAsync（先向前端要 scrollback 存檔，再快速收尾並立即結束）。</summary>
@@ -281,6 +277,7 @@ public partial class MainWindow : Window, IRemoteHost
         Title = string.IsNullOrEmpty(_titlePath) ? Loc.T("app.name") : $"{Loc.T("app.name")} - {_titlePath}";
         BtnNew.Content = Loc.T("tb.new"); BtnNew.ToolTip = Loc.T("tip.new");
         BtnHistory.Content = Loc.T("tb.history"); BtnHistory.ToolTip = Loc.T("tip.history");
+        BtnCompose.Content = Loc.T("tb.compose"); BtnCompose.ToolTip = Loc.T("tip.compose");
         BtnCopy.Content = Loc.T("tb.copy"); BtnCopy.ToolTip = Loc.T("tip.copy");
         BtnPaste.Content = Loc.T("tb.paste"); BtnPaste.ToolTip = Loc.T("tip.paste");
         BtnCopyAll.Content = Loc.T("tb.copyall"); BtnCopyAll.ToolTip = Loc.T("tip.copyall");
@@ -290,11 +287,6 @@ public partial class MainWindow : Window, IRemoteHost
         BtnRemote.Content = Loc.T("tb.remote"); BtnRemote.ToolTip = Loc.T("tip.remote");
         BtnSettings.Content = Loc.T("tb.settings"); BtnSettings.ToolTip = Loc.T("tip.settings");
         BtnAbout.Content = Loc.T("tb.about"); BtnAbout.ToolTip = Loc.T("tip.about");
-        BtnTaskbar.Content = Loc.T("tb.taskbar"); BtnTaskbar.ToolTip = Loc.T("tip.taskbar");
-        QuickGroupLabel.Text = Loc.T("prompt.group");
-        QuickTitleLabel.Text = Loc.T("prompt.header");
-        QuickContentLabel.Text = Loc.T("prompt.content");
-        QuickSendBtn.Content = Loc.T("prompt.send");
         UpdateSplitButton();
     }
 
@@ -333,11 +325,8 @@ public partial class MainWindow : Window, IRemoteHost
         manage.Click += Custom_Click;
         menu.Items.Add(manage);
 
-        bool right = AppSettings.Current.ToolbarPosition == "right";
         menu.PlacementTarget = (UIElement)sender;
-        menu.Placement = right
-            ? System.Windows.Controls.Primitives.PlacementMode.Right
-            : System.Windows.Controls.Primitives.PlacementMode.Bottom;
+        menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
         menu.IsOpen = true;
     }
 
@@ -489,67 +478,6 @@ public partial class MainWindow : Window, IRemoteHost
         dlg.ShowDialog(); // New 下拉每次開都讀最新 AppSettings，故不需額外刷新
     }
 
-    // ---------- 常用字串快速輸入（右側抽屜）----------
-    private void QuickToggle_Click(object sender, RoutedEventArgs e)
-    {
-        if (QuickPanel.Visibility == Visibility.Visible)
-        {
-            QuickPanel.Visibility = Visibility.Collapsed;
-            QuickToggle.Content = "▼"; // ▼ 收合（點按展開）
-        }
-        else
-        {
-            QuickPanel.Width = Math.Max(200, ActualWidth / 5.0);
-            RefreshQuickGroups();
-            QuickPanel.Visibility = Visibility.Visible;
-            QuickToggle.Content = "▲"; // ▲ 展開中（點按收合）
-        }
-    }
-
-    private void RefreshQuickGroups()
-    {
-        var groups = AppSettings.Current.Prompts
-            .Select(p => string.IsNullOrWhiteSpace(p.Group) ? Loc.T("prompt.ungrouped") : p.Group)
-            .Distinct().OrderBy(g => g).ToList();
-        var items = new List<string> { Loc.T("quick.all") };
-        items.AddRange(groups);
-        string? keep = QuickGroupCombo.SelectedItem as string;
-        QuickGroupCombo.ItemsSource = items;
-        QuickGroupCombo.SelectedItem = keep != null && items.Contains(keep) ? keep : items[0];
-        RefreshQuickTitles();
-    }
-
-    private void RefreshQuickTitles()
-    {
-        string g = QuickGroupCombo.SelectedItem as string ?? Loc.T("quick.all");
-        IEnumerable<PromptItem> src = AppSettings.Current.Prompts;
-        if (g == Loc.T("prompt.ungrouped")) src = src.Where(p => string.IsNullOrWhiteSpace(p.Group));
-        else if (g != Loc.T("quick.all")) src = src.Where(p => p.Group == g);
-        _quickItems = src.ToList();
-        QuickTitleCombo.ItemsSource = _quickItems.Select(p => p.Title).ToList();
-        if (_quickItems.Count > 0) QuickTitleCombo.SelectedIndex = 0;
-        else { QuickTitleCombo.SelectedIndex = -1; QuickContentBox.Text = ""; }
-    }
-
-    private void QuickGroup_SelectionChanged(object sender, SelectionChangedEventArgs e) => RefreshQuickTitles();
-
-    private void QuickTitle_SelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        int i = QuickTitleCombo.SelectedIndex;
-        QuickContentBox.Text = (i >= 0 && i < _quickItems.Count) ? _quickItems[i].Content : "";
-    }
-
-    private void QuickSend_Click(object sender, RoutedEventArgs e)
-    {
-        string content = QuickContentBox.Text;
-        if (string.IsNullOrWhiteSpace(content)) return;
-        // 依所選項目的「送出後送 Enter」決定要不要補 Enter（內容照抽屜文字框、可臨時改過再送）
-        int i = QuickTitleCombo.SelectedIndex;
-        bool sendEnter = i >= 0 && i < _quickItems.Count && _quickItems[i].SendEnter;
-        SendSnippet(content, sendEnter);   // 常用字串常含多行 → 同樣走 bracketed paste
-        Web.Focus();
-    }
-
     // ---------- 連線紀錄（「紀錄」按鈕）----------
     /// <summary>記錄一次連線（最新在前、去重、上限 20）。存的是複本，避免與分頁 Restore 共用物件。</summary>
     private void AddHistory(SavedTab e)
@@ -632,11 +560,8 @@ public partial class MainWindow : Window, IRemoteHost
                 menu.Items.Add(mi);
             }
         }
-        bool right = AppSettings.Current.ToolbarPosition == "right";
         menu.PlacementTarget = (UIElement)sender;
-        menu.Placement = right
-            ? System.Windows.Controls.Primitives.PlacementMode.Right
-            : System.Windows.Controls.Primitives.PlacementMode.Bottom;
+        menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
         menu.IsOpen = true;
     }
 
@@ -669,48 +594,6 @@ public partial class MainWindow : Window, IRemoteHost
         }
     }
 
-    /// <summary>切換功能列位置：上方橫排 ↔ 右側直欄（記憶於設定）。</summary>
-    private void TaskbarToggle_Click(object sender, RoutedEventArgs e)
-    {
-        AppSettings.Current.ToolbarPosition = AppSettings.Current.ToolbarPosition == "right" ? "top" : "right";
-        AppSettings.Current.Save();
-        ApplyToolbarPosition();
-    }
-
-    private void ApplyToolbarPosition()
-    {
-        bool right = AppSettings.Current.ToolbarPosition == "right";
-        DockPanel.SetDock(ToolbarBorder, right ? Dock.Right : Dock.Top);
-        ToolbarPanel.Orientation = right ? Orientation.Vertical : Orientation.Horizontal;
-        // 分隔線隨方向轉向；按鈕內部圖示/文字排版隨方向切換（右側=圖左字右）
-        foreach (var child in ToolbarPanel.Children)
-        {
-            if (child is System.Windows.Shapes.Rectangle sep)
-            {
-                if (right)
-                {
-                    sep.Width = double.NaN; sep.Height = 1;
-                    sep.HorizontalAlignment = HorizontalAlignment.Stretch;
-                    sep.VerticalAlignment = VerticalAlignment.Center;
-                    sep.Margin = new Thickness(2, 6, 2, 6);
-                }
-                else
-                {
-                    sep.Width = 1; sep.Height = double.NaN;
-                    sep.HorizontalAlignment = HorizontalAlignment.Center;
-                    sep.VerticalAlignment = VerticalAlignment.Stretch;
-                    sep.Margin = new Thickness(6, 2, 6, 2);
-                }
-            }
-            else if (child is Button btn)
-            {
-                ToolBtnEx.SetHorizontal(btn, right);
-                btn.Width = right ? 114 : 72;        // 直欄較寬（容納「圖左字右」）
-                btn.HorizontalContentAlignment = right ? HorizontalAlignment.Left : HorizontalAlignment.Center;
-            }
-        }
-    }
-
     private void ApplyWebDefaultBg()
     {
         try { Web.DefaultBackgroundColor = System.Drawing.ColorTranslator.FromHtml(AppSettings.Current.Background); }
@@ -736,6 +619,7 @@ public partial class MainWindow : Window, IRemoteHost
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
         TabStrip.ItemsSource = Tabs;
+        ApplyTabPanel();     // 右側分頁列表框：依記憶的顯示狀態與寬度
         ApplyWebDefaultBg(); // 避免 WebView2 內容未畫出前露出白底
 
         string userData = Path.Combine(
@@ -1709,9 +1593,10 @@ public partial class MainWindow : Window, IRemoteHost
     }
 
     /// <summary>分頁列尾端 ▲：上拉列出所有分頁供選擇。</summary>
-    /// <summary>分頁列最左「…」：開輸入框先把文字打好（IME 在一般 TextBox 裡組字、不經 xterm/ConPTY），
-    /// 按「送出」才整段貼進作用中分頁——繞過 claude 逐鍵解析造成的重複／亂碼。走 SendSnippet
-    /// （claude 分頁換行→ESC+CR 軟換行；勾「送出後送 Enter」則 200ms 後補 CR 直接送出）。</summary>
+    /// <summary>工具列「輸入文字」（1.0.30 為分頁列最左「…」，1.0.46 移到工具列並併入常用字串）：
+    /// 開輸入框先把文字打好（IME 在一般 TextBox 裡組字、不經 xterm/ConPTY），按「送出」才整段貼進作用中分頁——
+    /// 繞過 claude 逐鍵解析造成的重複／亂碼。視窗上方可選常用字串「插入」文字框或「直接送出」（視窗留著可連送，
+    /// 依該字串的 SendEnter）。都走 SendSnippet（claude 分頁換行→ESC+CR 軟換行；送 Enter 則 200ms 後補 CR）。</summary>
     private void Compose_Click(object sender, RoutedEventArgs e)
     {
         if (_active == null)
@@ -1719,32 +1604,43 @@ public partial class MainWindow : Window, IRemoteHost
             ShowCopyFeedback((FrameworkElement)sender, Loc.T("compose.noTab"));   // 不無聲返回
             return;
         }
-        var dlg = new ComposeDialog(AppSettings.Current.ComposeSendEnter) { Owner = this };
-        if (dlg.ShowDialog() != true) return;
+        var dlg = new ComposeDialog(AppSettings.Current.ComposeSendEnter, AppSettings.Current.Prompts,
+                                    (content, enter) => SendSnippet(content, enter)) { Owner = this };
+        if (dlg.ShowDialog() != true) { Web.Focus(); return; }
         AppSettings.Current.ComposeSendEnter = dlg.SendEnter;
         AppSettings.Current.Save();
         SendSnippet(dlg.TextToSend, dlg.SendEnter);
         Web.Focus();
     }
 
-    private void TabList_Click(object sender, RoutedEventArgs e)
+    // ---------- 右側分頁列表框（1.1.0）----------
+    private const double TabPanelMinWidth = 120;
+
+    /// <summary>右上 ▼/▲：顯示／隱藏分頁列表框（狀態記憶於 AppSettings.TabPanelVisible）。</summary>
+    private void TabPanelToggle_Click(object sender, RoutedEventArgs e)
     {
-        if (Tabs.Count == 0) return;
-        var menu = new ContextMenu();
-        foreach (var t in Tabs)
-        {
-            var tt = t;
-            var mi = new MenuItem
-            {
-                Header = t.Title,
-                FontWeight = t.IsActive ? FontWeights.Bold : FontWeights.Normal
-            };
-            mi.Click += (_, _) => SelectTab(tt);
-            menu.Items.Add(mi);
-        }
-        menu.PlacementTarget = (UIElement)sender;
-        menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Top;
-        menu.IsOpen = true;
+        AppSettings.Current.TabPanelVisible = !AppSettings.Current.TabPanelVisible;
+        AppSettings.Current.Save();
+        ApplyTabPanel();
+    }
+
+    /// <summary>依設定套用列表框顯示／寬度：隱藏＝欄寬 0、拖曳區也收起；顯示＝欄寬回設定值（不小於最小寬）。</summary>
+    private void ApplyTabPanel()
+    {
+        var s = AppSettings.Current;
+        bool show = s.TabPanelVisible;
+        TabPanel.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+        TabSplitter.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+        TabPanelCol.MinWidth = show ? TabPanelMinWidth : 0;
+        TabPanelCol.Width = show ? new GridLength(Math.Max(TabPanelMinWidth, s.TabPanelWidth)) : new GridLength(0);
+        TabPanelToggle.Content = show ? "▲" : "▼";
+    }
+
+    /// <summary>拖完列表框左緣 → 記住新寬度。</summary>
+    private void TabSplitter_DragCompleted(object sender, System.Windows.Controls.Primitives.DragCompletedEventArgs e)
+    {
+        AppSettings.Current.TabPanelWidth = Math.Round(TabPanelCol.ActualWidth);
+        AppSettings.Current.Save();
     }
 
     private void Split_Click(object sender, RoutedEventArgs e)
@@ -1942,11 +1838,8 @@ public partial class MainWindow : Window, IRemoteHost
         menu.Items.Add(MakeScrollItem("page.top", "top"));
         menu.Items.Add(MakeScrollItem("page.bottom", "bottom"));
 
-        bool right = AppSettings.Current.ToolbarPosition == "right";
         menu.PlacementTarget = (UIElement)sender;
-        menu.Placement = right
-            ? System.Windows.Controls.Primitives.PlacementMode.Right
-            : System.Windows.Controls.Primitives.PlacementMode.Bottom;
+        menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
         menu.IsOpen = true;
     }
 
