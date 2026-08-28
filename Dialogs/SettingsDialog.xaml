@@ -86,6 +86,11 @@
             </Grid>
         </GroupBox>
 
+        <!-- 檔案總管右鍵選單「用 AwayTerminal 開啟」（1.0.45；HKCU，見 ShellIntegration） -->
+        <GroupBox x:Name="ShellGroup" Header="檔案總管">
+            <CheckBox x:Name="ShellMenuCheck" Content="資料夾右鍵選單加入「用 AwayTerminal 開啟」" Foreground="#E0E0E0" Margin="2,2" />
+        </GroupBox>
+
         <DockPanel>
             <Button x:Name="ResetBtn" DockPanel.Dock="Left" Content="回到預設" Width="100" Height="26"
                     HorizontalAlignment="Left" Click="Reset_Click" />

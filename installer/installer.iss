@@ -12,7 +12,7 @@
 ; and re-encoding it with Set-Content has already corrupted the comments once.
 
 #define AppName "AwayTerminal"
-#define AppVersion "1.0.44"
+#define AppVersion "1.0.45"
 #define AppPublisher "Chih-Wei Su (Awaysu)"
 #define AppCopyright "Copyright (c) 2026 Chih-Wei Su (Awaysu)"
 #define AppExe "AwayTerminal.exe"
@@ -99,6 +99,12 @@ Filename: "{app}\{#AppExe}"; Description: "Launch {#AppName}"; Flags: nowait pos
 [UninstallRun]
 Filename: "certutil.exe"; Parameters: "-delstore Root ""AwayTerminal (awaysu)"""; Flags: runhidden; RunOnceId: "DelRootCert"
 Filename: "certutil.exe"; Parameters: "-delstore TrustedPublisher ""AwayTerminal (awaysu)"""; Flags: runhidden; RunOnceId: "DelPubCert"
+; 1.0.45: the app registers an "Open in AwayTerminal" folder context-menu verb under HKCU at
+; startup (Services\ShellIntegration.cs). Setup never writes it; remove it here so the entry
+; does not point at a deleted exe after uninstall. Missing keys make reg.exe exit non-zero,
+; which the uninstaller ignores.
+Filename: "reg.exe"; Parameters: "delete ""HKCU\Software\Classes\Directory\shell\AwayTerminal"" /f"; Flags: runhidden; RunOnceId: "DelShellMenuDir"
+Filename: "reg.exe"; Parameters: "delete ""HKCU\Software\Classes\Directory\Background\shell\AwayTerminal"" /f"; Flags: runhidden; RunOnceId: "DelShellMenuBg"
 
 [Code]
 function WebView2Installed: Boolean;

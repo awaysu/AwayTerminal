@@ -29,6 +29,9 @@ public partial class SettingsDialog : Window
         // Claude 輸入送出：靜止閘門門檻
         ImeQuietBox.Text = s.ImeQuietMs.ToString();
 
+        // 檔案總管右鍵選單
+        ShellMenuCheck.IsChecked = s.ExplorerMenu;
+
         // 本地化
         Title = Loc.T("settings.title");
         LangGroup.Header = Loc.T("settings.groupLang");
@@ -43,6 +46,8 @@ public partial class SettingsDialog : Window
         ImeQuietLabel.Text = Loc.T("settings.imeQuiet");
         ImeHelpLink.Inlines.Clear();
         ImeHelpLink.Inlines.Add(Loc.T("settings.imeQuietHelpLink"));
+        ShellGroup.Header = Loc.T("settings.groupShell");
+        ShellMenuCheck.Content = Loc.T("settings.shellMenu");
         ResetBtn.Content = Loc.T("common.reset");
         OkBtn.Content = Loc.T("common.ok");
         CancelBtn.Content = Loc.T("common.cancel");
@@ -98,6 +103,7 @@ public partial class SettingsDialog : Window
         s.Foreground = ValidColor(FgBox.Text, "#E0E0E0");
         s.Background = ValidColor(BgBox.Text, "#1E1E1E");
         s.ImeQuietMs = int.TryParse(ImeQuietBox.Text, out int q) ? System.Math.Clamp(q, 0, 150) : 20;
+        s.ExplorerMenu = ShellMenuCheck.IsChecked == true;
         s.Save();
 
         Loc.SetLang(lang);

@@ -11,8 +11,38 @@ public partial class App : Application
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern bool SetStdHandle(int nStdHandle, IntPtr hHandle);
 
+    /// <summary>命令列 --open-dir（檔案總管右鍵）要開的資料夾；沒有既有實例可轉交時由 MainWindow 在 ready 後開啟。</summary>
+    public static string? PendingOpenDir { get; set; }
+
+    /// <summary>解析 `--open-dir "路徑"`（也接受單一個存在的資料夾路徑＝把資料夾拖到 exe 上）。
+    /// 檔案總管代入 %V 的磁碟根目錄是 `C:\`，加引號後 `"C:\"` 的 `\"` 會被 C 執行期當成跳脫引號，
+    /// 收到的會是 `C:"`——這裡順手修正。</summary>
+    private static string? ParseOpenDir(string[] args)
+    {
+        string? dir = null;
+        for (int i = 0; i < args.Length; i++)
+        {
+            if (string.Equals(args[i], "--open-dir", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length)
+            { dir = args[i + 1]; break; }
+        }
+        if (dir == null && args.Length == 1 && !args[0].StartsWith("-") && System.IO.Directory.Exists(args[0]))
+            dir = args[0];
+        if (string.IsNullOrWhiteSpace(dir)) return null;
+        dir = dir.Trim().TrimEnd('"');
+        if (dir.Length == 2 && dir[1] == ':') dir += "\\";
+        return dir;
+    }
+
     protected override void OnStartup(StartupEventArgs e)
     {
+        // 檔案總管右鍵「用 AwayTerminal 開啟」：已有實例在跑就把資料夾交給它、本行程直接結束（不開第二個視窗）。
+        string? openDir = ParseOpenDir(e.Args);
+        if (openDir != null)
+        {
+            if (Services.IpcPipe.TrySend("open-dir\t" + openDir)) { Environment.Exit(0); return; }
+            PendingOpenDir = openDir;
+        }
+
         // 從「有重導 stdout/stderr 的環境」（腳本、CI、開發工具）啟動時，本程式會繼承對方的
         // pipe std handle；CreateProcess 對 console 子行程會把這些 handle「值」原樣帶過去，
         // ConPTY 連接只在 std handle 為空時才換成 console handle → powershell/claude 一寫

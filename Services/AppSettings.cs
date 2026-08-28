@@ -52,6 +52,9 @@ public sealed class SavedTab
     public bool ViaPowerShell { get; set; }
     public string CloseKey { get; set; } = "ctrl-c";
     public int CloseCount { get; set; } = 3;
+    /// <summary>關閉時存下的 scrollback 檔名（1.0.45；位於 AppSettings.RestoreDir，xterm 序列化文字、含 ANSI 顏色）。
+    /// 空＝沒存。只有 SavedTabs 用，History 不帶。</summary>
+    public string BufferFile { get; set; } = "";
 }
 
 /// <summary>整個程式的設定與歷史，存成一個 JSON（%LOCALAPPDATA%\AwayTerminal\settings.json）。</summary>
@@ -189,6 +192,16 @@ public sealed class AppSettings
 
     // 關閉時儲存的分頁（下次開啟恢復）
     public List<SavedTab> SavedTabs { get; set; } = new();
+
+    /// <summary>關閉程式勾「恢復分頁」時，每個分頁保留的 scrollback 行數（可視區另計；1.0.45）。
+    /// 下次開啟會先把這些舊訊息倒回分頁、再啟動連線。0＝不保留。只在 settings.json 調整、無 UI。</summary>
+    public int RestoreBufferLines { get; set; } = 2000;
+
+    /// <summary>檔案總管資料夾右鍵選單「用 AwayTerminal 開啟」（1.0.45；HKCU，每次啟動依此登錄／移除，見 ShellIntegration）。</summary>
+    public bool ExplorerMenu { get; set; } = true;
+
+    /// <summary>分頁 scrollback 暫存目錄（%LOCALAPPDATA%\AwayTerminal\restore）。</summary>
+    public static string RestoreDir => Path.Combine(Dir, "restore");
 
     // 連線紀錄（最近開過的連線，「紀錄」按鈕下拉用；最新在前）
     public List<SavedTab> History { get; set; } = new();

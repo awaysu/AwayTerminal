@@ -225,7 +225,7 @@ public static class Loc
         ["msg.exitTitle"] = ("關閉程式", "Exit"),
         ["exit.title"] = ("關閉 AwayTerminal", "Close AwayTerminal"),
         ["exit.msg"] = ("確定要關閉 AwayTerminal 嗎？", "Close AwayTerminal?"),
-        ["exit.restore"] = ("下次開啟恢復目前分頁", "Restore current tabs next time"),
+        ["exit.restore"] = ("下次開啟恢復目前分頁（含畫面上的舊訊息）", "Restore current tabs next time (with scrollback)"),
         ["exit.updateMd"] = ("Claude Code 離開前更新 CLAUDE.md", "Update CLAUDE.md before Claude Code exits"),
         ["exit.updating"] = ("正在請 Claude Code 更新 CLAUDE.md，請稍候…", "Asking Claude Code to update CLAUDE.md, please wait…"),
         ["exit.ok"] = ("確定離開", "Exit"),
@@ -242,6 +242,16 @@ public static class Loc
         ["dlg.pickDirClaude"] = ("選擇 Claude Code 工作目錄（可在此按「建立新資料夾」）", "Choose the Claude Code working folder"),
         ["term.exited"] = ("[連線已結束]", "[session ended]"),
         ["term.reconnect"] = ("[連線中斷，{0} 秒後自動重連…（關閉分頁可停止）]", "[Disconnected. Reconnecting in {0}s… (close tab to stop)]"),
+        // 1.0.45：SSH/Telnet/COM 沒勾自動重連時，session 結束後在同一分頁按 Enter 重連（舊訊息留在 scrollback）
+        ["term.exitedEnter"] = ("[按 Enter 在此分頁重新連線]", "[Press Enter to reconnect in this tab]"),
+        // 1.0.45：恢復分頁時倒回舊訊息後的分隔行（{0}＝上次關閉時間）
+        ["term.restoredSep"] = ("──── 以上為上次關閉前的紀錄（{0}）────", "──── previous session, saved {0} ────"),
+        // 1.0.45：檔案總管右鍵選單
+        ["shell.menuText"] = ("用 AwayTerminal 開啟", "Open in AwayTerminal"),
+        ["shell.dirMissing"] = ("找不到資料夾：\n{0}", "Folder not found:\n{0}"),
+        ["settings.groupShell"] = ("檔案總管", "File Explorer"),
+        ["settings.shellMenu"] = ("資料夾右鍵選單加入「用 AwayTerminal 開啟」（在該資料夾開 PowerShell 分頁）",
+                                  "Add \"Open in AwayTerminal\" to the folder context menu (opens a PowerShell tab there)"),
         ["conn.autoReconnect"] = ("斷線自動重連", "Auto-reconnect on disconnect"),
         ["conn.keepAlive"] = ("保持連線（分鐘，0=關）", "Keep-alive (min, 0=off)"),
 

@@ -8,9 +8,12 @@
 //   C# -> JS :  o{id}US{base64} 輸出、n{id}US{title}[US{flags}] 建立（flags 含 c=claude 貼上）、t{id}US{title} 改名、
 //               s{id} 選取、x{id} 關閉、c{id} 清畫面、L{tab|split} 切換模式、
 //               S{id}US{up|down|top|bottom} 捲動檢視（工具列「翻頁」；不送輸入）、
-//               q{id}US{sel|selpaste|all|text|file|cwd}（selpaste 與 sel 同樣回選取文字，C# 端多做一次貼回）、
+//               q{id}US{sel|selpaste|all|text|file|cwd|save}（selpaste 與 sel 同樣回選取文字，C# 端多做一次貼回；
+//               save=關閉程式時取 scrollback 序列化文字（含顏色）供下次恢復）、
 //               T{json} 套用字型顏色、P{id}US{fg}US{bg} 單一分頁配色（空=回設定預設）、
-//               A{id} 全選、F 開搜尋列、v{id}US{base64} 貼上（走 xterm.paste，支援 bracketed paste）
+//               A{id} 全選、F 開搜尋列、v{id}US{base64} 貼上（走 xterm.paste，支援 bracketed paste）、
+//               b{id}US{base64 舊內容}US{base64 分隔行}（1.0.45：把舊內容寫進分頁、再整頁推進 scrollback 並把游標歸位左上，
+//               之後才啟動新 session——兩欄皆可空＝只做「推進 scrollback」，斷線重連前用；見 applyRestore 註解）
 (function () {
   "use strict";
   var ws = window.chrome.webview;
@@ -166,7 +169,13 @@
 
     terms[id] = { term: term, fit: fit, ser: ser, el: el, body: body, titleSpan: titleSpan, title: title || ("#" + id),
                   claudePaste: !!(flags && flags.indexOf("c") >= 0),
-                  sendQ: [], sending: false, lastOutMs: 0 };
+                  sendQ: [], sending: false, lastOutMs: 0,
+                  keySeq: 0, imeLast: null,                 // IME 去重（1.0.45，見 sendTyped）
+                  fitted: false, pendingRestore: null, pendingSep: null, held: null, restoreTimer: null }; // 緩衝區恢復（1.0.45，見 applyRestore）
+
+    // 每個 keydown 遞增序號（capture 於 body 層＝比 xterm 掛在 textarea 上的 handler 更早跑）。
+    // sendTyped 的 IME 去重靠它分辨「同字串兩次」是使用者真的再按一次（序號變了）還是 xterm 內部重複交付（序號沒變）。
+    body.addEventListener("keydown", function () { var rk = terms[id]; if (rk) rk.keySeq++; }, true);
 
     // claude 分頁：瀏覽器原生貼上（Ctrl+V）也要走 doPaste（capture 階段先於 xterm 的 textarea 監聽）。
     // 搜尋列在 document 層級、不在 el 內，不受影響。
@@ -212,6 +221,16 @@
   var PACE_MS = 25;
   var QUIET_MS = 20;       // claude 輸出靜止這麼久＝視為畫完上一筆輸入（設定可調：AppSettings.ImeQuietMs；0=關閉閘門）
   var QUIET_MAX_MS = 150;  // 入列後最多等這麼久就一定送（claude 持續重繪時的保險上限）
+  // v1.0.45 IME 去重：使用者回報「注音開了獨立小視窗（非 inline 組字）時仍會重複兩次」。
+  //   讀 vendored xterm 6.0.0 原始碼找到一條會重複交付的路徑：IME 以浮動視窗組字時，提交是走 textarea 的
+  //   `input`(inputType=insertText) 事件——xterm `_inputEvent` 在 keyup 之後（_keyDownSeen=false）收到就直接
+  //   triggerDataEvent 一次；同時 `compositionend` 排的 setTimeout（_finalizeComposition）再從 textarea.value
+  //   取一次同樣的字串又送一次，而 `_dataAlreadySent` 只有 `_handleAnyTextareaChanges` 會設、`_inputEvent` 不會，
+  //   所以兩份都送出＝「重複輸入二次」。inline 組字時走 insertCompositionText、沒有這條路，所以平常不發生。
+  //   對策：同一分頁、同一字串、期間**沒有任何 keydown**、IME_DUP_MS 內再來一次＝xterm 重複交付 → 丟掉。
+  //   有 keydown 就一定放行——使用者真的連按兩次「！」、或按住鍵盤自動重複，都有各自的 keydown，不會被誤殺。
+  //   命中時寫一筆 diag.log（D 協定），之後看 log 就能確認重複到底發生在 JS 層還是 claude 端。
+  var IME_DUP_MS = 100;
   function isTypedText(d) {
     if (!d.length) return false;
     var nonAscii = false;
@@ -246,6 +265,12 @@
   }
   function sendTyped(rec, id, d) {
     if (isTypedText(d)) {
+      var now = performance.now(), last = rec.imeLast;
+      if (last && last.text === d && last.keySeq === rec.keySeq && (now - last.t) < IME_DUP_MS) {
+        dbgLog(id, "ime-dup dropped " + JSON.stringify(d) + " dt=" + Math.round(now - last.t) + "ms");
+        return;                                 // xterm 重複交付（見 IME_DUP_MS 註解）：第二份不送
+      }
+      rec.imeLast = { text: d, t: now, keySeq: rec.keySeq };
       qPush(rec, id, "\x1b[I", PACE_MS, true);  // 犧牲事件：吸收懸置的 ESC / Ctrl+C 待確認狀態
       qPush(rec, id, d, 0, true);               // 整個片語一次送（gate：等 claude 靜止再送，避免二倍/殘影）
     } else if (d === "\x7f" || d === "\x08") {
@@ -301,12 +326,67 @@
     if (rec) ws.postMessage("r" + id + US + rec.term.cols + "," + rec.term.rows);
   }
 
+  // 把一個可見的 pane fit 到容器大小；量得到尺寸（DOM 已排版）才算「fitted」。回傳量到的尺寸或 null。
+  function fitOne(k, rec) {
+    var dims = null;
+    try { dims = rec.fit.proposeDimensions(); } catch (e) {}
+    try { rec.fit.fit(); } catch (e) {}
+    sendResize(k);
+    if (dims && dims.cols > 0 && dims.rows > 0) { markFitted(k, rec); return dims; }
+    return null;
+  }
+  function markFitted(k, rec) {
+    rec.fitted = true;
+    if (rec.pendingRestore !== null) applyRestore(rec, k);
+  }
   function refit() {
+    var k, rec;
     if (mode !== "tab") {
-      for (var k in terms) { try { terms[k].fit.fit(); } catch (e) {} sendResize(k); }
+      for (k in terms) fitOne(k, terms[k]);
     } else if (active && terms[active]) {
-      try { terms[active].fit.fit(); } catch (e) {} sendResize(active);
+      var dims = fitOne(active, terms[active]);
+      // 分頁模式：隱藏分頁與作用中分頁共用同一個容器，尺寸直接同步成作用中分頁量到的值
+      // （隱藏的 display:none 量不到，fit 對它無效）。1.0.45 起這樣做有兩個好處：
+      // ① 切到隱藏分頁時不再「先以舊尺寸顯示、再 fit 重排」閃一下；
+      // ② 恢復緩衝區（applyRestore）必須在最終寬度下寫入——若在預設 80 欄寫、之後變寬時 xterm reflow 會把
+      //    接回的長行從 scrollback 拉回可視區，接著被新 session 首幀的 ESC[2J 清掉＝舊訊息消失。
+      if (dims) {
+        for (k in terms) {
+          if (k === active) continue;
+          rec = terms[k];
+          if (rec.term.cols !== dims.cols || rec.term.rows !== dims.rows) {
+            try { rec.term.resize(dims.cols, dims.rows); } catch (e) {}
+            sendResize(k);
+          }
+          markFitted(k, rec);
+        }
+      }
     }
+  }
+
+  // ── 緩衝區恢復 / 推進 scrollback（1.0.45）──
+  // 用途：① 關閉程式勾「恢復分頁」→ 下次開啟先把上次存的 scrollback（q…save 序列化、含顏色）倒回分頁，再啟動連線；
+  //       ② SSH/Telnet/COM 斷線重連前把舊畫面保住。
+  // 為什麼要「推進 scrollback」：ConPTY 每個新 session 的第一幀一定送 ESC[2J（conhost XtermEngine 首次 StartPaint
+  // 會 _ClearScreen），而 xterm 的 ED 2 是原地清掉可視區、不會把它推進 scrollback → 重連/恢復後「最後一頁」憑空消失。
+  // 對策＝啟動新 session 之前，先把游標放到最底列、送 rows 個換行（每個都把最上面一列推進 scrollback）、再 ESC[H 回左上：
+  // 可視區只剩空白列，2J 清的是空白；游標在最上列且底下全空白，之後視窗變高也不會把 scrollback 拉回來（xterm resize 規則）。
+  // 前置 ESC[?1049l／ESC[r／ESC[0m：舊 session 若死在 alt screen（vim/top）或留下捲動區域，先回正常畫面、解除區域，
+  // 否則換行只在區域內捲、不會進 scrollback。
+  // 時序：這裡的 write 與後續 o 輸出都走 xterm 的寫入佇列、保序；但恢復內容要等 pane fitted（最終寬度）才能寫，
+  // 期間收到的 o 輸出先存進 held、寫完舊內容再依序補寫。fit 一直量不到（視窗最小化啟動）時 4 秒後照寫，分頁不會卡死。
+  function applyRestore(rec, id) {
+    var payload = rec.pendingRestore, sep = rec.pendingSep || null;
+    rec.pendingRestore = null; rec.pendingSep = null;
+    clearTimeout(rec.restoreTimer); rec.restoreTimer = null;
+    var term = rec.term, rows = term.rows;
+    if (payload && payload.length) term.write(payload);
+    var seq = "\x1b[?1049l\x1b[r\x1b[0m\x1b[" + rows + ";1H";
+    if (sep && sep.length) { term.write(seq + "\r\n"); term.write(sep); seq = ""; }  // 分隔行寫在最底列（先捲一行，別壓到舊內容）
+    term.write(seq + "\r\n".repeat(rows) + "\x1b[H");
+    var held = rec.held; rec.held = null;
+    if (held) for (var i = 0; i < held.length; i++) term.write(held[i]);
+    rec.lastOutMs = performance.now();
   }
 
   function layout() {
@@ -368,6 +448,21 @@
     }
     updateBodyBg();
     requestAnimationFrame(refit);
+  }
+
+  // 關閉程式時保留的 scrollback 行數（可視區另計；T 協定 restoreLines 可調）
+  var SAVE_LINES = 2000;
+  // q…save：序列化最後 SAVE_LINES 行 scrollback＋可視區（含顏色）。只取正常畫面（alt screen 裡的 vim/top 不存）、
+  // 不帶模式切換序列（bracketed paste／應用程式游標鍵等模式應由新 session 自己設定，別替它預設）。
+  function saveBuffer(rec) {
+    try { return rec.ser.serialize({ scrollback: SAVE_LINES, excludeAltBuffer: true, excludeModes: true }); }
+    catch (e) { return ""; }
+  }
+  function b64ToBytes(b64) {
+    if (!b64) return new Uint8Array(0);
+    var bin = atob(b64), out = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
   }
 
   // 遠端 /last 用（q…text）：取 buffer 最後 maxLines 個「邏輯行」純文字。
@@ -482,8 +577,20 @@
       var bin = atob(rest.slice(i + 1));
       var bytes = new Uint8Array(bin.length);
       for (var j = 0; j < bin.length; j++) bytes[j] = bin.charCodeAt(j);
+      if (rec.pendingRestore !== null) { rec.held.push(bytes); return; } // 舊內容還沒倒回去：先扣住，applyRestore 後依序補寫
       rec.term.write(bytes);
       rec.lastOutMs = performance.now(); // 靜止閘門用：記錄 claude 最後一次輸出（重繪）時間
+    } else if (kind === "b") {
+      // 恢復緩衝區／推進 scrollback：b{id}US{base64 舊內容}US{base64 分隔行}（兩欄皆可空＝只推）。見 applyRestore。
+      var b1 = rest.indexOf(US); var bid = rest.slice(0, b1);
+      var rb = terms[bid]; if (!rb) return;
+      var bRest = rest.slice(b1 + 1), b2 = bRest.indexOf(US);
+      var bPayload = b2 < 0 ? bRest : bRest.slice(0, b2), bSep = b2 < 0 ? "" : bRest.slice(b2 + 1);
+      rb.pendingRestore = b64ToBytes(bPayload);
+      rb.pendingSep = bSep ? b64ToBytes(bSep) : null;
+      rb.held = [];
+      if (rb.fitted) applyRestore(rb, bid);
+      else rb.restoreTimer = setTimeout(function () { if (rb.pendingRestore !== null) applyRestore(rb, bid); }, 4000);
     } else if (kind === "n") {
       i = rest.indexOf(US);
       if (i < 0) makeTerm(rest, null);
@@ -499,7 +606,7 @@
       selectId(rest);
     } else if (kind === "x") {
       var rx = terms[rest];
-      if (rx) { try { rx.term.dispose(); } catch (e) {} rx.el.remove(); delete terms[rest]; if (active === rest) active = null; layout(); }
+      if (rx) { clearTimeout(rx.restoreTimer); try { rx.term.dispose(); } catch (e) {} rx.el.remove(); delete terms[rest]; if (active === rest) active = null; layout(); }
     } else if (kind === "c") {
       var rc = terms[rest]; if (rc) rc.term.clear();
     } else if (kind === "L") {
@@ -515,6 +622,8 @@
         if (t.background) cfg.background = t.background;
         // 靜止閘門門檻（設定可調；0=關閉閘門，立即送）。用 typeof 判斷，允許 0。
         if (typeof t.imeQuietMs === "number" && t.imeQuietMs >= 0) QUIET_MS = t.imeQuietMs;
+        // 關閉程式時每個分頁保留的 scrollback 行數（q…save；AppSettings.RestoreBufferLines）
+        if (typeof t.restoreLines === "number" && t.restoreLines >= 0) SAVE_LINES = t.restoreLines;
         applyTheme();
       } catch (e) {}
     } else if (kind === "q") {
@@ -525,6 +634,7 @@
                : (qk === "text") ? lastPlainText(r2.term, 400)
                : (qk === "file") ? lastPlainText(r2.term, 1000000)   // 複製全部至檔案：整個 buffer 純文字（無 ANSI）
                : (qk === "cwd") ? promptLine(r2.term)                // 標題列目前路徑
+               : (qk === "save") ? saveBuffer(r2)                    // 關閉程式：scrollback 序列化（含顏色）供下次恢復
                : r2.term.getSelection();
       ws.postMessage("a" + id2 + US + qk + US + text);
     } else if (kind === "v") {

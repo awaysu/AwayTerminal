@@ -63,6 +63,11 @@ public partial class MainWindow : Window, IRemoteHost
     private readonly Dictionary<int, DateTime> _busySince = new();
     private TaskCompletionSource<string>? _remoteTextTcs; // q…text 查詢的等待中回覆
 
+    /// <summary>RestoreTabs 逐筆設定：下一個 AddTab 要先倒回的 scrollback（內容, 分隔行）；AddTab 用掉就清（1.0.45）。</summary>
+    private (string buf, string sep)? _restoreBufferForNextTab;
+    /// <summary>關閉程式時等前端回傳各分頁 scrollback（a…save）的等待表（1.0.45）。</summary>
+    private readonly Dictionary<int, TaskCompletionSource<string>> _saveBufTcs = new();
+
     /// <summary>依型態產生分頁預設名稱「{prefix}({n})」，跳過已存在名稱。例：PowerShell(1)。</summary>
     private string NextName(string prefix)
     {
@@ -147,10 +152,11 @@ public partial class MainWindow : Window, IRemoteHost
         SizeChanged += (_, _) => { if (QuickPanel.Visibility == Visibility.Visible) QuickPanel.Width = Math.Max(200, ActualWidth / 5.0); };
     }
 
-    /// <summary>關閉時彈自訂視窗；確認後快速收尾並立即結束（跳過 WebView2 冗長 teardown）。</summary>
+    /// <summary>關閉時彈自訂視窗；確認後交給 FinishExitAsync（先向前端要 scrollback 存檔，再快速收尾並立即結束）。</summary>
     private void OnClosingAsk(object? sender, System.ComponentModel.CancelEventArgs e)
     {
         e.Cancel = true; // 先攔下，改由自訂視窗決定
+        if (_exiting) return;   // 已確認離開、正在等前端回傳 scrollback（最多 2.5 秒）→ 重複的關閉請求忽略
 
         var dlg = new ExitDialog { Owner = this };
         // 以 ClaudePaste 找 claude 分頁——自訂連線開的 ClaudeCode 沒有 Restore，
@@ -163,14 +169,51 @@ public partial class MainWindow : Window, IRemoteHost
         AppSettings.Current.ExitRestoreTabs = dlg.RestoreTabs;
         AppSettings.Current.ExitUpdateMd = dlg.UpdateMd;
 
-        AppSettings.Current.SavedTabs = dlg.RestoreTabs
-            ? Tabs.Where(t => t.Restore != null)
-                  .Select(t => { var s2 = t.Restore!; s2.Title = t.Title; return s2; }).ToList()
-            : new List<SavedTab>();
+        _exiting = true;   // 之後 session 的 Exited 不再跳「要關閉分頁嗎」；X 再按也不再問
+        _ = FinishExitAsync(dlg.RestoreTabs);
+    }
+
+    /// <summary>確認離開後的收尾（1.0.45 改為非同步）：勾「恢復分頁」時先向前端要每個分頁的 scrollback
+    /// （q…save，xterm 序列化、含顏色）存到 AppSettings.RestoreDir、SavedTab.BufferFile 記檔名——
+    /// 下次開啟 RestoreTabs 會先把它倒回分頁再啟動連線（舊訊息在上、新連線在下）。
+    /// 之後存設定、終止子行程（不送 Ctrl+C、不等待）、Environment.Exit(0)（跳過 WebView2 冗長 teardown）。</summary>
+    private async Task FinishExitAsync(bool restore)
+    {
+        var tabs = restore ? Tabs.Where(t => t.Restore != null).ToList() : new List<TerminalTab>();
+        var bufs = new Dictionary<int, string>();
+        if (tabs.Count > 0 && AppSettings.Current.RestoreBufferLines > 0)
+        {
+            try { bufs = await CaptureBuffersAsync(tabs, 2500); } catch (Exception ex) { Diag.Log("capture buffers: " + ex.Message); }
+        }
+
+        // 暫存目錄每次重寫：舊檔全清，不累積
+        string dir = AppSettings.RestoreDir;
+        try
+        {
+            Directory.CreateDirectory(dir);
+            foreach (var f in Directory.GetFiles(dir)) { try { File.Delete(f); } catch { } }
+        }
+        catch { }
+
+        var saved = new List<SavedTab>();
+        int n = 0;
+        foreach (var t in tabs)
+        {
+            var s2 = t.Restore!;
+            s2.Title = t.Title;
+            s2.BufferFile = "";
+            if (bufs.TryGetValue(t.Id, out var text) && !string.IsNullOrEmpty(text))
+            {
+                string name = $"tab{++n}.txt";
+                try { File.WriteAllText(Path.Combine(dir, name), text, new UTF8Encoding(false)); s2.BufferFile = name; }
+                catch (Exception ex) { Diag.Log($"save buffer {name}: {ex.Message}"); }
+            }
+            saved.Add(s2);
+        }
+        AppSettings.Current.SavedTabs = saved;
         AppSettings.Current.Save();
 
         // 快速收尾：終止子行程（不送 Ctrl+C、不等待），然後立即結束程式
-        _exiting = true;   // 之後 session 的 Exited 不再跳「要關閉分頁嗎」
         _statusTimer?.Stop();
         _bounceTimer?.Stop();
         _remote?.NotifyOfflineBlocking();   // 關閉前先告知手機「遠端離線」（使用者選項；只有遠端在跑才送）
@@ -187,6 +230,27 @@ public partial class MainWindow : Window, IRemoteHost
             catch { }
         }
         Environment.Exit(0); // 立即終止，msedgewebview2 等子程序會隨之結束
+    }
+
+    /// <summary>向前端要各分頁 scrollback 序列化（q…save → a…save）；逾時就只拿已回的那些。</summary>
+    private async Task<Dictionary<int, string>> CaptureBuffersAsync(List<TerminalTab> tabs, int timeoutMs)
+    {
+        var result = new Dictionary<int, string>();
+        if (!_webReady) return result;
+        _saveBufTcs.Clear();
+        var waits = new List<Task>();
+        foreach (var t in tabs)
+        {
+            var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+            _saveBufTcs[t.Id] = tcs;
+            waits.Add(tcs.Task);
+            PostToWeb("q" + t.Id + US + "save");
+        }
+        await Task.WhenAny(Task.WhenAll(waits), Task.Delay(timeoutMs));
+        foreach (var t in tabs)
+            if (_saveBufTcs.TryGetValue(t.Id, out var tcs) && tcs.Task.IsCompletedSuccessfully) result[t.Id] = tcs.Task.Result;
+        _saveBufTcs.Clear();
+        return result;
     }
 
     /// <summary>請每個 Claude Code 分頁更新 CLAUDE.md，並等到它們都閒置（或逾時）。</summary>
@@ -663,7 +727,8 @@ public partial class MainWindow : Window, IRemoteHost
             fontSize = s.FontSize,
             foreground = s.Foreground,
             background = s.Background,
-            imeQuietMs = s.ImeQuietMs   // claude 分頁靜止閘門門檻（見 AppSettings.ImeQuietMs / terminal.js）
+            imeQuietMs = s.ImeQuietMs,   // claude 分頁靜止閘門門檻（見 AppSettings.ImeQuietMs / terminal.js）
+            restoreLines = s.RestoreBufferLines   // 關閉時每個分頁保留的 scrollback 行數（q…save；1.0.45）
         });
         PostToWeb("T" + json);
     }
@@ -700,6 +765,48 @@ public partial class MainWindow : Window, IRemoteHost
         _statusTimer.Start();
 
         StartOrRestartRemote(); // 依設定啟動 Telegram 遠端（未設 token/chatId 則不啟動）
+
+        // 檔案總管右鍵「用 AwayTerminal 開啟」（1.0.45）：依設定登錄/移除 HKCU 選單（路徑指向目前 exe、文字隨語言），
+        // 並開 IPC 管線——之後從右鍵再啟動的 AwayTerminal.exe 會把資料夾轉交過來、由這個實例開分頁
+        ShellIntegration.Apply(AppSettings.Current.ExplorerMenu, Loc.T("shell.menuText"));
+        IpcPipe.StartServer(line => Dispatcher.InvokeAsync(() => HandleIpcLine(line)));
+    }
+
+    // ---------- 檔案總管右鍵「用 AwayTerminal 開啟」（1.0.45）----------
+    private void HandleIpcLine(string line)
+    {
+        int t = line.IndexOf('\t');
+        string cmd = t < 0 ? line : line.Substring(0, t);
+        string arg = t < 0 ? "" : line.Substring(t + 1);
+        Diag.Log($"ipc: {cmd} {arg}");
+        if (cmd == "open-dir") OpenDirFromShell(arg);
+    }
+
+    /// <summary>在指定資料夾開 PowerShell 分頁（分頁名＝資料夾名，同 ClaudeCode 的命名），並把視窗拉到前景。
+    /// WebView2 未 ready 時排隊（DeferUntilWebReady）。</summary>
+    private void OpenDirFromShell(string dir)
+    {
+        BringToFront();
+        if (DeferUntilWebReady(() => OpenDirFromShell(dir), "OpenDirFromShell")) return;
+        if (string.IsNullOrWhiteSpace(dir) || !Directory.Exists(dir))
+        {
+            MessageBox.Show(this, string.Format(Loc.T("shell.dirMissing"), dir), "AwayTerminal",
+                MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+        OpenPowerShellDirect(dir, DirTabName(dir, "PowerShell"));
+    }
+
+    /// <summary>把主視窗拉到前景（最小化先還原；Topmost 開關一下繞過前景鎖）。</summary>
+    private void BringToFront()
+    {
+        try
+        {
+            if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
+            Activate();
+            Topmost = true; Topmost = false;
+        }
+        catch { }
     }
 
     // ---------- WebView2 訊息 ----------
@@ -722,6 +829,8 @@ public partial class MainWindow : Window, IRemoteHost
             var pending = _pendingReadyAction;
             _pendingReadyAction = null;
             if (pending != null) { Diag.Log("running deferred action"); pending(); }
+            // 命令列 --open-dir（檔案總管右鍵，啟動時沒有既有實例可轉交）→ 恢復分頁之後再開，讓它成為作用中分頁
+            if (App.PendingOpenDir != null) { string d = App.PendingOpenDir; App.PendingOpenDir = null; OpenDirFromShell(d); }
             return;
         }
 
@@ -745,6 +854,11 @@ public partial class MainWindow : Window, IRemoteHost
                         tab.LastSubmitUtc = DateTime.UtcNow;   // 含 Enter＝送出指令 → 完成後應推播
                     if (tab.Session == null && tab.LoginBuffer != null)
                         HandleLoginInput(tab, text); // SSH「login as:」中
+                    else if (tab.Session == null && tab.Restore != null && tab.Kind is (TermKind.Ssh or TermKind.Telnet or TermKind.Com))
+                    {
+                        // 連線已結束的遠端分頁：按 Enter 在同一分頁重連（1.0.45，舊訊息留在 scrollback）；其他按鍵忽略
+                        if (text.IndexOf('\r') >= 0 || text.IndexOf('\n') >= 0) ManualReconnect(tab);
+                    }
                     else
                         tab.Session?.WriteText(text);
                 }
@@ -780,6 +894,11 @@ public partial class MainWindow : Window, IRemoteHost
                 if (p2 < 0) break;
                 string qk = rest.Substring(p1 + 1, p2 - p1 - 1);
                 string text = rest.Substring(p2 + 1);
+                if (qk == "save")   // 關閉程式：scrollback 序列化回覆（FinishExitAsync 等待中）
+                {
+                    if (int.TryParse(rest.Substring(0, p1), out int sid) && _saveBufTcs.TryGetValue(sid, out var stcs)) stcs.TrySetResult(text);
+                    break;
+                }
                 if (qk == "text") { _remoteTextTcs?.TrySetResult(text); _remoteTextTcs = null; break; } // 遠端查詢，不進剪貼簿
                 if (qk == "file") { SaveBufferToFile(rest.Substring(0, p1), text); break; }             // 複製全部至檔案
                 if (qk == "cwd") { UpdateTitlePath(rest.Substring(0, p1), text); break; }               // 標題列目前路徑
@@ -851,8 +970,35 @@ public partial class MainWindow : Window, IRemoteHost
         Tabs.Add(tab);
         // 第三欄 flags：c=claude 分頁 → JS 端多行貼上改送 ESC+CR 軟換行（terminal.js doPaste）
         PostToWeb("n" + id + US + title + US + (tab.ClaudePaste ? "c" : ""));
+        // 恢復分頁（1.0.45）：上次存的 scrollback 先倒回這個 xterm（b 協定；JS 端等 fit 到最終寬度才寫、期間的輸出先扣住），
+        // 呼叫端接著才啟動連線 → 舊訊息在上、分隔行、新連線在下
+        if (_restoreBufferForNextTab != null)
+        {
+            var (buf, sep) = _restoreBufferForNextTab.Value;
+            _restoreBufferForNextTab = null;
+            PostToWeb("b" + id + US + Convert.ToBase64String(Encoding.UTF8.GetBytes(buf))
+                          + US + Convert.ToBase64String(Encoding.UTF8.GetBytes(sep)));
+        }
         SelectTab(tab);
         return tab;
+    }
+
+    /// <summary>讀回上次關閉時存的 scrollback（SavedTab.BufferFile）；沒有或讀不到回 null。
+    /// 回傳 (內容, 分隔行)：內容末尾補 SGR 重置；分隔行灰字帶存檔時間，JS 端寫在舊內容之後、推進 scrollback 之前。</summary>
+    private static (string buf, string sep)? LoadRestoreBuffer(SavedTab st)
+    {
+        if (string.IsNullOrWhiteSpace(st.BufferFile)) return null;
+        try
+        {
+            string path = Path.Combine(AppSettings.RestoreDir, st.BufferFile);
+            if (!File.Exists(path)) return null;
+            string text = File.ReadAllText(path, Encoding.UTF8);
+            if (string.IsNullOrEmpty(text)) return null;
+            string when = File.GetLastWriteTime(path).ToString("yyyy-MM-dd HH:mm");
+            string sep = "\x1b[90m" + string.Format(Loc.T("term.restoredSep"), when) + "\x1b[0m";
+            return (text + "\x1b[0m", sep);
+        }
+        catch (Exception ex) { Diag.Log($"load buffer {st.BufferFile}: {ex.Message}"); return null; }
     }
 
     /// <summary>執行檔名含 claude → 貼上需走 ESC+CR 軟換行（AddTab 的 claudePaste 旗標）。</summary>
@@ -896,6 +1042,7 @@ public partial class MainWindow : Window, IRemoteHost
     {
         foreach (var st in saved.ToList())
         {
+            _restoreBufferForNextTab = LoadRestoreBuffer(st);   // 有存 scrollback 就交給 AddTab 先倒回去（1.0.45）
             try
             {
                 switch (st.Type)
@@ -977,6 +1124,7 @@ public partial class MainWindow : Window, IRemoteHost
                 }
             }
             catch { /* 個別分頁恢復失敗就跳過 */ }
+            finally { _restoreBufferForNextTab = null; }   // 這筆沒開成分頁（adb 找不到、使用者取消）→ 別留給下一筆
         }
     }
 
@@ -1062,11 +1210,16 @@ public partial class MainWindow : Window, IRemoteHost
             tab.Session = null;
             _ = System.Threading.Tasks.Task.Run(() => { try { session.Dispose(); } catch { } });
 
+            bool remoteKind = tab.Kind is (TermKind.Ssh or TermKind.Telnet or TermKind.Com);
+            bool willAuto = tab.AutoReconnect && tab.Restore != null && remoteKind;
+            // 沒勾自動重連的 SSH/Telnet/COM：提示按 Enter 在同一分頁重連（1.0.45；舊訊息留在 scrollback，見 ManualReconnect）
+            string hint = (!willAuto && !_exiting && remoteKind && tab.Restore != null)
+                ? " \x1b[33m" + Loc.T("term.exitedEnter") + "\x1b[0m" : "";
             PostToWeb("o" + tab.Id + US + Convert.ToBase64String(
-                Encoding.UTF8.GetBytes("\r\n\x1b[90m" + Loc.T("term.exited") + "\x1b[0m\r\n")));
+                Encoding.UTF8.GetBytes("\r\n\x1b[90m" + Loc.T("term.exited") + "\x1b[0m" + hint + "\r\n")));
 
             // 斷線自動重連：勾了自動重連才排程
-            if (tab.AutoReconnect && tab.Restore != null && tab.Kind is (TermKind.Ssh or TermKind.Telnet or TermKind.Com))
+            if (willAuto)
             {
                 ScheduleReconnect(tab);
                 return;
@@ -1106,10 +1259,32 @@ public partial class MainWindow : Window, IRemoteHost
         timer.Start();
     }
 
-    /// <summary>依 Restore 資訊重建 session（同一個分頁，不另開）。失敗就再排下一次。</summary>
+    /// <summary>連線已結束的 SSH/Telnet/COM 分頁按 Enter → 在同一分頁重連（1.0.45）：舊訊息留在 scrollback。
+    /// SSH 尚未輸入過帳號（Host 沒有 user@）→ 回到「login as:」。自動重連等待中按 Enter＝不等退避、立刻連。</summary>
+    private void ManualReconnect(TerminalTab tab)
+    {
+        var st = tab.Restore;
+        if (st == null || tab.Session != null) return;
+        tab.ReconnectAttempt = 0;
+        if (tab.Kind == TermKind.Ssh && !st.Host.Contains('@'))
+        {
+            PostToWeb("b" + tab.Id + US + US);   // 舊畫面先推進 scrollback（同 TryReconnect）
+            tab.PendingHost = st.Host;
+            tab.PendingPort = st.Port;
+            tab.LoginBuffer = new StringBuilder();
+            EchoToTab(tab.Id, "login as: ");
+            return;
+        }
+        TryReconnect(tab);
+    }
+
+    /// <summary>依 Restore 資訊重建 session（同一個分頁，不另開）。失敗：自動重連者再排下一次、手動者印錯誤再提示按 Enter。</summary>
     private void TryReconnect(TerminalTab tab)
     {
         var st = tab.Restore!;
+        // 1.0.45：先把舊畫面整頁推進 scrollback、游標歸位（b 協定，見 terminal.js applyRestore）——
+        // ConPTY 新 session 的第一幀一定送 ESC[2J 清可視區，不先推的話「最後一頁」舊訊息會憑空消失。
+        PostToWeb("b" + tab.Id + US + US);
         try
         {
             switch (tab.Kind)
@@ -1148,13 +1323,16 @@ public partial class MainWindow : Window, IRemoteHost
             }
             tab.Session?.Resize(tab.Cols, tab.Rows);
         }
-        catch
+        catch (Exception ex)
         {
             // 開失敗的 session 也要釋放（先取下再 Dispose，Serial 的 Exited 重發會被過期防護擋掉）
             var dead = tab.Session;
             tab.Session = null;
             if (dead != null) _ = System.Threading.Tasks.Task.Run(() => { try { dead.Dispose(); } catch { } });
-            ScheduleReconnect(tab);   // 連不上（埠不存在/主機不通）→ 退避後再試
+            if (tab.AutoReconnect)
+                ScheduleReconnect(tab);   // 連不上（埠不存在/主機不通）→ 退避後再試
+            else
+                EchoToTab(tab.Id, "\r\n\x1b[31m" + ex.Message + "\x1b[0m \x1b[33m" + Loc.T("term.exitedEnter") + "\x1b[0m\r\n");
         }
     }
 
@@ -2112,8 +2290,12 @@ public partial class MainWindow : Window, IRemoteHost
     private void Settings_Click(object sender, RoutedEventArgs e)
     {
         var dlg = new SettingsDialog { Owner = this };
-        // 語言切換由 Loc.Changed 自動套用工具列；字型/背景改動於此重新套到終端機
-        if (dlg.ShowDialog() == true) { PostTheme(); ApplyWebDefaultBg(); }
+        // 語言切換由 Loc.Changed 自動套用工具列；字型/背景改動於此重新套到終端機；檔案總管右鍵選單依勾選登錄/移除（文字隨語言）
+        if (dlg.ShowDialog() == true)
+        {
+            PostTheme(); ApplyWebDefaultBg();
+            ShellIntegration.Apply(AppSettings.Current.ExplorerMenu, Loc.T("shell.menuText"));
+        }
     }
 
     /// <summary>找不到 adb：說明並詢問是否開啟官方 platform-tools 下載頁。</summary>
