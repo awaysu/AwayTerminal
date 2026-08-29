@@ -1489,12 +1489,17 @@ public partial class MainWindow : Window, IRemoteHost
         AddHistory(new SavedTab { Type = "telnet", Host = host, Port = port });
     }
 
-    /// <summary>組 ssh.exe 指令：含保持連線（KeepAliveMins 分→ServerAliveInterval 秒；0=不加）。</summary>
+    /// <summary>
+    /// 組 ssh.exe 指令：含保持連線（KeepAliveMins 分→ServerAliveInterval 秒；0=不加）。
+    /// 1.1.1：帶 SendEnv 把 CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN 送到遠端——遠端跑 claude 時才不會走
+    /// alternate screen 把對話從 scrollback 洗掉（本機是 App.OnStartup 設的，SSH 不會自動帶過去）。
+    /// 遠端 sshd 要在 AcceptEnv 允許這個名字才收，沒允許就靜默忽略、無副作用；不收的機器請在遠端 rc 檔 export。
+    /// </summary>
     private static string SshCommand(string host, int port)
     {
         int m = AppSettings.Current.KeepAliveMins;
         string ka = m > 0 ? $" -o ServerAliveInterval={m * 60} -o ServerAliveCountMax=3" : "";
-        return $"ssh.exe -p {port}{ka} {host}";
+        return $"ssh.exe -p {port}{ka} -o SendEnv=CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN {host}";
     }
 
     /// <summary>PuTTY 式：先開分頁顯示「login as:」，輸入帳號後才啟動 ssh。</summary>
