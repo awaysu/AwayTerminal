@@ -46,6 +46,7 @@ public sealed class ConPtySession : ITerminalSession
         _outputPipe = new PseudoConsolePipe();
         _pty = PseudoConsole.Create(_inputPipe.ReadSide, _outputPipe.WriteSide, cols, rows);
         _procInfo = ProcessFactory.Start(command, _pty.Handle, workingDirectory);
+        _pty.Release();   // conpty.dll 後端：子行程已掛上，放掉參考 handle（內建 conhost 後端為 no-op）
 
         // 我方保留：輸入「寫端」（送鍵盤）、輸出「讀端」（收畫面）
         _writeStream = new FileStream(_inputPipe.WriteSide, FileAccess.Write);

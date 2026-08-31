@@ -77,6 +77,10 @@ public partial class App : Application
         // 官方 opt-out（v2.1.132+）：改回經典渲染器，回覆留在 xterm.js 的 50000 行 scrollback。
         Environment.SetEnvironmentVariable("CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN", "1");
 
+        // 1.1.3：ConPTY 後端（exe 旁 conpty\conpty.dll+OpenConsole.exe＝Windows Terminal 新版主機；缺檔＝Win10 內建 conhost）
+        AwayTerminal.Services.Diag.Log("ConPTY backend: " + (AwayTerminal.ConPty.ConptyDll.Available
+            ? "conpty.dll (OpenConsole) " + AwayTerminal.ConPty.ConptyDll.Dir : "inbox conhost"));
+
         base.OnStartup(e);
     }
 }

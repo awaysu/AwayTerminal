@@ -21,7 +21,7 @@ Telegram 遠端設定，設定完成後可用手機檢視畫面、下指令與�
 ## 特色
 
 - **多 Session 管理**：PowerShell、SSH、Telnet、COM Port、ADB、WSL 與自訂連線（Claude Code、Open Code…）皆以分頁集中管理
-- **AI Coding 友善**：Claude Code / Open Code 可直接以 ConPTY 執行，多行貼上、中文輸入與 scrollback 都已針對其 TUI 調校
+- **AI Coding 友善**：Claude Code / Open Code 可直接以 ConPTY 執行，多行貼上、中文輸入與 scrollback 都已針對其 TUI 調校（並隨附 Windows Terminal 的新版 ConPTY 主機，避免舊版 conhost 造成的輸入殘影與顯示錯位）
 - **常用字串**：儲存常用指令與 AI Prompt，可分群組，在「輸入文字」視窗選取後插入或直接送出（可設定送出後自動按 Enter）
 - **輸入文字**：工具列「輸入文字」開輸入框，中文、多行文字先在一般文字框打好再整段送進目前分頁（避開 AI TUI 逐鍵解析中文輸入的問題）；視窗上方可直接挑常用字串插入或送出
 - **Telegram 遠端控制**：手機端檢視畫面、下指令、截圖與完成通知
@@ -57,7 +57,8 @@ dotnet build
 ```text
 AwayTerminal.csproj        專案設定與相依套件
 MainWindow.xaml/.cs        主視窗、工具列、分頁與終端機控制
-ConPty/                    Windows ConPTY 連線實作
+ConPty/                    Windows ConPTY 連線實作（優先用打包的 OpenConsole，缺檔退回內建 conhost）
+third_party/conpty/        Windows Terminal 的 ConPTY 主機（conpty.dll + OpenConsole.exe，MIT）
 Sessions/                  Telnet、Serial 與終端機 Session 介面
 Dialogs/                   各種設定與連線對話框
 Services/                  設定、診斷、遠端控制等服務

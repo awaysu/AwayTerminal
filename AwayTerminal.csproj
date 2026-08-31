@@ -10,7 +10,7 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>app.ico</ApplicationIcon>
     <!-- 版本：每交付一版 +0.0.1（顯示在「關於」）。P0=0.0.1 … P4=0.0.4，微調=0.0.5 -->
-    <Version>1.1.2</Version>
+    <Version>1.1.3</Version>
     <AssemblyTitle>AwayTerminal</AssemblyTitle>
     <Company>Chih-Wei Su (Awaysu)</Company>
     <Copyright>Copyright (c) 2026 Chih-Wei Su (Awaysu)</Copyright>
@@ -38,6 +38,16 @@
        THIRD-PARTY-NOTICES.md）：Android SDK 條款 §3.4 禁止轉散布，與 §3.5 的
        開源元件例外界線不明，上架 Store 需對散布內容有明確權利。改為搜尋使用者
        既有的 platform-tools 安裝。 -->
+
+  <!-- 1.1.3：Windows Terminal 的新版 ConPTY 主機（conpty.dll + OpenConsole.exe，MIT、微軟簽章；
+       來源與雜湊見 third_party/conpty/README.md）→ 輸出目錄 conpty\，ConPty/ConptyDll.cs 啟動時載入；
+       缺檔就退回 kernel32 內建 conhost。安裝檔／MSIX 都打包 bin\publish\* 子目錄，自動含入。 -->
+  <ItemGroup>
+    <Content Include="third_party\conpty\conpty.dll;third_party\conpty\OpenConsole.exe">
+      <Link>conpty\%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
 
   <!-- 工具列 / 視窗 icon 內嵌為 WPF 資源 -->
   <ItemGroup>

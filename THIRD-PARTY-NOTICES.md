@@ -129,6 +129,47 @@ portions Copyright (c) 2000-2025 Martijn Laan. All rights reserved.
 
 ---
 
+## 6. Windows Terminal ConPTY host (conpty.dll, OpenConsole.exe)
+
+**Used for:** the pseudo-console that runs PowerShell / ssh.exe / Claude Code /
+custom programs (v1.1.3+). Replaces the Windows 10 inbox `conhost.exe` so that
+AwayTerminal gets the same, current ConPTY behaviour as Windows Terminal.
+**Shipped as:** `conpty\conpty.dll`, `conpty\OpenConsole.exe` — unmodified,
+Microsoft-signed binaries (Windows Terminal 1.23.2510.08001), taken from the
+`node-pty` npm package (`third_party/conpty/`). Source, versions and SHA-256
+hashes are listed in `third_party/conpty/README.md` of the repository.
+**Project:** https://github.com/microsoft/terminal
+**Licence:** MIT
+
+> Copyright (c) Microsoft Corporation. All rights reserved.
+>
+> MIT License
+>
+> Permission is hereby granted, free of charge, to any person obtaining a copy
+> of this software and associated documentation files (the "Software"), to deal
+> in the Software without restriction, including without limitation the rights
+> to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+> copies of the Software, and to permit persons to whom the Software is
+> furnished to do so, subject to the following conditions:
+>
+> The above copyright notice and this permission notice shall be included in all
+> copies or substantial portions of the Software.
+>
+> THE SOFTWARE IS PROVIDED *AS IS*, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+> IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+> FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+> AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+> LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+> OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+> SOFTWARE.
+
+The Windows Terminal binaries themselves incorporate further open-source
+components; their notices are published by the project in
+https://github.com/microsoft/terminal/blob/main/NOTICE.md and apply unchanged to
+the copies redistributed here.
+
+---
+
 ## Icons
 
 All icon artwork in `icon/` — including the icons that denote third-party
