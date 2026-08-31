@@ -1714,11 +1714,12 @@ public partial class MainWindow : Window, IRemoteHost
         new(@"^\[[^@\s\]]+@[^\s\]]+\s+(?<p>[^\]]+)\]\s*[$#]"),      // RHEL/CentOS：[user@host ~]#
         new(@"^[\w.-]+:(?<p>/[^\s$#]*)\s*[$#]"),                    // Android adb：davinci:/data $
         new(@"^[^@\s]+@[^\s:]+\s+(?<p>[/~][^\s>$#%]*)\s*[>$#%]"),   // fish 等：user@host /path>
+        new(@"^[\w.-]+:(?<p>[^\s]+)\s+[^\s]+[$#%]"),                // macOS bash 預設：host:資料夾名 user$（\h:\W \u$，只有 basename）
     };
 
     private string _titlePath = "";
 
-    /// <summary>從提示字元行解析目前路徑（CwdRes 六組 regex）；解析不到回 null。</summary>
+    /// <summary>從提示字元行解析目前路徑（CwdRes 七組 regex）；解析不到回 null。</summary>
     private static string? ParseCwd(string promptLine)
     {
         foreach (var re in CwdRes)
