@@ -99,7 +99,7 @@
                           Background="#2D2D30" ResizeBehavior="PreviousAndNext" ResizeDirection="Columns" ShowsPreview="False"
                           Cursor="SizeWE" DragCompleted="TabSplitter_DragCompleted" />
 
-            <!-- 分頁列表框：每列＝[狀態圓點][log][巨集] 標題 … [✕]，右鍵選單同舊分頁列；分頁多時可捲動 -->
+            <!-- 分頁列表框：每列＝[連線圖示（綠=閒/紅=忙）] 標題 … [✕]，右鍵選單同舊分頁列；分頁多時可捲動 -->
             <Border x:Name="TabPanel" Grid.Column="2" Background="#252528" Margin="0,0,4,4">
             <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
             <ItemsControl x:Name="TabStrip" Margin="4">
@@ -132,18 +132,12 @@
                                 </ContextMenu>
                             </Border.ContextMenu>
                             <DockPanel LastChildFill="True">
-                                <Ellipse DockPanel.Dock="Left" Width="13" Height="13" Fill="{Binding StatusBrush}"
-                                         VerticalAlignment="Center" Margin="0,0,7,0" />
-                                <Image DockPanel.Dock="Left" Source="pack://application:,,,/icon/log-record-32.png" Width="18" Height="18"
-                                       Opacity="{Binding LogOpacity}" VerticalAlignment="Center" Margin="0,0,4,0"
-                                       Cursor="Hand" MouseLeftButtonUp="LogIcon_Click"
-                                       ToolTip="{Binding Path=[tip.tabLog], Source={x:Static loc:LocProxy.Instance}}"
-                                       RenderOptions.BitmapScalingMode="HighQuality" />
-                                <Image DockPanel.Dock="Left" Source="pack://application:,,,/icon/auto-script-32.png" Width="18" Height="18"
-                                       Opacity="{Binding MacroOpacity}" VerticalAlignment="Center" Margin="0,0,6,0"
-                                       Cursor="Hand" MouseLeftButtonUp="MacroIcon_Click"
-                                       ToolTip="{Binding Path=[tip.tabMacro], Source={x:Static loc:LocProxy.Instance}}"
-                                       RenderOptions.BitmapScalingMode="HighQuality" />
+                                <!-- 1.1.2：狀態圓點／log／巨集三個圖示改為單一「連線種類圖示」（＝New 下拉同一組圖），
+                                     閒置染綠、忙碌染紅（TerminalTab.StatusIcon → IconTint）；滑鼠停上去顯示是哪一種連線 -->
+                                <Image DockPanel.Dock="Left" Source="{Binding StatusIcon}" Width="20" Height="20"
+                                       VerticalAlignment="Center" Margin="0,0,7,0"
+                                       ToolTip="{Binding KindTip}"
+                                       RenderOptions.BitmapScalingMode="HighQuality" SnapsToDevicePixels="True" />
                                 <Button DockPanel.Dock="Right" Content="&#10005;" Click="TabClose_Click" Width="22" Height="22"
                                         Margin="6,0,0,0" Padding="0" Background="Transparent" BorderThickness="0"
                                         Foreground="#AAAAAA" Cursor="Hand" FontSize="13"

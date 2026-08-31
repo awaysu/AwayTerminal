@@ -188,9 +188,18 @@ public static class Loc
         ["menu.log"] = ("記錄 log…", "Record log…"),
         ["menu.macro"] = ("執行巨集…", "Run macro…"),
         ["menu.close"] = ("關閉", "Close"),
-        ["tip.tabLog"] = ("記錄 log（點擊開始/停止）", "Record log (click to start/stop)"),
-        ["tip.tabMacro"] = ("巨集（點擊執行/停止）", "Macro (click to run/stop)"),
+        // 1.1.2：分頁列的 log／巨集圖示移除，改在分頁 tooltip 註明狀態
+        ["tip.tabLogging"] = ("● 記錄 log 中", "● Recording log"),
+        ["tip.tabMacroRunning"] = ("● 巨集執行中", "● Macro running"),
         ["tip.tabClose"] = ("關閉", "Close"),
+        // 1.1.2：分頁列連線圖示（綠=閒、紅=忙）的 tooltip＝是哪一種連線
+        ["kind.powershell"] = ("PowerShell", "PowerShell"),
+        ["kind.ssh"] = ("SSH", "SSH"),
+        ["kind.telnet"] = ("Telnet", "Telnet"),
+        ["kind.com"] = ("連接埠 (COM)", "Serial port (COM)"),
+        ["kind.adb"] = ("ADB", "ADB"),
+        ["kind.claude"] = ("Claude Code", "Claude Code"),
+        ["kind.custom"] = ("自訂連線", "Custom connection"),
         ["tip.tabPanel"] = ("顯示／隱藏分頁列表", "Show / hide the tab list"),
 
         // 分頁列最左「…」輸入框（先打好再送出）

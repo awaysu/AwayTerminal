@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Windows;
 using System.Windows.Media;
+using AwayTerminal.Localization;
 using AwayTerminal.Services;
 using AwayTerminal.Sessions;
 
@@ -87,59 +88,112 @@ public sealed class TerminalTab : INotifyPropertyChanged
         Id = id;
         Kind = kind;
         _title = title;
+        // 分頁列圖示與種類名稱依 Kind 給預設（1.1.2）；自訂連線由 OpenCustom 再覆寫成該連線的圖示／名稱
+        (_iconFile, KindKey) = kind switch
+        {
+            TermKind.PowerShell => ("powershell.png", "kind.powershell"),
+            TermKind.Ssh => ("ssh-telnet.png", "kind.ssh"),
+            TermKind.Telnet => ("ssh-telnet.png", "kind.telnet"),
+            TermKind.Com => ("com.png", "kind.com"),
+            TermKind.Adb => ("adb.png", "kind.adb"),
+            TermKind.Claude => ("claude-code.png", "kind.claude"),
+            _ => ("run.png", "kind.custom"),
+        };
     }
 
     private string _title;
+    /// <summary>分頁標題＝完整名稱、不截字（1.1.2 使用者要求：過長只在分頁列顯示層以 CharacterEllipsis 截、
+    /// 改名視窗與 tooltip 都看得到全名）。</summary>
     public string Title
     {
         get => _title;
         set { if (_title != value) { _title = value; Raise(nameof(Title)); Raise(nameof(ToolTipText)); } }
     }
 
-    // tooltip：標題 + 已啟動時間（時:分），例：PowerShell-1 00:23
+    /// <summary>由提示字元行解析到的目前路徑（PowerShell/SSH/Telnet/WSL 等 shell 分頁；tooltip 第二行）。</summary>
+    public string CwdPath { get; set; } = "";
+
+    /// <summary>使用者手動「更改名稱」後鎖住：不再依目前目錄自動改名。</summary>
+    public bool TitleLocked { get; set; }
+
+    /// <summary>分頁列圖示檔名（icon/ 內的 png；＝New 下拉同一組圖示），依狀態染成綠／紅（StatusIcon）。</summary>
+    private string _iconFile;
+    public string IconFile
+    {
+        get => _iconFile;
+        set { if (_iconFile != value) { _iconFile = value; Raise(nameof(StatusIcon)); } }
+    }
+
+    /// <summary>種類名稱的 Loc key（kind.powershell / kind.ssh / …），圖示 tooltip 用。</summary>
+    public string KindKey { get; set; }
+
+    /// <summary>種類補充（主機、COM 埠、自訂連線名稱、工作目錄…）：直接從 Restore（各開啟點都會填）取，
+    /// 不必每個開啟點各自設一次；沒有 Restore 時退回啟動目錄。</summary>
+    private string KindDetail => Restore switch
+    {
+        null => WorkDir,
+        { Type: "ssh" } r => r.Host,
+        { Type: "telnet" } r => $"{r.Host}:{r.Port}",
+        { Type: "com" } r => $"{r.ComPort} {r.Baud}",
+        { Type: "adb" } r => r.AdbSerial,
+        { Type: "custom" } r => string.IsNullOrEmpty(r.Dir) ? r.Name : $"{r.Name}  {r.Dir}",
+        var r => r.Dir,   // ps / claude
+    };
+
+    /// <summary>圖示 tooltip：「是哪一種連線」＝種類名稱＋補充，例「SSH  user@host」「PowerShell  C:\path」。</summary>
+    public string KindTip
+    {
+        get
+        {
+            string d = KindDetail;
+            return string.IsNullOrEmpty(d) ? Loc.T(KindKey) : $"{Loc.T(KindKey)}  {d}";
+        }
+    }
+
+    // tooltip：完整名稱 + 已啟動時間（時:分），例：AwayPhotoRawEditor_Swift 00:23；
+    // 第二行＝目前路徑（shell 分頁）；記錄 log／巨集執行中也在這裡註明（1.1.2 起分頁列不再放 log／巨集圖示）
     public string ToolTipText
     {
         get
         {
             int mins = (int)(DateTime.UtcNow - StartUtc).TotalMinutes;
             if (mins < 0) mins = 0;
-            return $"{_title} {mins / 60:D2}:{mins % 60:D2}";
+            var sb = new System.Text.StringBuilder($"{_title} {mins / 60:D2}:{mins % 60:D2}");
+            if (!string.IsNullOrEmpty(CwdPath) && CwdPath != _title) sb.Append('\n').Append(CwdPath);
+            if (_isLogging) sb.Append('\n').Append(Loc.T("tip.tabLogging"));
+            if (_isMacroRunning) sb.Append('\n').Append(Loc.T("tip.tabMacroRunning"));
+            return sb.ToString();
         }
     }
 
-    /// <summary>供狀態輪詢定期呼叫，更新 tooltip 的已啟動時間。</summary>
-    public void RefreshRuntime() => Raise(nameof(ToolTipText));
+    /// <summary>供狀態輪詢定期呼叫，更新 tooltip 的已啟動時間（語言切換也靠這裡更新 KindTip）。</summary>
+    public void RefreshRuntime() { Raise(nameof(ToolTipText)); Raise(nameof(KindTip)); }
 
-    // 狀態方塊：Ready=綠(可輸入)、Busy=紅(跑程式；1.0.42 由橘改紅，與工作列彈跳球同色)
+    // 狀態：Ready=綠(可輸入)、Busy=紅(跑程式；1.0.42 由橘改紅，與工作列彈跳球同色)。
+    // 1.1.2 起不再是圓點，而是把該分頁的連線圖示染色（StatusIcon）。
     private TermStatus _status = TermStatus.Ready;
     public TermStatus Status
     {
         get => _status;
-        set { if (_status != value) { _status = value; Raise(nameof(Status)); Raise(nameof(StatusBrush)); } }
+        set { if (_status != value) { _status = value; Raise(nameof(Status)); Raise(nameof(StatusIcon)); } }
     }
-    public Brush StatusBrush => _status == TermStatus.Busy ? BusyBrush : ReadyBrush;
+    public ImageSource StatusIcon => IconTint.Get(_iconFile, _status == TermStatus.Busy ? BusyColor : ReadyColor);
 
-    // 記錄 log icon：灰=停、藍=記錄中
+    // 記錄 log 中（分頁 tooltip 註明；右鍵選單開始/停止）
     private bool _isLogging;
     public bool IsLogging
     {
         get => _isLogging;
-        set { if (_isLogging != value) { _isLogging = value; Raise(nameof(IsLogging)); Raise(nameof(LogBrush)); Raise(nameof(LogOpacity)); } }
+        set { if (_isLogging != value) { _isLogging = value; Raise(nameof(IsLogging)); Raise(nameof(ToolTipText)); } }
     }
-    public Brush LogBrush => _isLogging ? LogOnBrush : OffBrush;
-    // log icon 圖片：停=淡、記錄中=亮
-    public double LogOpacity => _isLogging ? 1.0 : 0.35;
 
-    // 巨集 icon：灰=停、紫=執行中
+    // 巨集執行中（分頁 tooltip 註明；右鍵選單執行/停止）
     private bool _isMacroRunning;
     public bool IsMacroRunning
     {
         get => _isMacroRunning;
-        set { if (_isMacroRunning != value) { _isMacroRunning = value; Raise(nameof(IsMacroRunning)); Raise(nameof(MacroBrush)); Raise(nameof(MacroOpacity)); } }
+        set { if (_isMacroRunning != value) { _isMacroRunning = value; Raise(nameof(IsMacroRunning)); Raise(nameof(ToolTipText)); } }
     }
-    public Brush MacroBrush => _isMacroRunning ? MacroOnBrush : OffBrush;
-    // 巨集 icon 圖片：停=淡、執行中=亮
-    public double MacroOpacity => _isMacroRunning ? 1.0 : 0.35;
 
     private bool _isActive;
     public bool IsActive
@@ -155,11 +209,9 @@ public sealed class TerminalTab : INotifyPropertyChanged
     // 選中的標題亮、未選的標題淡灰
     public Brush TitleBrush => _isActive ? ActiveTitleBrush : InactiveTitleBrush;
 
-    private static readonly Brush ReadyBrush = Frozen("#4CAF50");
-    private static readonly Brush BusyBrush = Frozen("#F44336");   // 紅（與工作列彈跳球 #F44336 同色）
-    private static readonly Brush OffBrush = Frozen("#777777");
-    private static readonly Brush LogOnBrush = Frozen("#2196F3");
-    private static readonly Brush MacroOnBrush = Frozen("#9C27B0");
+    // 1.1.2：分頁列圖示染色改淡綠／淡紅（使用者要求；Material 200 級，原 #4CAF50／#F44336 太濃）。工作列彈跳球仍是 #F44336。
+    private static readonly Color ReadyColor = (Color)ColorConverter.ConvertFromString("#A5D6A7");
+    private static readonly Color BusyColor = (Color)ColorConverter.ConvertFromString("#EF9A9A");
     // 選中分頁背景 = 終端機背景(#1E1E1E)；黃框標示作用中
     private static readonly Brush ActiveBg = Frozen("#1E1E1E");
     private static readonly Brush InactiveBg = Frozen("#333337");

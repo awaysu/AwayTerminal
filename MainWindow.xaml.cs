@@ -77,14 +77,13 @@ public partial class MainWindow : Window, IRemoteHost
     }
 
     /// <summary>分頁名稱最長字數（ClaudeCode / OpenCode 以資料夾命名時用）。</summary>
-    private const int DirTitleMax = 15;
-
-    /// <summary>ClaudeCode / OpenCode 分頁名稱＝工作目錄名稱（超過 15 字取前 15 字）。
+    /// <summary>ClaudeCode / OpenCode / PowerShell 分頁名稱＝工作目錄名稱（1.1.2 起不截字：過長只在分頁列
+    /// 顯示層以 CharacterEllipsis 截、改名與 tooltip 看得到全名；1.0.44~1.1.2 前取前 15 字）。
     /// 例：C:\Users\me\Desktop\WORKSPACE2\AwayTerminal → 「AwayTerminal」。
     /// 同一資料夾再開一個 → 補「(2)」「(3)」；取不到目錄名（沒選資料夾）→ 退回 NextName(prefix)。</summary>
     private string DirTabName(string? dir, string prefix)
     {
-        string name = Truncate(ShortDir(dir ?? ""), DirTitleMax);
+        string name = ShortDir(dir ?? "");
         if (string.IsNullOrWhiteSpace(name))
             return NextName(string.IsNullOrWhiteSpace(prefix) ? "Custom" : prefix);
         if (!Tabs.Any(t => t.Title == name)) return name;
@@ -92,14 +91,6 @@ public partial class MainWindow : Window, IRemoteHost
         string dup;
         do { dup = $"{name}({++n})"; } while (Tabs.Any(t => t.Title == dup));
         return dup;
-    }
-
-    /// <summary>取前 max 個字；剛好切在代理對（emoji 等）中間時退一格，不留半個字。</summary>
-    private static string Truncate(string s, int max)
-    {
-        if (string.IsNullOrEmpty(s) || s.Length <= max) return s ?? "";
-        if (char.IsHighSurrogate(s[max - 1])) max--;
-        return s.Substring(0, max);
     }
 
     /// <summary>這條連線是不是 ClaudeCode / OpenCode（分頁改用資料夾名稱，見 DirTabName）。
@@ -311,7 +302,7 @@ public partial class MainWindow : Window, IRemoteHost
         foreach (var c in customs)
         {
             var conn = c;
-            string iconFile = string.IsNullOrWhiteSpace(conn.Icon) ? "run.png" : conn.Icon + ".png";
+            string iconFile = CustomIconFile(conn.Icon);
             var mi = MakeNewItemRaw(conn.Name, iconFile);
             mi.Click += (_, _) => OpenCustom(conn);
             menu.Items.Add(mi);
@@ -440,6 +431,7 @@ public partial class MainWindow : Window, IRemoteHost
                 claudePaste: IsClaudeExe(path));
             if (tab == null) return;
             tab.Restore = restore;
+            tab.IconFile = CustomIconFile(conn.Icon); tab.KindKey = "kind.custom";   // 分頁列圖示＝這條自訂連線的圖示（1.1.2）
             if (dir != null) { tab.WorkDir = dir; SetTitlePath(dir); }
             // 等尺寸就緒後才把指令打進 PowerShell（避免以 80 欄啟動）；1 秒後保險送出
             tab.PendingCommand = $"& \"{path}\"{args}";
@@ -462,6 +454,7 @@ public partial class MainWindow : Window, IRemoteHost
                 claudePaste: IsClaudeExe(path));
             if (tab == null) return;
             tab.Restore = restore;
+            tab.IconFile = CustomIconFile(conn.Icon);   // 分頁列圖示＝這條自訂連線的圖示（1.1.2；KindKey 預設即 kind.custom）
             if (dir != null) { tab.WorkDir = dir; SetTitlePath(dir); }
         }
         AddHistory(new SavedTab
@@ -530,9 +523,12 @@ public partial class MainWindow : Window, IRemoteHost
         "ssh" or "telnet" => "ssh-telnet.png",
         "com" => "com.png",
         "adb" => "adb.png",
-        "custom" => string.IsNullOrWhiteSpace(e.Icon) ? "run.png" : e.Icon + ".png",
+        "custom" => CustomIconFile(e.Icon),
         _ => "new-connecting.png"
     };
+
+    /// <summary>自訂連線的圖示 key → icon/ 檔名（New 下拉、紀錄、分頁列三處同一組）。</summary>
+    private static string CustomIconFile(string? icon) => string.IsNullOrWhiteSpace(icon) ? "run.png" : icon + ".png";
 
     private static string ShortDir(string dir)
     {
@@ -785,7 +781,7 @@ public partial class MainWindow : Window, IRemoteHost
                 }
                 if (qk == "text") { _remoteTextTcs?.TrySetResult(text); _remoteTextTcs = null; break; } // 遠端查詢，不進剪貼簿
                 if (qk == "file") { SaveBufferToFile(rest.Substring(0, p1), text); break; }             // 複製全部至檔案
-                if (qk == "cwd") { UpdateTitlePath(rest.Substring(0, p1), text); break; }               // 標題列目前路徑
+                if (qk == "cwd") { UpdateTitlePath(rest.Substring(0, p1), text); UpdateDirTitle(rest.Substring(0, p1), text); break; } // 標題列目前路徑／SSH-Telnet 分頁名
                 var target = qk == "all" ? (FrameworkElement)BtnCopyAll : BtnCopy;
                 if (string.IsNullOrEmpty(text)) { ShowCopyFeedback(target, Loc.T("toast.noSelection")); break; }
                 try { Clipboard.SetText(text); } catch { }
@@ -1315,8 +1311,15 @@ public partial class MainWindow : Window, IRemoteHost
     private void UpdateStatuses(object? sender, EventArgs e)
     {
         if (Tabs.Count == 0) { SetTaskbarBusy(false); SetTitlePath(""); return; } // 沒有分頁 → 不顯示狀態球、標題回程式名
-        // 標題列目前路徑：向作用中分頁查提示字元行（回覆走 a…cwd）
-        if (_webReady && _active != null) PostToWeb("q" + _active.Id + US + "cwd");
+        // 標題列目前路徑：向作用中分頁查提示字元行（回覆走 a…cwd）。
+        // 1.1.2：shell 分頁（PowerShell/SSH/Telnet/WSL 等自訂 shell）名稱＝目前目錄名稱，所以已連線、未手動改名的
+        // 分頁（含非作用中）也一起查，回覆進 UpdateDirTitle（claude 跑起來後沒有提示行 → 名稱停在啟動 claude 時的目錄）
+        if (_webReady)
+        {
+            if (_active != null) PostToWeb("q" + _active.Id + US + "cwd");
+            foreach (var t in Tabs)
+                if (t != _active && TracksCwdTitle(t)) PostToWeb("q" + t.Id + US + "cwd");
+        }
         HashSet<int> busyParents;
         try { busyParents = ProcessTree.ParentsWithChildren(); }
         catch { return; }
@@ -1444,6 +1447,7 @@ public partial class MainWindow : Window, IRemoteHost
                 claudePaste: true);
             if (tab == null) return;
             tab.WorkDir = dir; SetTitlePath(dir);
+            tab.IconFile = "claude-code.png"; tab.KindKey = "kind.claude";   // 經 PowerShell 跑的 claude 分頁列圖示仍是 claude（1.1.2）
             tab.Restore = new SavedTab { Type = "claude", Title = title, Dir = dir };
             AddHistory(new SavedTab { Type = "claude", Title = title, Dir = dir });
             // 等尺寸就緒後才把指令打進 PowerShell，避免 claude 以 80 欄啟動；1 秒後保險送出
@@ -1709,17 +1713,59 @@ public partial class MainWindow : Window, IRemoteHost
 
     private string _titlePath = "";
 
+    /// <summary>從提示字元行解析目前路徑（CwdRes 六組 regex）；解析不到回 null。</summary>
+    private static string? ParseCwd(string promptLine)
+    {
+        foreach (var re in CwdRes)
+        {
+            var m = re.Match(promptLine);
+            if (m.Success) return m.Groups["p"].Value.Trim();
+        }
+        return null;
+    }
+
     /// <summary>依提示字元行更新標題（解析不到就保留上次的，避免打字過程閃動）。</summary>
     private void UpdateTitlePath(string idStr, string promptLine)
     {
         if (_active == null || _active.Id.ToString() != idStr) return;   // 已切換分頁 → 丟棄過期回覆
-        foreach (var re in CwdRes)
-        {
-            var m = re.Match(promptLine);
-            if (!m.Success) continue;
-            SetTitlePath(m.Groups["p"].Value.Trim());
-            return;
-        }
+        var path = ParseCwd(promptLine);
+        if (path != null) SetTitlePath(path);
+    }
+
+    /// <summary>哪些分頁依提示行的目前目錄自動命名：PowerShell / SSH / Telnet / 自訂 shell（WSL、docker bash…；
+    /// 提示行解析不到的自訂程式如 python REPL 自然不會動），已連線、未手動改名。Claude 直跑與 ADB 不算。</summary>
+    private static bool TracksCwdTitle(TerminalTab t)
+        => t.Session != null && !t.TitleLocked
+           && t.Kind is TermKind.PowerShell or TermKind.Ssh or TermKind.Telnet or TermKind.Custom;
+
+    /// <summary>1.1.2：shell 分頁名稱＝目前目錄名稱（例 ~/workspace1/AwayPhotoRawEditor_Swift → AwayPhotoRawEditor_Swift）。
+    /// 名稱保留全文（過長只在分頁列顯示層截），tooltip 第二行是完整路徑；使用者手動改過名（TitleLocked）就不再動。
+    /// 在 shell 裡啟動 claude 後沒有提示行 → 名稱停在啟動 claude 當下的目錄；claude 離開、提示行回來再跟著更新。
+    /// 同一資料夾開第二個分頁時 DirTabName 補的「(2)」保留（同目錄不重新命名）。登入前（login as: / 密碼提示）
+    /// 解析不到提示行，SSH 分頁維持主機名。</summary>
+    private void UpdateDirTitle(string idStr, string promptLine)
+    {
+        var tab = FindTab(idStr);
+        if (tab == null || !TracksCwdTitle(tab)) return;
+        var path = ParseCwd(promptLine);
+        if (path == null || path == tab.CwdPath) return;
+        tab.CwdPath = path;
+        string name = DirNameOf(path);
+        if (string.IsNullOrEmpty(name) || tab.Title == name) return;
+        if (tab.Title.StartsWith(name, StringComparison.Ordinal) && tab.Title.Length > name.Length
+            && tab.Title[name.Length] == '(' && tab.Title.EndsWith(')')) return;   // 「名稱(2)」＝同目錄的第二個分頁，保留
+        tab.Title = name;
+        PostToWeb("t" + tab.Id + US + tab.Title);   // 同步分割模式 pane 標題
+    }
+
+    /// <summary>路徑最後一段：`~/a/b/` → b、`/` → /、`~` → ~、`C:\Users\me` → me、`C:\` → C:。</summary>
+    private static string DirNameOf(string path)
+    {
+        string t = path.TrimEnd('/', '\\');
+        if (t.Length == 0) return path;   // 只有根「/」
+        int i = t.LastIndexOfAny(new[] { '/', '\\' });
+        string last = i < 0 ? t : t.Substring(i + 1);
+        return last.Length == 0 ? path : last;   // `C:\` 去尾後剩 `C:`→取整段
     }
 
     private void SetTitlePath(string path)
@@ -2544,6 +2590,7 @@ public partial class MainWindow : Window, IRemoteHost
         if (!string.IsNullOrWhiteSpace(name))
         {
             tab.Title = name.Trim();
+            tab.TitleLocked = true;   // 手動改名後不再依目前目錄自動改名（1.1.2）
             PostToWeb("t" + tab.Id + US + tab.Title); // 同步分割模式 pane 標題
         }
     }
@@ -2573,25 +2620,7 @@ public partial class MainWindow : Window, IRemoteHost
         PostToWeb("P" + tab.Id + US + fg + US + bg);
     }
 
-    private void LogIcon_Click(object sender, MouseButtonEventArgs e)
-    {
-        e.Handled = true;
-        var tab = TabOf(sender);
-        if (tab == null) return;
-        SelectTab(tab);
-        LogAction(tab);
-    }
-
-    private void MacroIcon_Click(object sender, MouseButtonEventArgs e)
-    {
-        e.Handled = true;
-        var tab = TabOf(sender);
-        if (tab == null) return;
-        SelectTab(tab);
-        MacroAction(tab);
-    }
-
-    // ---------- 記錄 log ----------
+    // ---------- 記錄 log ----------（1.1.2 起分頁列不再放 log／巨集圖示，只從右鍵選單進入）
     private void LogAction(TerminalTab tab)
     {
         if (tab.Logger is SessionLogger)

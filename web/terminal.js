@@ -552,14 +552,33 @@
   document.getElementById("search-close").addEventListener("click", closeSearch);
 
   // 標題列目前路徑用（q…cwd）：從游標所在行往上找第一個非空行＝提示字元行，C# 端再解析路徑
+  // 1.1.2：提示行太長被折行（長路徑的 PS C:\…> 常見）時，游標所在列只是邏輯行的後半段、C# 端 regex 對不到；
+  // 往上接回整條邏輯行再回傳。判斷「上一列是同一條邏輯行」＝本列 isWrapped（xterm 自動折行）或上一列最後一格有字
+  // （ConPTY 逐列重繪、折行處送的是硬換行、isWrapped 不會設，只能看上一列是否填滿）。中間列不 trim，
+  // 路徑含空白剛好切在列尾也不會被吃掉。
   function promptLine(term) {
     var buf = term.buffer.active;
     var start = buf.baseY + buf.cursorY;
+    var lastCol = term.cols - 1;
+    function joinedAbove(j) {
+      var cur = buf.getLine(j), prev = j > 0 ? buf.getLine(j - 1) : null;
+      if (!cur || !prev) return false;
+      if (cur.isWrapped) return true;
+      var c = prev.getCell(lastCol);
+      var ch = c ? c.getChars() : "";
+      return !!ch && ch !== " ";
+    }
     for (var i = start; i >= 0 && i > start - 30; i--) {
       var line = buf.getLine(i);
       if (!line) continue;
       var s = line.translateToString(true).trim();
-      if (s) return s;
+      if (!s) continue;
+      var j = i;
+      while (j > 0 && i - j < 8 && joinedAbove(j)) j--;
+      if (j === i) return s;
+      var parts = [];
+      for (var k = j; k <= i; k++) { var l = buf.getLine(k); if (l) parts.push(l.translateToString(k === i)); }
+      return parts.join("").trim();
     }
     return "";
   }
