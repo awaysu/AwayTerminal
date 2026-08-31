@@ -65,6 +65,7 @@ public partial class MainWindow : Window, IRemoteHost
     /// <summary>RestoreTabs 逐筆設定：下一個 AddTab 要先倒回的 scrollback（內容, 分隔行）；AddTab 用掉就清（1.0.45）。</summary>
     private (string buf, string sep)? _restoreBufferForNextTab;
     private DateTime? _restoreOpenedForNextTab;   // 1.1.4：恢復分頁的原始開啟時間，AddTab 消化（同 _restoreBufferForNextTab 機制）
+    private readonly Dictionary<int, string> _lastSshPromptLog = new();   // 1.1.6 SSH 提示行診斷去重（見 UpdateDirTitle）
     /// <summary>關閉程式時等前端回傳各分頁 scrollback（a…save）的等待表（1.0.45）。</summary>
     private readonly Dictionary<int, TaskCompletionSource<string>> _saveBufTcs = new();
 
@@ -639,6 +640,8 @@ public partial class MainWindow : Window, IRemoteHost
         core.AddWebResourceRequestedFilter("https://app/*", CoreWebView2WebResourceContext.All);
         core.WebResourceRequested += OnWebResourceRequested;
         core.WebMessageReceived += OnWebMessage;
+        // 安全網（1.1.6）：任何 window.open / target=_blank 一律用系統預設瀏覽器開、不開內嵌 WebView2 視窗
+        core.NewWindowRequested += (_, ev) => { ev.Handled = true; OpenUrlExternal(ev.Uri); };
         core.ContextMenuRequested += OnWebContextMenu;   // 終端機右鍵：自訂選單取代 Edge 預設
         core.Navigate("https://app/index.html");
 
@@ -722,6 +725,9 @@ public partial class MainWindow : Window, IRemoteHost
         {
             case 'D': // JS 端 IME 診斷（terminal.js IMEDBG）
                 Diag.Log("js" + rest);
+                return;
+            case 'U': // 點終端機裡的連結 → 用系統預設瀏覽器開（1.1.6；rest=URL）
+                OpenUrlExternal(rest);
                 return;
             case 'i': // 輸入： id US text
             {
@@ -1526,6 +1532,17 @@ public partial class MainWindow : Window, IRemoteHost
     private void EchoToTab(int id, string text)
         => PostToWeb("o" + id + US + Convert.ToBase64String(Encoding.UTF8.GetBytes(text)));
 
+    /// <summary>1.1.6：終端機裡的連結（xterm web-links 套件偵測）用系統預設瀏覽器開。
+    /// 只放行 http/https（擋掉 file:、javascript: 等，避免點到終端機輸出的怪字串觸發本機動作）。</summary>
+    private void OpenUrlExternal(string url)
+    {
+        if (string.IsNullOrWhiteSpace(url)) return;
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)) return;
+        if (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps) return;
+        try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true }); }
+        catch (Exception ex) { Diag.Log($"open url: {ex.Message}"); }
+    }
+
     /// <summary>SSH「login as:」輸入處理：Enter 啟動 ssh；Backspace 退格；其餘字元回顯。</summary>
     private void HandleLoginInput(TerminalTab tab, string text)
     {
@@ -1754,6 +1771,13 @@ public partial class MainWindow : Window, IRemoteHost
         var tab = FindTab(idStr);
         if (tab == null || !TracksCwdTitle(tab)) return;
         var path = ParseCwd(promptLine);
+        // 1.1.6 輕量診斷（SSH 分頁 cwd 命名問題）：只在提示行「和上次記過的不同」時記一筆，避免每 0.6s 洗 log。
+        // 使用者在遠端 cd 換目錄時會各記一筆原始提示行＋解析結果，供補 CwdRes 規則。
+        if (tab.Kind == TermKind.Ssh && (!_lastSshPromptLog.TryGetValue(tab.Id, out var last) || last != promptLine))
+        {
+            _lastSshPromptLog[tab.Id] = promptLine;
+            Diag.Log($"ssh-prompt id={idStr} parsed={(path ?? "<null>")} raw=[{promptLine}]");
+        }
         if (path == null || path == tab.CwdPath) return;
         tab.CwdPath = path;
         string name = DirNameOf(path);

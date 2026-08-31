@@ -10,7 +10,7 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>app.ico</ApplicationIcon>
     <!-- 版本：每交付一版 +0.0.1（顯示在「關於」）。P0=0.0.1 … P4=0.0.4，微調=0.0.5 -->
-    <Version>1.1.5</Version>
+    <Version>1.1.6</Version>
     <AssemblyTitle>AwayTerminal</AssemblyTitle>
     <Company>Chih-Wei Su (Awaysu)</Company>
     <Copyright>Copyright (c) 2026 Chih-Wei Su (Awaysu)</Copyright>

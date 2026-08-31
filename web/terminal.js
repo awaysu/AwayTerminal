@@ -80,7 +80,8 @@
     term.loadAddon(fit);
     term.loadAddon(new Unicode11Addon.Unicode11Addon());
     term.unicode.activeVersion = "11";
-    term.loadAddon(new WebLinksAddon.WebLinksAddon());
+    // 連結：點一下用系統預設瀏覽器開（1.1.6）——交給 C#（U 協定），而非 window.open（WebView2 會開內嵌視窗）
+    term.loadAddon(new WebLinksAddon.WebLinksAddon(function (ev, uri) { ws.postMessage("U" + uri); }));
     var ser = new SerializeAddon.SerializeAddon();
     term.loadAddon(ser);
     term.open(body);
