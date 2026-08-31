@@ -65,7 +65,6 @@ public partial class MainWindow : Window, IRemoteHost
     /// <summary>RestoreTabs 逐筆設定：下一個 AddTab 要先倒回的 scrollback（內容, 分隔行）；AddTab 用掉就清（1.0.45）。</summary>
     private (string buf, string sep)? _restoreBufferForNextTab;
     private DateTime? _restoreOpenedForNextTab;   // 1.1.4：恢復分頁的原始開啟時間，AddTab 消化（同 _restoreBufferForNextTab 機制）
-    private readonly Dictionary<int, string> _lastSshPromptLog = new();   // 1.1.6 SSH 提示行診斷去重（見 UpdateDirTitle）
     /// <summary>關閉程式時等前端回傳各分頁 scrollback（a…save）的等待表（1.0.45）。</summary>
     private readonly Dictionary<int, TaskCompletionSource<string>> _saveBufTcs = new();
 
@@ -1732,11 +1731,12 @@ public partial class MainWindow : Window, IRemoteHost
         new(@"^[\w.-]+:(?<p>/[^\s$#]*)\s*[$#]"),                    // Android adb：davinci:/data $
         new(@"^[^@\s]+@[^\s:]+\s+(?<p>[/~][^\s>$#%]*)\s*[>$#%]"),   // fish 等：user@host /path>
         new(@"^[\w.-]+:(?<p>[^\s]+)\s+[^\s]+[$#%]"),                // macOS bash 預設：host:資料夾名 user$（\h:\W \u$，只有 basename）
+        new(@"^[^@\s]+@\S+\s+(?<p>\S+)\s+[%$#]"),                   // macOS zsh 預設：user@host 資料夾名 %（空格分隔、cwd 可為純 basename，非 /~ 開頭；1.1.7）
     };
 
     private string _titlePath = "";
 
-    /// <summary>從提示字元行解析目前路徑（CwdRes 七組 regex）；解析不到回 null。</summary>
+    /// <summary>從提示字元行解析目前路徑（CwdRes 八組 regex）；解析不到回 null。</summary>
     private static string? ParseCwd(string promptLine)
     {
         foreach (var re in CwdRes)
@@ -1771,13 +1771,6 @@ public partial class MainWindow : Window, IRemoteHost
         var tab = FindTab(idStr);
         if (tab == null || !TracksCwdTitle(tab)) return;
         var path = ParseCwd(promptLine);
-        // 1.1.6 輕量診斷（SSH 分頁 cwd 命名問題）：只在提示行「和上次記過的不同」時記一筆，避免每 0.6s 洗 log。
-        // 使用者在遠端 cd 換目錄時會各記一筆原始提示行＋解析結果，供補 CwdRes 規則。
-        if (tab.Kind == TermKind.Ssh && (!_lastSshPromptLog.TryGetValue(tab.Id, out var last) || last != promptLine))
-        {
-            _lastSshPromptLog[tab.Id] = promptLine;
-            Diag.Log($"ssh-prompt id={idStr} parsed={(path ?? "<null>")} raw=[{promptLine}]");
-        }
         if (path == null || path == tab.CwdPath) return;
         tab.CwdPath = path;
         string name = DirNameOf(path);
