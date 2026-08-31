@@ -31,8 +31,9 @@ public sealed class TerminalTab : INotifyPropertyChanged
     /// 不推播（使用者實測「改在 App 發問沒丟給手機」）；只要這段忙碌期間有送出過，就視為真工作、照推。</summary>
     public DateTime LastSubmitUtc { get; set; }
 
-    /// <summary>分頁建立時間（tooltip 顯示已啟動時長用）。</summary>
-    public DateTime StartUtc { get; } = DateTime.UtcNow;
+    /// <summary>分頁開啟時間（tooltip 顯示「開啟 HH:mm」用）。可設：恢復分頁時填回原始開啟時間，
+    /// 讓重開程式後 tooltip 仍顯示這個分頁「最初開啟」的時刻，而非本次恢復的時刻（1.1.4 使用者要求）。</summary>
+    public DateTime StartUtc { get; set; } = DateTime.UtcNow;
 
     /// <summary>收到終端機鈴聲後、等待使用者輸入中（Claude 完成）→ 強制綠燈。</summary>
     public bool WaitingForUser { get; set; }
@@ -150,15 +151,14 @@ public sealed class TerminalTab : INotifyPropertyChanged
         }
     }
 
-    // tooltip：完整名稱 + 已啟動時間（時:分），例：AwayPhotoRawEditor_Swift 00:23；
-    // 第二行＝目前路徑（shell 分頁）；記錄 log／巨集執行中也在這裡註明（1.1.2 起分頁列不再放 log／巨集圖示）
+    // tooltip：完整名稱 + 開啟時刻（時鐘 HH:mm，本機時區），例：AwayPhotoRawEditor_Swift  開啟 14:12；
+    // 第二行＝目前路徑（shell 分頁）；記錄 log／巨集執行中也在這裡註明（1.1.2 起分頁列不再放 log／巨集圖示）。
+    // 1.1.4 起改顯示「實際開啟的時間點」而非經過時長（使用者要求）——StartUtc 恢復分頁時會填回原始開啟時間。
     public string ToolTipText
     {
         get
         {
-            int mins = (int)(DateTime.UtcNow - StartUtc).TotalMinutes;
-            if (mins < 0) mins = 0;
-            var sb = new System.Text.StringBuilder($"{_title} {mins / 60:D2}:{mins % 60:D2}");
+            var sb = new System.Text.StringBuilder($"{_title}  {Loc.T("tip.tabOpened")} {StartUtc.ToLocalTime():HH:mm}");
             if (!string.IsNullOrEmpty(CwdPath) && CwdPath != _title) sb.Append('\n').Append(CwdPath);
             if (_isLogging) sb.Append('\n').Append(Loc.T("tip.tabLogging"));
             if (_isMacroRunning) sb.Append('\n').Append(Loc.T("tip.tabMacroRunning"));
@@ -166,7 +166,12 @@ public sealed class TerminalTab : INotifyPropertyChanged
         }
     }
 
-    /// <summary>供狀態輪詢定期呼叫，更新 tooltip 的已啟動時間（語言切換也靠這裡更新 KindTip）。</summary>
+    /// <summary>視窗標題中括號內顯示的連線標籤（例「ClaudeCode」「PowerShell」「SSH」）：
+    /// 自訂連線用連線名稱、其餘用種類名稱。見 MainWindow.SetTitlePath →「AwayTerminal - [標籤] 路徑」。</summary>
+    public string TitleTag => Restore is { Type: "custom", Name: var nm } && !string.IsNullOrWhiteSpace(nm)
+        ? nm : Loc.T(KindKey);
+
+    /// <summary>供狀態輪詢定期呼叫：更新 tooltip 的開啟時刻文字（語言切換時 tip.tabOpened/KindTip 也靠這裡）。</summary>
     public void RefreshRuntime() { Raise(nameof(ToolTipText)); Raise(nameof(KindTip)); }
 
     // 狀態：Ready=綠(可輸入)、Busy=紅(跑程式；1.0.42 由橘改紅，與工作列彈跳球同色)。

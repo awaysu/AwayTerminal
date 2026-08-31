@@ -64,6 +64,7 @@ public partial class MainWindow : Window, IRemoteHost
 
     /// <summary>RestoreTabs 逐筆設定：下一個 AddTab 要先倒回的 scrollback（內容, 分隔行）；AddTab 用掉就清（1.0.45）。</summary>
     private (string buf, string sep)? _restoreBufferForNextTab;
+    private DateTime? _restoreOpenedForNextTab;   // 1.1.4：恢復分頁的原始開啟時間，AddTab 消化（同 _restoreBufferForNextTab 機制）
     /// <summary>關閉程式時等前端回傳各分頁 scrollback（a…save）的等待表（1.0.45）。</summary>
     private readonly Dictionary<int, TaskCompletionSource<string>> _saveBufTcs = new();
 
@@ -188,6 +189,7 @@ public partial class MainWindow : Window, IRemoteHost
         {
             var s2 = t.Restore!;
             s2.Title = t.Title;
+            s2.OpenedUtc = t.StartUtc;   // 1.1.4：存原始開啟時間，恢復後 tooltip 仍顯示最初開啟時刻
             s2.BufferFile = "";
             if (bufs.TryGetValue(t.Id, out var text) && !string.IsNullOrEmpty(text))
             {
@@ -265,7 +267,7 @@ public partial class MainWindow : Window, IRemoteHost
 
     private void ApplyLoc()
     {
-        Title = string.IsNullOrEmpty(_titlePath) ? Loc.T("app.name") : $"{Loc.T("app.name")} - {_titlePath}";
+        Title = ComposeTitle();
         BtnNew.Content = Loc.T("tb.new"); BtnNew.ToolTip = Loc.T("tip.new");
         BtnHistory.Content = Loc.T("tb.history"); BtnHistory.ToolTip = Loc.T("tip.history");
         BtnCompose.Content = Loc.T("tb.compose"); BtnCompose.ToolTip = Loc.T("tip.compose");
@@ -847,6 +849,8 @@ public partial class MainWindow : Window, IRemoteHost
         int id = _nextId++;
         var tab = new TerminalTab(id, kind, title)
         { Cols = _lastCols, Rows = _lastRows, ClaudePaste = claudePaste || kind == TermKind.Claude };
+        // 恢復分頁：填回原始開啟時間（1.1.4），讓 tooltip 顯示最初開啟時刻而非本次恢復時刻
+        if (_restoreOpenedForNextTab is { } opened) { tab.StartUtc = opened; _restoreOpenedForNextTab = null; }
         Tabs.Add(tab);
         // 第三欄 flags：c=claude 分頁 → JS 端多行貼上改送 ESC+CR 軟換行（terminal.js doPaste）
         PostToWeb("n" + id + US + title + US + (tab.ClaudePaste ? "c" : ""));
@@ -923,6 +927,7 @@ public partial class MainWindow : Window, IRemoteHost
         foreach (var st in saved.ToList())
         {
             _restoreBufferForNextTab = LoadRestoreBuffer(st);   // 有存 scrollback 就交給 AddTab 先倒回去（1.0.45）
+            _restoreOpenedForNextTab = st.OpenedUtc == default ? null : st.OpenedUtc;   // 1.1.4：原始開啟時間（舊檔沒有＝用當下）
             try
             {
                 switch (st.Type)
@@ -1004,7 +1009,7 @@ public partial class MainWindow : Window, IRemoteHost
                 }
             }
             catch { /* 個別分頁恢復失敗就跳過 */ }
-            finally { _restoreBufferForNextTab = null; }   // 這筆沒開成分頁（adb 找不到、使用者取消）→ 別留給下一筆
+            finally { _restoreBufferForNextTab = null; _restoreOpenedForNextTab = null; }   // 這筆沒開成分頁（adb 找不到、使用者取消）→ 別留給下一筆
         }
     }
 
@@ -1768,11 +1773,24 @@ public partial class MainWindow : Window, IRemoteHost
         return last.Length == 0 ? path : last;   // `C:\` 去尾後剩 `C:`→取整段
     }
 
+    private string _titleTag = "";
+
     private void SetTitlePath(string path)
     {
-        if (_titlePath == path) return;
+        // 1.1.4：標題格式改「AwayTerminal - [連線標籤] 路徑」（標籤＝作用中分頁的 TitleTag）
+        string tag = _active?.TitleTag ?? "";
+        if (_titlePath == path && _titleTag == tag) return;
         _titlePath = path;
-        Title = string.IsNullOrEmpty(path) ? Loc.T("app.name") : $"{Loc.T("app.name")} - {path}";
+        _titleTag = tag;
+        Title = ComposeTitle();
+    }
+
+    /// <summary>視窗標題字串：「AwayTerminal」／「AwayTerminal - [標籤] 路徑」（沒路徑就只有程式名；語言切換沿用）。</summary>
+    private string ComposeTitle()
+    {
+        if (string.IsNullOrEmpty(_titlePath)) return Loc.T("app.name");
+        string prefix = string.IsNullOrEmpty(_titleTag) ? "" : $"[{_titleTag}] ";
+        return $"{Loc.T("app.name")} - {prefix}{_titlePath}";
     }
 
     /// <summary>「複製全部至檔案」：把整個 buffer 的純文字存檔（q…file 的回覆）。</summary>

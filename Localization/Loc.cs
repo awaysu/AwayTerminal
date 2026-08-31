@@ -188,6 +188,8 @@ public static class Loc
         ["menu.log"] = ("記錄 log…", "Record log…"),
         ["menu.macro"] = ("執行巨集…", "Run macro…"),
         ["menu.close"] = ("關閉", "Close"),
+        // 1.1.4：分頁 tooltip 顯示開啟時刻（時鐘），例「開啟 14:12」
+        ["tip.tabOpened"] = ("開啟", "opened"),
         // 1.1.2：分頁列的 log／巨集圖示移除，改在分頁 tooltip 註明狀態
         ["tip.tabLogging"] = ("● 記錄 log 中", "● Recording log"),
         ["tip.tabMacroRunning"] = ("● 巨集執行中", "● Macro running"),
