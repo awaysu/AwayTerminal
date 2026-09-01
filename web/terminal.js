@@ -88,8 +88,17 @@
     term.onData(function (d) {
       if (IMEDBG) dbgLog(id, "onData " + JSON.stringify(d));
       var rec0 = terms[id];
-      if (rec0 && rec0.claudePaste) sendTyped(rec0, id, d);
-      else ws.postMessage("i" + id + US + d);
+      if (!rec0) { ws.postMessage("i" + id + US + d); return; }
+      // IME 水位（1.1.9，見 setupImeGuard）：claude/一般分頁的 IME 文字都經這裡。d 若對得上 textarea「尚未送出」的
+      // 內容＝xterm 正常從 textarea 送出→推進水位後照送；它前面若還夾著沒送過的字（前一筆漏送、使用者又接著打）先補送、保序。
+      // d 若「已在水位後方」＝補救計時器已搶先送過同一段（xterm 的延遲送出比 40ms 補救更晚才落地）→ 抑制，避免重複送兩次。
+      if (rec0.ta && isTypedText(d)) {
+        var rest0 = taUnsent(rec0), k0 = rest0.indexOf(d);
+        if (k0 < 0) { dbgLog(id, "ime-already-sent " + JSON.stringify(d)); return; } // 補救已送過：不重複
+        if (k0 > 0 && !rec0.composing) { var missed = rest0.slice(0, k0); dbgLog(id, "ime-rescue ondata " + JSON.stringify(missed)); emitTyped(rec0, id, missed, true); }
+        rec0.taMark += k0 + d.length;
+      }
+      emitTyped(rec0, id, d, false);
     });
 
     // ── IME 診斷（IMEDBG=true 時）：組字/輸入事件送 C# 寫 diag.log，追注音重複問題 ──
@@ -172,7 +181,9 @@
                   claudePaste: !!(flags && flags.indexOf("c") >= 0),
                   sendQ: [], sending: false, lastOutMs: 0,
                   keySeq: 0, imeLast: null,                 // IME 去重（1.0.45，見 sendTyped）
-                  fitted: false, pendingRestore: null, pendingSep: null, held: null, restoreTimer: null }; // 緩衝區恢復（1.0.45，見 applyRestore）
+                  fitted: false, pendingRestore: null, pendingSep: null, held: null, restoreTimer: null, // 緩衝區恢復（1.0.45，見 applyRestore）
+                  ta: null, taMark: 0, composing: false, compEndPending: false, rescueTimer: null }; // IME 漏送補救（1.1.9，見 setupImeGuard）
+    setupImeGuard(id, terms[id], body);
 
     // 每個 keydown 遞增序號（capture 於 body 層＝比 xterm 掛在 textarea 上的 handler 更早跑）。
     // sendTyped 的 IME 去重靠它分辨「同字串兩次」是使用者真的再按一次（序號變了）還是 xterm 內部重複交付（序號沒變）。
@@ -264,10 +275,10 @@
       else step();
     })();
   }
-  function sendTyped(rec, id, d) {
+  function sendTyped(rec, id, d, noDedup) {
     if (isTypedText(d)) {
       var now = performance.now(), last = rec.imeLast;
-      if (last && last.text === d && last.keySeq === rec.keySeq && (now - last.t) < IME_DUP_MS) {
+      if (!noDedup && last && last.text === d && last.keySeq === rec.keySeq && (now - last.t) < IME_DUP_MS) {
         dbgLog(id, "ime-dup dropped " + JSON.stringify(d) + " dt=" + Math.round(now - last.t) + "ms");
         return;                                 // xterm 重複交付（見 IME_DUP_MS 註解）：第二份不送
       }
@@ -279,6 +290,62 @@
     } else {
       qPush(rec, id, d, 0, false);              // 一般 ASCII／控制鍵（含 Enter）：即時、不 gate
     }
+  }
+  // 統一送出入口：claude 分頁走佇列（sendTyped），其餘直接 i 協定。noDedup＝補救送出（依水位判定、不可能是重複）不套 IME 去重。
+  function emitTyped(rec, id, d, noDedup) {
+    if (rec.claudePaste) sendTyped(rec, id, d, noDedup);
+    else ws.postMessage("i" + id + US + d);
+  }
+
+  // ── IME 漏送補救（1.1.9）──
+  // 使用者回報「注音打完偶爾畫面沒字、再打一次才出來」。用 CDP 對真正的 index.html 重現（scratchpad imeweb.js）：
+  //   注音以「獨立小視窗」組字時，提交是走 textarea 的 input(insertText) 事件、沒有 composition 事件。xterm 6.0.0 只有兩處會送它：
+  //   ① _inputEvent——但按鍵仍按著（_keyDownSeen=true）時直接略過；② keydown(229) 排的 setTimeout(0)
+  //   （_handleAnyTextareaChanges）比對 textarea 前後差異——但 IME 的提交常比這個 0ms timer 晚落地（IPC 另一個 task）。
+  //   兩邊都沒接到＝文字留在 textarea、永遠不送：keydown229 → 30ms → insertText → keyup ＝ 什麼都沒送（S4）；
+  //   insertText 只差 1ms 趕在 timer 前落地就正常（S2）＝時序競賽＝「偶爾」。inline 組字（compositionend）路徑本身沒問題。
+  // 對策＝自己記 textarea「已送出到哪」（rec.taMark；xterm 從不清 textarea，只在 Enter/Ctrl+C 時清成空）：
+  //   ① onData 送出的片語對得上水位之後的內容→推進水位（前面夾著的沒送字先補送）；
+  //   ② 任何 IME/鍵盤事件後 IME_RESCUE_MS 內再無事件、且不在組字中→水位之後還有字＝xterm 漏送→補送並記 diag（ime-rescue）；
+  //   ③ 真正的 Enter／Ctrl+C（非 229）在 xterm 清 textarea 之前先補送，順序＝文字→Enter。
+  //   compEndPending：compositionend 排的 xterm 延遲送出還沒跑（主執行緒忙時 Enter 可能同批進來）→ 這時不補救，讓 xterm 自己同步送、不重複。
+  var IME_RESCUE_MS = 40;
+  function taUnsent(rec) {
+    var v = rec.ta ? rec.ta.value : "";
+    if (rec.taMark > v.length) rec.taMark = v.length;   // xterm 清過 textarea（Enter/Ctrl+C）或 IME 取消組字
+    return v.substring(rec.taMark);
+  }
+  function rescueUnsent(rec, id, why) {
+    if (!rec.ta || rec.composing || rec.compEndPending || !terms[id]) return;
+    var rest = taUnsent(rec);
+    if (!rest) return;
+    rec.taMark = rec.ta.value.length;
+    if (!isTypedText(rest)) return;                      // 單一 ASCII 殘值（dead key 之類）不補、只推水位
+    dbgLog(id, "ime-rescue " + why + " " + JSON.stringify(rest));
+    emitTyped(rec, id, rest, true);
+  }
+  function setupImeGuard(id, rec, body) {
+    var ta = body.querySelector(".xterm-helper-textarea");
+    if (!ta) return;
+    rec.ta = ta; rec.taMark = ta.value.length;
+    function arm() {
+      clearTimeout(rec.rescueTimer);
+      rec.rescueTimer = setTimeout(function () { rec.rescueTimer = null; rescueUnsent(rec, id, "timer"); }, IME_RESCUE_MS);
+    }
+    ta.addEventListener("compositionstart", function () { rec.composing = true; arm(); }, true);
+    ta.addEventListener("compositionupdate", arm, true);
+    ta.addEventListener("compositionend", function () {
+      rec.composing = false; rec.compEndPending = true;
+      setTimeout(function () { rec.compEndPending = false; }, 0);  // 排在 xterm 的延遲送出（同為 setTimeout 0）之後
+      arm();
+    }, true);
+    ta.addEventListener("input", arm, true);
+    ta.addEventListener("keyup", arm, true);
+    // body capture 層＝比 xterm 掛在 textarea 上的 keydown 先跑：真 Enter／Ctrl+C 會讓 xterm 清空 textarea，先把沒送的字送掉
+    body.addEventListener("keydown", function (e) {
+      if (e.keyCode !== 229 && (e.keyCode === 13 || (e.ctrlKey && (e.key === "c" || e.key === "C")))) rescueUnsent(rec, id, "enter");
+      arm();
+    }, true);
   }
 
   // 統一貼上入口。claude 分頁不能靠 bracketed paste：Win10 conhost 會把 ESC[200~/201~
