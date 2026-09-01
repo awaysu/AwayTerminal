@@ -2607,8 +2607,60 @@ public partial class MainWindow : Window, IRemoteHost
 
     private void Tab_Click(object sender, MouseButtonEventArgs e)
     {
+        if (_tabDragging) { _tabDragging = false; return; }   // 剛結束拖曳 → 這次放開不當選取
         var tab = TabOf(sender);
         if (tab != null) SelectTab(tab);
+    }
+
+    // ---------- 右側分頁列拖曳排序（1.1.8）----------
+    private System.Windows.Point _tabDragStart;
+    private TerminalTab? _tabDragItem;
+    private bool _tabDragging;   // 這次按下有無真的拖曳（避免拖完那下放開被當成選取）
+
+    private void Tab_DragDown(object sender, MouseButtonEventArgs e)
+    {
+        _tabDragging = false;   // 每次重新按下先歸零，拖曳後的下一次點選不會被吃掉
+        _tabDragStart = e.GetPosition(null);
+        _tabDragItem = TabOf(sender);   // 記住候選；超過門檻才真的起拖（否則就是一般點選）
+    }
+
+    private void Tab_DragMove(object sender, MouseEventArgs e)
+    {
+        if (e.LeftButton != MouseButtonState.Pressed || _tabDragItem == null) return;
+        var pos = e.GetPosition(null);
+        if (Math.Abs(pos.X - _tabDragStart.X) < SystemParameters.MinimumHorizontalDragDistance &&
+            Math.Abs(pos.Y - _tabDragStart.Y) < SystemParameters.MinimumVerticalDragDistance) return;
+        var item = _tabDragItem;
+        _tabDragItem = null;
+        _tabDragging = true;
+        try { DragDrop.DoDragDrop((DependencyObject)sender, new DataObject("AwayTab", item), DragDropEffects.Move); }
+        catch { }
+    }
+
+    private void Tab_DragOver(object sender, DragEventArgs e)
+    {
+        bool ok = e.Data.GetDataPresent("AwayTab");
+        e.Effects = ok ? DragDropEffects.Move : DragDropEffects.None;
+        e.Handled = true;
+        if (ok && sender is Border b && TabOf(b) != (e.Data.GetData("AwayTab") as TerminalTab)) b.Opacity = 0.55;
+    }
+
+    private void Tab_DragLeave(object sender, DragEventArgs e)
+    {
+        if (sender is Border b) b.Opacity = 1.0;
+    }
+
+    private void Tab_DragDrop(object sender, DragEventArgs e)
+    {
+        if (sender is Border b) b.Opacity = 1.0;
+        if (e.Data.GetData("AwayTab") is not TerminalTab dragged) return;
+        var target = TabOf(sender);
+        if (target == null || target == dragged) return;
+        int from = Tabs.IndexOf(dragged), to = Tabs.IndexOf(target);
+        if (from < 0 || to < 0 || from == to) return;
+        Tabs.Move(from, to);
+        // 分割/分欄模式的 pane 順序同步（K 協定），並存新順序（下次開機恢復照此序）
+        if (_webReady) PostToWeb("K" + string.Join(",", Tabs.Select(t => t.Id)));
     }
 
     private void TabClose_Click(object sender, RoutedEventArgs e)

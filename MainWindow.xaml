@@ -110,9 +110,13 @@
                 </ItemsControl.ItemsPanel>
                 <ItemsControl.ItemTemplate>
                     <DataTemplate>
+                        <!-- 1.1.8：拖曳可調整分頁上下順序（AllowDrop＋PreviewMouseLeftButtonDown/Move 起拖、Drop 重排）-->
                         <Border Background="{Binding TabBackground}" BorderBrush="{Binding TabBorder}"
                                 BorderThickness="1" CornerRadius="4" Margin="0,0,0,4" Padding="8,6"
-                                Cursor="Hand" MouseLeftButtonUp="Tab_Click" ToolTip="{Binding ToolTipText}">
+                                Cursor="Hand" MouseLeftButtonUp="Tab_Click" ToolTip="{Binding ToolTipText}"
+                                AllowDrop="True" PreviewMouseLeftButtonDown="Tab_DragDown"
+                                PreviewMouseMove="Tab_DragMove" Drop="Tab_DragDrop"
+                                DragEnter="Tab_DragOver" DragOver="Tab_DragOver" DragLeave="Tab_DragLeave">
                             <Border.ContextMenu>
                                 <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
                                     <MenuItem Header="{Binding Path=[menu.rename], Source={x:Static loc:LocProxy.Instance}}" Click="MenuRename_Click" />

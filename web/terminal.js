@@ -633,6 +633,11 @@
       mode = (rest === "split" || rest === "columns") ? rest : "tab";
       zoomed = null;
       layout();
+    } else if (kind === "K") {
+      // 右側分頁列拖曳後的新順序（1.1.8，C#→JS）：依 id 順序把 pane 元素重排，分割/分欄模式的 pane 才與分頁列一致
+      var korder = rest.length ? rest.split(",") : [];
+      for (var ki = 0; ki < korder.length; ki++) { var kr = terms[korder[ki]]; if (kr && kr.el) container.appendChild(kr.el); }
+      layout();
     } else if (kind === "T") {
       try {
         var t = JSON.parse(rest);
