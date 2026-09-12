@@ -16,7 +16,7 @@ public partial class CustomConnDialog : Window
 {
     // 可選的圖示（對應 icon\{key}.png）
     private static readonly string[] IconKeys =
-        { "powershell", "ssh-telnet", "adb", "wsl", "git", "docker", "claude-code", "opencode", "python", "run", "none" };
+        { "powershell", "ssh-telnet", "adb", "wsl", "git", "docker", "claude-code", "codex", "opencode", "python", "run", "none" };
     private const string DefaultIcon = "run";
 
     /// <summary>自動偵測用的已知工具（在 PATH 與常見安裝位置尋找）。</summary>
@@ -34,6 +34,9 @@ public partial class CustomConnDialog : Window
     private static readonly KnownTool[] KnownTools =
     {
         new("ClaudeCode", new[] { "claude.exe", "claude.cmd" }, "--dangerously-skip-permissions", "claude-code", true),
+        // Codex CLI（1.1.10）：Codex 桌面版會把 CLI 裝在 %LOCALAPPDATA%\Programs\OpenAI\Codex\bin 並加進使用者 PATH；
+        // npm 版（@openai/codex）是 %APPDATA%\npm\codex.cmd。參數刻意留空（不預設跳過核准／沙箱，需要的人自己加）。
+        new("Codex",      new[] { "codex.exe", "codex.cmd" }, "", "codex", true),
         new("WSL",        new[] { "wsl.exe" }, "", "wsl", false),
         new("OpenCode",   new[] { "opencode.exe", "opencode.cmd" }, "", "opencode", true),
         new("Gemini",     new[] { "gemini.exe", "gemini.cmd" }, "", "run", true),
@@ -321,6 +324,8 @@ public partial class CustomConnDialog : Window
             System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".local", "bin"),
             System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "npm"),
             System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs"),
+            // Codex 桌面版附的 CLI：PATH 是事後才加進使用者環境變數的，比它早啟動的 AwayTerminal 行程看不到 → 直接找目錄
+            System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "OpenAI", "Codex", "bin"),
         };
         foreach (var exe in exeNames)
         {

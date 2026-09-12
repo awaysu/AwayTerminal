@@ -60,7 +60,10 @@ public partial class MainWindow : Window, IRemoteHost
     // 遠端（Telegram）：服務 + 忙碌起始時間（用來過濾閃爍、只在忙碌≥3秒後推播閒置）
     private TelegramRemote? _remote;
     private readonly Dictionary<int, DateTime> _busySince = new();
-    private TaskCompletionSource<string>? _remoteTextTcs; // q…text 查詢的等待中回覆
+    // q…text 查詢的等待者（依分頁 id；只在 UI 執行緒存取）。1.1.10 起遠端在執行緒池跑、指令與完成推播可能同時查——
+    // 舊版單一欄位會被後一個查詢蓋掉，前一個必逾時退回劣化備援；改成同分頁的等待者一起用同一份回覆完成。
+    private readonly Dictionary<int, List<TaskCompletionSource<string>>> _remoteTextWaiters = new();
+    private string? _selMouseHintId;   // 1.1.10：JS 回報「選取是空的、因為程式接管了滑鼠」（m 協定）→ 下一個空選取提示改說按住 Shift
 
     /// <summary>RestoreTabs 逐筆設定：下一個 AddTab 要先倒回的 scrollback（內容, 分隔行）；AddTab 用掉就清（1.0.45）。</summary>
     private (string buf, string sep)? _restoreBufferForNextTab;
@@ -94,26 +97,29 @@ public partial class MainWindow : Window, IRemoteHost
         return dup;
     }
 
-    /// <summary>這條連線是不是 ClaudeCode / OpenCode（分頁改用資料夾名稱，見 DirTabName）。
-    /// 先看圖示 key（「自動偵測」加入的就是 claude-code / opencode），使用者換過圖示或
+    /// <summary>這條連線是不是 ClaudeCode / Codex / OpenCode（分頁改用資料夾名稱，見 DirTabName）。
+    /// 先看圖示 key（「自動偵測」加入的就是 claude-code / codex / opencode），使用者換過圖示或
     /// 手動新增的則看執行檔名。其餘連線（PowerShell / WSL / ADB / Gemini…）維持原本命名。</summary>
     private static bool UsesDirTitle(string path, string icon)
     {
-        if (icon is "claude-code" or "opencode") return true;
+        if (icon is "claude-code" or "opencode" or "codex") return true;
         try
         {
             string exe = Path.GetFileNameWithoutExtension(path);
             return exe.Contains("claude", StringComparison.OrdinalIgnoreCase)
+                || exe.Contains("codex", StringComparison.OrdinalIgnoreCase)
                 || exe.Contains("opencode", StringComparison.OrdinalIgnoreCase);
         }
         catch { return false; }
     }
 
-    // 在指定按鈕旁邊浮出提示（複製成功等）
-    private void ShowCopyFeedback(FrameworkElement target, string msg)
+    // 在指定按鈕旁邊浮出提示（複製成功等）；atMouse＝浮在滑鼠位置（網址選單「複製網址」用，按鈕不在附近）
+    private void ShowCopyFeedback(FrameworkElement target, string msg, bool atMouse = false)
     {
         CopyPopupText.Text = msg;
         CopyPopup.PlacementTarget = target;
+        CopyPopup.Placement = atMouse ? System.Windows.Controls.Primitives.PlacementMode.MousePoint
+                                      : System.Windows.Controls.Primitives.PlacementMode.Bottom;
         CopyPopup.IsOpen = false;
         CopyPopup.IsOpen = true;
         _copyPopupTimer ??= new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1200) };
@@ -397,7 +403,7 @@ public partial class MainWindow : Window, IRemoteHost
         }
 
         string args = string.IsNullOrWhiteSpace(conn.Args) ? "" : " " + conn.Args.Trim();
-        // ClaudeCode / OpenCode → 分頁名稱用工作目錄名稱（例：AwayTerminal），其餘連線照舊「名稱(1)」。
+        // ClaudeCode / Codex / OpenCode → 分頁名稱用工作目錄名稱（例：AwayTerminal），其餘連線照舊「名稱(1)」。
         // 恢復分頁時 restoreTitle 優先（沿用上次看到的名稱）。
         string title = !string.IsNullOrWhiteSpace(restoreTitle) && !Tabs.Any(t => t.Title == restoreTitle)
             ? restoreTitle
@@ -725,8 +731,19 @@ public partial class MainWindow : Window, IRemoteHost
             case 'D': // JS 端 IME 診斷（terminal.js IMEDBG）
                 Diag.Log("js" + rest);
                 return;
-            case 'U': // 點終端機裡的連結 → 用系統預設瀏覽器開（1.1.6；rest=URL）
-                OpenUrlExternal(rest);
+            case 'U': // 點終端機裡的連結（rest=URL）→ 1.1.10 起先跳選單「從瀏覽器開啟／複製網址」（1.1.6~1.1.9 是直接開瀏覽器）
+                ShowUrlMenu(rest);
+                return;
+            case 'y': // 1.1.10：程式以 OSC 52 要求寫入剪貼簿（claude 全螢幕介面接管滑鼠、自己畫選取後用它複製）：id US text
+            {
+                int p = rest.IndexOf(US);
+                if (p < 0) break;
+                try { Clipboard.SetText(rest.Substring(p + 1)); }
+                catch (Exception ex) { Diag.Log($"osc52 clipboard: {ex.Message}"); }
+                return;
+            }
+            case 'm': // 1.1.10：接下來那個空的選取回覆是因為程式接管了滑鼠（xterm 選取停用）→ 提示按住 Shift 拖曳
+                _selMouseHintId = rest;
                 return;
             case 'i': // 輸入： id US text
             {
@@ -786,11 +803,22 @@ public partial class MainWindow : Window, IRemoteHost
                     if (int.TryParse(rest.Substring(0, p1), out int sid) && _saveBufTcs.TryGetValue(sid, out var stcs)) stcs.TrySetResult(text);
                     break;
                 }
-                if (qk == "text") { _remoteTextTcs?.TrySetResult(text); _remoteTextTcs = null; break; } // 遠端查詢，不進剪貼簿
+                if (qk == "text")   // 遠端查詢，不進剪貼簿
+                {
+                    if (int.TryParse(rest.Substring(0, p1), out int tid) && _remoteTextWaiters.Remove(tid, out var waiters))
+                        foreach (var w in waiters) w.TrySetResult(text);
+                    break;
+                }
                 if (qk == "file") { SaveBufferToFile(rest.Substring(0, p1), text); break; }             // 複製全部至檔案
                 if (qk == "cwd") { UpdateTitlePath(rest.Substring(0, p1), text); UpdateDirTitle(rest.Substring(0, p1), text); break; } // 標題列目前路徑／SSH-Telnet 分頁名
                 var target = qk == "all" ? (FrameworkElement)BtnCopyAll : BtnCopy;
-                if (string.IsNullOrEmpty(text)) { ShowCopyFeedback(target, Loc.T("toast.noSelection")); break; }
+                bool mouseOwned = _selMouseHintId == rest.Substring(0, p1);
+                _selMouseHintId = null;
+                if (string.IsNullOrEmpty(text))
+                {
+                    ShowCopyFeedback(target, Loc.T(mouseOwned ? "toast.noSelectionMouse" : "toast.noSelection"));
+                    break;
+                }
                 try { Clipboard.SetText(text); } catch { }
                 // 複製且貼上：進剪貼簿後再貼回原分頁（走 v 協定，claude 分頁自動用 ESC+CR）
                 if (qk == "selpaste")
@@ -1531,6 +1559,27 @@ public partial class MainWindow : Window, IRemoteHost
     private void EchoToTab(int id, string text)
         => PostToWeb("o" + id + US + Convert.ToBase64String(Encoding.UTF8.GetBytes(text)));
 
+    /// <summary>1.1.10：點終端機裡的連結 → 在滑鼠位置跳選單「從瀏覽器開啟」「複製網址」（使用者要求：點了不要馬上開瀏覽器）。
+    /// 選單同終端機右鍵選單，是 WPF ContextMenu（獨立 popup 視窗，不受 WebView2 airspace 影響）。</summary>
+    private void ShowUrlMenu(string url)
+    {
+        if (string.IsNullOrWhiteSpace(url)) return;
+        var menu = new ContextMenu();
+        var open = new MenuItem { Header = Loc.T("ctx.openUrl") };
+        open.Click += (_, _) => OpenUrlExternal(url);
+        var copy = new MenuItem { Header = Loc.T("ctx.copyUrl") };
+        copy.Click += (_, _) =>
+        {
+            try { Clipboard.SetText(url); } catch { }
+            ShowCopyFeedback(Web, Loc.T("toast.urlCopied"), atMouse: true);
+        };
+        menu.Items.Add(open);
+        menu.Items.Add(copy);
+        menu.PlacementTarget = Web;
+        menu.Placement = System.Windows.Controls.Primitives.PlacementMode.MousePoint;
+        menu.IsOpen = true;
+    }
+
     /// <summary>1.1.6：終端機裡的連結（xterm web-links 套件偵測）用系統預設瀏覽器開。
     /// 只放行 http/https（擋掉 file:、javascript: 等，避免點到終端機輸出的怪字串觸發本機動作）。</summary>
     private void OpenUrlExternal(string url)
@@ -2197,14 +2246,30 @@ public partial class MainWindow : Window, IRemoteHost
         {
             var tab = FindTab(tabId);
             if (tab == null) return false;
-            string t = enter ? text + "\r" : text;
             if (enter) tab.LastSubmitUtc = DateTime.UtcNow;   // 遠端送出的指令也算「送出」，完成後照推
             if (tab.Session == null && tab.LoginBuffer != null)
-            { HandleLoginInput(tab, t); return true; }   // SSH「login as:」：帳號從遠端回覆也能登入
+            { HandleLoginInput(tab, enter ? text + "\r" : text); return true; }   // SSH「login as:」：帳號從遠端回覆也能登入
             if (tab.Session == null) return false;
-            tab.Session.WriteText(t);
+            // 1.1.10：文字與 Enter 分兩次送（同「輸入文字」視窗的 SendSnippet）。1.1.9 以前「文字＋CR」一次寫入：
+            // claude 會把整塊當成貼上、CR 變成輸入框裡的換行而不是送出——手機傳來的訊息停在輸入框、看起來「沒有動作」。
+            // 實測（scratchpad probe，claude 2.1.269＋OpenConsole，同一段 95 字訊息 A/B）：一次寫入＝沒送出、文字＋300ms 後單獨 CR＝送出；83 字一次寫入也沒送出。
+            // 短訊息（53 字）一次寫入則有送出，所以是「有時候」。claude 分頁的文字走 JS doPaste（多行轉 ESC+CR 軟換行、
+            // 先 ESC[I 吸收懸置狀態、等 claude 靜止）；Enter 一律延後對「當初那個 session」直接送，期間切分頁也不會送錯。
+            var session = tab.Session;
+            if (tab.ClaudePaste && _webReady) PasteToTab(tab.Id, text);
+            else if (text.Length > 0) session.WriteText(text);
+            if (enter)
+            {
+                var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(RemoteEnterDelayMs) };
+                timer.Tick += (_, _) => { timer.Stop(); if (tab.Session == session) session.WriteText("\r"); };
+                timer.Start();
+            }
             return true;
         });
+
+    /// <summary>遠端送文字後隔多久才送 Enter（ms）。要比 JS doPaste 最壞的延遲（靜止閘門上限 150＋ESC[I 間隔 25）長，
+    /// 並超過 claude 的貼上判定窗；SendSnippet 用 200 已實測可行，遠端取 300 多留餘裕（手機端感覺不到）。</summary>
+    private const int RemoteEnterDelayMs = 300;
 
     bool IRemoteHost.SendKeyToTab(int tabId, string keyName)
         => Dispatcher.Invoke(() =>
@@ -2237,12 +2302,20 @@ public partial class MainWindow : Window, IRemoteHost
         Dispatcher.Invoke(() =>
         {
             if (FindTab(tabId) == null) { tcs.TrySetResult(""); return; }
-            _remoteTextTcs = tcs;
+            if (!_remoteTextWaiters.TryGetValue(tabId, out var list)) _remoteTextWaiters[tabId] = list = new();
+            list.Add(tcs);
             PostToWeb("q" + tabId + US + "text");
         });
         try
         {
-            if (tcs.Task.Wait(1500) && tcs.Task.Result.Length > 0)
+            bool got = tcs.Task.Wait(1500);
+            if (!got)   // 逾時：把自己從等待者移除，免得殘留
+                Dispatcher.Invoke(() =>
+                {
+                    if (_remoteTextWaiters.TryGetValue(tabId, out var list) && list.Remove(tcs) && list.Count == 0)
+                        _remoteTextWaiters.Remove(tabId);
+                });
+            if (got && tcs.Task.Result.Length > 0)
             {
                 var a = tcs.Task.Result.Replace("\r", "").Split('\n');
                 int s0 = Math.Max(0, a.Length - lines);

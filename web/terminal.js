@@ -4,7 +4,9 @@
 // 訊息協定（字串；US = \x1f）：
 //   JS -> C# :  i{id}US{text} 輸入、r{id}US{cols},{rows} 尺寸、
 //               a{id}US{kind}US{text} 查詢回覆、p{id} 選取某 pane、
-//               k{id1},{id2},... 拖曳後的新順序、z{size} Ctrl+滾輪縮放後的字級、ready
+//               k{id1},{id2},... 拖曳後的新順序、z{size} Ctrl+滾輪縮放後的字級、ready、
+//               U{url} 點了終端機裡的連結（C# 跳「從瀏覽器開啟／複製網址」選單）、D{text} 診斷記錄、
+//               y{id}US{text} 程式以 OSC 52 要求寫剪貼簿（1.1.10）、m{id} 下一個空選取回覆是因為程式接管滑鼠（1.1.10）
 //   C# -> JS :  o{id}US{base64} 輸出、n{id}US{title}[US{flags}] 建立（flags 含 c=claude 貼上）、t{id}US{title} 改名、
 //               s{id} 選取、x{id} 關閉、c{id} 清畫面、L{tab|split} 切換模式、
 //               S{id}US{up|down|top|bottom} 捲動檢視（工具列「翻頁」；不送輸入）、
@@ -80,8 +82,27 @@
     term.loadAddon(fit);
     term.loadAddon(new Unicode11Addon.Unicode11Addon());
     term.unicode.activeVersion = "11";
-    // 連結：點一下用系統預設瀏覽器開（1.1.6）——交給 C#（U 協定），而非 window.open（WebView2 會開內嵌視窗）
+    // 連結：點一下交給 C#（U 協定）而非 window.open（WebView2 會開內嵌視窗）。1.1.6 起用系統預設瀏覽器開；
+    // 1.1.10 起 C# 先跳選單「從瀏覽器開啟／複製網址」
     term.loadAddon(new WebLinksAddon.WebLinksAddon(function (ev, uri) { ws.postMessage("U" + uri); }));
+    // OSC 52 剪貼簿寫入（1.1.10）：程式接管滑鼠（DECSET 1000/1002/1003，例 claude 全螢幕介面＝在 claude 裡用 /tui 切換後，
+    // 它重啟自己時會丟掉 CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN）時，xterm 的選取整個停用、getSelection() 永遠是空的——
+    // 拖曳是 claude 自己畫反白，再用 OSC 52 送出選到的文字要終端機放進剪貼簿；xterm.js 沒載 clipboard addon 會直接忽略，
+    // 於是「看得到反白、按複製卻說沒有選取文字、剪貼簿也沒東西」（scratchpad probe 以 ConPTY 實錄確認）。
+    // 收到就交給 C# 寫剪貼簿（y 協定），並記在 rec.appSel 讓工具列「複製」／右鍵「複製且貼上」拿得到。只接受寫入：
+    // 讀取查詢（Pd="?"）不回應、清空（Pd 空）忽略、超過 OSC52_MAX 字不收。
+    term.parser.registerOscHandler(52, function (data) {
+      var r52 = terms[id]; if (!r52) return true;
+      var semi = data.indexOf(";");
+      var pd = semi < 0 ? data : data.slice(semi + 1);
+      if (!pd || pd === "?") return true;
+      var txt52 = "";
+      try { txt52 = new TextDecoder().decode(b64ToBytes(pd)); } catch (_) { return true; }
+      if (!txt52 || txt52.length > OSC52_MAX) return true;
+      r52.appSel = txt52;
+      ws.postMessage("y" + id + US + txt52);
+      return true;
+    });
     var ser = new SerializeAddon.SerializeAddon();
     term.loadAddon(ser);
     term.open(body);
@@ -155,7 +176,11 @@
       return true;
     });
 
-    el.addEventListener("mousedown", function () { setActivePane(id); });
+    el.addEventListener("mousedown", function (e) {
+      // 左鍵按下＝程式那邊的選取會重來（拖曳結束後它會再送一次 OSC 52）或被點掉 → 舊的 appSel 作廢；右鍵要留著給右鍵選單的「複製」
+      if (e.button === 0 && terms[id]) terms[id].appSel = "";
+      setActivePane(id);
+    });
 
     header.addEventListener("dragstart", function (e) {
       dragId = id; e.dataTransfer.effectAllowed = "move";
@@ -182,12 +207,17 @@
                   sendQ: [], sending: false, lastOutMs: 0,
                   keySeq: 0, imeLast: null,                 // IME 去重（1.0.45，見 sendTyped）
                   fitted: false, pendingRestore: null, pendingSep: null, held: null, restoreTimer: null, // 緩衝區恢復（1.0.45，見 applyRestore）
-                  ta: null, taMark: 0, composing: false, compEndPending: false, rescueTimer: null }; // IME 漏送補救（1.1.9，見 setupImeGuard）
+                  ta: null, taMark: 0, composing: false, compEndPending: false, rescueTimer: null, // IME 漏送補救（1.1.9，見 setupImeGuard）
+                  appSel: "" };                             // 程式以 OSC 52 送來的選取文字（1.1.10，見 registerOscHandler(52) 與 selectionFor）
     setupImeGuard(id, terms[id], body);
 
     // 每個 keydown 遞增序號（capture 於 body 層＝比 xterm 掛在 textarea 上的 handler 更早跑）。
     // sendTyped 的 IME 去重靠它分辨「同字串兩次」是使用者真的再按一次（序號變了）還是 xterm 內部重複交付（序號沒變）。
-    body.addEventListener("keydown", function () { var rk = terms[id]; if (rk) rk.keySeq++; }, true);
+    body.addEventListener("keydown", function (e) {
+      var rk = terms[id]; if (!rk) return;
+      rk.keySeq++;
+      if (!/^(Shift|Control|Alt|Meta|CapsLock)$/.test(e.key)) rk.appSel = "";   // 打字＝程式那邊的反白通常已消失，別再拿舊選取去複製
+    }, true);
 
     // claude 分頁：瀏覽器原生貼上（Ctrl+V）也要走 doPaste（capture 階段先於 xterm 的 textarea 監聽）。
     // 搜尋列在 document 層級、不在 el 內，不受影響。
@@ -533,6 +563,20 @@
     return out;
   }
 
+  // 工具列「複製」／右鍵「複製、複製且貼上」的選取文字（q…sel/selpaste；1.1.10）：
+  // ① xterm 自己的選取優先（一般拖曳；接管滑鼠的程式裡按住 Shift 拖曳也是這個）；
+  // ② 程式接管滑鼠時 xterm 選取停用 → 改用程式最近一次 OSC 52 送來的選取（claude 全螢幕介面拖曳反白）；
+  // ③ 都沒有、且正在接管滑鼠 → 先送 m{id}，讓 C# 的「沒有選取文字」提示改說「按住 Shift 再拖曳」。
+  var OSC52_MAX = 1000000;
+  function selectionFor(rec, id) {
+    var s = rec.term.getSelection();
+    if (s) return s;
+    if (rec.term.modes.mouseTrackingMode === "none") return "";
+    if (rec.appSel) return rec.appSel;
+    ws.postMessage("m" + id);
+    return "";
+  }
+
   // 遠端 /last 用（q…text）：取 buffer 最後 maxLines 個「邏輯行」純文字。
   // xterm 已把 TUI 原地重繪全部合成完畢，這裡拿到的是乾淨整行；isWrapped 的行接回上一行。
   function lastPlainText(term, maxLines) {
@@ -727,7 +771,7 @@
                : (qk === "file") ? lastPlainText(r2.term, 1000000)   // 複製全部至檔案：整個 buffer 純文字（無 ANSI）
                : (qk === "cwd") ? promptLine(r2.term)                // 標題列目前路徑
                : (qk === "save") ? saveBuffer(r2)                    // 關閉程式：scrollback 序列化（含顏色）供下次恢復
-               : r2.term.getSelection();
+               : selectionFor(r2, id2);                              // sel / selpaste（含程式接管滑鼠時的 OSC 52 選取）
       ws.postMessage("a" + id2 + US + qk + US + text);
     } else if (kind === "v") {
       // 貼上：統一走 doPaste（一般分頁=xterm.paste；claude 分頁=ESC+CR 軟換行，見 doPaste 註解）

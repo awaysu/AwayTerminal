@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
@@ -68,10 +69,11 @@ public sealed class TelegramRemote
 
     // 「只推新輸出」基準：每個分頁上次推播（或附著）當下的原始渲染文字；
     // follow/完成推播只推基準之後的新行，比對不到（清屏/TUI 重繪）退回快照。
-    private readonly Dictionary<int, string> _baseline = new();
+    // 1.1.10 起輪詢在執行緒池跑、指令與完成推播可能同時進來 → 用 ConcurrentDictionary。
+    private readonly ConcurrentDictionary<int, string> _baseline = new();
     // 每個分頁上次「自動推播」送出的內容（空白正規化）＋時間——用來擋忙→閒連兩次/快照退回造成的重送；
     // 只在短時間窗內去重，隔一段時間又問一樣的東西（答案相同）照樣送。
-    private readonly Dictionary<int, (string Sig, DateTime Time)> _lastSent = new();
+    private readonly ConcurrentDictionary<int, (string Sig, DateTime Time)> _lastSent = new();
 
     // 10 分鐘閒置自動離開分頁檢視（只離開檢視，分頁照跑；9 分鐘先警告一次）
     private DateTime _lastUserMsgUtc = DateTime.UtcNow;
@@ -90,7 +92,11 @@ public sealed class TelegramRemote
         _lastUserMsgUtc = DateTime.UtcNow;
         if (string.IsNullOrEmpty(_token) || _chatId == 0) return;
         _cts = new CancellationTokenSource();
-        _ = PollLoop(_cts.Token);
+        // 1.1.10：丟到執行緒池跑。Start 由 UI 執行緒呼叫，直接 `_ = PollLoop()` 會讓整個輪詢與指令處理的 await 都接回 UI 執行緒
+        // （WPF SynchronizationContext）——/goto、/last、選單應答呼叫 GetRecentText 時在 UI 執行緒上 Wait 1.5 秒等 WebView2 回覆，
+        // 回覆卻要 UI 執行緒處理 → 必逾時：UI 卡住、而且只能拿到劣化的位元組流備援（選單偵測對不到＝回數字「沒有動作」）。
+        var ct = _cts.Token;
+        _ = Task.Run(() => PollLoop(ct));
     }
 
     public void Stop()
@@ -150,6 +156,7 @@ public sealed class TelegramRemote
         await RegisterCommandsAsync(ct);             // 註冊原生 / 指令選單
         // 上線通知（1.0.36）：與關閉時的「🔴 離線」成對——開啟時告知手機遠端可用。
         await SendAsync("🟢 AwayTerminal 已開啟，遠端上線——可以開始下指令了。/goto 選分頁、/help 看指令。");
+        int errors = 0;   // 連續失敗次數（診斷用：第 1 次與每 20 次記一筆 diag.log，恢復時再記一筆）
         while (!ct.IsCancellationRequested)
         {
             try
@@ -157,7 +164,13 @@ public sealed class TelegramRemote
                 await CheckIdleAsync();   // getUpdates 最多阻塞 30s → 每輪至少檢查一次閒置
                 string url = $"https://api.telegram.org/bot{_token}/getUpdates?timeout=30&offset={_offset}";
                 using var resp = await _http.GetAsync(url, ct);
-                if (!resp.IsSuccessStatusCode) { await Task.Delay(3000, ct); continue; }
+                if (!resp.IsSuccessStatusCode)
+                {
+                    // 409＝同一個 bot 有別的程式在 poll、401＝token 失效：都會「沒動作」，記下來才查得到
+                    if (++errors == 1 || errors % 20 == 0) Diag.Log($"remote poll http {(int)resp.StatusCode} (#{errors})");
+                    await Task.Delay(3000, ct); continue;
+                }
+                if (errors > 0) { Diag.Log($"remote poll recovered after {errors} error(s)"); errors = 0; }
                 string json = await resp.Content.ReadAsStringAsync(ct);
                 using var doc = JsonDocument.Parse(json);
                 if (!doc.RootElement.TryGetProperty("result", out var result)) continue;
@@ -167,8 +180,15 @@ public sealed class TelegramRemote
                     HandleUpdate(upd);
                 }
             }
-            catch (OperationCanceledException) { break; }
-            catch { try { await Task.Delay(3000, ct); } catch { break; } }
+            // 只有「真的被 Stop()」才離開。1.1.9 以前這裡是不分來源的 catch (OperationCanceledException) { break; }——
+            // 但 HttpClient 逾時（50s，網路卡住／電腦睡眠喚醒後掛住的 long poll）丟的 TaskCanceledException 正是它的子類，
+            // 於是一次逾時就讓輪詢永久停止＝遠端從此「沒有動作」，直到重開程式或重存遠端設定（1.1.10 實測例外型別確認）。
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { break; }
+            catch (Exception ex)
+            {
+                if (++errors == 1 || errors % 20 == 0) Diag.Log($"remote poll error #{errors}: {ex.GetType().Name} {ex.Message}");
+                try { await Task.Delay(3000, ct); } catch { break; }
+            }
         }
     }
 

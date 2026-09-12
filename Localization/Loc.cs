@@ -95,8 +95,8 @@ public static class Loc
         ["custom.delete"] = ("刪除", "Delete"),
         ["custom.back"] = ("返回", "Back"),
         ["custom.detect"] = ("自動偵測", "Auto-detect"),
-        ["custom.detectNone"] = ("沒有偵測到可加入的工具（claude / opencode 等，或都已在清單中）。",
-                                  "No new tools detected (claude / opencode, etc., or all already listed)."),
+        ["custom.detectNone"] = ("沒有偵測到可加入的工具（claude / codex / opencode 等，或都已在清單中）。",
+                                  "No new tools detected (claude / codex / opencode, etc., or all already listed)."),
         ["custom.detectDone"] = ("已加入：{0}", "Added: {0}"),
         ["custom.delConfirm"] = ("確定要刪除「{0}」？", "Delete \"{0}\"?"),
         ["custom.untitled"] = ("新項目", "New item"),
@@ -218,12 +218,21 @@ public static class Loc
         ["compose.clear"] = ("清除", "Clear"),
         ["compose.undo"] = ("復原", "Undo"),
         ["compose.noTab"] = ("沒有分頁可送", "No tab to send to"),
+        // 1.1.10：「清除」左邊的「載入文字檔」
+        ["compose.loadFile"] = ("載入文字檔", "Load file"),
+        ["compose.loadFilter"] = ("文字檔", "Text files"),
+        ["compose.loadTooBig"] = ("檔案太大（上限 {0} MB），未載入。", "File is too large (max {0} MB); not loaded."),
+        ["compose.loadFail"] = ("讀取檔案失敗", "Failed to read the file"),
 
         // 浮動提示
         ["toast.copied"] = ("複製成功", "Copied"),
         ["toast.copiedPasted"] = ("已複製並貼上", "Copied and pasted"),
         ["toast.copiedAll"] = ("已複製全部文字", "All text copied"),
         ["toast.noSelection"] = ("沒有選取文字", "Nothing selected"),
+        ["toast.urlCopied"] = ("已複製網址", "URL copied"),
+        // 1.1.10：選取是空的、而且分頁裡的程式接管了滑鼠（例如 Claude 全螢幕介面）→ xterm 無法用一般拖曳選取
+        ["toast.noSelectionMouse"] = ("沒有選取文字（此程式接管了滑鼠：按住 Shift 再拖曳選取）",
+                                      "Nothing selected (this program captures the mouse: hold Shift while dragging to select)"),
 
         // MessageBox
         ["msg.closeTabConfirm"] = ("確定要關閉「{0}」？", "Close \"{0}\"?"),
@@ -280,6 +289,9 @@ public static class Loc
         ["ctx.selectAll"] = ("全選", "Select all"),
         ["ctx.search"] = ("搜尋", "Find"),
         ["ctx.copyAllFile"] = ("複製全部存至檔案", "Copy all to file"),
+        // 1.1.10：點終端機裡的網址先跳選單（不再直接開瀏覽器）
+        ["ctx.openUrl"] = ("從瀏覽器開啟", "Open in browser"),
+        ["ctx.copyUrl"] = ("複製網址", "Copy URL"),
         ["msg.saveFail"] = ("存檔失敗", "Save failed"),
 
         // 連線視窗
