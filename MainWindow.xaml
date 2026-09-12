@@ -121,7 +121,9 @@
                                 <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
                                     <MenuItem Header="{Binding Path=[menu.rename], Source={x:Static loc:LocProxy.Instance}}" Click="MenuRename_Click" />
                                     <MenuItem Header="{Binding Path=[menu.log], Source={x:Static loc:LocProxy.Instance}}" Click="MenuLog_Click" />
-                                    <MenuItem Header="{Binding Path=[menu.macro], Source={x:Static loc:LocProxy.Instance}}" Click="MenuMacro_Click" />
+                                    <!-- 1.1.11：Claude+Codex 協作分頁不支援巨集（使用者決定）→ 該列藏起來 -->
+                                    <MenuItem Header="{Binding Path=[menu.macro], Source={x:Static loc:LocProxy.Instance}}" Click="MenuMacro_Click"
+                                              Visibility="{Binding NotCoworkVisibility}" />
                                     <MenuItem Header="{Binding Path=[menu.color], Source={x:Static loc:LocProxy.Instance}}">
                                         <MenuItem Header="{Binding Path=[menu.colorDefault], Source={x:Static loc:LocProxy.Instance}}" Tag="" Click="MenuColor_Click" />
                                         <Separator />
@@ -131,6 +133,11 @@
                                         <MenuItem Header="Aa 範例文字" Foreground="#C0CAF5" Background="#1A1B26" Tag="#C0CAF5|#1A1B26" Click="MenuColor_Click" />
                                         <MenuItem Header="Aa 範例文字" Foreground="#EBDBB2" Background="#282828" Tag="#EBDBB2|#282828" Click="MenuColor_Click" />
                                     </MenuItem>
+                                    <!-- 1.1.11 協作分頁：自動交棒控制（只有協作分頁那一列顯示） -->
+                                    <Separator Visibility="{Binding CoworkVisibility}" />
+                                    <MenuItem Header="{Binding CoworkPauseHeader}" Click="CoworkPause_Click" Visibility="{Binding CoworkVisibility}" />
+                                    <MenuItem Header="{Binding Path=[menu.coworkReset], Source={x:Static loc:LocProxy.Instance}}" Click="CoworkReset_Click"
+                                              Visibility="{Binding CoworkVisibility}" />
                                     <Separator />
                                     <MenuItem Header="{Binding Path=[menu.close], Source={x:Static loc:LocProxy.Instance}}" Click="MenuClose_Click" />
                                 </ContextMenu>
@@ -142,10 +149,23 @@
                                        VerticalAlignment="Center" Margin="0,0,7,0"
                                        ToolTip="{Binding KindTip}"
                                        RenderOptions.BitmapScalingMode="HighQuality" SnapsToDevicePixels="True" />
+                                <!-- 1.1.11 Claude+Codex 協作分頁：第二個圖示＝另一半（Codex）的忙／閒 -->
+                                <Image DockPanel.Dock="Left" Source="{Binding SecondStatusIcon}" Width="20" Height="20"
+                                       VerticalAlignment="Center" Margin="-3,0,7,0" Visibility="{Binding CoworkVisibility}"
+                                       ToolTip="{Binding SecondKindTip}"
+                                       RenderOptions.BitmapScalingMode="HighQuality" SnapsToDevicePixels="True" />
                                 <Button DockPanel.Dock="Right" Content="&#10005;" Click="TabClose_Click" Width="22" Height="22"
                                         Margin="6,0,0,0" Padding="0" Background="Transparent" BorderThickness="0"
                                         Foreground="#AAAAAA" Cursor="Hand" FontSize="13"
                                         ToolTip="{Binding Path=[tip.tabClose], Source={x:Static loc:LocProxy.Instance}}" />
+                                <!-- 1.1.11 協作分頁：左右 ⇆ ／上下 ⇅ 切換（在 ✕ 左邊；只有協作分頁那一列顯示） -->
+                                <Button DockPanel.Dock="Right" Content="{Binding CoworkLayoutGlyph}" Click="CoworkLayout_Click"
+                                        Width="22" Height="22" Margin="4,0,0,0" Padding="0" Background="Transparent" BorderThickness="0"
+                                        Foreground="#FDFFB0" Cursor="Hand" FontSize="14" Visibility="{Binding CoworkVisibility}"
+                                        ToolTip="{Binding CoworkLayoutTip}" />
+                                <!-- 1.1.11 協作分頁：交棒狀態（2/10、⏸ 2/10、✔ 完成） -->
+                                <TextBlock DockPanel.Dock="Right" Text="{Binding CoworkStateText}" Foreground="#B0B0B0" FontSize="11"
+                                           VerticalAlignment="Center" Margin="4,0,0,0" Visibility="{Binding CoworkVisibility}" />
                                 <TextBlock Text="{Binding Title}" Foreground="{Binding TitleBrush}" VerticalAlignment="Center"
                                            FontSize="14" TextTrimming="CharacterEllipsis" />
                             </DockPanel>

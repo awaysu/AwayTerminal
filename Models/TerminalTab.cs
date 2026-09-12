@@ -84,6 +84,57 @@ public sealed class TerminalTab : INotifyPropertyChanged
     /// <summary>此分頁的巨集執行器（null = 未執行）。</summary>
     public object? Macro { get; set; }
 
+    // ---------- Claude+Codex 協作分頁（1.1.11，見 CoworkGroup）----------
+    private CoworkGroup? _cowork;
+    /// <summary>所屬協作組（null＝一般分頁）。設定後分頁列那一列的第二個圖示／左右上下切換鈕跟著出現。</summary>
+    public CoworkGroup? Cowork
+    {
+        get => _cowork;
+        set
+        {
+            if (ReferenceEquals(_cowork, value)) return;
+            _cowork = value;
+            Raise(nameof(Cowork)); Raise(nameof(CoworkVisibility)); Raise(nameof(NotCoworkVisibility));
+            Raise(nameof(SecondStatusIcon)); Raise(nameof(SecondKindTip)); RaiseCoworkLayout(); Raise(nameof(ToolTipText));
+        }
+    }
+    private bool IsCoworkFirst => _cowork != null && ReferenceEquals(_cowork.First, this);
+    /// <summary>分頁列：只有協作組的那一列顯示第二個狀態圖示與左右／上下切換鈕。</summary>
+    public Visibility CoworkVisibility => IsCoworkFirst ? Visibility.Visible : Visibility.Collapsed;
+    /// <summary>分頁右鍵「巨集」：協作分頁不支援（使用者決定）→ 藏起來。</summary>
+    public Visibility NotCoworkVisibility => _cowork == null ? Visibility.Visible : Visibility.Collapsed;
+    /// <summary>分頁列第二個圖示＝另一半（Codex）的連線圖示，依它自己的忙／閒染色。</summary>
+    public ImageSource? SecondStatusIcon => IsCoworkFirst ? _cowork!.Second.StatusIcon : null;
+    public string SecondKindTip => IsCoworkFirst ? _cowork!.Second.KindTip : "";
+    /// <summary>切換鈕顯示目前的排列：⇆＝左右、⇅＝上下。</summary>
+    public string CoworkLayoutGlyph => _cowork?.Vertical == true ? "⇅" : "⇆";
+    public string CoworkLayoutTip => Loc.T(_cowork?.Vertical == true ? "tip.coworkLayoutV" : "tip.coworkLayoutH");
+    public void RaiseCoworkLayout() { Raise(nameof(CoworkLayoutGlyph)); Raise(nameof(CoworkLayoutTip)); }
+    /// <summary>分頁列那一列的交棒狀態（刻意短，別把資料夾名擠掉）：「2/10」「⏸2/10」「✔」；還沒交棒過＝空。完整說明在 tooltip。</summary>
+    public string CoworkStateText
+    {
+        get
+        {
+            if (!IsCoworkFirst) return "";
+            var g = _cowork!;
+            int max = AppSettings.Current.CoworkMaxRounds;
+            if (g.Done) return "✔";
+            if (g.Paused) return $"⏸{g.Round}/{max}";
+            return g.Round > 0 ? $"{g.Round}/{max}" : "";
+        }
+    }
+    /// <summary>tooltip 裡的交棒狀態說明。</summary>
+    private string CoworkStateTip()
+    {
+        var g = _cowork!;
+        int max = AppSettings.Current.CoworkMaxRounds;
+        string s = g.Done ? Loc.T("cowork.tipDone") : g.Paused ? Loc.T("cowork.tipPaused") : g.Round > 0 ? Loc.T("cowork.tipRunning") : Loc.T("cowork.tipIdle");
+        return string.Format(s, g.Round, max);
+    }
+    /// <summary>分頁右鍵「暫停交棒／繼續交棒」。</summary>
+    public string CoworkPauseHeader => Loc.T(_cowork?.Paused == true ? "menu.coworkResume" : "menu.coworkPause");
+    public void RaiseCoworkState() { Raise(nameof(CoworkStateText)); Raise(nameof(CoworkPauseHeader)); Raise(nameof(ToolTipText)); }
+
     public TerminalTab(int id, TermKind kind, string title)
     {
         Id = id;
@@ -159,6 +210,8 @@ public sealed class TerminalTab : INotifyPropertyChanged
         get
         {
             var sb = new System.Text.StringBuilder($"{_title}  {Loc.T("tip.tabOpened")} {StartUtc.ToLocalTime():HH:mm}");
+            if (IsCoworkFirst) sb.Append('\n').Append(Loc.T("tip.cowork")).Append("  ").Append(WorkDir)   // 協作分頁：註明＋工作目錄＋交棒狀態
+                                 .Append('\n').Append(CoworkStateTip());
             if (!string.IsNullOrEmpty(CwdPath) && CwdPath != _title) sb.Append('\n').Append(CwdPath);
             if (_isLogging) sb.Append('\n').Append(Loc.T("tip.tabLogging"));
             if (_isMacroRunning) sb.Append('\n').Append(Loc.T("tip.tabMacroRunning"));
@@ -172,7 +225,7 @@ public sealed class TerminalTab : INotifyPropertyChanged
         ? nm : Loc.T(KindKey);
 
     /// <summary>供狀態輪詢定期呼叫：更新 tooltip 的開啟時刻文字（語言切換時 tip.tabOpened/KindTip 也靠這裡）。</summary>
-    public void RefreshRuntime() { Raise(nameof(ToolTipText)); Raise(nameof(KindTip)); }
+    public void RefreshRuntime() { Raise(nameof(ToolTipText)); Raise(nameof(KindTip)); if (IsCoworkFirst) { Raise(nameof(SecondKindTip)); RaiseCoworkLayout(); } }
 
     // 狀態：Ready=綠(可輸入)、Busy=紅(跑程式；1.0.42 由橘改紅，與工作列彈跳球同色)。
     // 1.1.2 起不再是圓點，而是把該分頁的連線圖示染色（StatusIcon）。
@@ -180,8 +233,15 @@ public sealed class TerminalTab : INotifyPropertyChanged
     public TermStatus Status
     {
         get => _status;
-        set { if (_status != value) { _status = value; Raise(nameof(Status)); Raise(nameof(StatusIcon)); } }
+        set
+        {
+            if (_status == value) return;
+            _status = value; Raise(nameof(Status)); Raise(nameof(StatusIcon));
+            // 協作組的第二半沒有自己的分頁列那一列 → 通知第一半重畫第二個圖示
+            if (_cowork != null && ReferenceEquals(_cowork.Second, this)) _cowork.First.RaiseSecondIcon();
+        }
     }
+    public void RaiseSecondIcon() => Raise(nameof(SecondStatusIcon));
     public ImageSource StatusIcon => IconTint.Get(_iconFile, _status == TermStatus.Busy ? BusyColor : ReadyColor);
 
     // 記錄 log 中（分頁 tooltip 註明；右鍵選單開始/停止）

@@ -36,6 +36,25 @@ internal static class ProcessTree
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern bool CloseHandle(IntPtr hObject);
 
+    /// <summary>PID → 父 PID 對照（1.1.11：協作分頁 hook 送來的 curl 往上找是哪個分頁的 claude／codex 衍生的）。</summary>
+    public static Dictionary<int, int> ParentMap()
+    {
+        var map = new Dictionary<int, int>();
+        IntPtr snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+        if (snap == IntPtr.Zero || snap == new IntPtr(-1)) return map;
+        try
+        {
+            var pe = new PROCESSENTRY32 { dwSize = Marshal.SizeOf<PROCESSENTRY32>() };
+            if (Process32First(snap, ref pe))
+            {
+                do { map[pe.th32ProcessID] = pe.th32ParentProcessID; }
+                while (Process32Next(snap, ref pe));
+            }
+        }
+        finally { CloseHandle(snap); }
+        return map;
+    }
+
     /// <summary>回傳「有子行程」的父 PID 集合。session 的 PID 若在其中，代表正在跑外部程式。</summary>
     public static HashSet<int> ParentsWithChildren()
     {

@@ -196,6 +196,13 @@ public partial class MainWindow : Window, IRemoteHost
             var s2 = t.Restore!;
             s2.Title = t.Title;
             s2.OpenedUtc = t.StartUtc;   // 1.1.4：存原始開啟時間，恢復後 tooltip 仍顯示最初開啟時刻
+            // 1.1.11 協作分頁：兩半存同一個代號＋排列，恢復後重新綁組（另一半沒有 Restore 就不存組資訊）
+            var cg = t.Cowork;
+            bool keepGroup = cg != null && cg.First.Restore != null && cg.Second.Restore != null;
+            s2.CoworkKey = keepGroup ? cg!.Key : "";
+            s2.CoworkSecond = keepGroup && ReferenceEquals(cg!.Second, t);
+            s2.CoworkVertical = keepGroup && cg!.Vertical;
+            s2.CoworkRatio = keepGroup ? cg!.Ratio : 0.5;
             s2.BufferFile = "";
             if (bufs.TryGetValue(t.Id, out var text) && !string.IsNullOrEmpty(text))
             {
@@ -316,6 +323,14 @@ public partial class MainWindow : Window, IRemoteHost
             menu.Items.Add(mi);
         }
 
+        // Claude+Codex 協作分頁（1.1.11）：自訂連線裡同時有 ClaudeCode 與 Codex 才列（路徑／參數沿用那兩筆）
+        if (FindCoworkConns() is { } pair)
+        {
+            var mi = MakeNewItemRaw(Loc.T("tb.cowork"), CustomIconFile(pair.Claude.Icon), CustomIconFile(pair.Codex.Icon));
+            mi.Click += (_, _) => OpenCowork();
+            menu.Items.Add(mi);
+        }
+
         // 註：ADB 自 v1.0.18 起**不再是內建項目**，改由自訂連線決定（自訂視窗的
         // 「自動偵測」可一鍵加入）。刪光自訂連線後這一區就是空的，符合預期。
         // 「自訂…」上方一律加分隔線 → 開管理視窗
@@ -336,23 +351,27 @@ public partial class MainWindow : Window, IRemoteHost
         return mi;
     }
 
-    /// <summary>建立下拉選單項目：圖示放進 Header（非 MenuItem.Icon，避免被固定尺寸圖示欄裁切）；圖左字右。</summary>
-    private MenuItem MakeNewItemRaw(string headerText, string iconFile)
+    /// <summary>建立下拉選單項目：圖示放進 Header（非 MenuItem.Icon，避免被固定尺寸圖示欄裁切）；圖左字右。
+    /// 可給多個圖示（1.1.11 Claude+Codex 並排兩個）。</summary>
+    private MenuItem MakeNewItemRaw(string headerText, params string[] iconFiles)
     {
         var panel = new StackPanel { Orientation = Orientation.Horizontal };
-        try
+        for (int i = 0; i < iconFiles.Length; i++)
         {
-            panel.Children.Add(new Image
+            try
             {
-                Source = new System.Windows.Media.Imaging.BitmapImage(
-                    new Uri($"pack://application:,,,/icon/{iconFile}")),
-                Width = 26,
-                Height = 26,
-                Margin = new Thickness(0, 0, 10, 0),
-                VerticalAlignment = VerticalAlignment.Center
-            });
+                panel.Children.Add(new Image
+                {
+                    Source = new System.Windows.Media.Imaging.BitmapImage(
+                        new Uri($"pack://application:,,,/icon/{iconFiles[i]}")),
+                    Width = 26,
+                    Height = 26,
+                    Margin = new Thickness(0, 0, i == iconFiles.Length - 1 ? 10 : 2, 0),
+                    VerticalAlignment = VerticalAlignment.Center
+                });
+            }
+            catch { }
         }
-        catch { }
         panel.Children.Add(new TextBlock
         {
             Text = headerText,
@@ -373,7 +392,9 @@ public partial class MainWindow : Window, IRemoteHost
 
     /// <param name="forcedDir">指定工作目錄（遠端/紀錄/恢復用）；null 且 PickDir 時跳資料夾框。</param>
     /// <param name="restoreTitle">恢復分頁時沿用上次的分頁標題（名稱已被占用時退回 NextName）。</param>
-    private void OpenCustom(CustomConn conn, string? forcedDir = null, string? restoreTitle = null)
+    /// <param name="addHistory">false＝不記進「紀錄」（Claude+Codex 協作分頁另記一筆 cowork）。</param>
+    /// <param name="extraArgs">附加在連線參數後面、只用在這次啟動（1.1.11 協作分頁注入 Stop hook／交棒規則；不存進恢復資訊／紀錄）。</param>
+    private void OpenCustom(CustomConn conn, string? forcedDir = null, string? restoreTitle = null, bool addHistory = true, string extraArgs = "")
     {
         // 診斷點：與 PickWorkDir 的 log 對照可分辨「點了沒進 handler」vs「進了卡在哪一步」
         Diag.Log($"OpenCustom '{conn.Name}' pickDir={conn.PickDir} webReady={_webReady}");
@@ -402,7 +423,7 @@ public partial class MainWindow : Window, IRemoteHost
             if (dir == null) return; // 使用者取消 → 不開
         }
 
-        string args = string.IsNullOrWhiteSpace(conn.Args) ? "" : " " + conn.Args.Trim();
+        string args = (string.IsNullOrWhiteSpace(conn.Args) ? "" : " " + conn.Args.Trim()) + extraArgs;   // extraArgs：1.1.11 協作分頁
         // ClaudeCode / Codex / OpenCode → 分頁名稱用工作目錄名稱（例：AwayTerminal），其餘連線照舊「名稱(1)」。
         // 恢復分頁時 restoreTitle 優先（沿用上次看到的名稱）。
         string title = !string.IsNullOrWhiteSpace(restoreTitle) && !Tabs.Any(t => t.Title == restoreTitle)
@@ -465,7 +486,7 @@ public partial class MainWindow : Window, IRemoteHost
             tab.IconFile = CustomIconFile(conn.Icon);   // 分頁列圖示＝這條自訂連線的圖示（1.1.2；KindKey 預設即 kind.custom）
             if (dir != null) { tab.WorkDir = dir; SetTitlePath(dir); }
         }
-        AddHistory(new SavedTab
+        if (addHistory) AddHistory(new SavedTab
         {
             Type = "custom", Name = conn.Name, Title = conn.Name, Path = path, Args = conn.Args, Icon = conn.Icon,
             PickDir = conn.PickDir, ViaPowerShell = conn.ViaPowerShell,
@@ -477,6 +498,132 @@ public partial class MainWindow : Window, IRemoteHost
     {
         var dlg = new CustomConnDialog { Owner = this };
         dlg.ShowDialog(); // New 下拉每次開都讀最新 AppSettings，故不需額外刷新
+    }
+
+    // ---------- Claude+Codex 協作分頁（1.1.11，見 Models/CoworkGroup）----------
+    private System.Windows.Data.ListCollectionView? _stripView;
+
+    private static bool ConnIs(CustomConn c, string iconKey, string exeWord)
+    {
+        if (string.Equals(c.Icon, iconKey, StringComparison.OrdinalIgnoreCase)) return true;
+        try { return Path.GetFileNameWithoutExtension(c.Path).Contains(exeWord, StringComparison.OrdinalIgnoreCase); }
+        catch { return false; }
+    }
+
+    /// <summary>自訂連線裡的 ClaudeCode 與 Codex（沒隱藏的優先）；缺一個就回 null（New 下拉不列 Claude+Codex）。</summary>
+    private static (CustomConn Claude, CustomConn Codex)? FindCoworkConns()
+    {
+        var conns = AppSettings.Current.CustomConns.Where(c => !string.IsNullOrWhiteSpace(c.Path)).OrderBy(c => c.Hidden).ToList();
+        var claude = conns.FirstOrDefault(c => ConnIs(c, "claude-code", "claude"));
+        var codex = conns.FirstOrDefault(c => ConnIs(c, "codex", "codex"));
+        return claude != null && codex != null ? (claude, codex) : null;
+    }
+
+    /// <summary>開一個 Claude+Codex 協作分頁：選一次資料夾 → 同一個資料夾各開一個 ClaudeCode／Codex 自訂連線分頁 → 綁成一組。
+    /// dir 給定＝不跳資料夾框（紀錄重開）。只開成一半時保留成一般分頁並提示。</summary>
+    private void OpenCowork(string? dir = null)
+    {
+        if (DeferUntilWebReady(() => OpenCowork(dir), "OpenCowork")) return;
+        if (FindCoworkConns() is not { } pair)
+        {
+            MessageBox.Show(this, Loc.T("cowork.needConns"), "AwayTerminal", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+        dir ??= PickWorkDir(Loc.T("tb.cowork"));
+        if (dir == null) return;   // 使用者取消
+
+        var first = OpenCustomTab(pair.Claude, dir, null);
+        var second = first == null ? null : OpenCustomTab(pair.Codex, dir, null);
+        if (first == null || second == null)
+        {
+            if (first != null) Info(Loc.T("cowork.openFail"));
+            return;
+        }
+        LinkCowork(first, second, Guid.NewGuid().ToString("N"), vertical: false, ratio: 0.5);
+        SelectTab(first);
+        AddHistory(new SavedTab { Type = "cowork", Title = Loc.T("tb.cowork"), Dir = dir });
+        if (!AppSettings.Current.CoworkHintShown)   // 第一次：說明自動交棒與 Codex 的 hook 信任提示（1.1.11）
+        {
+            AppSettings.Current.CoworkHintShown = true;
+            AppSettings.Current.Save();
+            MessageBox.Show(this, string.Format(Loc.T("cowork.firstHint"), AppSettings.Current.CoworkMaxRounds), Loc.T("tb.cowork"),
+                MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+    }
+
+    /// <summary>OpenCustom（不記紀錄）並回傳開出來的分頁；沒開成回 null。</summary>
+    private TerminalTab? OpenCustomTab(CustomConn conn, string dir, string? restoreTitle)
+    {
+        int before = Tabs.Count;
+        OpenCustom(conn, dir, restoreTitle, addHistory: false, extraArgs: CoworkExtraArgs(conn.Icon, conn.Path));   // 有給 dir＝不跳資料夾框；注入交棒 hook
+        return Tabs.Count > before ? Tabs[^1] : null;
+    }
+
+    /// <summary>把兩個分頁綁成協作組：分頁列只留第一半那一列、前端把兩個 xterm 放進同一個左右／上下外框（g 協定）。</summary>
+    private void LinkCowork(TerminalTab first, TerminalTab second, string key, bool vertical, double ratio)
+    {
+        if (first.Cowork != null) DissolveCowork(first.Cowork);
+        if (second.Cowork != null) DissolveCowork(second.Cowork);
+        var g = new CoworkGroup(key, first, second) { Vertical = vertical, Ratio = CoworkGroup.ClampRatio(ratio), LastFocused = first };
+        first.Cowork = g;
+        second.Cowork = g;
+        NormalizeCoworkOrder();
+        _stripView?.Refresh();
+        PostCowork(g);
+        if (ReferenceEquals(_active, first) || ReferenceEquals(_active, second)) MarkActiveRow(_active!);
+    }
+
+    /// <summary>g{第一半id}US{第二半id}US{h|v}US{比例}US{第一半標籤}US{第二半標籤}（建立或更新外框）。</summary>
+    private void PostCowork(CoworkGroup g)
+    {
+        string label(TerminalTab t) => t.Restore is { Name: var n } && !string.IsNullOrWhiteSpace(n) ? n : t.Title;
+        PostToWeb("g" + g.First.Id + US + g.Second.Id + US + (g.Vertical ? "v" : "h") + US +
+                  g.Ratio.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture) + US +
+                  label(g.First) + US + label(g.Second));
+    }
+
+    /// <summary>拆組：兩半變回一般分頁（其中一半被關掉、或整組關閉前）。</summary>
+    private void DissolveCowork(CoworkGroup g)
+    {
+        if (!ReferenceEquals(g.First.Cowork, g) && !ReferenceEquals(g.Second.Cowork, g)) return;
+        g.First.Cowork = null;
+        g.Second.Cowork = null;
+        _stripView?.Refresh();
+        PostToWeb("u" + g.First.Id);
+        if (_active != null) MarkActiveRow(_active);
+    }
+
+    /// <summary>協作組的第二半一律緊接在第一半後面（分頁列拖曳排序、恢復分頁、存檔順序都靠這個保持成對）。</summary>
+    private void NormalizeCoworkOrder()
+    {
+        foreach (var t in Tabs.Where(t => t.Cowork != null && ReferenceEquals(t.Cowork.First, t)).ToList())
+        {
+            int fi = Tabs.IndexOf(t), si = Tabs.IndexOf(t.Cowork!.Second);
+            if (fi < 0 || si < 0 || si == fi + 1) continue;
+            Tabs.Move(si, si > fi ? fi + 1 : fi);   // 第二半在前面時，移走它之後第一半會往前一格，目標索引＝fi
+        }
+    }
+
+    /// <summary>分頁列上代表這個分頁的那一列（協作組＝第一半）。</summary>
+    private static TerminalTab RowOf(TerminalTab t) => t.Cowork?.First ?? t;
+
+    /// <summary>作用中分頁的那一列亮黃框；協作組記住最後點的那一半。</summary>
+    private void MarkActiveRow(TerminalTab active)
+    {
+        var row = RowOf(active);
+        foreach (var t in Tabs) t.IsActive = ReferenceEquals(t, row);
+        if (active.Cowork != null) active.Cowork.LastFocused = active;
+    }
+
+    /// <summary>分頁列那一列的 ⇆／⇅：切換左右／上下。</summary>
+    private void CoworkLayout_Click(object sender, RoutedEventArgs e)
+    {
+        e.Handled = true;
+        if (TabOf(sender)?.Cowork is not { } g) return;
+        g.Vertical = !g.Vertical;
+        g.First.RaiseCoworkLayout();
+        PostCowork(g);
+        SelectTab(g.LastFocused ?? g.First);
     }
 
     // ---------- 連線紀錄（「紀錄」按鈕）----------
@@ -509,6 +656,7 @@ public partial class MainWindow : Window, IRemoteHost
         "com" => "com|" + e.ComPort + "|" + e.Baud,
         "adb" => "adb|" + e.AdbSerial,
         "custom" => "custom|" + e.Title + "|" + e.Path,
+        "cowork" => "cowork|" + e.Dir,
         _ => e.Type + "|" + e.Title
     };
 
@@ -521,13 +669,14 @@ public partial class MainWindow : Window, IRemoteHost
         "com" => $"{e.ComPort} {e.Baud}",
         "adb" => "ADB" + (string.IsNullOrEmpty(e.AdbSerial) ? "" : " " + e.AdbSerial),
         "custom" => e.Title,
+        "cowork" => Loc.T("tb.cowork") + " — " + ShortDir(e.Dir),
         _ => e.Title
     };
 
     private static string HistoryIcon(SavedTab e) => e.Type switch
     {
         "ps" => "powershell.png",
-        "claude" => "claude-code.png",
+        "claude" or "cowork" => "claude-code.png",
         "ssh" or "telnet" => "ssh-telnet.png",
         "com" => "com.png",
         "adb" => "adb.png",
@@ -595,6 +744,9 @@ public partial class MainWindow : Window, IRemoteHost
                     CloseKey = e.CloseKey, CloseCount = e.CloseCount
                 }, string.IsNullOrWhiteSpace(e.Dir) ? null : e.Dir);   // 遠端開啟帶桌面目錄、不跳資料夾框
                 break;
+            case "cowork":   // 1.1.11：資料夾還在就直接開、不在就跳資料夾框
+                OpenCowork(Directory.Exists(e.Dir) ? e.Dir : null);
+                break;
         }
     }
 
@@ -622,13 +774,14 @@ public partial class MainWindow : Window, IRemoteHost
 
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
-        TabStrip.ItemsSource = Tabs;
+        // 分頁列綁「過濾後的檢視」（1.1.11）：Claude+Codex 協作分頁的第二半（Codex）不另列一列，整組只顯示第一半那列
+        _stripView = new System.Windows.Data.ListCollectionView(Tabs)
+        { Filter = o => o is TerminalTab t && (t.Cowork == null || t.Cowork.First == t) };
+        TabStrip.ItemsSource = _stripView;
         ApplyTabPanel();     // 右側分頁列表框：依記憶的顯示狀態與寬度
         ApplyWebDefaultBg(); // 避免 WebView2 內容未畫出前露出白底
 
-        string userData = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "AwayTerminal", "WebView2");
+        string userData = Path.Combine(AppPaths.DataDir, "WebView2");   // 測試模式（AWAYTERMINAL_DATA_DIR）與正式版分開
         Directory.CreateDirectory(userData);
 
         var env = await CoreWebView2Environment.CreateAsync(null, userData);
@@ -653,6 +806,10 @@ public partial class MainWindow : Window, IRemoteHost
         _statusTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(600) };
         _statusTimer.Tick += UpdateStatuses;
         _statusTimer.Start();
+
+        // 測試模式（1.1.11，AWAYTERMINAL_DATA_DIR）：遠端、檔案總管右鍵選單、實例間管線都是整台電腦只有一份的東西，
+        // 開發版一律不碰，免得搶走／改寫使用者正在用的 AwayTerminal
+        if (AppPaths.IsTestMode) { Diag.Log("test mode: data dir " + AppPaths.DataDir); return; }
 
         StartOrRestartRemote(); // 依設定啟動 Telegram 遠端（未設 token/chatId 則不啟動）
 
@@ -778,7 +935,7 @@ public partial class MainWindow : Window, IRemoteHost
                     int.TryParse(wh[0], out int c) && int.TryParse(wh[1], out int r))
                 {
                     tab.Cols = c; tab.Rows = r; // 記住尺寸（login as: 階段 session 尚未啟動）
-                    _lastCols = c; _lastRows = r;
+                    if (tab.Cowork == null) { _lastCols = c; _lastRows = r; }   // 協作分頁只有半邊寬，別拿來當新分頁的初始尺寸
                     tab.Session?.Resize(c, r);
                     // 有待送出的自動指令（Claude Code）→ 尺寸就緒後才送，寬度才會正確
                     if (tab.PendingCommand != null && tab.Session != null)
@@ -837,8 +994,19 @@ public partial class MainWindow : Window, IRemoteHost
                 if (tab != null)
                 {
                     _active = tab;
-                    foreach (var t in Tabs) t.IsActive = (t == tab);
+                    MarkActiveRow(tab);   // 協作分頁點了另一半（1.1.11）：同一列、記住最後點的那一半
+                    if (tab.Cowork != null) SetTitlePath(tab.WorkDir);   // 標題的 [ClaudeCode]／[Codex] 跟著換
                 }
+                break;
+            }
+            case 'G': // 1.1.11：協作分頁中間分隔線拖完的新比例：第一半id US 比例
+            {
+                int p = rest.IndexOf(US);
+                if (p < 0) break;
+                if (FindTab(rest.Substring(0, p))?.Cowork is { } g &&
+                    double.TryParse(rest.Substring(p + 1), System.Globalization.NumberStyles.Float,
+                                    System.Globalization.CultureInfo.InvariantCulture, out double ratio))
+                    g.Ratio = CoworkGroup.ClampRatio(ratio);
                 break;
             }
             case 'k': // 拖曳後的新順序
@@ -957,10 +1125,13 @@ public partial class MainWindow : Window, IRemoteHost
     /// <summary>依上次關閉時儲存的清單重建分頁。</summary>
     private void RestoreTabs(List<SavedTab> saved)
     {
+        // 1.1.11 協作分頁：兩半各自照一般自訂分頁恢復，全部開完再依 CoworkKey 綁回同一組
+        var coworkHalves = new Dictionary<string, (TerminalTab? First, TerminalTab? Second, SavedTab St)>();
         foreach (var st in saved.ToList())
         {
             _restoreBufferForNextTab = LoadRestoreBuffer(st);   // 有存 scrollback 就交給 AddTab 先倒回去（1.0.45）
             _restoreOpenedForNextTab = st.OpenedUtc == default ? null : st.OpenedUtc;   // 1.1.4：原始開啟時間（舊檔沒有＝用當下）
+            int tabsBefore = Tabs.Count;
             try
             {
                 switch (st.Type)
@@ -1026,7 +1197,8 @@ public partial class MainWindow : Window, IRemoteHost
                             Path = st.Path, Args = st.Args, Icon = st.Icon,
                             PickDir = st.PickDir, ViaPowerShell = st.ViaPowerShell,
                             CloseKey = st.CloseKey, CloseCount = st.CloseCount
-                        }, dir, st.Title);
+                        }, dir, st.Title, addHistory: string.IsNullOrEmpty(st.CoworkKey),   // 協作分頁的兩半不各記一筆紀錄
+                           extraArgs: string.IsNullOrEmpty(st.CoworkKey) ? "" : CoworkExtraArgs(st.Icon, st.Path));   // 協作分頁：重新注入交棒 hook
                         break;
                     }
                     case "adb":
@@ -1043,20 +1215,32 @@ public partial class MainWindow : Window, IRemoteHost
             }
             catch { /* 個別分頁恢復失敗就跳過 */ }
             finally { _restoreBufferForNextTab = null; _restoreOpenedForNextTab = null; }   // 這筆沒開成分頁（adb 找不到、使用者取消）→ 別留給下一筆
+
+            if (!string.IsNullOrEmpty(st.CoworkKey) && st.Type == "custom" && Tabs.Count > tabsBefore)
+            {
+                var opened = Tabs[^1];
+                coworkHalves.TryGetValue(st.CoworkKey, out var cur);
+                coworkHalves[st.CoworkKey] = st.CoworkSecond ? (cur.First, opened, cur.St ?? st) : (opened, cur.Second, st);
+            }
         }
+        foreach (var (key, h) in coworkHalves)
+            if (h.First != null && h.Second != null)
+                LinkCowork(h.First, h.Second, key, h.St.CoworkVertical, h.St.CoworkRatio);   // 只回來一半＝維持一般分頁
+        if (_active != null) SelectTab(_active);
     }
 
     private void SelectTab(TerminalTab tab)
     {
         _active = tab;
         SetTitlePath(tab.WorkDir);   // 先用啟動目錄墊底（claude/自訂沒提示行就顯示它）；有提示行的分頁 0.6s 內被解析值蓋掉
-        foreach (var t in Tabs) t.IsActive = (t == tab);
+        MarkActiveRow(tab);          // 協作分頁（1.1.11）：亮的是整組那一列
         PostToWeb("s" + tab.Id);
         Web.Focus();
     }
 
     private void RemoveTabSilently(TerminalTab tab)
     {
+        if (tab.Cowork != null) DissolveCowork(tab.Cowork);   // 協作組少了一半 → 另一半變回一般分頁（1.1.11）
         int idx = Tabs.IndexOf(tab);
         PostToWeb("x" + tab.Id);
         try { (tab.Macro as MacroRunner)?.Stop(); } catch { }
@@ -1075,6 +1259,15 @@ public partial class MainWindow : Window, IRemoteHost
 
     private void CloseTab(TerminalTab tab)
     {
+        if (tab.Cowork is { } g)
+        {
+            // 協作分頁（1.1.11）：分頁列只有一列＝整組一起關，問一次
+            if (MessageBox.Show(this, string.Format(Loc.T("msg.closeCoworkConfirm"), g.First.Title),
+                    Loc.T("msg.closeTabTitle"), MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
+            RemoveTabSilently(g.Second);
+            RemoveTabSilently(g.First);
+            return;
+        }
         var r = MessageBox.Show(this, string.Format(Loc.T("msg.closeTabConfirm"), tab.Title),
             Loc.T("msg.closeTabTitle"), MessageBoxButton.YesNo, MessageBoxImage.Question);
         if (r != MessageBoxResult.Yes) return;
@@ -1405,7 +1598,7 @@ public partial class MainWindow : Window, IRemoteHost
                     bool submittedThisBusy = t.LastSubmitUtc >= since.AddSeconds(-2);
                     bool echoFromTyping = !submittedThisBusy && (now - t.LastInputUtc).TotalSeconds < 2.5;
                     bool longEnough = submittedThisBusy ? busyDur >= 0.8 : busyDur >= 3;
-                    if (!echoFromTyping && longEnough)
+                    if (!echoFromTyping && longEnough && t.Cowork == null)   // 協作分頁不支援遠端（1.1.11）
                         _remote.OnTabIdle(t.Id, t.Title);
                     _busySince.Remove(t.Id);
                 }
@@ -1855,9 +2048,10 @@ public partial class MainWindow : Window, IRemoteHost
     /// <summary>視窗標題字串：「AwayTerminal」／「AwayTerminal - [標籤] 路徑」（沒路徑就只有程式名；語言切換沿用）。</summary>
     private string ComposeTitle()
     {
-        if (string.IsNullOrEmpty(_titlePath)) return Loc.T("app.name");
+        string app = Loc.T("app.name") + (AppPaths.IsTestMode ? " [TEST]" : "");   // 測試模式（1.1.11）一眼分得出不是正式那一個
+        if (string.IsNullOrEmpty(_titlePath)) return app;
         string prefix = string.IsNullOrEmpty(_titleTag) ? "" : $"[{_titleTag}] ";
-        return $"{Loc.T("app.name")} - {prefix}{_titlePath}";
+        return $"{app} - {prefix}{_titlePath}";
     }
 
     /// <summary>「複製全部至檔案」：把整個 buffer 的純文字存檔（q…file 的回覆）。</summary>
@@ -2047,6 +2241,7 @@ public partial class MainWindow : Window, IRemoteHost
         var s = AppSettings.Current;
         _remote ??= new TelegramRemote(this);
         _remote.Stop();
+        if (AppPaths.IsTestMode) return;   // 測試模式不啟動遠端（同一個 bot 只能有一個程式在 poll）
         if (!(s.RemoteEnabled && !string.IsNullOrWhiteSpace(s.TelegramBotToken) && s.TelegramChatId != 0))
         { ReleaseRemoteLock(); RemoteTakenByOther = false; return; }
         if (!TryAcquireRemoteLock()) { RemoteTakenByOther = true; return; }
@@ -2181,7 +2376,7 @@ public partial class MainWindow : Window, IRemoteHost
     IReadOnlyList<string> IRemoteHost.ListHistory()
         => Dispatcher.Invoke(() =>
         {
-            _remoteHistList = AppSettings.Current.History.Take(10).ToList();
+            _remoteHistList = AppSettings.Current.History.Where(h => h.Type != "cowork").Take(10).ToList();   // 協作分頁不支援遠端（1.1.11）
             return (IReadOnlyList<string>)_remoteHistList.Select(e => e.Type switch
             {
                 "ssh" => "SSH " + e.Host,          // 手機純文字列表沒有圖示 → ssh/telnet 補型態前綴
@@ -2224,13 +2419,14 @@ public partial class MainWindow : Window, IRemoteHost
         => Dispatcher.Invoke(() =>
         {
             var tab = FindTab(tabId);
-            if (tab == null) return false;
+            if (tab == null || tab.Cowork != null) return false;   // 協作分頁不支援遠端（1.1.11）
             RemoveTabSilently(tab);   // 手機端已下指令 → 不再跳 PC 端確認框，直接走優雅結束流程
             return true;
         });
 
+    // 1.1.11：Claude+Codex 協作分頁不支援遠端（使用者決定）→ 不列給手機，/goto 選不到、也收不到完成推播
     IReadOnlyList<RemoteTabInfo> IRemoteHost.SnapshotTabs()
-        => Dispatcher.Invoke(() => (IReadOnlyList<RemoteTabInfo>)Tabs.Select(
+        => Dispatcher.Invoke(() => (IReadOnlyList<RemoteTabInfo>)Tabs.Where(t => t.Cowork == null).Select(
                t => new RemoteTabInfo(t.Id, t.Title, t.Status == TermStatus.Busy, t.Kind.ToString())).ToList());
 
     DateTime IRemoteHost.GetTabActivityUtc(int tabId)
@@ -2245,7 +2441,7 @@ public partial class MainWindow : Window, IRemoteHost
         => Dispatcher.Invoke(() =>
         {
             var tab = FindTab(tabId);
-            if (tab == null) return false;
+            if (tab == null || tab.Cowork != null) return false;   // 協作分頁不支援遠端（1.1.11）
             if (enter) tab.LastSubmitUtc = DateTime.UtcNow;   // 遠端送出的指令也算「送出」，完成後照推
             if (tab.Session == null && tab.LoginBuffer != null)
             { HandleLoginInput(tab, enter ? text + "\r" : text); return true; }   // SSH「login as:」：帳號從遠端回覆也能登入
@@ -2255,15 +2451,8 @@ public partial class MainWindow : Window, IRemoteHost
             // 實測（scratchpad probe，claude 2.1.269＋OpenConsole，同一段 95 字訊息 A/B）：一次寫入＝沒送出、文字＋300ms 後單獨 CR＝送出；83 字一次寫入也沒送出。
             // 短訊息（53 字）一次寫入則有送出，所以是「有時候」。claude 分頁的文字走 JS doPaste（多行轉 ESC+CR 軟換行、
             // 先 ESC[I 吸收懸置狀態、等 claude 靜止）；Enter 一律延後對「當初那個 session」直接送，期間切分頁也不會送錯。
-            var session = tab.Session;
-            if (tab.ClaudePaste && _webReady) PasteToTab(tab.Id, text);
-            else if (text.Length > 0) session.WriteText(text);
-            if (enter)
-            {
-                var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(RemoteEnterDelayMs) };
-                timer.Tick += (_, _) => { timer.Stop(); if (tab.Session == session) session.WriteText("\r"); };
-                timer.Start();
-            }
+            // 1.1.11：與 Claude+Codex 協作交棒共用 SendTextThenEnter（MainWindow.Cowork.cs）
+            SendTextThenEnter(tab, text, enter);
             return true;
         });
 
@@ -2275,7 +2464,7 @@ public partial class MainWindow : Window, IRemoteHost
         => Dispatcher.Invoke(() =>
         {
             var tab = FindTab(tabId);
-            if (tab?.Session == null) return false;
+            if (tab?.Session == null || tab.Cowork != null) return false;   // 協作分頁不支援遠端（1.1.11）
             byte[]? b = keyName switch
             {
                 "ctrl-c" => new byte[] { 0x03 },
@@ -2347,7 +2536,7 @@ public partial class MainWindow : Window, IRemoteHost
         if (dlg.ShowDialog() == true)
         {
             PostTheme(); ApplyWebDefaultBg();
-            ShellIntegration.Apply(AppSettings.Current.ExplorerMenu, Loc.T("shell.menuText"));
+            if (!AppPaths.IsTestMode) ShellIntegration.Apply(AppSettings.Current.ExplorerMenu, Loc.T("shell.menuText"));   // 測試模式不改 HKCU
         }
     }
 
@@ -2682,7 +2871,7 @@ public partial class MainWindow : Window, IRemoteHost
     {
         if (_tabDragging) { _tabDragging = false; return; }   // 剛結束拖曳 → 這次放開不當選取
         var tab = TabOf(sender);
-        if (tab != null) SelectTab(tab);
+        if (tab != null) SelectTab(tab.Cowork?.LastFocused ?? tab);   // 協作分頁：回到最後點的那一半
     }
 
     // ---------- 右側分頁列拖曳排序（1.1.8）----------
@@ -2731,7 +2920,10 @@ public partial class MainWindow : Window, IRemoteHost
         if (target == null || target == dragged) return;
         int from = Tabs.IndexOf(dragged), to = Tabs.IndexOf(target);
         if (from < 0 || to < 0 || from == to) return;
+        // 協作分頁（1.1.11）：分頁列一列＝兩個分頁。往下拖到協作組上時落在它的第二半之後，免得插進兩半中間
+        if (from < to && target.Cowork != null) to = Tabs.IndexOf(target.Cowork.Second);
         Tabs.Move(from, to);
+        NormalizeCoworkOrder();   // 拖的若是協作組（第一半），第二半跟上
         // 分割/分欄模式的 pane 順序同步（K 協定），並存新順序（下次開機恢復照此序）
         if (_webReady) PostToWeb("K" + string.Join(",", Tabs.Select(t => t.Id)));
     }
@@ -2756,22 +2948,29 @@ public partial class MainWindow : Window, IRemoteHost
         }
     }
 
-    private void MenuLog_Click(object sender, RoutedEventArgs e)
+    /// <summary>分頁右鍵選單要作用的分頁：一般分頁＝那一列；協作分頁（1.1.11）＝最後點的那一半（記錄 log、配色）。</summary>
+    private static TerminalTab? MenuTargetOf(object sender)
     {
         var tab = TabOf(sender);
+        return tab?.Cowork?.LastFocused ?? tab;
+    }
+
+    private void MenuLog_Click(object sender, RoutedEventArgs e)
+    {
+        var tab = MenuTargetOf(sender);
         if (tab != null) LogAction(tab);
     }
 
     private void MenuMacro_Click(object sender, RoutedEventArgs e)
     {
         var tab = TabOf(sender);
-        if (tab != null) MacroAction(tab);
+        if (tab != null && tab.Cowork == null) MacroAction(tab);   // 協作分頁不支援巨集（1.1.11；選單項目也藏起來了）
     }
 
     /// <summary>分頁右鍵「配色」：套用該分頁的文字/背景色。Tag="fg|bg"；空 Tag = 回到設定預設顏色。</summary>
     private void MenuColor_Click(object sender, RoutedEventArgs e)
     {
-        var tab = TabOf(sender);
+        var tab = MenuTargetOf(sender);
         if (tab == null) return;
         string tag = (sender as MenuItem)?.Tag as string ?? "";
         string fg = "", bg = "";

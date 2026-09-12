@@ -194,6 +194,35 @@ public static class Loc
         ["tip.tabLogging"] = ("● 記錄 log 中", "● Recording log"),
         ["tip.tabMacroRunning"] = ("● 巨集執行中", "● Macro running"),
         ["tip.tabClose"] = ("關閉", "Close"),
+        // 1.1.11：Claude+Codex 協作分頁
+        ["tb.cowork"] = ("Claude+Codex", "Claude+Codex"),
+        ["tip.cowork"] = ("Claude+Codex 協作", "Claude+Codex cowork"),
+        ["tip.coworkLayoutH"] = ("目前左右排列（點一下改上下）", "Side by side (click for top/bottom)"),
+        ["tip.coworkLayoutV"] = ("目前上下排列（點一下改左右）", "Top/bottom (click for side by side)"),
+        ["cowork.needConns"] = ("要先有 ClaudeCode 與 Codex 兩筆自訂連線：「新連接 → 自訂… → 自動偵測」可一鍵加入。",
+                                "You need both a ClaudeCode and a Codex custom connection first: New → Custom… → Auto-detect."),
+        ["cowork.openFail"] = ("Claude+Codex 只開成一半，已保留成一般分頁。", "Only one side of Claude+Codex opened; it was kept as a normal tab."),
+        ["msg.closeCoworkConfirm"] = ("確定要關閉「{0}」？（Claude 與 Codex 兩邊一起關閉）", "Close \"{0}\"? (both Claude and Codex are closed)"),
+        ["cowork.tipIdle"] = ("自動交棒：待命（任一邊寫了 .ai/handoff/ 交棒檔、結束一輪後自動交給另一邊；上限 {1} 輪）",
+                              "Auto handoff: waiting (when either side writes its .ai/handoff/ file and ends a turn, the other side is asked to read it; max {1} rounds)"),
+        ["cowork.tipRunning"] = ("自動交棒：第 {0} 輪（上限 {1} 輪）", "Auto handoff: round {0} (max {1})"),
+        ["cowork.tipPaused"] = ("自動交棒：已暫停（第 {0} 輪／上限 {1}；右鍵「繼續交棒」）", "Auto handoff: paused (round {0} of {1}; right-click → Resume handoff)"),
+        ["cowork.tipDone"] = ("自動交棒：完成（交棒檔寫了 STATUS: DONE，共 {0} 輪）", "Auto handoff: done (STATUS: DONE, {0} rounds)"),
+        ["cowork.firstHint"] = (
+            "Claude+Codex 協作分頁已開啟（左 Claude、右 Codex；分頁列的 ⇆ 可改上下）。\n\n" +
+            "• 自動交棒：任一邊把交辦寫進專案的 .ai/handoff/to-codex.md 或 to-claude.md 並結束這一輪，AwayTerminal 就會請另一邊去讀（最多 {0} 輪；交棒檔第一行寫 STATUS: DONE 就停止）。兩邊都已被告知這個規則。\n\n" +
+            "• 第一次使用時，Codex 那一半會出現「Hooks need review」：請選「2. Trust all and continue」，自動交棒才會運作。\n\n" +
+            "• 右鍵分頁可以暫停／繼續交棒、輪數歸零。這個分頁不支援巨集與 Telegram 遠端。",
+            "Claude+Codex cowork tab opened (Claude left, Codex right; ⇆ on the tab row switches to top/bottom).\n\n" +
+            "• Auto handoff: when either side writes its task into .ai/handoff/to-codex.md or to-claude.md and ends a turn, AwayTerminal asks the other side to read it (max {0} rounds; STATUS: DONE on the first line stops it). Both agents are told this rule.\n\n" +
+            "• The first time, the Codex side shows \"Hooks need review\": choose \"2. Trust all and continue\" or auto handoff won't work.\n\n" +
+            "• Right-click the tab to pause/resume handoff or reset rounds. This tab doesn't support macros or the Telegram remote."),
+        ["menu.coworkPause"] = ("暫停交棒", "Pause handoff"),
+        ["menu.coworkResume"] = ("繼續交棒", "Resume handoff"),
+        ["menu.coworkReset"] = ("交棒輪數歸零", "Reset handoff rounds"),
+        // 交棒時打進對方那一半的訊息：{0}＝要讀的檔、{1}＝做完要寫的檔、{2}＝第幾輪
+        ["cowork.readMsg"] = ("請讀 {0}，依內容工作；完成後把結果與下一步寫進 {1}（第 {2} 輪）",
+                              "Read {0} and do the work it describes; when done, write your results and next steps to {1} (round {2})"),
         // 1.1.2：分頁列連線圖示（綠=閒、紅=忙）的 tooltip＝是哪一種連線
         ["kind.powershell"] = ("PowerShell", "PowerShell"),
         ["kind.ssh"] = ("SSH", "SSH"),

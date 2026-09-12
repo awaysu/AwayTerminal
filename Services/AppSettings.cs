@@ -58,6 +58,15 @@ public sealed class SavedTab
     /// <summary>分頁原始開啟時間（UTC，1.1.4）：恢復分頁時填回 TerminalTab.StartUtc，讓 tooltip 顯示「最初開啟」
     /// 的時刻而非本次恢復的時刻。default(DateTime)＝沒存（舊檔／History）→ 恢復時用當下時間。只有 SavedTabs 用。</summary>
     public DateTime OpenedUtc { get; set; }
+    /// <summary>Claude+Codex 協作分頁（1.1.11）：同一組兩半存同一個代號（空＝一般分頁）。SavedTabs 恢復後依此重新綁組。
+    /// History 另用 Type="cowork"＋Dir 記一筆「Claude+Codex — 資料夾」。</summary>
+    public string CoworkKey { get; set; } = "";
+    /// <summary>這一筆是組內第二半（右／下＝Codex）。</summary>
+    public bool CoworkSecond { get; set; }
+    /// <summary>上下排列（false＝左右）。</summary>
+    public bool CoworkVertical { get; set; }
+    /// <summary>第一半占的比例。</summary>
+    public double CoworkRatio { get; set; } = 0.5;
 }
 
 /// <summary>整個程式的設定與歷史，存成一個 JSON（%LOCALAPPDATA%\AwayTerminal\settings.json）。</summary>
@@ -204,6 +213,14 @@ public sealed class AppSettings
     /// <summary>檔案總管資料夾右鍵選單「用 AwayTerminal 開啟」（1.0.45；HKCU，每次啟動依此登錄／移除，見 ShellIntegration）。</summary>
     public bool ExplorerMenu { get; set; } = true;
 
+    /// <summary>Claude+Codex 協作分頁的交棒訊號埠（1.1.11，只綁 127.0.0.1；0＝第一次用時隨機挑一個並記住）。
+    /// 固定下來是因為 Codex 會要求審核「新的／變更過的」hook——埠一變 hook 指令就變、又要重審一次。</summary>
+    public int CoworkPort { get; set; } = 0;
+    /// <summary>自動交棒最多幾輪，到了就暫停（右鍵「繼續交棒」可再往下）。</summary>
+    public int CoworkMaxRounds { get; set; } = 10;
+    /// <summary>第一次開 Claude+Codex 時的使用說明（含 Codex「Hooks need review」要選 Trust all）已顯示過。</summary>
+    public bool CoworkHintShown { get; set; } = false;
+
     /// <summary>分頁 scrollback 暫存目錄（%LOCALAPPDATA%\AwayTerminal\restore）。</summary>
     public static string RestoreDir => Path.Combine(Dir, "restore");
 
@@ -222,8 +239,7 @@ public sealed class AppSettings
     public Dictionary<string, JsonElement>? ExtraFields { get; set; }
 
     // ---------- 載入 / 儲存 ----------
-    private static readonly string Dir =
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AwayTerminal");
+    private static readonly string Dir = AppPaths.DataDir;   // 1.1.11：測試模式可用 AWAYTERMINAL_DATA_DIR 改到別的資料夾
     private static readonly string FilePath = Path.Combine(Dir, "settings.json");
     private static readonly JsonSerializerOptions JsonOpts = new() { WriteIndented = true };
 

@@ -31,6 +31,20 @@
 
     .pane-header .ph-title { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; }
 
+    /* Claude+Codex 協作分頁（1.1.11）：一個外框放兩個 pane，左右（預設）或上下；中間分隔線可拖曳、雙擊回到各半 */
+    .cowork { position: absolute; inset: 0; display: flex; flex-direction: row; }
+    .cowork.vertical { flex-direction: column; }
+    .cowork > .term { position: relative; inset: auto; min-width: 0; min-height: 0; box-sizing: border-box; border: 1px solid #333; }
+    .cowork > .term.active-pane { border-color: #FDFFB0; }
+    .cowork .pane-header { display: flex; }
+    .cowork > .term.active-pane .pane-header { background: #45472e; color: #ffffff; }
+    .cw-divider { flex: 0 0 5px; background: #2d2d30; cursor: col-resize; }
+    .cowork.vertical > .cw-divider { cursor: row-resize; }
+    .cw-divider:hover, .cowork.dragging > .cw-divider { background: #5a5a40; }
+    .cowork.dragging { cursor: col-resize; user-select: none; }
+    .cowork.vertical.dragging { cursor: row-resize; }
+    #terminals.split .cowork { position: relative; inset: auto; min-width: 0; min-height: 0; }
+
     .xterm-viewport::-webkit-scrollbar { width: 10px; }
     .xterm-viewport::-webkit-scrollbar-thumb { background: #4a4a4a; border-radius: 5px; }
     .xterm-viewport::-webkit-scrollbar-track { background: transparent; }
