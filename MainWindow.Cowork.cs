@@ -124,7 +124,8 @@ public partial class MainWindow
     /// <summary>等對方那一半閒置（連續 2 秒沒輸出）再打「請讀 …」＋Enter；最多等 10 分鐘，對方結束或拆組就放棄並暫停。</summary>
     private async Task DeliverHandoffAsync(CoworkGroup g, TerminalTab writer)
     {
-        if (g.Delivering) return;
+        // 正在等另一個方向送出（兩邊幾乎同時結束一輪）：這份先記著，前一份送完馬上接著送，不能丟（交棒檔已標記處理過）
+        if (g.Delivering) { g.PendingFrom = writer; return; }
         g.Delivering = true;
         try
         {
@@ -146,7 +147,17 @@ public partial class MainWindow
             SendTextThenEnter(target, msg);
             g.First.RaiseCoworkState();
         }
-        finally { g.Delivering = false; }
+        finally
+        {
+            g.Delivering = false;
+            // 等待期間另一邊也交棒了 → 接著送（暫停中就留給「繼續交棒」；上限照 CheckHandoff 的規則）
+            if (g.PendingFrom is { } next && !g.Paused && ReferenceEquals(next.Cowork, g))
+            {
+                g.PendingFrom = null;
+                if (g.Round >= AppSettings.Current.CoworkMaxRounds) { g.Paused = true; g.PendingFrom = next; g.First.RaiseCoworkState(); }
+                else _ = DeliverHandoffAsync(g, next);
+            }
+        }
     }
 
     /// <summary>送一行文字進分頁、隔 RemoteEnterDelayMs 再單獨送 Enter（claude 分頁文字走 JS doPaste）。遠端送指令與協作交棒共用。
