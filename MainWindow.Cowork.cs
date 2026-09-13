@@ -26,7 +26,7 @@ public partial class MainWindow
         var b = new CoworkBridge();
         if (!b.Start(AppSettings.Current.CoworkPort)) return null;
         if (AppSettings.Current.CoworkPort != b.Port) { AppSettings.Current.CoworkPort = b.Port; AppSettings.Current.Save(); }
-        b.StopReceived += (agent, cwd, pid) => Dispatcher.InvokeAsync(() => OnCoworkStop(agent, cwd, pid));
+        b.StopReceived += (agent, cwd, ancestry) => Dispatcher.InvokeAsync(() => OnCoworkStop(agent, cwd, ancestry));
         _coworkBridge = b;
         return b;
     }
@@ -42,28 +42,30 @@ public partial class MainWindow
         return "";
     }
 
-    private void OnCoworkStop(string agent, string cwd, int clientPid)
+    private void OnCoworkStop(string agent, string cwd, int[] ancestry)
     {
-        var tab = FindCoworkTabByProcess(clientPid) ?? FindCoworkTabByCwd(agent, cwd);
-        Diag.Log($"cowork stop agent={agent} pid={clientPid} tab={tab?.Id.ToString() ?? "?"} cwd={cwd}");
+        var tab = FindCoworkTabByProcess(ancestry) ?? FindCoworkTabByCwd(agent, cwd) ?? FindOnlyCoworkTab(agent);
+        Diag.Log($"cowork stop agent={agent} chain={string.Join("<", ancestry.Take(6))} tab={tab?.Id.ToString() ?? "?"} cwd={cwd}");
         if (tab?.Cowork is { } g) CheckHandoff(g, tab);
     }
 
-    /// <summary>從 curl 的 PID 沿父行程往上，找到某個協作分頁 session 的行程（經 PowerShell 跑的也會在鏈上）。</summary>
-    private TerminalTab? FindCoworkTabByProcess(int pid)
+    /// <summary>curl 的父行程鏈（連線當下由 CoworkBridge 查好）裡，找到某個協作分頁 session 的行程（經 PowerShell／bash 跑的也在鏈上）。</summary>
+    private TerminalTab? FindCoworkTabByProcess(int[] ancestry)
     {
-        if (pid <= 0) return null;
-        Dictionary<int, int> parents;
-        try { parents = ProcessTree.ParentMap(); } catch { return null; }
+        if (ancestry.Length == 0) return null;
         var bySession = Tabs.Where(t => t.Cowork != null && t.Session != null && t.Session.ProcessId != 0)
                             .GroupBy(t => t.Session!.ProcessId).ToDictionary(g => g.Key, g => g.First());
-        for (int i = 0, cur = pid; i < 24 && cur > 0; i++)
-        {
-            if (bySession.TryGetValue(cur, out var t)) return t;
-            if (!parents.TryGetValue(cur, out int parent) || parent == cur) break;
-            cur = parent;
-        }
+        foreach (int pid in ancestry)
+            if (bySession.TryGetValue(pid, out var t)) return t;
         return null;
+    }
+
+    /// <summary>最後的退路：整個程式只有一組協作分頁時，照 agent 種類給那一組的對應半邊（Codex 版 hook 沒帶 cwd）。</summary>
+    private TerminalTab? FindOnlyCoworkTab(string agent)
+    {
+        var groups = Tabs.Where(t => t.Cowork != null).Select(t => t.Cowork!).Distinct().ToList();
+        if (groups.Count != 1) return null;
+        return agent == "claude" ? groups[0].First : groups[0].Second;
     }
 
     /// <summary>退路：agent 種類（claude＝第一半、codex＝第二半）＋工作目錄；剛好一個才算數（同資料夾開兩組就不猜）。</summary>

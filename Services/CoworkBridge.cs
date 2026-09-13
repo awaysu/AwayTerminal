@@ -11,8 +11,8 @@ namespace AwayTerminal.Services;
 /// Claude+Codex 協作分頁的「交棒訊號」接收端（1.1.11）。
 /// <para>做法：開協作分頁時，只替那兩個 session 在啟動參數注入 Stop hook（Claude：<c>--settings 檔案</c>；Codex：<c>-c hooks.Stop=…</c>），
 /// 不改使用者全域的 ~/.claude、~/.codex 設定。每一輪回覆結束時 hook 跑
-/// <c>curl.exe -s -m 5 -X POST http://127.0.0.1:埠/cowork/stop/{claude|codex} --data-binary @-</c>（stdin 的 hook JSON 帶 cwd）。
-/// 選 curl：同一個指令字串在 Claude 的 Git Bash、Codex 的 cmd／PowerShell 都能跑（實測 Claude hook 走 bash.exe → curl.exe）。</para>
+/// <c>curl.exe -s -m 5 -X POST http://127.0.0.1:埠/cowork/stop/{claude|codex}</c>（Claude 版另帶 <c>--data-binary @-</c> 把 hook JSON 的 cwd 送來，見 StopCommand）。
+/// 選 curl：在 Claude 的 Git Bash、Codex 的 PowerShell 都能跑（實測 Claude hook 走 bash.exe → curl.exe；Codex 走 PowerShell）。</para>
 /// <para>指令字串刻意「每次都一樣」（固定埠、不帶分頁代號或 token）：Codex 會要求使用者審核新的／變更過的 hook，
 /// 字串每次變就每次都要審；固定字串只要第一次選「Trust all and continue」。</para>
 /// <para>是哪個分頁送的：先查這條 TCP 連線的用戶端 PID（GetExtendedTcpTable），沿父行程往上找到某個協作分頁的 session 行程
@@ -24,8 +24,9 @@ public sealed class CoworkBridge
 {
     public int Port { get; private set; }
 
-    /// <summary>收到 Stop 訊號（背景執行緒觸發）：agent＝claude|codex、cwd＝hook JSON 的 cwd（可能空）、clientPid＝curl 的 PID（查不到＝0）。</summary>
-    public event Action<string, string, int>? StopReceived;
+    /// <summary>收到 Stop 訊號（背景執行緒觸發）：agent＝claude|codex、cwd＝hook JSON 的 cwd（Codex 版沒有＝空）、
+    /// ancestry＝curl 自己＋往上的父行程 PID 鏈（查不到＝空陣列）。</summary>
+    public event Action<string, string, int[]>? StopReceived;
 
     private TcpListener? _listener;
 
@@ -58,9 +59,15 @@ public sealed class CoworkBridge
         return false;
     }
 
-    /// <summary>hook 要跑的指令（兩邊只差最後的 agent 名稱）。</summary>
-    public string StopCommand(string agent) =>
-        $"curl.exe -s -m 5 -X POST http://127.0.0.1:{Port}/cowork/stop/{agent} --data-binary @-";
+    /// <summary>hook 要跑的指令。
+    /// <para>Claude 的 hook 走 Git Bash，可以用 <c>--data-binary @-</c> 把 hook JSON（含 cwd）帶過來當退路。</para>
+    /// <para>Codex 的 hook 在 Windows 走 **PowerShell**：<c>@-</c> 在 PowerShell 是語法錯誤（ParserError: UnrecognizedToken），
+    /// 1.1.11 實際使用時 Codex 的 Stop hook 0.24 秒就失敗、curl 根本沒送出（Codex logs_2.sqlite 有 hook/started→completed、
+    /// AwayTerminal 沒收到；用 PowerShell 跑同一行即重現）。所以 Codex 版不帶本文——認分頁本來就靠 curl 的父行程鏈。
+    /// 注意：改這個字串會讓 Codex 再問一次「Hooks need review」。</para></summary>
+    public string StopCommand(string agent) => agent == "codex"
+        ? $"curl.exe -s -m 5 -X POST http://127.0.0.1:{Port}/cowork/stop/codex"
+        : $"curl.exe -s -m 5 -X POST http://127.0.0.1:{Port}/cowork/stop/{agent} --data-binary @-";
 
     /// <summary>ClaudeCode 半邊的額外啟動參數：注入 Stop hook ＋ 附加交棒規則（系統提示）。</summary>
     public string ClaudeArgs() => $" --settings \"{ClaudeSettingsPath}\" --append-system-prompt-file \"{ClaudeProtocolPath}\"";
@@ -112,13 +119,15 @@ public sealed class CoworkBridge
     private async Task HandleClient(TcpClient client)
     {
         string agent = "", cwd = "";
-        int pid = 0;
+        int[] ancestry = Array.Empty<int>();
         try
         {
             using (client)
             {
                 var remote = (IPEndPoint)client.Client.RemoteEndPoint!;
-                pid = FindClientPid(remote.Port, Port);   // 連線還開著時查，才查得到
+                // 連線還開著（curl 在等回應）時就把整條父行程鏈查好：回應送出後 curl 立刻結束，之後再查就斷鏈
+                // （1.1.12：Codex 經 PowerShell 跑 hook 時實測 tab=?——事後才查 ParentMap，curl 已不在快照裡）
+                ancestry = Ancestry(FindClientPid(remote.Port, Port));
                 client.ReceiveTimeout = 3000;
                 var stream = client.GetStream();
                 var (path, body) = await ReadRequest(stream).ConfigureAwait(false);
@@ -136,7 +145,26 @@ public sealed class CoworkBridge
             }
         }
         catch (Exception ex) { Diag.Log("cowork bridge request: " + ex.Message); return; }
-        if (agent is "claude" or "codex") StopReceived?.Invoke(agent, cwd, pid);
+        if (agent is "claude" or "codex") StopReceived?.Invoke(agent, cwd, ancestry);
+    }
+
+    /// <summary>pid 自己＋往上最多 24 層的父行程 PID（pid≤0 回空）。</summary>
+    private static int[] Ancestry(int pid)
+    {
+        if (pid <= 0) return Array.Empty<int>();
+        try
+        {
+            var parents = ProcessTree.ParentMap();
+            var chain = new List<int>();
+            for (int i = 0, cur = pid; i < 24 && cur > 0 && !chain.Contains(cur); i++)
+            {
+                chain.Add(cur);
+                if (!parents.TryGetValue(cur, out int parent)) break;
+                cur = parent;
+            }
+            return chain.ToArray();
+        }
+        catch { return new[] { pid }; }
     }
 
     private static async Task<(string Path, string Body)> ReadRequest(NetworkStream stream)
