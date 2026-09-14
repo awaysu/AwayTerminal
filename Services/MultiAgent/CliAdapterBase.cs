@@ -60,8 +60,10 @@ internal abstract class CliAdapterBase : ICodingAgentAdapter
     /// <summary>角色指引（英文、單行、不含引號與 PowerShell／cmd 特殊字元——要能安全地放進命令列，也要能直接打進 TUI）。</summary>
     protected static string Pointer(AgentSlot slot) =>
         $"You are {slot.AgentId} ({slot.RoleTitle}) in an AwayTerminal Multi-Agent team. " +
-        $"Before doing anything else, read the file {slot.RoleFile} completely. " +
-        "It defines your role, your teammates and how to send and receive messages. Follow it for the whole session.";
+        $"Before doing anything else, read the file {slot.RoleFile} completely " +
+        "(it is UTF-8; in Windows PowerShell use Get-Content -Raw -Encoding UTF8). " +
+        "It defines your role, your teammates and how to send and receive messages. Follow it for the whole session. " +
+        "Your teammates are separate terminals, not sub-agents: never use spawn_agent or any other sub-agent tool to reach them.";
 
     /// <summary>多行文字壓成一行（TOML literal string 不能換行、不能含單引號；命令列不能含雙引號）。</summary>
     protected static string OneLine(string s) =>

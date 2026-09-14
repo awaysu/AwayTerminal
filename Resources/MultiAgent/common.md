@@ -33,8 +33,8 @@ Normal communication flow:
 
 User → Product Manager → Worker Agent → Product Manager → User
 
-- Worker agents should not independently communicate with the user.
-- Worker agents return their results to the Product Manager.
+- Worker agents do not take requests from the user or ask the user questions.
+- Worker agents return their results to the Product Manager. The user can still see every agent's terminal, so workers also show their work (and anything a task asks them to display) in their own terminal.
 - Worker-to-worker communication goes through the Product Manager.
 - Do not initiate uncontrolled conversations with other agents.
 

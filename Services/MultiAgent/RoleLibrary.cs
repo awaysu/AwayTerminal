@@ -151,6 +151,17 @@ internal static class RoleLibrary
         if (!hasWorker) sb.Append("You are the only enabled agent (Solo Mode).\n");
         sb.Append($"Mailbox: {AgentMessage.BusRelDir}/  (relative to the project directory)\n\n");
 
+        // 1.2.0 實測：Codex（gpt-5.6-sol）內建「你是 /root，可以 spawn_agent 開子代理」的提示詞，使用者說「讓 Agent-12 做…」時
+        // 它直接開了名叫 /root/agent_12 的子代理，信箱完全沒用到；--disable multi_agent、agents.max_depth 等設定都拿不掉那些工具
+        // （codex exec 問它有哪些工具，照樣列出 collaboration.spawn_agent）→ 只能在這裡講清楚。Claude Code 的 Task 工具同理。
+        sb.Append("## Your teammates are separate terminals, not sub-agents\n\n");
+        sb.Append("Every other agent listed above is an independent coding-agent session running in its own AwayTerminal pane.\n");
+        sb.Append("They are NOT your sub-agents and you cannot reach them with any built-in tool.\n\n");
+        sb.Append("- \"Have Agent-xx do something\" / \"let Agent-xx handle it\" always means: write a mailbox message to that agent (below).\n");
+        sb.Append("- Do not use built-in sub-agent or collaboration tools in this team session at all: no spawn_agent, followup_task,\n");
+        sb.Append("  send_message, wait_agent, list_agents, interrupt_agent, no Task/sub-agent tool, and never create a sub-agent named after a teammate.\n");
+        sb.Append("- Do not wait, sleep or poll for replies. End your turn; AwayTerminal types a notice into your terminal when a reply arrives.\n\n");
+
         sb.Append("## How to send a message\n\n");
         sb.Append($"Write ONE new file {AgentMessage.BusRelDir}/NNNN-{me.AgentId}-to-<recipient id>.md where NNNN is\n");
         sb.Append("(the highest existing NNNN in that folder) + 1, zero-padded to 4 digits. Start the file with a\n");
@@ -174,7 +185,15 @@ internal static class RoleLibrary
             $"{AgentMessage.BusRelDir}/0007-{exampleFrom}-to-{me.AgentId}.md")).Append("\n\n");
         sb.Append("Read that file, act according to your role, and reply by writing a new message file.\n");
         sb.Append($"You may read any file in {AgentMessage.BusRelDir}/ for context.\n");
-        sb.Append("Only the Product Manager talks to the user. Workers reply to the Product Manager.\n");
+        // 1.2.0 實測：PowerShell 5.1 的 Get-Content 預設用系統字碼頁讀，中文訊息變亂碼（Codex 在 Windows 預設 shell 就是它）
+        sb.Append("Message files are UTF-8. Read and write them as UTF-8 (in Windows PowerShell use Get-Content -Raw -Encoding UTF8 <file>).\n\n");
+
+        sb.Append("## Talking to the user\n\n");
+        // 1.2.0 實測：「叫 Agent-12 顯示 123」→ worker 只把 123 寫進回信，自己的畫面沒顯示，使用者在那格看不到
+        sb.Append("Only the Product Manager takes requests from the user and asks the user questions; workers report to the Product Manager\n");
+        sb.Append("with a message file. The user can still see every agent's terminal, so a worker also shows its work in its own terminal:\n");
+        sb.Append("when a task asks you to show, print or display something, output it in your terminal reply as well as in your result message.\n");
+        sb.Append("Write terminal replies in the user's language.\n");
         return sb.ToString();
     }
 }
