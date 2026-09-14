@@ -71,6 +71,8 @@ public sealed class SavedTab
     public string AgentBackend { get; set; } = "";
     /// <summary>上列高度比例。</summary>
     public double AgentRatio { get; set; } = 0.5;
+    /// <summary>投遞限制次數（0＝不限；舊檔沒有這欄＝30）。</summary>
+    public int AgentMaxMessages { get; set; } = 30;
 }
 
 /// <summary>整個程式的設定與歷史，存成一個 JSON（%LOCALAPPDATA%\AwayTerminal\settings.json）。</summary>
@@ -217,8 +219,7 @@ public sealed class AppSettings
     /// <summary>檔案總管資料夾右鍵選單「用 AwayTerminal 開啟」（1.0.45；HKCU，每次啟動依此登錄／移除，見 ShellIntegration）。</summary>
     public bool ExplorerMenu { get; set; } = true;
 
-    /// <summary>Multi-Agent（1.2.0）：每組投遞幾則就暫停（防 agent 互踢無限迴圈燒 token；右鍵「繼續投遞」歸零）。只在 settings.json 調。</summary>
-    public int MultiAgentMaxMessages { get; set; } = 30;
+    // 註：投遞上限原本是全域 MultiAgentMaxMessages（只在 settings.json 調）；使用者要求改成每組在設定視窗／右鍵選（AgentGroup.MaxMessages），全域欄位拿掉。
     // 註：1.2.0 開發期曾有 MultiAgentLastSetup（設定視窗記上次的選擇）；使用者要求每格固定預設後拿掉，舊檔的值由 ExtraFields 原樣保留、不再使用。
 
     /// <summary>分頁 scrollback 暫存目錄（%LOCALAPPDATA%\AwayTerminal\restore）。</summary>

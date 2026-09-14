@@ -97,20 +97,17 @@ public sealed class TerminalTab : INotifyPropertyChanged
     public Visibility AgentRowVisibility => IsAgentRow ? Visibility.Visible : Visibility.Collapsed;
     /// <summary>分頁右鍵「巨集」：Multi-Agent 分頁不支援（使用者決定）→ 藏起來。</summary>
     public Visibility NotAgentVisibility => _agent == null ? Visibility.Visible : Visibility.Collapsed;
-    /// <summary>分頁列那一列尾端的小字（刻意短）：已投遞 3 則＝「✉3/30」、暫停＝「⏸3/30」；還沒投遞過＝空。</summary>
+    /// <summary>分頁列那一列尾端的小字（刻意短）：已投遞 3 則＝「✉3/30」（不限＝「✉3/∞」）、暫停＝「⏸3/30」；還沒投遞過＝空。</summary>
     public string AgentStateText
     {
         get
         {
             if (!IsAgentRow) return "";
             var g = _agent!.Group;
-            int max = AppSettings.Current.MultiAgentMaxMessages;
-            if (g.Paused) return $"⏸{g.MessageCount}/{max}";
-            return g.MessageCount > 0 ? $"✉{g.MessageCount}/{max}" : "";
+            if (g.Paused) return $"⏸{g.MessageCount}/{g.LimitText}";
+            return g.MessageCount > 0 ? $"✉{g.MessageCount}/{g.LimitText}" : "";
         }
     }
-    /// <summary>分頁右鍵「暫停投遞／繼續投遞」。</summary>
-    public string AgentPauseHeader => Loc.T(_agent?.Group.Paused == true ? "ma.menuResume" : "ma.menuPause");
     public void RaiseAgent()
     {
         Raise(nameof(Agent)); Raise(nameof(AgentRowVisibility)); Raise(nameof(NotAgentVisibility));
@@ -119,7 +116,7 @@ public sealed class TerminalTab : INotifyPropertyChanged
     /// <summary>投遞數／暫停／各格忙閒變了：分頁列那一列的小字、右鍵選單文字、tooltip、圖示重畫。</summary>
     public void RaiseAgentState()
     {
-        Raise(nameof(AgentStateText)); Raise(nameof(AgentPauseHeader)); Raise(nameof(ToolTipText)); Raise(nameof(StatusIcon));
+        Raise(nameof(AgentStateText)); Raise(nameof(ToolTipText)); Raise(nameof(StatusIcon));
     }
 
     /// <summary>tooltip 裡的 Multi-Agent 段落：資料夾、每格（ID 角色 CLI 狀態）、訊息數／暫停／待投遞。</summary>
@@ -135,7 +132,7 @@ public sealed class TerminalTab : INotifyPropertyChanged
             sb.Append('\n').Append(s.AgentId).Append("  ").Append(s.RoleTitle).Append("  ").Append(s.BackendName).Append("  ").Append(st);
             if (s.Queue.Count > 0) sb.Append("  · ").Append(string.Format(Loc.T("ma.tipPending"), s.Queue.Count));
         }
-        sb.Append('\n').Append(string.Format(Loc.T("ma.tipMessages"), g.MessageCount, AppSettings.Current.MultiAgentMaxMessages));
+        sb.Append('\n').Append(string.Format(Loc.T("ma.tipMessages"), g.MessageCount, g.LimitText));
         if (g.Paused) sb.Append("  · ").Append(Loc.T("ma.tipPaused"));
         return sb.ToString();
     }

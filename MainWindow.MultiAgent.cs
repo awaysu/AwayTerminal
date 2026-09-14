@@ -14,7 +14,7 @@ namespace AwayTerminal;
 /// <para>畫面：每個 agent 是一個獨立分頁（沿用 1.1.11 協作分頁「綁組」的做法），分頁列只顯示一列，前端把 pane 排成「下一上 N−1」（g 協定）。</para>
 /// <para>溝通：agent 寫信到專案的 <c>.ai/bus/</c>（<see cref="MessageBus"/> 發現）→ 這裡依收件人 ID 排進那一格的佇列 →
 /// 收件人閒置時打一行「請讀 …」＋隔 300ms 單獨送 Enter（<see cref="SendTextThenEnter"/>）。沒有 hook、沒有 HTTP。</para>
-/// <para>防失控：每組投遞 AppSettings.MultiAgentMaxMessages 則（預設 30）就暫停，右鍵「繼續投遞」歸零。不支援巨集與 Telegram 遠端。</para>
+/// <para>防失控：每組投遞 AgentGroup.MaxMessages 則（設定視窗最上面選，預設 30、可不限）就暫停，右鍵「投遞」選次數＝繼續並歸零。不支援巨集與 Telegram 遠端。</para>
 /// </summary>
 public partial class MainWindow
 {
@@ -91,7 +91,10 @@ public partial class MainWindow
     {
         int number = AgentGroup.NextFreeNumber(_agentGroups, preferredNumber);
         if (number == 0) { Info(Loc.T("ma.tooMany")); return null; }
-        var g = new AgentGroup(key ?? Guid.NewGuid().ToString("N"), number, setup.Dir) { Ratio = AgentGroup.ClampRatio(ratio) };
+        var g = new AgentGroup(key ?? Guid.NewGuid().ToString("N"), number, setup.Dir)
+        {
+            Ratio = AgentGroup.ClampRatio(ratio), MaxMessages = Math.Max(0, setup.MaxMessages)
+        };
         for (int i = 0; i < 4; i++)
         {
             var s = g.Slots[i];
@@ -300,7 +303,6 @@ public partial class MainWindow
     {
         if (_agentGroups.Count == 0) return;
         var now = DateTime.UtcNow;
-        int max = Math.Max(1, AppSettings.Current.MultiAgentMaxMessages);
         foreach (var g in _agentGroups.ToList())
         {
             foreach (var s in g.Running.ToList())
@@ -333,8 +335,8 @@ public partial class MainWindow
                     continue;
                 }
                 if (s.Queue.Count == 0 || g.Paused || !s.RoleInjected) continue;
-                if (g.MessageCount >= max) { PauseAgentGroup(g, limit: true); continue; }
-                DeliverQueued(g, s, max, now);
+                if (g.LimitReached) { PauseAgentGroup(g, limit: true); continue; }
+                DeliverQueued(g, s, now);
             }
             PostAgentState(g);
             g.RowTab?.RaiseAgentState();
@@ -362,9 +364,9 @@ public partial class MainWindow
     }
 
     /// <summary>把這格佇列裡的信一次送出：一封＝「訊息 #n from … 請讀 …」；多封＝「你有 k 則新訊息：請依序讀 …」。每封都記進 .delivered、計數。</summary>
-    private void DeliverQueued(AgentGroup g, AgentSlot s, int max, DateTime now)
+    private void DeliverQueued(AgentGroup g, AgentSlot s, DateTime now)
     {
-        int take = Math.Min(s.Queue.Count, max - g.MessageCount);
+        int take = g.MaxMessages > 0 ? Math.Min(s.Queue.Count, g.MaxMessages - g.MessageCount) : s.Queue.Count;
         var batch = new List<AgentMessage>();
         while (batch.Count < take && s.Queue.Count > 0) batch.Add(s.Queue.Dequeue());
         if (batch.Count == 0) return;
@@ -387,14 +389,15 @@ public partial class MainWindow
         foreach (var m in batch) g.Bus?.MarkDelivered(m.FileName);
         g.MessageCount += batch.Count;
         MarkTyped(s, now);
-        Diag.Log($"ma deliver #{g.DeliverySeq} -> {s.AgentId} ({string.Join(", ", batch.Select(b => b.FileName))}) count={g.MessageCount}/{max}");
-        if (g.MessageCount >= max) PauseAgentGroup(g, limit: true);
+        Diag.Log($"ma deliver #{g.DeliverySeq} -> {s.AgentId} ({string.Join(", ", batch.Select(b => b.FileName))}) count={g.MessageCount}/{g.LimitText}");
+        if (g.LimitReached) PauseAgentGroup(g, limit: true);
     }
 
     private void PauseAgentGroup(AgentGroup g, bool limit)
     {
         if (g.Paused) return;
         g.Paused = true;
+        g.PausedByLimit = limit;
         Diag.Log($"ma pause team {g.Number}{(limit ? $" (limit {g.MessageCount})" : "")} pending={g.PendingCount}");
         g.RowTab?.RaiseAgentState();
         if (limit) FlashIfInactive();
@@ -465,6 +468,13 @@ public partial class MainWindow
     private void ApplyAgentSetup(AgentGroup g, MultiAgentSetup r)
     {
         if (!_agentGroups.Contains(g)) return;
+        if (r.MaxMessages != g.MaxMessages)
+        {
+            g.MaxMessages = Math.Max(0, r.MaxMessages);
+            if (g.Paused && g.PausedByLimit && !g.LimitReached) g.Paused = g.PausedByLimit = false;   // 因為到上限而暫停、上限調高了＝接著送（計數照舊）
+            Diag.Log($"ma setup team {g.Number}: limit={g.LimitText} count={g.MessageCount} paused={g.Paused}");
+            g.RowTab?.RaiseAgentState();
+        }
         var close = r.Close.Where(i => i is >= 1 and <= 4).Distinct().ToList();
         var launch = r.Launch.Where(i => i is >= 1 and <= 4 && !close.Contains(i)).Distinct().OrderBy(i => i).ToList();
         bool wasActive = _active?.Agent?.Group == g;
@@ -527,14 +537,30 @@ public partial class MainWindow
         Diag.Log($"ma setup team {g.Number}: launched {string.Join(",", fresh.Select(s => s.AgentId))} closed {string.Join(",", closed)}");
     }
 
-    /// <summary>「暫停投遞／繼續投遞」：繼續＝訊息數歸零、補送暫停期間收到的信。</summary>
-    private void AgentPause_Click(object sender, RoutedEventArgs e)
+    /// <summary>右鍵「投遞」子選單打開：勾目前的狀態——暫停中＝勾「暫停」，否則勾目前的次數。</summary>
+    private void AgentDelivery_SubmenuOpened(object sender, RoutedEventArgs e)
     {
+        if (!ReferenceEquals(e.OriginalSource, sender) || sender is not System.Windows.Controls.MenuItem parent) return;
         if (TabOf(sender)?.Agent?.Group is not { } g) return;
-        if (!g.Paused) { PauseAgentGroup(g, limit: false); return; }
-        g.Paused = false;
-        g.MessageCount = 0;
-        Diag.Log($"ma resume team {g.Number} pending={g.PendingCount}");
+        foreach (var o in parent.Items)
+            if (o is System.Windows.Controls.MenuItem mi)
+                mi.IsChecked = g.Paused ? (string?)mi.Tag == "pause" : (string?)mi.Tag == g.MaxMessages.ToString();
+    }
+
+    /// <summary>右鍵「投遞」→ 10／30／50／100／不限／暫停。選次數＝改成這個上限並繼續投遞（暫停中就解除、本輪計數歸零，補送暫停期間收到的信）；
+    /// 沒有暫停時只改上限、計數照舊。</summary>
+    private void AgentDelivery_Click(object sender, RoutedEventArgs e)
+    {
+        if (TabOf(sender)?.Agent?.Group is not { } g || sender is not System.Windows.Controls.MenuItem { Tag: string tag }) return;
+        if (tag == "pause") { PauseAgentGroup(g, limit: false); return; }
+        if (!int.TryParse(tag, out int max)) return;
+        g.MaxMessages = Math.Max(0, max);
+        if (g.Paused)
+        {
+            g.Paused = g.PausedByLimit = false;
+            g.MessageCount = 0;
+        }
+        Diag.Log($"ma delivery team {g.Number}: limit={g.LimitText} count={g.MessageCount} pending={g.PendingCount}");
         g.RowTab?.RaiseAgentState();
     }
 
@@ -558,7 +584,7 @@ public partial class MainWindow
             Diag.Log($"ma restore skipped: folder missing '{first.Dir}'");
             return;
         }
-        var setup = new MultiAgentSetup { Dir = first.Dir };
+        var setup = new MultiAgentSetup { Dir = first.Dir, MaxMessages = first.AgentMaxMessages };
         var bySlot = new Dictionary<int, SavedTab>();
         foreach (var st in entries)
         {

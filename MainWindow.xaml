@@ -133,11 +133,20 @@
                                         <MenuItem Header="Aa 範例文字" Foreground="#C0CAF5" Background="#1A1B26" Tag="#C0CAF5|#1A1B26" Click="MenuColor_Click" />
                                         <MenuItem Header="Aa 範例文字" Foreground="#EBDBB2" Background="#282828" Tag="#EBDBB2|#282828" Click="MenuColor_Click" />
                                     </MenuItem>
-                                    <!-- 1.2.0 Multi-Agent：設定（補開格 3／4、重新啟動已結束的格）、暫停／繼續投遞、開信箱資料夾（只有 Multi-Agent 那一列顯示）-->
+                                    <!-- 1.2.0 Multi-Agent（代理團隊）：設定、投遞（次數上限／暫停；打開時勾目前狀態）、開信箱資料夾（只有代理團隊那一列顯示）-->
                                     <Separator Visibility="{Binding AgentRowVisibility}" />
                                     <MenuItem Header="{Binding Path=[ma.menuSetup], Source={x:Static loc:LocProxy.Instance}}" Click="AgentSetup_Click"
                                               Visibility="{Binding AgentRowVisibility}" />
-                                    <MenuItem Header="{Binding AgentPauseHeader}" Click="AgentPause_Click" Visibility="{Binding AgentRowVisibility}" />
+                                    <MenuItem Header="{Binding Path=[ma.menuDelivery], Source={x:Static loc:LocProxy.Instance}}"
+                                              Visibility="{Binding AgentRowVisibility}" SubmenuOpened="AgentDelivery_SubmenuOpened">
+                                        <MenuItem Header="10" Tag="10" Click="AgentDelivery_Click" />
+                                        <MenuItem Header="30" Tag="30" Click="AgentDelivery_Click" />
+                                        <MenuItem Header="50" Tag="50" Click="AgentDelivery_Click" />
+                                        <MenuItem Header="100" Tag="100" Click="AgentDelivery_Click" />
+                                        <MenuItem Header="{Binding Path=[ma.limitUnlimited], Source={x:Static loc:LocProxy.Instance}}" Tag="0" Click="AgentDelivery_Click" />
+                                        <Separator />
+                                        <MenuItem Header="{Binding Path=[ma.menuPauseItem], Source={x:Static loc:LocProxy.Instance}}" Tag="pause" Click="AgentDelivery_Click" />
+                                    </MenuItem>
                                     <MenuItem Header="{Binding Path=[ma.menuOpenBus], Source={x:Static loc:LocProxy.Instance}}" Click="AgentOpenBus_Click"
                                               Visibility="{Binding AgentRowVisibility}" />
                                     <Separator />

@@ -19,6 +19,9 @@ internal sealed class CodexAdapter : CliAdapterBase
     {
         string full = OneLine(roleText);
         string text = !RunsViaPowerShell(conn) && full.Length <= MaxInline ? full : OneLine(Pointer(slot));
-        return new($" -c \"developer_instructions='{text}'\"", null);
+        // tui.whimsy=false：gpt-6-astra 閒置時輸入框背景有「星星閃爍」動畫，每秒重畫 6～7 次、約 8KB/s（probe 實錄；gpt-5.6-sol 閒置 0 byte）
+        // → 畫面永遠不會靜止 2 秒，AgentReady 永遠 false、信一直卡在佇列（使用者中途 /model 換成 astra 後 PM 收不到信）。
+        // 只關裝飾動畫；tui.animations=false 也有效，但可能連「Working」這類忙碌指示一起關，忙閒判斷會失準，所以不用它。
+        return new($" -c tui.whimsy=false -c \"developer_instructions='{text}'\"", null);
     }
 }

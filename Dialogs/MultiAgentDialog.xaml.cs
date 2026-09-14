@@ -26,6 +26,8 @@ public sealed class MultiAgentSetup
     public List<int> Launch { get; set; } = new();
     /// <summary>既有組：取消勾選「啟用」＝要關掉的格號。</summary>
     public List<int> Close { get; set; } = new();
+    /// <summary>投遞限制次數（0＝不限）。</summary>
+    public int MaxMessages { get; set; } = AgentGroup.DefaultMaxMessages;
 }
 
 /// <summary>
@@ -68,6 +70,7 @@ public partial class MultiAgentDialog : Window
     private static readonly Brush StatusText = Frozen(0x9A, 0x9A, 0x9A);
 
     private readonly AgentGroup? _group;
+    private readonly string _dir;
     private readonly SlotUi[] _ui = new SlotUi[4];
     private readonly List<Choice> _backends;
     private bool _ready;   // 初始化完成前（設 ItemsSource／預選）的 SelectionChanged 不處理
@@ -78,24 +81,30 @@ public partial class MultiAgentDialog : Window
     {
         InitializeComponent();
         _group = existing;
+        _dir = existing?.Dir ?? dir;
 
-        Title = Loc.T("ma.title") + (existing != null ? $" — {ShortName(existing.Dir)}" : "");
-        FolderLabel.Text = Loc.T("ma.dlgFolder");
-        BrowseBtn.Content = Loc.T("log.browse");
+        // 資料夾在開視窗前就選好了（New → 代理團隊先跳資料夾選擇），視窗裡不再有資料夾欄位，標題顯示完整路徑
+        Title = $"{Loc.T("ma.title")} — {_dir}";
         RestoreRolesBtn.Content = Loc.T("ma.dlgRestoreRoles");
         OpenRolesBtn.Content = Loc.T("ma.dlgOpenRoles");
         OkBtn.Content = Loc.T(existing == null ? "ma.dlgOpen" : "ma.dlgApply");
         CancelBtn.Content = Loc.T("ma.dlgCancel");
         HintText.Text = Loc.T("ma.dlgHint");
 
+        // 投遞限制次數：10／30／50／100／不限；新開的組預設 30，既有的組＝它目前的值（不在選項裡就補一項）
+        LimitLabel.Text = Loc.T("ma.dlgLimit");
+        LimitHint.Text = Loc.T("ma.dlgLimitHint");
+        LimitHint.ToolTip = LimitHint.Text;
+        var limits = AgentGroup.LimitChoices.Select(n => new Choice(n.ToString(), n > 0 ? n.ToString() : Loc.T("ma.limitUnlimited"), null)).ToList();
+        int curLimit = existing?.MaxMessages ?? AgentGroup.DefaultMaxMessages;
+        if (!AgentGroup.LimitChoices.Contains(curLimit)) limits.Insert(0, new Choice(curLimit.ToString(), curLimit.ToString(), null));
+        LimitBox.ItemTemplate = ChoiceTemplate(withIcon: false);
+        LimitBox.ItemsSource = limits;
+        Select(LimitBox, curLimit.ToString());
+
         // 這台電腦找得到的 Coding Agent（沿用自訂連線或自動偵測；見 ICodingAgentAdapter.Resolve），順序 ClaudeCode／Codex／OpenCode／GeminiCLI
         _backends = AdapterRegistry.All.Where(a => a.Resolve() != null)
             .Select(a => new Choice(a.Key, a.DisplayName, a.Key + ".png")).ToList();
-
-        // 資料夾在開視窗前就選好了；新開的組要換就按「瀏覽…」，既有的組不能換
-        FolderBox.Text = existing?.Dir ?? dir;
-        FolderBox.IsReadOnly = true;
-        BrowseBtn.IsEnabled = existing == null;
 
         for (int i = 0; i < 4; i++) SlotGrid.Children.Add(BuildSlot(i));
         FillRoles();
@@ -116,12 +125,6 @@ public partial class MultiAgentDialog : Window
         var br = new SolidColorBrush(Color.FromRgb(r, g, b));
         br.Freeze();
         return br;
-    }
-
-    private static string ShortName(string dir)
-    {
-        try { var n = Path.GetFileName(dir.TrimEnd('\\', '/')); return string.IsNullOrEmpty(n) ? dir : n; }
-        catch { return dir; }
     }
 
     // ---------- 一格的畫面 ----------
@@ -324,21 +327,6 @@ public partial class MultiAgentDialog : Window
     }
 
     // ---------- 按鈕 ----------
-    private void Browse_Click(object sender, RoutedEventArgs e)
-    {
-        using var fbd = new System.Windows.Forms.FolderBrowserDialog
-        {
-            Description = Loc.T("ma.pickDir"), UseDescriptionForTitle = true, ShowNewFolderButton = true
-        };
-        string start = Directory.Exists(FolderBox.Text) ? FolderBox.Text : AppSettings.Current.LastDir ?? "";
-        if (Directory.Exists(start)) fbd.SelectedPath = start;
-        // WinForms 對話框一定要傳 owner（踩雷：沒傳會開在主視窗後面＝「點了沒反應」）
-        if (fbd.ShowDialog(Win32Owner.Of(this)) != System.Windows.Forms.DialogResult.OK) return;
-        FolderBox.Text = fbd.SelectedPath;
-        AppSettings.Current.LastDir = fbd.SelectedPath;
-        AppSettings.Current.Save();
-    }
-
     private void RestoreRoles_Click(object sender, RoutedEventArgs e)
     {
         if (MessageBox.Show(this, Loc.T("ma.dlgRestoreRolesAsk"), Loc.T("ma.title"), MessageBoxButton.YesNo, MessageBoxImage.Question)
@@ -355,14 +343,13 @@ public partial class MultiAgentDialog : Window
 
     private void Ok_Click(object sender, RoutedEventArgs e)
     {
-        string dir = FolderBox.Text.Trim();
-        if (_group == null)
-        {
-            if (string.IsNullOrEmpty(dir)) { Warn(Loc.T("ma.dlgNeedFolder")); return; }
-            if (!Directory.Exists(dir)) { Warn(string.Format(Loc.T("ma.dlgFolderMissing"), dir)); return; }
-        }
+        if (_group == null && !Directory.Exists(_dir)) { Warn(string.Format(Loc.T("ma.dlgFolderMissing"), _dir)); return; }   // 開著視窗時資料夾被刪／改名
 
-        var result = new MultiAgentSetup { Dir = _group?.Dir ?? dir };
+        var result = new MultiAgentSetup
+        {
+            Dir = _dir,
+            MaxMessages = int.TryParse(KeyOf(LimitBox), out int limit) ? Math.Max(0, limit) : AgentGroup.DefaultMaxMessages
+        };
         var endsConversation = new List<string>();   // 執行中、套用後會關閉或重新啟動的 agent（先確認）
         for (int i = 0; i < 4; i++)
         {
@@ -386,7 +373,8 @@ public partial class MultiAgentDialog : Window
 
         if (_group != null)
         {
-            if (result.Launch.Count == 0 && result.Close.Count == 0) { DialogResult = false; return; }   // 沒有要變動的 → 當作取消
+            if (result.Launch.Count == 0 && result.Close.Count == 0 && result.MaxMessages == _group.MaxMessages)
+            { DialogResult = false; return; }   // 沒有要變動的 → 當作取消
             if (endsConversation.Count > 0 &&
                 MessageBox.Show(this, string.Format(Loc.T("ma.applyAsk"), string.Join("\n", endsConversation)), Loc.T("ma.title"),
                     MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;

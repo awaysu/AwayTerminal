@@ -37,11 +37,28 @@ public sealed class AgentGroup
     /// <summary>上列（格 2～4）占的高度比例（中間分隔線拖曳；0.15～0.85）。只有一格時沒有上列。</summary>
     public double Ratio { get; set; } = 0.5;
 
-    /// <summary>暫停投遞（使用者右鍵、或訊息數到上限）。暫停中照收信、照排隊，只是不打字。</summary>
+    /// <summary>暫停投遞（使用者右鍵「投遞 → 暫停」、或訊息數到上限）。暫停中照收信、照排隊，只是不打字。</summary>
     public bool Paused { get; set; }
 
-    /// <summary>本輪已投遞幾則（到 AppSettings.MultiAgentMaxMessages 就暫停；「繼續投遞」歸零）。</summary>
+    /// <summary>這次暫停是訊息數到上限造成的（設定視窗把上限調高時自動解除；使用者自己按的暫停不解除）。</summary>
+    public bool PausedByLimit { get; set; }
+
+    /// <summary>本輪已投遞幾則（到 <see cref="MaxMessages"/> 就暫停；右鍵「投遞」選一個次數＝繼續並歸零）。</summary>
     public int MessageCount { get; set; }
+
+    /// <summary>投遞限制次數（每組各自設；設定視窗最上面、右鍵「投遞」）：投遞這麼多則就暫停，防 agent 互踢無限迴圈燒 token。0＝不限。</summary>
+    public int MaxMessages { get; set; } = DefaultMaxMessages;
+
+    public const int DefaultMaxMessages = 30;
+
+    /// <summary>設定視窗與右鍵選單可選的次數（0＝不限）。</summary>
+    public static readonly int[] LimitChoices = { 10, 30, 50, 100, 0 };
+
+    /// <summary>已經投遞到上限（不限＝永遠 false）。</summary>
+    public bool LimitReached => MaxMessages > 0 && MessageCount >= MaxMessages;
+
+    /// <summary>上限的顯示文字（分頁列小字、tooltip）：數字或 ∞。</summary>
+    public string LimitText => MaxMessages > 0 ? MaxMessages.ToString() : "∞";
 
     /// <summary>本次程式執行內的投遞序號（「訊息 #n」用，從 1 起）。</summary>
     public int DeliverySeq { get; set; }

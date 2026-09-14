@@ -22,8 +22,9 @@ internal static class RoleLibrary
     public static string CommonPath => Path.Combine(Root, "common.md");
     public static string SessionDir(int groupNumber) => Path.Combine(Root, "sessions", groupNumber.ToString());
 
-    /// <summary>內建四個角色在下拉裡的固定順序（其餘使用者自訂的依檔名排在後面）。</summary>
-    public static readonly string[] BuiltInRoles = { "product-manager", "software-engineer", "software-architect", "qa-engineer" };
+    /// <summary>內建角色在下拉裡的固定順序（其餘使用者自訂的依檔名排在後面）。前四個依序是格 1～4 的預設角色。
+    /// ui-ux-designer（使用者提供，2026-09-14）＝新增的第五個；已經複製過範本的資料目錄會由 EnsureDefaults 補上缺的檔。</summary>
+    public static readonly string[] BuiltInRoles = { "product-manager", "software-engineer", "software-architect", "qa-engineer", "ui-ux-designer" };
 
     public sealed record RoleInfo(string Key, string Title);
 

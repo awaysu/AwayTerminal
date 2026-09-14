@@ -22,6 +22,7 @@ The Multi-Agent team may contain:
 - Software Engineer
 - Software Architect
 - QA Engineer
+- UI/UX Designer
 
 Not every role is necessarily enabled. AwayTerminal provides the currently enabled agents at runtime (see the Runtime Context section at the end of this file).
 

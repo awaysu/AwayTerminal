@@ -34,11 +34,13 @@
     </Window.Resources>
 
     <StackPanel Margin="16,14,16,14">
-        <!-- 專案資料夾（所有 agent 共用；開視窗前已選好＝唯讀，新開的組可按「瀏覽…」換；既有的組不能換）-->
-        <TextBlock x:Name="FolderLabel" Text="專案資料夾" Margin="0,0,0,4" />
-        <DockPanel Margin="0,0,0,10">
-            <Button x:Name="BrowseBtn" DockPanel.Dock="Right" Content="瀏覽…" Width="84" Height="27" Margin="8,0,0,0" Click="Browse_Click" />
-            <TextBox x:Name="FolderBox" />
+        <!-- 專案資料夾在開視窗前就選好了（同其他「啟動前選擇資料夾」的連線），這裡不再有資料夾欄位；視窗標題顯示完整路徑 -->
+
+        <!-- 投遞限制次數（整組一個值；Agent-x1 那格的正上方，左邊對齊格子外框）-->
+        <DockPanel Margin="4,0,4,8">
+            <TextBlock x:Name="LimitLabel" Text="投遞限制次數" Margin="0,0,10,0" />
+            <ComboBox x:Name="LimitBox" Width="110" />
+            <TextBlock x:Name="LimitHint" Foreground="#9A9A9A" FontSize="11" Margin="12,0,0,0" TextTrimming="CharacterEllipsis" />
         </DockPanel>
 
         <!-- 四格（2×2）：Agent-x1 Agent-x2 / Agent-x3 Agent-x4；外框顏色＝終端機裡的 pane 外框 -->
