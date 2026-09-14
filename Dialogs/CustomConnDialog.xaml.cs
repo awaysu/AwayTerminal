@@ -19,8 +19,8 @@ public partial class CustomConnDialog : Window
         { "powershell", "ssh-telnet", "adb", "wsl", "git", "docker", "claude-code", "codex", "opencode", "geminicli", "python", "run", "none" };
     private const string DefaultIcon = "run";
 
-    /// <summary>自動偵測用的已知工具（在 PATH 與常見安裝位置尋找）。</summary>
-    private sealed class KnownTool
+    /// <summary>自動偵測用的已知工具（在 PATH 與常見安裝位置尋找）。1.2.0 起 Multi-Agent 的 adapter 也用它（internal）。</summary>
+    internal sealed class KnownTool
     {
         public string Name;
         public string[] ExeNames;
@@ -31,7 +31,7 @@ public partial class CustomConnDialog : Window
         { Name = name; ExeNames = exeNames; Args = args; Icon = icon; PickDir = pickDir; }
     }
 
-    private static readonly KnownTool[] KnownTools =
+    internal static readonly KnownTool[] KnownTools =
     {
         new("ClaudeCode", new[] { "claude.exe", "claude.cmd" }, "--dangerously-skip-permissions", "claude-code", true),
         // Codex CLI（1.1.10）：Codex 桌面版會把 CLI 裝在 %LOCALAPPDATA%\Programs\OpenAI\Codex\bin 並加進使用者 PATH；
@@ -320,7 +320,7 @@ public partial class CustomConnDialog : Window
     }
 
     /// <summary>在 PATH 與常見安裝位置尋找工具，回傳第一個存在的完整路徑；找不到回空字串。</summary>
-    private static string ResolveTool(string[] exeNames)
+    internal static string ResolveTool(string[] exeNames)
     {
         string[] extraDirs =
         {

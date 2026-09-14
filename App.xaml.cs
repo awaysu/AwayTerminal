@@ -39,7 +39,8 @@ public partial class App : Application
         string? openDir = ParseOpenDir(e.Args);
         if (openDir != null)
         {
-            if (Services.IpcPipe.TrySend("open-dir\t" + openDir)) { Environment.Exit(0); return; }
+            // 測試模式（AWAYTERMINAL_DATA_DIR）不轉交給正式實例，自己開
+            if (!Services.AppPaths.IsTestMode && Services.IpcPipe.TrySend("open-dir\t" + openDir)) { Environment.Exit(0); return; }
             PendingOpenDir = openDir;
         }
 

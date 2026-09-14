@@ -31,6 +31,26 @@
 
     .pane-header .ph-title { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; }
 
+    /* Multi-Agent 分頁（1.2.0）：一個外框放 2～4 個 pane——上列（格 2～4 由左到右平分）＋可上下拖的分隔線＋下方全寬（格 1）。
+       外框顏色由 C# 依格號給（inline style，蓋過一般的灰框／作用中黃框）；作用中那格用 header 亮色標示。
+       規則放在分割模式規則之後、選擇器同權重（#terminals …），分割／分頁兩種模式都由這裡決定 agent pane 的框。 */
+    #terminals .agents { position: absolute; inset: 0; display: flex; flex-direction: column; }
+    #terminals.split .agents { position: relative; inset: auto; min-width: 0; min-height: 0; }
+    #terminals .agents-top { display: flex; flex-direction: row; gap: 2px; min-height: 0; }
+    #terminals .agents .term { position: relative; inset: auto; min-width: 0; min-height: 0; box-sizing: border-box;
+                               border: 2px solid #333; border-radius: 3px; overflow: hidden; }
+    #terminals .agents-top > .term { flex: 1 1 0px; }
+    #terminals .agents .pane-header { display: flex; }
+    #terminals .agents .term.active-pane .pane-header { background: #45472e; color: #ffffff; }
+    .ag-divider { flex: 0 0 5px; background: #2d2d30; cursor: row-resize; }
+    .ag-divider:hover, .agents.dragging > .ag-divider { background: #5a5a40; }
+    .agents.dragging { cursor: row-resize; user-select: none; }
+    .ph-pill { flex: 0 0 auto; margin-left: 6px; padding: 0 5px; border-radius: 6px; font-size: 9px; line-height: 12px; }
+    .ph-pill.st-idle { background: #2b3d2c; color: #A5D6A7; }
+    .ph-pill.st-busy { background: #4a2e2e; color: #EF9A9A; }
+    .ph-pill.st-queued { background: #45472e; color: #FDFFB0; }
+    .ph-pill.st-exited { background: #333; color: #999; }
+
     .xterm-viewport::-webkit-scrollbar { width: 10px; }
     .xterm-viewport::-webkit-scrollbar-thumb { background: #4a4a4a; border-radius: 5px; }
     .xterm-viewport::-webkit-scrollbar-track { background: transparent; }

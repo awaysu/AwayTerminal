@@ -156,7 +156,8 @@ public partial class MainWindow : Window, IRemoteHost
         var dlg = new ExitDialog { Owner = this };
         // 以 ClaudePaste 找 claude 分頁——自訂連線開的 ClaudeCode 沒有 Restore，
         // 用 Restore.Type == "claude" 只會找到舊紀錄恢復的 legacy 分頁（v1.0.18 後等於永遠 false）
-        dlg.SetClaudeAvailable(Tabs.Any(t => t.ClaudePaste && t.Session != null));
+        // Multi-Agent 的 claude 不算（1.2.0：好幾個 agent 同時改同一份 CLAUDE.md 會互相覆蓋）
+        dlg.SetClaudeAvailable(Tabs.Any(t => t.ClaudePaste && t.Session != null && t.Agent == null));
         dlg.UpdateAction = UpdateClaudeMdAsync;
         if (dlg.ShowDialog() != true) return; // 取消 → 不關
 
@@ -197,6 +198,14 @@ public partial class MainWindow : Window, IRemoteHost
             var s2 = t.Restore!;
             s2.Title = t.Title;
             s2.OpenedUtc = t.StartUtc;   // 1.1.4：存原始開啟時間，恢復後 tooltip 仍顯示最初開啟時刻
+            // 1.2.0 Multi-Agent：各格存同一個組代號＋格號／組號／角色／CLI／比例，恢復時整組重開
+            var ag = t.Agent;
+            s2.AgentKey = ag?.Group.Key ?? "";
+            s2.AgentIndex = ag?.Index ?? 0;
+            s2.AgentGroupNumber = ag?.Group.Number ?? 0;
+            s2.AgentRole = ag?.Role ?? "";
+            s2.AgentBackend = ag?.Backend ?? "";
+            s2.AgentRatio = ag?.Group.Ratio ?? 0.5;
             s2.BufferFile = "";
             if (bufs.TryGetValue(t.Id, out var text) && !string.IsNullOrEmpty(text))
             {
@@ -252,7 +261,7 @@ public partial class MainWindow : Window, IRemoteHost
     /// <summary>請每個 Claude Code 分頁更新 CLAUDE.md，並等到它們都閒置（或逾時）。</summary>
     private async Task UpdateClaudeMdAsync()
     {
-        var claudeTabs = Tabs.Where(t => t.ClaudePaste && t.Session != null).ToList();
+        var claudeTabs = Tabs.Where(t => t.ClaudePaste && t.Session != null && t.Agent == null).ToList();
         if (claudeTabs.Count == 0) return;
 
         string prompt = Loc.T("exit.mdPrompt");
@@ -288,6 +297,7 @@ public partial class MainWindow : Window, IRemoteHost
         BtnSettings.Content = Loc.T("tb.settings"); BtnSettings.ToolTip = Loc.T("tip.settings");
         BtnAbout.Content = Loc.T("tb.about"); BtnAbout.ToolTip = Loc.T("tip.about");
         UpdateSplitButton();
+        if (_webReady) PostTheme();   // 1.2.0：Multi-Agent pane 狀態標籤的文字隨語言（T 協定 agentStates）
     }
 
     /// <summary>「New」按鈕：下拉選單（圖示＋文字）。
@@ -319,8 +329,9 @@ public partial class MainWindow : Window, IRemoteHost
 
         // 註：ADB 自 v1.0.18 起**不再是內建項目**，改由自訂連線決定（自訂視窗的
         // 「自動偵測」可一鍵加入）。刪光自訂連線後這一區就是空的，符合預期。
-        // 「自訂…」上方一律加分隔線 → 開管理視窗
+        // 「自訂…」上方一律加分隔線 → 開管理視窗；Multi-Agent（1.2.0）放在它上面（一律列出，沒有可用的 CLI 時設定視窗會說明）
         menu.Items.Add(new Separator());
+        menu.Items.Add(MakeNewItem("ma.title", "multi-agent.png", OpenMultiAgent_Click));
         var manage = MakeNewItemRaw(Loc.T("menu.custom"), "settings.png");
         manage.Click += Custom_Click;
         menu.Items.Add(manage);
@@ -374,16 +385,20 @@ public partial class MainWindow : Window, IRemoteHost
 
     /// <param name="forcedDir">指定工作目錄（遠端/紀錄/恢復用）；null 且 PickDir 時跳資料夾框。</param>
     /// <param name="restoreTitle">恢復分頁時沿用上次的分頁標題（名稱已被占用時退回 NextName）。</param>
-    private void OpenCustom(CustomConn conn, string? forcedDir = null, string? restoreTitle = null)
+    /// <param name="addHistory">false＝不記進「紀錄」（Multi-Agent 的各格另記一筆 multiagent）。</param>
+    /// <param name="extraArgs">附加在連線參數後面、只用在這次啟動（1.2.0 Multi-Agent 注入角色檔；不存進恢復資訊／紀錄）。</param>
+    /// <returns>開出來的分頁；沒開成（取消、找不到執行檔、web 未 ready 排隊中、adb 流程）回 null。</returns>
+    private TerminalTab? OpenCustom(CustomConn conn, string? forcedDir = null, string? restoreTitle = null,
+                                    bool addHistory = true, string extraArgs = "")
     {
         // 診斷點：與 PickWorkDir 的 log 對照可分辨「點了沒進 handler」vs「進了卡在哪一步」
         Diag.Log($"OpenCustom '{conn.Name}' pickDir={conn.PickDir} webReady={_webReady}");
-        if (DeferUntilWebReady(() => OpenCustom(conn, forcedDir, restoreTitle), $"OpenCustom {conn.Name}")) return;
+        if (DeferUntilWebReady(() => OpenCustom(conn, forcedDir, restoreTitle, addHistory, extraArgs), $"OpenCustom {conn.Name}")) return null;
         string path = conn.Path;
 
         // 指向 adb 的自訂連線改走專屬流程：先 adb devices，0 台提示、1 台直接開、
         // 2 台以上跳選單選序號。否則會直接跑「adb shell」，接多台時只會噴錯。
-        if (!conn.ViaPowerShell && IsAdbExe(path)) { OpenAdbFlow(path); return; }
+        if (!conn.ViaPowerShell && IsAdbExe(path)) { OpenAdbFlow(path); return null; }
 
         bool viaPs = conn.ViaPowerShell
             || path.EndsWith(".cmd", StringComparison.OrdinalIgnoreCase)
@@ -393,17 +408,17 @@ public partial class MainWindow : Window, IRemoteHost
         {
             MessageBox.Show(this, Loc.T("custom.notFound") + "\n" + path, "AwayTerminal",
                 MessageBoxButton.OK, MessageBoxImage.Warning);
-            return;
+            return null;
         }
 
         string? dir = forcedDir;
         if (dir == null && conn.PickDir)
         {
             dir = PickWorkDir(conn.Name);
-            if (dir == null) return; // 使用者取消 → 不開
+            if (dir == null) return null; // 使用者取消 → 不開
         }
 
-        string args = string.IsNullOrWhiteSpace(conn.Args) ? "" : " " + conn.Args.Trim();
+        string args = (string.IsNullOrWhiteSpace(conn.Args) ? "" : " " + conn.Args.Trim()) + extraArgs;
         // ClaudeCode / Codex / OpenCode → 分頁名稱用工作目錄名稱（例：AwayTerminal），其餘連線照舊「名稱(1)」。
         // 恢復分頁時 restoreTitle 優先（沿用上次看到的名稱）。
         string title = !string.IsNullOrWhiteSpace(restoreTitle) && !Tabs.Any(t => t.Title == restoreTitle)
@@ -433,12 +448,14 @@ public partial class MainWindow : Window, IRemoteHost
             closeBytes = Enumerable.Repeat(closeByte, closeCount).ToArray();
         }
 
+        TerminalTab? opened;
         if (viaPs)
         {
             var s = new ConPtySession { GracefulExitBytes = closeBytes };
             var tab = StartTab(TermKind.PowerShell, title, s, () => s.Start("powershell.exe", _lastCols, _lastRows, dir),
                 claudePaste: IsClaudeExe(path));
-            if (tab == null) return;
+            if (tab == null) return null;
+            opened = tab;
             tab.Restore = restore;
             tab.IconFile = CustomIconFile(conn.Icon); tab.KindKey = "kind.custom";   // 分頁列圖示＝這條自訂連線的圖示（1.1.2）
             if (dir != null) { tab.WorkDir = dir; SetTitlePath(dir); }
@@ -461,17 +478,19 @@ public partial class MainWindow : Window, IRemoteHost
             var s = new ConPtySession { GracefulExitBytes = closeBytes };
             var tab = StartTab(TermKind.Custom, title, s, () => s.Start($"\"{path}\"{args}", _lastCols, _lastRows, dir),
                 claudePaste: IsClaudeExe(path));
-            if (tab == null) return;
+            if (tab == null) return null;
+            opened = tab;
             tab.Restore = restore;
             tab.IconFile = CustomIconFile(conn.Icon);   // 分頁列圖示＝這條自訂連線的圖示（1.1.2；KindKey 預設即 kind.custom）
             if (dir != null) { tab.WorkDir = dir; SetTitlePath(dir); }
         }
-        AddHistory(new SavedTab
+        if (addHistory) AddHistory(new SavedTab
         {
             Type = "custom", Name = conn.Name, Title = conn.Name, Path = path, Args = conn.Args, Icon = conn.Icon,
             PickDir = conn.PickDir, ViaPowerShell = conn.ViaPowerShell,
             CloseKey = conn.CloseKey, CloseCount = conn.CloseCount
         });
+        return opened;
     }
 
     private void Custom_Click(object sender, RoutedEventArgs e)
@@ -510,6 +529,7 @@ public partial class MainWindow : Window, IRemoteHost
         "com" => "com|" + e.ComPort + "|" + e.Baud,
         "adb" => "adb|" + e.AdbSerial,
         "custom" => "custom|" + e.Title + "|" + e.Path,
+        "multiagent" => "multiagent|" + e.Dir,
         _ => e.Type + "|" + e.Title
     };
 
@@ -522,12 +542,14 @@ public partial class MainWindow : Window, IRemoteHost
         "com" => $"{e.ComPort} {e.Baud}",
         "adb" => "ADB" + (string.IsNullOrEmpty(e.AdbSerial) ? "" : " " + e.AdbSerial),
         "custom" => e.Title,
+        "multiagent" => Loc.T("ma.title") + " — " + ShortDir(e.Dir),
         _ => e.Title
     };
 
     private static string HistoryIcon(SavedTab e) => e.Type switch
     {
         "ps" => "powershell.png",
+        "multiagent" => "multi-agent.png",
         "claude" => "claude-code.png",
         "ssh" or "telnet" => "ssh-telnet.png",
         "com" => "com.png",
@@ -596,6 +618,9 @@ public partial class MainWindow : Window, IRemoteHost
                     CloseKey = e.CloseKey, CloseCount = e.CloseCount
                 }, string.IsNullOrWhiteSpace(e.Dir) ? null : e.Dir);   // 遠端開啟帶桌面目錄、不跳資料夾框
                 break;
+            case "multiagent":   // 1.2.0：開設定視窗、預填上次的資料夾（不在了就空白）
+                OpenMultiAgent(Directory.Exists(e.Dir) ? e.Dir : null);
+                break;
         }
     }
 
@@ -616,20 +641,22 @@ public partial class MainWindow : Window, IRemoteHost
             foreground = s.Foreground,
             background = s.Background,
             imeQuietMs = s.ImeQuietMs,   // claude 分頁靜止閘門門檻（見 AppSettings.ImeQuietMs / terminal.js）
-            restoreLines = s.RestoreBufferLines   // 關閉時每個分頁保留的 scrollback 行數（q…save；1.0.45）
+            restoreLines = s.RestoreBufferLines,   // 關閉時每個分頁保留的 scrollback 行數（q…save；1.0.45）
+            // 1.2.0 Multi-Agent pane 狀態標籤（E 協定 0～3）
+            agentStates = new[] { Loc.T("ma.stateIdle"), Loc.T("ma.stateBusy"), Loc.T("ma.stateQueued"), Loc.T("ma.stateExited") }
         });
         PostToWeb("T" + json);
     }
 
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
-        TabStrip.ItemsSource = Tabs;
+        // 分頁列綁「過濾後的檢視」（1.2.0）：Multi-Agent 分頁的每個 agent 都是獨立分頁，但整組只顯示一列（見 IsStripRow）
+        _stripView = new System.Windows.Data.ListCollectionView(Tabs) { Filter = o => o is TerminalTab t && IsStripRow(t) };
+        TabStrip.ItemsSource = _stripView;
         ApplyTabPanel();     // 右側分頁列表框：依記憶的顯示狀態與寬度
         ApplyWebDefaultBg(); // 避免 WebView2 內容未畫出前露出白底
 
-        string userData = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "AwayTerminal", "WebView2");
+        string userData = Path.Combine(AppPaths.DataDir, "WebView2");   // 測試模式（AWAYTERMINAL_DATA_DIR）與正式版分開
         Directory.CreateDirectory(userData);
 
         var env = await CoreWebView2Environment.CreateAsync(null, userData);
@@ -654,6 +681,10 @@ public partial class MainWindow : Window, IRemoteHost
         _statusTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(600) };
         _statusTimer.Tick += UpdateStatuses;
         _statusTimer.Start();
+
+        // 測試模式（AWAYTERMINAL_DATA_DIR）：遠端、檔案總管右鍵選單、實例間管線都是整台電腦只有一份的東西，
+        // 開發版一律不碰，免得搶走／改寫使用者正在用的 AwayTerminal
+        if (AppPaths.IsTestMode) { Diag.Log("test mode: data dir " + AppPaths.DataDir); return; }
 
         StartOrRestartRemote(); // 依設定啟動 Telegram 遠端（未設 token/chatId 則不啟動）
 
@@ -779,7 +810,7 @@ public partial class MainWindow : Window, IRemoteHost
                     int.TryParse(wh[0], out int c) && int.TryParse(wh[1], out int r))
                 {
                     tab.Cols = c; tab.Rows = r; // 記住尺寸（login as: 階段 session 尚未啟動）
-                    _lastCols = c; _lastRows = r;
+                    if (tab.Agent == null) { _lastCols = c; _lastRows = r; }   // Multi-Agent 的 pane 只占一部分，別拿來當新分頁的初始尺寸
                     tab.Session?.Resize(c, r);
                     // 有待送出的自動指令（Claude Code）→ 尺寸就緒後才送，寬度才會正確
                     if (tab.PendingCommand != null && tab.Session != null)
@@ -838,12 +869,24 @@ public partial class MainWindow : Window, IRemoteHost
                 if (tab != null)
                 {
                     _active = tab;
-                    foreach (var t in Tabs) t.IsActive = (t == tab);
+                    MarkActiveRow(tab);   // Multi-Agent 點了另一格（1.2.0）：同一列、記住最後點的那一格
+                    if (tab.Agent != null) SetTitlePath(tab.WorkDir);   // 標題的 [Agent-12 Codex] 跟著換
                 }
+                break;
+            }
+            case 'G': // 1.2.0：Multi-Agent 上下分隔線拖完的新比例：下方 pane id US 上列比例
+            {
+                int p = rest.IndexOf(US);
+                if (p < 0) break;
+                if (FindTab(rest.Substring(0, p))?.Agent?.Group is { } g &&
+                    double.TryParse(rest.Substring(p + 1), System.Globalization.NumberStyles.Float,
+                                    System.Globalization.CultureInfo.InvariantCulture, out double ratio))
+                    g.Ratio = AgentGroup.ClampRatio(ratio);
                 break;
             }
             case 'k': // 拖曳後的新順序
                 ReorderTabs(rest.Split(','));
+                NormalizeAgentOrder();   // Multi-Agent 各格保持相鄰（JS 回報時已相鄰，保險）
                 break;
             case 'z': // Ctrl+滾輪縮放：記住新字級（新分頁/重開沿用）
                 if (int.TryParse(rest, out int fs) && fs is >= 6 and <= 40)
@@ -958,8 +1001,19 @@ public partial class MainWindow : Window, IRemoteHost
     /// <summary>依上次關閉時儲存的清單重建分頁。</summary>
     private void RestoreTabs(List<SavedTab> saved)
     {
+        var agentKeysDone = new HashSet<string>();
         foreach (var st in saved.ToList())
         {
+            // 1.2.0 Multi-Agent：遇到一組的第一格就整組一起重開（各格的 scrollback 在 LaunchSlot 裡倒回），後面同組的略過
+            if (!string.IsNullOrEmpty(st.AgentKey))
+            {
+                if (agentKeysDone.Add(st.AgentKey))
+                {
+                    try { RestoreAgentGroup(saved.Where(x => x.AgentKey == st.AgentKey).ToList()); }
+                    catch (Exception ex) { Diag.Log("ma restore: " + ex.Message); }
+                }
+                continue;
+            }
             _restoreBufferForNextTab = LoadRestoreBuffer(st);   // 有存 scrollback 就交給 AddTab 先倒回去（1.0.45）
             _restoreOpenedForNextTab = st.OpenedUtc == default ? null : st.OpenedUtc;   // 1.1.4：原始開啟時間（舊檔沒有＝用當下）
             try
@@ -1051,13 +1105,16 @@ public partial class MainWindow : Window, IRemoteHost
     {
         _active = tab;
         SetTitlePath(tab.WorkDir);   // 先用啟動目錄墊底（claude/自訂沒提示行就顯示它）；有提示行的分頁 0.6s 內被解析值蓋掉
-        foreach (var t in Tabs) t.IsActive = (t == tab);
+        MarkActiveRow(tab);          // Multi-Agent（1.2.0）：亮的是整組那一列
         PostToWeb("s" + tab.Id);
         Web.Focus();
     }
 
     private void RemoveTabSilently(TerminalTab tab)
     {
+        // Multi-Agent（1.2.0）：先把這格從組裡摘掉（組的代表列可能換人），分頁移除後再重綁或拆組
+        var agentGroup = tab.Agent?.Group;
+        if (tab.Agent is { } slot) { slot.Tab = null; tab.Agent = null; }
         int idx = Tabs.IndexOf(tab);
         PostToWeb("x" + tab.Id);
         try { (tab.Macro as MacroRunner)?.Stop(); } catch { }
@@ -1072,10 +1129,12 @@ public partial class MainWindow : Window, IRemoteHost
             _active = null;
             if (Tabs.Count > 0) SelectTab(Tabs[Math.Min(idx, Tabs.Count - 1)]);
         }
+        if (agentGroup != null) AfterAgentTabRemoved(agentGroup);
     }
 
     private void CloseTab(TerminalTab tab)
     {
+        if (tab.Agent?.Group is { } g) { CloseAgentGroup(g, ask: true); return; }   // Multi-Agent：分頁列只有一列＝整組一起關
         var r = MessageBox.Show(this, string.Format(Loc.T("msg.closeTabConfirm"), tab.Title),
             Loc.T("msg.closeTabTitle"), MessageBoxButton.YesNo, MessageBoxImage.Question);
         if (r != MessageBoxResult.Yes) return;
@@ -1146,6 +1205,13 @@ public partial class MainWindow : Window, IRemoteHost
 
             // claude / adb / 自訂 exe 結束（斷線、崩潰、/exit）→ 分頁只剩一行灰字沒人看得到，
             // 改為跳出提示並詢問是否順手關掉（1.0.30，使用者要求）。程式關閉中不問。
+            // Multi-Agent 的格不問（1.2.0）：分頁留著、pane 標籤顯示「已結束」，右鍵「Multi-Agent 設定…」可以重新啟動那一格
+            if (tab.Agent is { } exitedSlot)
+            {
+                Diag.Log($"ma exited {exitedSlot.AgentId}");
+                exitedSlot.Group.RowTab?.RaiseAgentState();
+                return;
+            }
             if (!_exiting && tab.Kind is (TermKind.Claude or TermKind.Custom or TermKind.Adb))
                 AskCloseExitedTab(tab);
         });
@@ -1406,7 +1472,7 @@ public partial class MainWindow : Window, IRemoteHost
                     bool submittedThisBusy = t.LastSubmitUtc >= since.AddSeconds(-2);
                     bool echoFromTyping = !submittedThisBusy && (now - t.LastInputUtc).TotalSeconds < 2.5;
                     bool longEnough = submittedThisBusy ? busyDur >= 0.8 : busyDur >= 3;
-                    if (!echoFromTyping && longEnough)
+                    if (!echoFromTyping && longEnough && t.Agent == null)   // Multi-Agent 分頁不支援遠端（1.2.0）
                         _remote.OnTabIdle(t.Id, t.Title);
                     _busySince.Remove(t.Id);
                 }
@@ -1414,6 +1480,8 @@ public partial class MainWindow : Window, IRemoteHost
         }
         // 工作列 icon 右下：有分頁忙碌=紅球跳動、全部閒置=不顯示
         SetTaskbarBusy(Tabs.Any(t => t.Status == TermStatus.Busy));
+        // Multi-Agent（1.2.0）：忙閒剛更新完 → 看哪一格閒下來、有信要送
+        try { MultiAgentTick(); } catch (Exception ex) { Diag.Log("ma tick: " + ex.Message); }
     }
 
     // ---------- 工具列：連線群組 ----------
@@ -1808,7 +1876,7 @@ public partial class MainWindow : Window, IRemoteHost
     /// <summary>哪些分頁依提示行的目前目錄自動命名：PowerShell / SSH / Telnet / 自訂 shell（WSL、docker bash…；
     /// 提示行解析不到的自訂程式如 python REPL 自然不會動），已連線、未手動改名。Claude 直跑與 ADB 不算。</summary>
     private static bool TracksCwdTitle(TerminalTab t)
-        => t.Session != null && !t.TitleLocked
+        => t.Session != null && !t.TitleLocked && t.Agent == null   // Multi-Agent 的格名稱由組決定（1.2.0）
            && t.Kind is TermKind.PowerShell or TermKind.Ssh or TermKind.Telnet or TermKind.Custom;
 
     /// <summary>1.1.2：shell 分頁名稱＝目前目錄名稱（例 ~/workspace1/AwayPhotoRawEditor_Swift → AwayPhotoRawEditor_Swift）。
@@ -1856,9 +1924,10 @@ public partial class MainWindow : Window, IRemoteHost
     /// <summary>視窗標題字串：「AwayTerminal」／「AwayTerminal - [標籤] 路徑」（沒路徑就只有程式名；語言切換沿用）。</summary>
     private string ComposeTitle()
     {
-        if (string.IsNullOrEmpty(_titlePath)) return Loc.T("app.name");
+        string app = Loc.T("app.name") + (AppPaths.IsTestMode ? " [TEST]" : "");   // 測試模式一眼分得出不是正式那一個
+        if (string.IsNullOrEmpty(_titlePath)) return app;
         string prefix = string.IsNullOrEmpty(_titleTag) ? "" : $"[{_titleTag}] ";
-        return $"{Loc.T("app.name")} - {prefix}{_titlePath}";
+        return $"{app} - {prefix}{_titlePath}";
     }
 
     /// <summary>「複製全部至檔案」：把整個 buffer 的純文字存檔（q…file 的回覆）。</summary>
@@ -2048,6 +2117,7 @@ public partial class MainWindow : Window, IRemoteHost
         var s = AppSettings.Current;
         _remote ??= new TelegramRemote(this);
         _remote.Stop();
+        if (AppPaths.IsTestMode) return;   // 測試模式不啟動遠端（同一個 bot 只能有一個程式在 poll）
         if (!(s.RemoteEnabled && !string.IsNullOrWhiteSpace(s.TelegramBotToken) && s.TelegramChatId != 0))
         { ReleaseRemoteLock(); RemoteTakenByOther = false; return; }
         if (!TryAcquireRemoteLock()) { RemoteTakenByOther = true; return; }
@@ -2182,7 +2252,7 @@ public partial class MainWindow : Window, IRemoteHost
     IReadOnlyList<string> IRemoteHost.ListHistory()
         => Dispatcher.Invoke(() =>
         {
-            _remoteHistList = AppSettings.Current.History.Take(10).ToList();
+            _remoteHistList = AppSettings.Current.History.Where(h => h.Type != "multiagent").Take(10).ToList();   // Multi-Agent 不支援遠端（1.2.0）
             return (IReadOnlyList<string>)_remoteHistList.Select(e => e.Type switch
             {
                 "ssh" => "SSH " + e.Host,          // 手機純文字列表沒有圖示 → ssh/telnet 補型態前綴
@@ -2225,13 +2295,14 @@ public partial class MainWindow : Window, IRemoteHost
         => Dispatcher.Invoke(() =>
         {
             var tab = FindTab(tabId);
-            if (tab == null) return false;
+            if (tab == null || tab.Agent != null) return false;   // Multi-Agent 分頁不支援遠端（1.2.0）
             RemoveTabSilently(tab);   // 手機端已下指令 → 不再跳 PC 端確認框，直接走優雅結束流程
             return true;
         });
 
+    // 1.2.0：Multi-Agent 分頁不支援遠端（使用者決定）→ 不列給手機，/goto 選不到、也收不到完成推播
     IReadOnlyList<RemoteTabInfo> IRemoteHost.SnapshotTabs()
-        => Dispatcher.Invoke(() => (IReadOnlyList<RemoteTabInfo>)Tabs.Select(
+        => Dispatcher.Invoke(() => (IReadOnlyList<RemoteTabInfo>)Tabs.Where(t => t.Agent == null).Select(
                t => new RemoteTabInfo(t.Id, t.Title, t.Status == TermStatus.Busy, t.Kind.ToString())).ToList());
 
     DateTime IRemoteHost.GetTabActivityUtc(int tabId)
@@ -2246,7 +2317,7 @@ public partial class MainWindow : Window, IRemoteHost
         => Dispatcher.Invoke(() =>
         {
             var tab = FindTab(tabId);
-            if (tab == null) return false;
+            if (tab == null || tab.Agent != null) return false;   // Multi-Agent 分頁不支援遠端（1.2.0）
             if (enter) tab.LastSubmitUtc = DateTime.UtcNow;   // 遠端送出的指令也算「送出」，完成後照推
             if (tab.Session == null && tab.LoginBuffer != null)
             { HandleLoginInput(tab, enter ? text + "\r" : text); return true; }   // SSH「login as:」：帳號從遠端回覆也能登入
@@ -2256,15 +2327,8 @@ public partial class MainWindow : Window, IRemoteHost
             // 實測（scratchpad probe，claude 2.1.269＋OpenConsole，同一段 95 字訊息 A/B）：一次寫入＝沒送出、文字＋300ms 後單獨 CR＝送出；83 字一次寫入也沒送出。
             // 短訊息（53 字）一次寫入則有送出，所以是「有時候」。claude 分頁的文字走 JS doPaste（多行轉 ESC+CR 軟換行、
             // 先 ESC[I 吸收懸置狀態、等 claude 靜止）；Enter 一律延後對「當初那個 session」直接送，期間切分頁也不會送錯。
-            var session = tab.Session;
-            if (tab.ClaudePaste && _webReady) PasteToTab(tab.Id, text);
-            else if (text.Length > 0) session.WriteText(text);
-            if (enter)
-            {
-                var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(RemoteEnterDelayMs) };
-                timer.Tick += (_, _) => { timer.Stop(); if (tab.Session == session) session.WriteText("\r"); };
-                timer.Start();
-            }
+            // 1.2.0：與 Multi-Agent 投遞共用 SendTextThenEnter（MainWindow.MultiAgent.cs）
+            SendTextThenEnter(tab, text, enter);
             return true;
         });
 
@@ -2276,7 +2340,7 @@ public partial class MainWindow : Window, IRemoteHost
         => Dispatcher.Invoke(() =>
         {
             var tab = FindTab(tabId);
-            if (tab?.Session == null) return false;
+            if (tab?.Session == null || tab.Agent != null) return false;   // Multi-Agent 分頁不支援遠端（1.2.0）
             byte[]? b = keyName switch
             {
                 "ctrl-c" => new byte[] { 0x03 },
@@ -2348,7 +2412,7 @@ public partial class MainWindow : Window, IRemoteHost
         if (dlg.ShowDialog() == true)
         {
             PostTheme(); ApplyWebDefaultBg();
-            ShellIntegration.Apply(AppSettings.Current.ExplorerMenu, Loc.T("shell.menuText"));
+            if (!AppPaths.IsTestMode) ShellIntegration.Apply(AppSettings.Current.ExplorerMenu, Loc.T("shell.menuText"));   // 測試模式不改 HKCU
         }
     }
 
@@ -2683,7 +2747,7 @@ public partial class MainWindow : Window, IRemoteHost
     {
         if (_tabDragging) { _tabDragging = false; return; }   // 剛結束拖曳 → 這次放開不當選取
         var tab = TabOf(sender);
-        if (tab != null) SelectTab(tab);
+        if (tab != null) SelectTab(FocusTargetOf(tab));   // Multi-Agent：回到最後點的那一格
     }
 
     // ---------- 右側分頁列拖曳排序（1.1.8）----------
@@ -2732,7 +2796,10 @@ public partial class MainWindow : Window, IRemoteHost
         if (target == null || target == dragged) return;
         int from = Tabs.IndexOf(dragged), to = Tabs.IndexOf(target);
         if (from < 0 || to < 0 || from == to) return;
+        // Multi-Agent（1.2.0）：分頁列一列＝好幾個分頁。往下拖到一組上時落在那組最後一格之後，免得插進組中間
+        if (from < to && target.Agent?.Group is { } tg && tg.Running.LastOrDefault()?.Tab is { } lastTab) to = Tabs.IndexOf(lastTab);
         Tabs.Move(from, to);
+        NormalizeAgentOrder();   // 拖的若是一組（代表列），其他格跟上
         // 分割/分欄模式的 pane 順序同步（K 協定），並存新順序（下次開機恢復照此序）
         if (_webReady) PostToWeb("K" + string.Join(",", Tabs.Select(t => t.Id)));
     }
@@ -2752,6 +2819,7 @@ public partial class MainWindow : Window, IRemoteHost
         if (!string.IsNullOrWhiteSpace(name))
         {
             tab.Title = name.Trim();
+            if (tab.Agent?.Group is { } ag) ag.Title = tab.Title;   // Multi-Agent：改的是組名（代表列換人時沿用）
             tab.TitleLocked = true;   // 手動改名後不再依目前目錄自動改名（1.1.2）
             PostToWeb("t" + tab.Id + US + tab.Title); // 同步分割模式 pane 標題
         }
@@ -2759,20 +2827,20 @@ public partial class MainWindow : Window, IRemoteHost
 
     private void MenuLog_Click(object sender, RoutedEventArgs e)
     {
-        var tab = TabOf(sender);
+        var tab = MenuTargetOf(sender);   // Multi-Agent：最後點的那一格
         if (tab != null) LogAction(tab);
     }
 
     private void MenuMacro_Click(object sender, RoutedEventArgs e)
     {
         var tab = TabOf(sender);
-        if (tab != null) MacroAction(tab);
+        if (tab != null && tab.Agent == null) MacroAction(tab);   // Multi-Agent 不支援巨集（1.2.0；選單項目也藏起來了）
     }
 
     /// <summary>分頁右鍵「配色」：套用該分頁的文字/背景色。Tag="fg|bg"；空 Tag = 回到設定預設顏色。</summary>
     private void MenuColor_Click(object sender, RoutedEventArgs e)
     {
-        var tab = TabOf(sender);
+        var tab = MenuTargetOf(sender);   // Multi-Agent：最後點的那一格
         if (tab == null) return;
         string tag = (sender as MenuItem)?.Tag as string ?? "";
         string fg = "", bg = "";

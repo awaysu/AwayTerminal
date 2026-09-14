@@ -121,7 +121,9 @@
                                 <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
                                     <MenuItem Header="{Binding Path=[menu.rename], Source={x:Static loc:LocProxy.Instance}}" Click="MenuRename_Click" />
                                     <MenuItem Header="{Binding Path=[menu.log], Source={x:Static loc:LocProxy.Instance}}" Click="MenuLog_Click" />
-                                    <MenuItem Header="{Binding Path=[menu.macro], Source={x:Static loc:LocProxy.Instance}}" Click="MenuMacro_Click" />
+                                    <!-- 1.2.0：Multi-Agent 分頁不支援巨集（使用者決定）→ 該列藏起來 -->
+                                    <MenuItem Header="{Binding Path=[menu.macro], Source={x:Static loc:LocProxy.Instance}}" Click="MenuMacro_Click"
+                                              Visibility="{Binding NotAgentVisibility}" />
                                     <MenuItem Header="{Binding Path=[menu.color], Source={x:Static loc:LocProxy.Instance}}">
                                         <MenuItem Header="{Binding Path=[menu.colorDefault], Source={x:Static loc:LocProxy.Instance}}" Tag="" Click="MenuColor_Click" />
                                         <Separator />
@@ -131,6 +133,13 @@
                                         <MenuItem Header="Aa 範例文字" Foreground="#C0CAF5" Background="#1A1B26" Tag="#C0CAF5|#1A1B26" Click="MenuColor_Click" />
                                         <MenuItem Header="Aa 範例文字" Foreground="#EBDBB2" Background="#282828" Tag="#EBDBB2|#282828" Click="MenuColor_Click" />
                                     </MenuItem>
+                                    <!-- 1.2.0 Multi-Agent：設定（補開格 3／4、重新啟動已結束的格）、暫停／繼續投遞、開信箱資料夾（只有 Multi-Agent 那一列顯示）-->
+                                    <Separator Visibility="{Binding AgentRowVisibility}" />
+                                    <MenuItem Header="{Binding Path=[ma.menuSetup], Source={x:Static loc:LocProxy.Instance}}" Click="AgentSetup_Click"
+                                              Visibility="{Binding AgentRowVisibility}" />
+                                    <MenuItem Header="{Binding AgentPauseHeader}" Click="AgentPause_Click" Visibility="{Binding AgentRowVisibility}" />
+                                    <MenuItem Header="{Binding Path=[ma.menuOpenBus], Source={x:Static loc:LocProxy.Instance}}" Click="AgentOpenBus_Click"
+                                              Visibility="{Binding AgentRowVisibility}" />
                                     <Separator />
                                     <MenuItem Header="{Binding Path=[menu.close], Source={x:Static loc:LocProxy.Instance}}" Click="MenuClose_Click" />
                                 </ContextMenu>
@@ -146,6 +155,9 @@
                                         Margin="6,0,0,0" Padding="0" Background="Transparent" BorderThickness="0"
                                         Foreground="#AAAAAA" Cursor="Hand" FontSize="13"
                                         ToolTip="{Binding Path=[tip.tabClose], Source={x:Static loc:LocProxy.Instance}}" />
+                                <!-- 1.2.0 Multi-Agent：投遞狀態（✉3/30、⏸3/30）-->
+                                <TextBlock DockPanel.Dock="Right" Text="{Binding AgentStateText}" Foreground="#B0B0B0" FontSize="11"
+                                           VerticalAlignment="Center" Margin="4,0,0,0" Visibility="{Binding AgentRowVisibility}" />
                                 <TextBlock Text="{Binding Title}" Foreground="{Binding TitleBrush}" VerticalAlignment="Center"
                                            FontSize="14" TextTrimming="CharacterEllipsis" />
                             </DockPanel>

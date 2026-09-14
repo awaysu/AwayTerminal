@@ -84,6 +84,62 @@ public sealed class TerminalTab : INotifyPropertyChanged
     /// <summary>此分頁的巨集執行器（null = 未執行）。</summary>
     public object? Macro { get; set; }
 
+    // ---------- Multi-Agent 分頁（1.2.0，見 AgentGroup）----------
+    private AgentSlot? _agent;
+    /// <summary>這個分頁是 Multi-Agent 分頁的哪一格（null＝一般分頁）。</summary>
+    public AgentSlot? Agent
+    {
+        get => _agent;
+        set { if (ReferenceEquals(_agent, value)) return; _agent = value; RaiseAgent(); }
+    }
+    /// <summary>分頁列上代表整組的那一列（組內格號最小、有分頁的那格）。</summary>
+    private bool IsAgentRow => _agent != null && ReferenceEquals(_agent.Group.RowTab, this);
+    public Visibility AgentRowVisibility => IsAgentRow ? Visibility.Visible : Visibility.Collapsed;
+    /// <summary>分頁右鍵「巨集」：Multi-Agent 分頁不支援（使用者決定）→ 藏起來。</summary>
+    public Visibility NotAgentVisibility => _agent == null ? Visibility.Visible : Visibility.Collapsed;
+    /// <summary>分頁列那一列尾端的小字（刻意短）：已投遞 3 則＝「✉3/30」、暫停＝「⏸3/30」；還沒投遞過＝空。</summary>
+    public string AgentStateText
+    {
+        get
+        {
+            if (!IsAgentRow) return "";
+            var g = _agent!.Group;
+            int max = AppSettings.Current.MultiAgentMaxMessages;
+            if (g.Paused) return $"⏸{g.MessageCount}/{max}";
+            return g.MessageCount > 0 ? $"✉{g.MessageCount}/{max}" : "";
+        }
+    }
+    /// <summary>分頁右鍵「暫停投遞／繼續投遞」。</summary>
+    public string AgentPauseHeader => Loc.T(_agent?.Group.Paused == true ? "ma.menuResume" : "ma.menuPause");
+    public void RaiseAgent()
+    {
+        Raise(nameof(Agent)); Raise(nameof(AgentRowVisibility)); Raise(nameof(NotAgentVisibility));
+        RaiseAgentState(); Raise(nameof(KindTip));
+    }
+    /// <summary>投遞數／暫停／各格忙閒變了：分頁列那一列的小字、右鍵選單文字、tooltip、圖示重畫。</summary>
+    public void RaiseAgentState()
+    {
+        Raise(nameof(AgentStateText)); Raise(nameof(AgentPauseHeader)); Raise(nameof(ToolTipText)); Raise(nameof(StatusIcon));
+    }
+
+    /// <summary>tooltip 裡的 Multi-Agent 段落：資料夾、每格（ID 角色 CLI 狀態）、訊息數／暫停／待投遞。</summary>
+    private string AgentGroupTip()
+    {
+        var g = _agent!.Group;
+        var sb = new System.Text.StringBuilder();
+        sb.Append(Loc.T("ma.title")).Append("  ").Append(g.Dir);
+        foreach (var s in g.Running)
+        {
+            string st = s.Tab!.Session == null ? Loc.T("ma.stateExited")
+                      : s.Tab.Status == TermStatus.Busy ? Loc.T("ma.stateBusy") : Loc.T("ma.stateIdle");
+            sb.Append('\n').Append(s.AgentId).Append("  ").Append(s.RoleTitle).Append("  ").Append(s.BackendName).Append("  ").Append(st);
+            if (s.Queue.Count > 0) sb.Append("  · ").Append(string.Format(Loc.T("ma.tipPending"), s.Queue.Count));
+        }
+        sb.Append('\n').Append(string.Format(Loc.T("ma.tipMessages"), g.MessageCount, AppSettings.Current.MultiAgentMaxMessages));
+        if (g.Paused) sb.Append("  · ").Append(Loc.T("ma.tipPaused"));
+        return sb.ToString();
+    }
+
     public TerminalTab(int id, TermKind kind, string title)
     {
         Id = id;
@@ -130,7 +186,7 @@ public sealed class TerminalTab : INotifyPropertyChanged
 
     /// <summary>種類補充（主機、COM 埠、自訂連線名稱、工作目錄…）：直接從 Restore（各開啟點都會填）取，
     /// 不必每個開啟點各自設一次；沒有 Restore 時退回啟動目錄。</summary>
-    private string KindDetail => Restore switch
+    private string KindDetail => _agent != null ? _agent.Group.Dir : Restore switch
     {
         null => WorkDir,
         { Type: "ssh" } r => r.Host,
@@ -147,7 +203,8 @@ public sealed class TerminalTab : INotifyPropertyChanged
         get
         {
             string d = KindDetail;
-            return string.IsNullOrEmpty(d) ? Loc.T(KindKey) : $"{Loc.T(KindKey)}  {d}";
+            string kind = IsAgentRow ? Loc.T("ma.title") : Loc.T(KindKey);   // Multi-Agent 那一列的圖示是整組
+            return string.IsNullOrEmpty(d) ? kind : $"{kind}  {d}";
         }
     }
 
@@ -159,6 +216,7 @@ public sealed class TerminalTab : INotifyPropertyChanged
         get
         {
             var sb = new System.Text.StringBuilder($"{_title}  {Loc.T("tip.tabOpened")} {StartUtc.ToLocalTime():HH:mm}");
+            if (IsAgentRow) sb.Append('\n').Append(AgentGroupTip());   // Multi-Agent（1.2.0）：資料夾＋各格狀態＋訊息數
             if (!string.IsNullOrEmpty(CwdPath) && CwdPath != _title) sb.Append('\n').Append(CwdPath);
             if (_isLogging) sb.Append('\n').Append(Loc.T("tip.tabLogging"));
             if (_isMacroRunning) sb.Append('\n').Append(Loc.T("tip.tabMacroRunning"));
@@ -168,8 +226,8 @@ public sealed class TerminalTab : INotifyPropertyChanged
 
     /// <summary>視窗標題中括號內顯示的連線標籤（例「ClaudeCode」「PowerShell」「SSH」）：
     /// 自訂連線用連線名稱、其餘用種類名稱。見 MainWindow.SetTitlePath →「AwayTerminal - [標籤] 路徑」。</summary>
-    public string TitleTag => Restore is { Type: "custom", Name: var nm } && !string.IsNullOrWhiteSpace(nm)
-        ? nm : Loc.T(KindKey);
+    public string TitleTag => _agent != null ? $"{_agent.AgentId} {_agent.BackendName}"   // Multi-Agent：［Agent-12 Codex］
+        : Restore is { Type: "custom", Name: var nm } && !string.IsNullOrWhiteSpace(nm) ? nm : Loc.T(KindKey);
 
     /// <summary>供狀態輪詢定期呼叫：更新 tooltip 的開啟時刻文字（語言切換時 tip.tabOpened/KindTip 也靠這裡）。</summary>
     public void RefreshRuntime() { Raise(nameof(ToolTipText)); Raise(nameof(KindTip)); }
@@ -180,9 +238,17 @@ public sealed class TerminalTab : INotifyPropertyChanged
     public TermStatus Status
     {
         get => _status;
-        set { if (_status != value) { _status = value; Raise(nameof(Status)); Raise(nameof(StatusIcon)); } }
+        set
+        {
+            if (_status == value) return;
+            _status = value; Raise(nameof(Status)); Raise(nameof(StatusIcon));
+            // Multi-Agent：其他格沒有自己的分頁列那一列 → 通知那一列重畫（任一格忙＝整組染忙碌色）
+            if (_agent?.Group.RowTab is { } row && !ReferenceEquals(row, this)) row.RaiseAgentState();
+        }
     }
-    public ImageSource StatusIcon => IconTint.Get(_iconFile, _status == TermStatus.Busy ? BusyColor : ReadyColor);
+    public ImageSource StatusIcon => IsAgentRow
+        ? IconTint.Get("multi-agent.png", _agent!.Group.AnyBusy ? BusyColor : ReadyColor)
+        : IconTint.Get(_iconFile, _status == TermStatus.Busy ? BusyColor : ReadyColor);
 
     // 記錄 log 中（分頁 tooltip 註明；右鍵選單開始/停止）
     private bool _isLogging;

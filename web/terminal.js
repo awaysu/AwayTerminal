@@ -15,7 +15,10 @@
 //               T{json} 套用字型顏色、P{id}US{fg}US{bg} 單一分頁配色（空=回設定預設）、
 //               A{id} 全選、F 開搜尋列、v{id}US{base64} 貼上（走 xterm.paste，支援 bracketed paste）、
 //               b{id}US{base64 舊內容}US{base64 分隔行}（1.0.45：把舊內容寫進分頁、再整頁推進 scrollback 並把游標歸位左上，
-//               之後才啟動新 session——兩欄皆可空＝只做「推進 scrollback」，斷線重連前用；見 applyRestore 註解）
+//               之後才啟動新 session——兩欄皆可空＝只做「推進 scrollback」，斷線重連前用；見 applyRestore 註解）、
+//               g{下方id}US{上列比例}US{上列id,…}US{標籤|…}US{外框顏色,…}（1.2.0 Multi-Agent：把 2～4 個 pane 排成「下一上 N−1」、建立或更新）、
+//               u{id}（1.2.0 拆掉 id 所在的 Multi-Agent 外框）、E{id}US{0|1|2|3}（1.2.0 pane 標題的狀態標籤：閒置／忙碌／有信待送／已結束）
+//   JS -> C#（1.2.0）：G{下方id}US{上列比例} Multi-Agent 上下分隔線拖完的新比例
 (function () {
   "use strict";
   var ws = window.chrome.webview;
@@ -30,7 +33,8 @@
 
   var cfg = {
     fontFamily: '"Cascadia Mono", Consolas, "Microsoft JhengHei", "微軟正黑體", monospace',
-    fontSize: 14, foreground: "#e0e0e0", background: "#1e1e1e"
+    fontSize: 14, foreground: "#e0e0e0", background: "#1e1e1e",
+    agentStates: ["閒置", "忙碌", "有信待送", "已結束"]   // Multi-Agent pane 狀態標籤文字（T 協定 agentStates 覆寫，隨語言）
   };
   // IME 診斷開關（追注音輸入問題用；D 協定 → C# Diag → diag.log。平時關閉）
   var IMEDBG = false;
@@ -181,6 +185,10 @@
       if (e.button === 0 && terms[id]) terms[id].appSel = "";
       setActivePane(id);
     });
+    // 使用者自己捲動的意圖（1.2.0，見 settleBottoms）：滾輪、拖捲軸、Shift+PgUp/PgDn 之後記下「是不是停在最底」
+    el.addEventListener("wheel", function () { noteScrollIntent(id); }, { passive: true });
+    el.addEventListener("mouseup", function () { noteScrollIntent(id); });
+    el.addEventListener("keyup", function (e) { if (e.key === "PageUp" || e.key === "PageDown" || e.key === "Home" || e.key === "End") noteScrollIntent(id); });
 
     header.addEventListener("dragstart", function (e) {
       dragId = id; e.dataTransfer.effectAllowed = "move";
@@ -191,7 +199,8 @@
     header.addEventListener("click", function () {
       if (mode === "tab") return;
       if (suppressClick) { suppressClick = false; return; }
-      zoomed = (zoomed === id) ? null : id;
+      // Multi-Agent 的各格同一個顯示單位：點任一格的標題都是放大／還原整組
+      zoomed = (zoomed && terms[zoomed] && terms[id] && unitEl(terms[zoomed]) === unitEl(terms[id])) ? null : id;
       layout();
     });
     el.addEventListener("dragover", function (e) {
@@ -202,7 +211,9 @@
       e.preventDefault(); el.classList.remove("drag-over"); onDrop(id);
     });
 
-    terms[id] = { term: term, fit: fit, ser: ser, el: el, body: body, titleSpan: titleSpan, title: title || ("#" + id),
+    terms[id] = { term: term, fit: fit, ser: ser, el: el, body: body, header: header, titleSpan: titleSpan, title: title || ("#" + id),
+                  group: null, label: "", pill: null, agentState: -1,   // Multi-Agent（1.2.0，見 applyGroup）
+                  atBottom: true,                                         // 使用者沒有往上捲（1.2.0，見 settleBottoms）
                   claudePaste: !!(flags && flags.indexOf("c") >= 0),
                   sendQ: [], sending: false, lastOutMs: 0,
                   keySeq: 0, imeLast: null,                 // IME 去重（1.0.45，見 sendTyped）
@@ -216,6 +227,7 @@
     body.addEventListener("keydown", function (e) {
       var rk = terms[id]; if (!rk) return;
       rk.keySeq++;
+      noteScrollIntent(id);   // 打字時 xterm 會捲回最底（scrollOnUserInput）→ 捲動意圖跟著更新（見 settleBottoms）
       if (!/^(Shift|Control|Alt|Meta|CapsLock)$/.test(e.key)) rk.appSel = "";   // 打字＝程式那邊的反白通常已消失，別再拿舊選取去複製
     }, true);
 
@@ -425,11 +437,12 @@
   }
 
   // 把一個可見的 pane fit 到容器大小；量得到尺寸（DOM 已排版）才算「fitted」。回傳量到的尺寸或 null。
-  function fitOne(k, rec) {
-    var dims = null;
+  // quiet＝尺寸沒變就不回報 r（量隱藏的 Multi-Agent 組時每次 refit 都會跑，別一直對 ConPTY 送同尺寸 resize）
+  function fitOne(k, rec, quiet) {
+    var dims = null, c0 = rec.term.cols, r0 = rec.term.rows;
     try { dims = rec.fit.proposeDimensions(); } catch (e) {}
     try { rec.fit.fit(); } catch (e) {}
-    sendResize(k);
+    if (!quiet || rec.term.cols !== c0 || rec.term.rows !== r0) sendResize(k);
     if (dims && dims.cols > 0 && dims.rows > 0) { markFitted(k, rec); return dims; }
     return null;
   }
@@ -437,29 +450,200 @@
     rec.fitted = true;
     if (rec.pendingRestore !== null) applyRestore(rec, k);
   }
+  // 隱藏中的顯示單位（一般分頁或 Multi-Agent 外框）暫時「有排版但看不見」（visibility:hidden＋display:flex）量一次尺寸再藏回去
+  function measureHidden(unit, ids) {
+    var vis = unit.style.visibility, first = null;
+    unit.style.visibility = "hidden"; unit.style.display = "flex";
+    for (var i = 0; i < ids.length; i++) { var d = terms[ids[i]] ? fitOne(ids[i], terms[ids[i]], true) : null; if (i === 0) first = d; }
+    unit.style.display = "none"; unit.style.visibility = vis;
+    return first;
+  }
+  var lastSingleDims = null;   // 分頁模式最近一次量到的「整頁一般分頁」尺寸（Multi-Agent 在前景時，隱藏的一般分頁照它同步）
   function refit() {
     var k, rec;
     if (mode !== "tab") {
       for (k in terms) fitOne(k, terms[k]);
-    } else if (active && terms[active]) {
-      var dims = fitOne(active, terms[active]);
-      // 分頁模式：隱藏分頁與作用中分頁共用同一個容器，尺寸直接同步成作用中分頁量到的值
-      // （隱藏的 display:none 量不到，fit 對它無效）。1.0.45 起這樣做有兩個好處：
-      // ① 切到隱藏分頁時不再「先以舊尺寸顯示、再 fit 重排」閃一下；
-      // ② 恢復緩衝區（applyRestore）必須在最終寬度下寫入——若在預設 80 欄寫、之後變寬時 xterm reflow 會把
-      //    接回的長行從 scrollback 拉回可視區，接著被新 session 首幀的 ESC[2J 清掉＝舊訊息消失。
-      if (dims) {
-        for (k in terms) {
-          if (k === active) continue;
-          rec = terms[k];
-          if (rec.term.cols !== dims.cols || rec.term.rows !== dims.rows) {
-            try { rec.term.resize(dims.cols, dims.rows); } catch (e) {}
-            sendResize(k);
-          }
-          markFitted(k, rec);
-        }
-      }
+      return;
     }
+    if (!active || !terms[active]) return;
+    var ar = terms[active];
+    if (ar.group) groupIds(ar.group).forEach(function (gk) { if (terms[gk]) fitOne(gk, terms[gk]); });   // Multi-Agent：各格各自 fit
+    else { var d0 = fitOne(active, ar); if (d0) lastSingleDims = d0; }
+    // 分頁模式：隱藏的一般分頁與作用中分頁共用同一個容器，尺寸直接同步成整頁量到的值
+    // （隱藏的 display:none 量不到，fit 對它無效）。1.0.45 起這樣做有兩個好處：
+    // ① 切到隱藏分頁時不再「先以舊尺寸顯示、再 fit 重排」閃一下；
+    // ② 恢復緩衝區（applyRestore）必須在最終寬度下寫入——若在預設 80 欄寫、之後變寬時 xterm reflow 會把
+    //    接回的長行從 scrollback 拉回可視區，接著被新 session 首幀的 ESC[2J 清掉＝舊訊息消失。
+    // Multi-Agent 的格只占一部分，不能照整頁同步 → 用 measureHidden 實際量；還沒量過整頁尺寸時也先量一個隱藏的一般分頁。
+    var dims = lastSingleDims, seen = [];
+    for (k in terms) {
+      if (k === active) continue;
+      rec = terms[k];
+      if (rec.group) {
+        if (rec.group !== ar.group && seen.indexOf(rec.group) < 0) { seen.push(rec.group); measureHidden(rec.group.el, groupIds(rec.group)); }
+        continue;
+      }
+      if (!dims) { dims = measureHidden(rec.el, [k]); if (dims) lastSingleDims = dims; continue; }
+      if (rec.term.cols !== dims.cols || rec.term.rows !== dims.rows) {
+        try { rec.term.resize(dims.cols, dims.rows); } catch (e) {}
+        sendResize(k);
+      }
+      markFitted(k, rec);
+    }
+  }
+  var refitQueued = false;
+  function scheduleRefit() {
+    if (refitQueued) return;
+    refitQueued = true;
+    requestAnimationFrame(function () { refitQueued = false; refit(); settleBottoms(); });
+  }
+
+  // ── 視窗「黏在最底」（1.2.0 修）──
+  // 實錄（CDP 看 buffer）：恢復分頁時 Multi-Agent 的某一格 viewportY 75／baseY 96——pane 在 display:none 期間被 resize、
+  // 之後搬進組外框才顯示，xterm 的捲動狀態卡在「使用者往上捲了」，之後的新輸出都不會跟著捲、畫面停在分隔行下面的空白＝整格看起來空白。
+  // 不是每次都發生（時序競賽）。對策＝自己記「使用者的捲動意圖」（滾輪／拖捲軸／PgUp 等／翻頁／搜尋之後才更新 atBottom），
+  // 每次排版 fit 完，看得見的 pane 只要使用者沒有刻意往上捲、卻不在最底，就捲回最底。
+  function isAtBottom(rec) { try { var b = rec.term.buffer.active; return b.viewportY >= b.baseY; } catch (e) { return true; } }
+  function noteScrollIntent(id) {
+    setTimeout(function () { var r = terms[id]; if (r) r.atBottom = isAtBottom(r); }, 60);   // 等 xterm 處理完這次捲動
+  }
+  function settleBottoms() {
+    for (var k in terms) {
+      var r = terms[k];
+      if (!r.atBottom || isAtBottom(r)) continue;
+      var u = unitEl(r);
+      if (u.style.display === "none" || r.el.style.display === "none") continue;   // 看不見的等顯示時再處理
+      try { r.term.scrollToBottom(); } catch (e) {}
+    }
+  }
+
+  // ── Multi-Agent 分頁（1.2.0；源自 1.1.11 協作分頁的兩半版本）──
+  // C# 端是 2～4 個獨立分頁綁成一組（Models/AgentGroup）；這裡把它們的 pane 放進同一個 .agents 外框：
+  //   上列 .agents-top 放格 2～4（由左到右平分）、中間 .ag-divider 可上下拖（拖完 G 協定回報比例、雙擊回 0.5）、下面放格 1（全寬）。
+  // 只有一格時沒有上列。分頁模式整個外框當一個「顯示單位」切換，分割／分欄模式外框佔一格；拖曳排序、放大、K 重排都以顯示單位為準（unitEl）。
+  // 每格外框顏色由 C# 給（1 淡紅、2 淡藍、3 淡綠、4 淡紫），作用中 pane 用 header 亮色標示、外框顏色不變。
+  function unitEl(rec) { return rec.group ? rec.group.el : rec.el; }
+  function unitList() {
+    var u = [];
+    for (var i = 0; i < container.children.length; i++) {
+      var c = container.children[i];
+      if (c.classList.contains("term") || c.classList.contains("agents")) u.push(c);
+    }
+    return u;
+  }
+  function groupIds(g) { return [g.bottom].concat(g.tops); }
+  function clampRatio(r) { r = parseFloat(r); return isNaN(r) ? 0.5 : Math.min(0.85, Math.max(0.15, r)); }
+  function paneTitle(rec) { rec.titleSpan.textContent = (rec.group && rec.label) ? rec.label : rec.title; }
+  function updatePill(rec) {
+    if (!rec.group || rec.agentState < 0) { if (rec.pill) { rec.pill.remove(); rec.pill = null; } return; }
+    if (!rec.pill) { rec.pill = document.createElement("span"); rec.header.appendChild(rec.pill); }
+    var names = ["idle", "busy", "queued", "exited"];
+    rec.pill.className = "ph-pill st-" + (names[rec.agentState] || "idle");
+    rec.pill.textContent = cfg.agentStates[rec.agentState] || "";
+  }
+  function applyGroupRatio(g) {
+    var rb = terms[g.bottom];
+    if (g.tops.length) {
+      g.topEl.style.flex = g.ratio + " 1 0px";
+      if (rb) rb.el.style.flex = (1 - g.ratio) + " 1 0px";
+    } else if (rb) rb.el.style.flex = "1 1 0px";
+  }
+  // 依 g.bottom / g.tops 重新擺放外框裡的元素（appendChild 會把已在 DOM 裡的元素移過來、xterm 狀態不受影響）
+  function arrangeGroup(g) {
+    g.tops.forEach(function (k) { var r = terms[k]; if (r) { r.el.style.flex = ""; g.topEl.appendChild(r.el); } });
+    g.el.appendChild(g.topEl);
+    g.el.appendChild(g.divider);
+    if (terms[g.bottom]) g.el.appendChild(terms[g.bottom].el);
+    var hasTop = g.tops.length > 0;
+    g.topEl.style.display = hasTop ? "flex" : "none";
+    g.divider.style.display = hasTop ? "block" : "none";
+    g.el.dataset.ids = groupIds(g).join(",");
+  }
+  function detachPane(rec) {
+    rec.group = null; rec.label = ""; rec.agentState = -1;
+    rec.el.style.flex = ""; rec.el.style.borderColor = ""; rec.el.classList.remove("agent-pane");
+    updatePill(rec); paneTitle(rec);
+  }
+  function applyGroup(bottom, ratio, tops, labels, colors) {
+    var all = [bottom].concat(tops), ids = [], lb = [], cl = [], i;
+    for (i = 0; i < all.length; i++) if (all[i] && terms[all[i]]) { ids.push(all[i]); lb.push(labels[i] || ""); cl.push(colors[i] || ""); }
+    if (!ids.length) return;
+    var g = null;
+    for (i = 0; i < ids.length && !g; i++) g = terms[ids[i]].group;
+    if (g) {
+      // 不在新名單裡的舊成員退回一般分頁；新名單裡屬於別組的先拉出來
+      groupIds(g).forEach(function (k) {
+        var r = terms[k];
+        if (r && r.group === g && ids.indexOf(k) < 0) { if (g.el.parentNode === container) container.insertBefore(r.el, g.el); detachPane(r); }
+      });
+      ids.forEach(function (k) { if (terms[k].group && terms[k].group !== g) removeFromGroup(k, true); });
+    } else {
+      g = { el: document.createElement("div"), topEl: document.createElement("div"), divider: document.createElement("div"),
+            bottom: ids[0], tops: [], ratio: 0.5 };
+      g.el.className = "agents"; g.topEl.className = "agents-top"; g.divider.className = "ag-divider";
+      container.insertBefore(g.el, unitEl(terms[ids[0]]));   // 佔下方那格原本的位置
+      setupDivider(g);
+    }
+    g.bottom = ids[0]; g.tops = ids.slice(1); g.ratio = clampRatio(ratio);
+    ids.forEach(function (k, j) {
+      var r = terms[k];
+      r.group = g; r.label = lb[j];
+      r.el.classList.add("agent-pane");
+      r.el.style.borderColor = cl[j];
+      paneTitle(r); updatePill(r);
+    });
+    arrangeGroup(g);
+    applyGroupRatio(g);
+    layout();
+  }
+  // 一格離開組（被關掉／重新啟動）：組裡還有別格就重排（下方那格被拿掉時上列第一格補上），沒有就拆掉外框
+  function removeFromGroup(id, noLayout) {
+    var r = terms[id], g = r && r.group;
+    if (!g) return;
+    var rest = groupIds(g).filter(function (k) { return k !== id && terms[k] && terms[k].group === g; });
+    if (g.el.parentNode === container) container.insertBefore(r.el, g.el);
+    detachPane(r);
+    if (!rest.length) g.el.remove();
+    else { g.bottom = rest[0]; g.tops = rest.slice(1); arrangeGroup(g); applyGroupRatio(g); }
+    if (!noLayout) layout();
+  }
+  function ungroupAll(id) {
+    var r = terms[id], g = r && r.group;
+    if (!g) return;
+    groupIds(g).forEach(function (k) {
+      var rk = terms[k];
+      if (!rk || rk.group !== g) return;
+      if (g.el.parentNode === container) container.insertBefore(rk.el, g.el);
+      detachPane(rk);
+    });
+    g.el.remove();
+    layout();
+  }
+  function setupDivider(g) {
+    g.divider.addEventListener("mousedown", function (e) {
+      if (e.button !== 0) return;
+      e.preventDefault(); e.stopPropagation();
+      var rect = g.el.getBoundingClientRect();
+      g.el.classList.add("dragging");
+      function mv(ev) {
+        g.ratio = clampRatio((ev.clientY - rect.top) / rect.height);
+        applyGroupRatio(g);
+        scheduleRefit();
+      }
+      function up() {
+        document.removeEventListener("mousemove", mv, true);
+        document.removeEventListener("mouseup", up, true);
+        g.el.classList.remove("dragging");
+        ws.postMessage("G" + g.bottom + US + g.ratio.toFixed(3));
+        scheduleRefit();
+      }
+      document.addEventListener("mousemove", mv, true);
+      document.addEventListener("mouseup", up, true);
+    });
+    g.divider.addEventListener("dblclick", function () {
+      g.ratio = 0.5; applyGroupRatio(g); scheduleRefit();
+      ws.postMessage("G" + g.bottom + US + "0.5");
+    });
   }
 
   // ── 緩衝區恢復 / 推進 scrollback（1.0.45）──
@@ -485,52 +669,57 @@
     var held = rec.held; rec.held = null;
     if (held) for (var i = 0; i < held.length; i++) term.write(held[i]);
     rec.lastOutMs = performance.now();
+    rec.atBottom = true;   // 恢復後本來就該停在最底（1.2.0，見 settleBottoms）
   }
 
+  // 版面以「顯示單位」為準（1.2.0）：一般分頁＝它的 pane、Multi-Agent＝整個 .agents 外框（裡面各格一律顯示）
   function layout() {
-    var k;
+    var k, i, units = unitList();
+    for (k in terms) if (terms[k].group) terms[k].el.style.display = "flex";
     if (mode === "split" || mode === "columns") {
       container.classList.add("split");
       if (zoomed && !terms[zoomed]) zoomed = null;
-      var n = Object.keys(terms).length;
-      if (zoomed) {
-        // 放大模式：只顯示該 pane（標題仍在，可再點一次還原）
+      var n = units.length, zu = zoomed ? unitEl(terms[zoomed]) : null;
+      if (zu) {
+        // 放大模式：只顯示該 pane（Multi-Agent＝整組；標題仍在，可再點一次還原）
         container.style.gridTemplateColumns = "1fr";
-        for (k in terms) terms[k].el.style.display = (k === zoomed) ? "flex" : "none";
+        for (i = 0; i < n; i++) units[i].style.display = (units[i] === zu) ? "flex" : "none";
       } else if (mode === "columns") {
         // 分欄：全部橫向並排成一列（超寬螢幕用）
         container.style.gridTemplateColumns = "repeat(" + Math.max(1, n) + ", 1fr)";
-        for (k in terms) terms[k].el.style.display = "flex";
+        for (i = 0; i < n; i++) units[i].style.display = "flex";
       } else {
         // 分割：接近正方的 grid
         var cols = n <= 1 ? 1 : Math.ceil(Math.sqrt(n));
         container.style.gridTemplateColumns = "repeat(" + cols + ", 1fr)";
-        for (k in terms) terms[k].el.style.display = "flex";
+        for (i = 0; i < n; i++) units[i].style.display = "flex";
       }
-      updateHighlight();
     } else {
       container.classList.remove("split");
       container.style.gridTemplateColumns = "";
-      for (k in terms) terms[k].el.style.display = (k === active ? "flex" : "none");
+      var au = active && terms[active] ? unitEl(terms[active]) : null;
+      for (i = 0; i < units.length; i++) units[i].style.display = (units[i] === au) ? "flex" : "none";
     }
-    requestAnimationFrame(refit);
+    updateHighlight();
+    requestAnimationFrame(function () { refit(); settleBottoms(); });
   }
 
   function onDrop(targetId) {
     if (mode === "tab" || dragId == null || dragId === targetId) { dragId = null; return; }
-    var dragEl = terms[dragId] && terms[dragId].el;
-    var targetEl = terms[targetId] && terms[targetId].el;
-    if (dragEl && targetEl) container.insertBefore(dragEl, targetEl);
+    var dragEl = terms[dragId] && unitEl(terms[dragId]);
+    var targetEl = terms[targetId] && unitEl(terms[targetId]);
+    if (dragEl && targetEl && dragEl !== targetEl) container.insertBefore(dragEl, targetEl);
     dragId = null;
     layout();
     notifyOrder();
   }
 
   function notifyOrder() {
-    var order = [];
-    for (var i = 0; i < container.children.length; i++) {
-      var c = container.children[i];
-      if (c.dataset && c.dataset.id) order.push(c.dataset.id);
+    var order = [], units = unitList();
+    for (var i = 0; i < units.length; i++) {
+      var c = units[i];
+      if (c.classList.contains("agents")) order = order.concat((c.dataset.ids || "").split(",").filter(Boolean));   // Multi-Agent：各格相鄰、下方那格在前
+      else if (c.dataset && c.dataset.id) order.push(c.dataset.id);
     }
     ws.postMessage("k" + order.join(","));
   }
@@ -648,6 +837,7 @@
     var h = sHits[sIdx], term = rec.term;
     term.select(h.col, h.row, h.len);
     term.scrollToLine(Math.max(0, h.row - Math.floor(term.rows / 2)));   // 命中行置中
+    rec.atBottom = isAtBottom(rec);   // 搜尋跳到的位置＝使用者要看的地方（見 settleBottoms）
     sbCount.textContent = (sIdx + 1) + "/" + sHits.length;
   }
   sbInput.addEventListener("input", function () {
@@ -732,12 +922,25 @@
       }
     } else if (kind === "t") {
       i = rest.indexOf(US); id = rest.slice(0, i);
-      var rt = terms[id]; if (rt) { rt.title = rest.slice(i + 1); rt.titleSpan.textContent = rt.title; }
+      var rt = terms[id]; if (rt) { rt.title = rest.slice(i + 1); paneTitle(rt); }   // Multi-Agent 的 pane 標題仍顯示 Agent 標籤
     } else if (kind === "s") {
       selectId(rest);
+    } else if (kind === "g") {
+      // 1.2.0 Multi-Agent：g{下方id}US{上列比例}US{上列id,…}US{標籤|…}US{外框顏色,…}
+      var gp = rest.split(US);
+      applyGroup(gp[0], gp[1], (gp[2] || "").split(",").filter(Boolean), (gp[3] || "").split("|"), (gp[4] || "").split(","));
+    } else if (kind === "u") {
+      ungroupAll(rest);   // 1.2.0：拆組，各格變回一般分頁
+    } else if (kind === "E") {
+      // 1.2.0 Multi-Agent pane 狀態標籤：E{id}US{0 閒置|1 忙碌|2 有信待送|3 已結束}
+      var e1 = rest.indexOf(US), re = terms[rest.slice(0, e1)];
+      if (re) { re.agentState = parseInt(rest.slice(e1 + 1), 10); updatePill(re); }
     } else if (kind === "x") {
       var rx = terms[rest];
-      if (rx) { clearTimeout(rx.restoreTimer); try { rx.term.dispose(); } catch (e) {} rx.el.remove(); delete terms[rest]; if (active === rest) active = null; layout(); }
+      if (rx) {
+        if (rx.group) removeFromGroup(rest, true);   // Multi-Agent 的一格被關：先從組裡拿出來（其他格重排）
+        clearTimeout(rx.restoreTimer); try { rx.term.dispose(); } catch (e) {} rx.el.remove(); delete terms[rest]; if (active === rest) active = null; layout();
+      }
     } else if (kind === "c") {
       var rc = terms[rest]; if (rc) rc.term.clear();
     } else if (kind === "L") {
@@ -747,7 +950,7 @@
     } else if (kind === "K") {
       // 右側分頁列拖曳後的新順序（1.1.8，C#→JS）：依 id 順序把 pane 元素重排，分割/分欄模式的 pane 才與分頁列一致
       var korder = rest.length ? rest.split(",") : [];
-      for (var ki = 0; ki < korder.length; ki++) { var kr = terms[korder[ki]]; if (kr && kr.el) container.appendChild(kr.el); }
+      for (var ki = 0; ki < korder.length; ki++) { var kr = terms[korder[ki]]; if (kr && kr.el) container.appendChild(unitEl(kr)); }   // Multi-Agent 整組一起移
       layout();
     } else if (kind === "T") {
       try {
@@ -760,6 +963,8 @@
         if (typeof t.imeQuietMs === "number" && t.imeQuietMs >= 0) QUIET_MS = t.imeQuietMs;
         // 關閉程式時每個分頁保留的 scrollback 行數（q…save；AppSettings.RestoreBufferLines）
         if (typeof t.restoreLines === "number" && t.restoreLines >= 0) SAVE_LINES = t.restoreLines;
+        // Multi-Agent pane 狀態標籤文字（隨語言）
+        if (t.agentStates && t.agentStates.length === 4) { cfg.agentStates = t.agentStates; for (var ak in terms) updatePill(terms[ak]); }
         applyTheme();
       } catch (e) {}
     } else if (kind === "q") {
@@ -790,6 +995,7 @@
       else if (act === "down") rs.term.scrollPages(1);
       else if (act === "top") rs.term.scrollToTop();
       else if (act === "bottom") rs.term.scrollToBottom();
+      rs.atBottom = isAtBottom(rs);   // 使用者用「翻頁」捲的＝捲動意圖（見 settleBottoms）
       rs.term.focus();
     } else if (kind === "A") {
       var ra = terms[rest]; if (ra) { ra.term.focus(); ra.term.selectAll(); }
@@ -822,9 +1028,9 @@
     ws.postMessage("z" + ns);
   }, { passive: false, capture: true });
 
-  window.addEventListener("resize", function () { requestAnimationFrame(refit); });
+  window.addEventListener("resize", function () { requestAnimationFrame(function () { refit(); settleBottoms(); }); });
   var rt;
-  new ResizeObserver(function () { clearTimeout(rt); rt = setTimeout(refit, 30); }).observe(container);
+  new ResizeObserver(function () { clearTimeout(rt); rt = setTimeout(function () { refit(); settleBottoms(); }, 30); }).observe(container);
 
   ws.postMessage("ready");
 })();

@@ -7,10 +7,7 @@ namespace AwayTerminal.Services;
 internal static class Diag
 {
     private static readonly object Lock = new();
-    private static readonly string LogPath =
-        System.IO.Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "AwayTerminal", "diag.log");
+    private static readonly string LogPath = System.IO.Path.Combine(AppPaths.DataDir, "diag.log");   // 測試模式跟著 AWAYTERMINAL_DATA_DIR
 
     public static void Log(string msg)
     {

@@ -58,6 +58,19 @@ public sealed class SavedTab
     /// <summary>分頁原始開啟時間（UTC，1.1.4）：恢復分頁時填回 TerminalTab.StartUtc，讓 tooltip 顯示「最初開啟」
     /// 的時刻而非本次恢復的時刻。default(DateTime)＝沒存（舊檔／History）→ 恢復時用當下時間。只有 SavedTabs 用。</summary>
     public DateTime OpenedUtc { get; set; }
+    /// <summary>Multi-Agent 分頁（1.2.0）：同一組各格存同一個代號（空＝一般分頁）。SavedTabs 恢復時依此重新開組。
+    /// History 另用 Type="multiagent"＋Dir 記一筆「Multi-Agent — 資料夾」。</summary>
+    public string AgentKey { get; set; } = "";
+    /// <summary>格號 1～4。</summary>
+    public int AgentIndex { get; set; }
+    /// <summary>組號 1～9（恢復時優先沿用，舊信件的收件人 ID 才對得上）。</summary>
+    public int AgentGroupNumber { get; set; }
+    /// <summary>角色檔名（roles\*.md 去副檔名；空＝None）。</summary>
+    public string AgentRole { get; set; } = "";
+    /// <summary>Coding Agent 種類（圖示 key：claude-code / codex / opencode / geminicli）。</summary>
+    public string AgentBackend { get; set; } = "";
+    /// <summary>上列高度比例。</summary>
+    public double AgentRatio { get; set; } = 0.5;
 }
 
 /// <summary>整個程式的設定與歷史，存成一個 JSON（%LOCALAPPDATA%\AwayTerminal\settings.json）。</summary>
@@ -204,6 +217,11 @@ public sealed class AppSettings
     /// <summary>檔案總管資料夾右鍵選單「用 AwayTerminal 開啟」（1.0.45；HKCU，每次啟動依此登錄／移除，見 ShellIntegration）。</summary>
     public bool ExplorerMenu { get; set; } = true;
 
+    /// <summary>Multi-Agent（1.2.0）：每組投遞幾則就暫停（防 agent 互踢無限迴圈燒 token；右鍵「繼續投遞」歸零）。只在 settings.json 調。</summary>
+    public int MultiAgentMaxMessages { get; set; } = 30;
+    /// <summary>Multi-Agent 設定視窗上次的選擇（資料夾＋四格的啟用／Coding Agent／角色；JSON 字串，下次開視窗帶入）。</summary>
+    public string MultiAgentLastSetup { get; set; } = "";
+
     /// <summary>分頁 scrollback 暫存目錄（%LOCALAPPDATA%\AwayTerminal\restore）。</summary>
     public static string RestoreDir => Path.Combine(Dir, "restore");
 
@@ -222,8 +240,7 @@ public sealed class AppSettings
     public Dictionary<string, JsonElement>? ExtraFields { get; set; }
 
     // ---------- 載入 / 儲存 ----------
-    private static readonly string Dir =
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AwayTerminal");
+    private static readonly string Dir = AppPaths.DataDir;   // 1.2.0：測試模式可用 AWAYTERMINAL_DATA_DIR 改到別的資料夾
     private static readonly string FilePath = Path.Combine(Dir, "settings.json");
     private static readonly JsonSerializerOptions JsonOpts = new() { WriteIndented = true };
 
