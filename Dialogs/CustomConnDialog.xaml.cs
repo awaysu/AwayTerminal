@@ -16,7 +16,7 @@ public partial class CustomConnDialog : Window
 {
     // 可選的圖示（對應 icon\{key}.png）
     private static readonly string[] IconKeys =
-        { "powershell", "ssh-telnet", "adb", "wsl", "git", "docker", "claude-code", "codex", "opencode", "python", "run", "none" };
+        { "powershell", "ssh-telnet", "adb", "wsl", "git", "docker", "claude-code", "codex", "opencode", "geminicli", "python", "run", "none" };
     private const string DefaultIcon = "run";
 
     /// <summary>自動偵測用的已知工具（在 PATH 與常見安裝位置尋找）。</summary>
@@ -39,7 +39,9 @@ public partial class CustomConnDialog : Window
         new("Codex",      new[] { "codex.exe", "codex.cmd" }, "", "codex", true),
         new("WSL",        new[] { "wsl.exe" }, "", "wsl", false),
         new("OpenCode",   new[] { "opencode.exe", "opencode.cmd" }, "", "opencode", true),
-        new("Gemini",     new[] { "gemini.exe", "gemini.cmd" }, "", "run", true),
+        // Gemini CLI（1.1.11）：npm 版（@google/gemini-cli）是 %APPDATA%\npm\gemini.cmd。圖示 icon/geminicli.png；
+        // 1.1.10 以前同一項叫「Gemini」、圖示 run——已加過的靠下面 AutoDetect 的「同路徑」判斷不會再重複加入。
+        new("GeminiCLI",  new[] { "gemini.exe", "gemini.cmd" }, "", "geminicli", true),
         new("Aider",      new[] { "aider.exe", "aider.cmd" }, "", "run", true),
         // ADB：v1.0.18 起不再是內建選單項目，改成一般自訂連線。參數固定 shell；
         // 若機器上接了兩台以上裝置，MainWindow.OpenCustom 會偵測到執行檔是 adb 而
@@ -292,6 +294,7 @@ public partial class CustomConnDialog : Window
             if (_items.Any(c => string.Equals(c.Name, tool.Name, StringComparison.OrdinalIgnoreCase))) continue; // 已存在
             string path = ResolveTool(tool.ExeNames);
             if (string.IsNullOrEmpty(path)) continue;
+            if (_items.Any(c => string.Equals(c.Path, path, StringComparison.OrdinalIgnoreCase))) continue; // 同一支執行檔已在清單（名稱不同，例：舊版加入的 Gemini）
 
             bool viaPs = path.EndsWith(".cmd", StringComparison.OrdinalIgnoreCase)
                       || path.EndsWith(".bat", StringComparison.OrdinalIgnoreCase);

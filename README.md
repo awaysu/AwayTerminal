@@ -20,7 +20,7 @@ Telegram 遠端設定，設定完成後可用手機檢視畫面、下指令與�
 
 ## 特色
 
-- **多 Session 管理**：PowerShell、SSH、Telnet、COM Port、ADB、WSL 與自訂連線（Claude Code、Codex CLI、Open Code…；「自訂 → 自動偵測」一鍵加入）皆以分頁集中管理
+- **多 Session 管理**：PowerShell、SSH、Telnet、COM Port、ADB、WSL 與自訂連線（Claude Code、Codex CLI、Gemini CLI、Open Code…；「自訂 → 自動偵測」一鍵加入）皆以分頁集中管理
 - **AI Coding 友善**：Claude Code / Open Code 可直接以 ConPTY 執行，多行貼上、中文輸入與 scrollback 都已針對其 TUI 調校（並隨附 Windows Terminal 的新版 ConPTY 主機，避免舊版 conhost 造成的輸入殘影與顯示錯位）
 - **常用字串**：儲存常用指令與 AI Prompt，可分群組，在「輸入文字」視窗選取後插入或直接送出（可設定送出後自動按 Enter）
 - **輸入文字**：工具列「輸入文字」開輸入框，中文、多行文字先在一般文字框打好再整段送進目前分頁（避開 AI TUI 逐鍵解析中文輸入的問題）；視窗上方可直接挑常用字串插入或送出，也可「載入文字檔」（UTF-8 / Big5）

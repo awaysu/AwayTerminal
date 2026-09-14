@@ -97,18 +97,19 @@ public partial class MainWindow : Window, IRemoteHost
         return dup;
     }
 
-    /// <summary>這條連線是不是 ClaudeCode / Codex / OpenCode（分頁改用資料夾名稱，見 DirTabName）。
-    /// 先看圖示 key（「自動偵測」加入的就是 claude-code / codex / opencode），使用者換過圖示或
-    /// 手動新增的則看執行檔名。其餘連線（PowerShell / WSL / ADB / Gemini…）維持原本命名。</summary>
+    /// <summary>這條連線是不是 ClaudeCode / Codex / OpenCode / GeminiCLI（分頁改用資料夾名稱，見 DirTabName）。
+    /// 先看圖示 key（「自動偵測」加入的就是 claude-code / codex / opencode / geminicli），使用者換過圖示或
+    /// 手動新增的則看執行檔名。其餘連線（PowerShell / WSL / ADB / Aider…）維持原本命名。</summary>
     private static bool UsesDirTitle(string path, string icon)
     {
-        if (icon is "claude-code" or "opencode" or "codex") return true;
+        if (icon is "claude-code" or "opencode" or "codex" or "geminicli") return true;
         try
         {
             string exe = Path.GetFileNameWithoutExtension(path);
             return exe.Contains("claude", StringComparison.OrdinalIgnoreCase)
                 || exe.Contains("codex", StringComparison.OrdinalIgnoreCase)
-                || exe.Contains("opencode", StringComparison.OrdinalIgnoreCase);
+                || exe.Contains("opencode", StringComparison.OrdinalIgnoreCase)
+                || exe.Contains("gemini", StringComparison.OrdinalIgnoreCase);
         }
         catch { return false; }
     }
