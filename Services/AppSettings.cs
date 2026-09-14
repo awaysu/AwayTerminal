@@ -219,8 +219,7 @@ public sealed class AppSettings
 
     /// <summary>Multi-Agent（1.2.0）：每組投遞幾則就暫停（防 agent 互踢無限迴圈燒 token；右鍵「繼續投遞」歸零）。只在 settings.json 調。</summary>
     public int MultiAgentMaxMessages { get; set; } = 30;
-    /// <summary>Multi-Agent 設定視窗上次的選擇（資料夾＋四格的啟用／Coding Agent／角色；JSON 字串，下次開視窗帶入）。</summary>
-    public string MultiAgentLastSetup { get; set; } = "";
+    // 註：1.2.0 開發期曾有 MultiAgentLastSetup（設定視窗記上次的選擇）；使用者要求每格固定預設後拿掉，舊檔的值由 ExtraFields 原樣保留、不再使用。
 
     /// <summary>分頁 scrollback 暫存目錄（%LOCALAPPDATA%\AwayTerminal\restore）。</summary>
     public static string RestoreDir => Path.Combine(Dir, "restore");

@@ -1,7 +1,7 @@
 <Window x:Class="AwayTerminal.Dialogs.MultiAgentDialog"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Multi-Agent" Width="720" SizeToContent="Height"
+        Title="代理團隊" Width="720" SizeToContent="Height"
         Background="#2D2D30" WindowStartupLocation="CenterOwner"
         ResizeMode="NoResize" ShowInTaskbar="False">
     <Window.Resources>
@@ -34,7 +34,7 @@
     </Window.Resources>
 
     <StackPanel Margin="16,14,16,14">
-        <!-- 專案資料夾（四個 agent 共用；既有的組唯讀）-->
+        <!-- 專案資料夾（所有 agent 共用；開視窗前已選好＝唯讀，新開的組可按「瀏覽…」換；既有的組不能換）-->
         <TextBlock x:Name="FolderLabel" Text="專案資料夾" Margin="0,0,0,4" />
         <DockPanel Margin="0,0,0,10">
             <Button x:Name="BrowseBtn" DockPanel.Dock="Right" Content="瀏覽…" Width="84" Height="27" Margin="8,0,0,0" Click="Browse_Click" />

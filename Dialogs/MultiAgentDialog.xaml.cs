@@ -1,5 +1,4 @@
 using System.IO;
-using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -18,46 +17,64 @@ public sealed class AgentSlotSetup
     public string Role { get; set; } = "";
 }
 
-/// <summary>設定視窗的結果（新開一組／既有組補開、重新啟動）。</summary>
+/// <summary>設定視窗的結果（新開一組／既有的組改設定）。</summary>
 public sealed class MultiAgentSetup
 {
     public string Dir { get; set; } = "";
     public AgentSlotSetup[] Slots { get; set; } = { new(), new(), new(), new() };
-    /// <summary>既有組：要（重新）啟動的格號 1～4（新勾啟用的、按了「重新啟動」的）。新開的組不用。</summary>
+    /// <summary>既有組：要（重新）啟動的格號 1～4（新勾啟用的、改了 CLI／角色的、按了「重新啟動」的）。新開的組不用。</summary>
     public List<int> Launch { get; set; } = new();
+    /// <summary>既有組：取消勾選「啟用」＝要關掉的格號。</summary>
+    public List<int> Close { get; set; } = new();
 }
 
 /// <summary>
-/// New → Multi-Agent 的設定視窗（1.2.0）。上方專案資料夾；四格（2×2）各有：啟用（格 1 一定啟用）、Agent ID（程式產生、不可改）、
-/// Coding Agent（只列這台電腦找得到的：ClaudeCode／Codex／OpenCode／GeminiCLI）、Agent Role（None＋roles\*.md）。
-/// 預設格 1、2 啟用（Product Manager／Software Engineer），格 3、4 停用（Software Architect／QA Engineer）；上次的選擇記在
-/// AppSettings.MultiAgentLastSetup。<para>分頁右鍵「Multi-Agent 設定…」開同一個視窗：執行中的格唯讀、沒啟用的格可以勾起來補開、
-/// 已結束的格可以改 CLI／角色後「重新啟動」。</para>
+/// New → 代理團隊（Multi-Agent）的設定視窗（1.2.0）。開視窗前已經選好專案資料夾（和其他「啟動前選擇資料夾」的連線一樣先跳資料夾選擇）；
+/// 四格（2×2）各有：啟用（格 1 一定啟用）、Agent ID（Agent-x1～x4，組號開組時才決定）、Coding Agent（只列這台電腦找得到的）、
+/// Agent Role（None＋roles\*.md）。每次都從預設開始：格 1～4 的 CLI 依序 ClaudeCode／Codex／OpenCode／GeminiCLI（找不到就用清單第一個），
+/// 角色依序 PM／SE／Architect／QA，格 1、2 啟用。沒勾「啟用」的格文字一律灰色。
+/// <para>分頁右鍵「代理團隊設定…」開同一個視窗改既有的組：勾起沒啟用的格＝啟動；取消勾選執行中的格＝關掉（格 1 不能關）；
+/// 改了 CLI 或角色＝重新啟動那一格（CLI 的角色是啟動時注入的）；「重新啟動」鈕＝設定不變也重開。會結束執行中 agent 的變更，按「套用」時先確認。</para>
 /// </summary>
 public partial class MultiAgentDialog : Window
 {
     private sealed record Choice(string Key, string Text, string? Icon);
 
+    private enum SlotState { NotRunning, Running, Exited }
+    private enum SlotAction { None, Start, Restart, Close }
+
     private sealed class SlotUi
     {
         public CheckBox Enable = null!;
         public TextBlock Id = null!;
+        public TextBlock CliLabel = null!;
+        public TextBlock RoleLabel = null!;
         public ComboBox Backend = null!;
         public ComboBox Role = null!;
         public TextBlock Status = null!;
         public Button Restart = null!;
-        public bool Locked;       // 既有組：執行中＝唯讀
-        public bool Exited;       // 既有組：已結束
-        public bool WantRestart;  // 已結束的格按了「重新啟動」
+        public Brush IdBrush = null!;
+        public SlotState State;              // 既有組：開視窗當下這格的狀態
+        public string OrigBackend = "";      // 既有組：執行中／已結束那格目前的 CLI 與角色（改了＝重新啟動）
+        public string OrigRole = "";
+        public bool WantRestart;             // 按了「重新啟動」
     }
+
+    /// <summary>每格預設的 Coding Agent（格 1～4）。</summary>
+    private static readonly string[] DefaultBackends = { "claude-code", "codex", "opencode", "geminicli" };
+
+    private static readonly Brush NormalText = Frozen(0xE0, 0xE0, 0xE0);
+    private static readonly Brush GrayText = Frozen(0x6E, 0x6E, 0x6E);   // 沒勾「啟用」的格
+    private static readonly Brush StatusText = Frozen(0x9A, 0x9A, 0x9A);
 
     private readonly AgentGroup? _group;
     private readonly SlotUi[] _ui = new SlotUi[4];
     private readonly List<Choice> _backends;
+    private bool _ready;   // 初始化完成前（設 ItemsSource／預選）的 SelectionChanged 不處理
 
     public MultiAgentSetup? Result { get; private set; }
 
-    public MultiAgentDialog(string? dir, AgentGroup? existing)
+    public MultiAgentDialog(string dir, AgentGroup? existing)
     {
         InitializeComponent();
         _group = existing;
@@ -71,22 +88,20 @@ public partial class MultiAgentDialog : Window
         CancelBtn.Content = Loc.T("ma.dlgCancel");
         HintText.Text = Loc.T("ma.dlgHint");
 
-        // 這台電腦找得到的 Coding Agent（沿用自訂連線或自動偵測；見 ICodingAgentAdapter.Resolve）
+        // 這台電腦找得到的 Coding Agent（沿用自訂連線或自動偵測；見 ICodingAgentAdapter.Resolve），順序 ClaudeCode／Codex／OpenCode／GeminiCLI
         _backends = AdapterRegistry.All.Where(a => a.Resolve() != null)
             .Select(a => new Choice(a.Key, a.DisplayName, a.Key + ".png")).ToList();
 
-        var saved = LoadLastSetup();
-        if (existing != null)
-        {
-            FolderBox.Text = existing.Dir;
-            FolderBox.IsReadOnly = true;
-            BrowseBtn.IsEnabled = false;
-        }
-        else FolderBox.Text = dir ?? saved?.Dir ?? "";
+        // 資料夾在開視窗前就選好了；新開的組要換就按「瀏覽…」，既有的組不能換
+        FolderBox.Text = existing?.Dir ?? dir;
+        FolderBox.IsReadOnly = true;
+        BrowseBtn.IsEnabled = existing == null;
 
-        for (int i = 0; i < 4; i++) SlotGrid.Children.Add(BuildSlot(i, saved));
+        for (int i = 0; i < 4; i++) SlotGrid.Children.Add(BuildSlot(i));
         FillRoles();
-        for (int i = 0; i < 4; i++) ApplyInitial(i, saved);
+        for (int i = 0; i < 4; i++) ApplyInitial(i);
+        _ready = true;
+        for (int i = 0; i < 4; i++) RefreshSlot(i);
 
         if (_backends.Count == 0 && existing == null)
         {
@@ -96,60 +111,59 @@ public partial class MultiAgentDialog : Window
         }
     }
 
+    private static SolidColorBrush Frozen(byte r, byte g, byte b)
+    {
+        var br = new SolidColorBrush(Color.FromRgb(r, g, b));
+        br.Freeze();
+        return br;
+    }
+
     private static string ShortName(string dir)
     {
         try { var n = Path.GetFileName(dir.TrimEnd('\\', '/')); return string.IsNullOrEmpty(n) ? dir : n; }
         catch { return dir; }
     }
 
-    private static MultiAgentSetup? LoadLastSetup()
-    {
-        try
-        {
-            string json = AppSettings.Current.MultiAgentLastSetup;
-            if (string.IsNullOrWhiteSpace(json)) return null;
-            var s = JsonSerializer.Deserialize<MultiAgentSetup>(json);
-            return s?.Slots is { Length: 4 } ? s : null;
-        }
-        catch { return null; }
-    }
-
     // ---------- 一格的畫面 ----------
-    private FrameworkElement BuildSlot(int i, MultiAgentSetup? saved)
+    private FrameworkElement BuildSlot(int i)
     {
         var slotColor = (Color)ColorConverter.ConvertFromString(SlotColor(i + 1));
-        var ui = _ui[i] = new SlotUi();
+        var ui = _ui[i] = new SlotUi { IdBrush = new SolidColorBrush(slotColor) };
         var panel = new StackPanel();
+        int idx = i;
 
         var head = new DockPanel { Margin = new Thickness(0, 0, 0, 8) };
         ui.Enable = new CheckBox { Content = Loc.T("ma.dlgEnable"), Margin = new Thickness(8, 0, 0, 0) };
         DockPanel.SetDock(ui.Enable, Dock.Right);
         head.Children.Add(ui.Enable);
-        ui.Id = new TextBlock { FontSize = 15, FontWeight = FontWeights.Bold, Foreground = new SolidColorBrush(slotColor) };
+        ui.Id = new TextBlock { FontSize = 15, FontWeight = FontWeights.Bold, Foreground = ui.IdBrush };
         head.Children.Add(ui.Id);
         panel.Children.Add(head);
 
-        panel.Children.Add(new TextBlock { Text = "Coding Agent", Margin = new Thickness(0, 0, 0, 3) });
+        ui.CliLabel = new TextBlock { Text = "Coding Agent", Margin = new Thickness(0, 0, 0, 3) };
+        panel.Children.Add(ui.CliLabel);
         ui.Backend = new ComboBox { Margin = new Thickness(0, 0, 0, 8), ItemTemplate = ChoiceTemplate(withIcon: true) };
         panel.Children.Add(ui.Backend);
 
-        panel.Children.Add(new TextBlock { Text = "Agent Role", Margin = new Thickness(0, 0, 0, 3) });
+        ui.RoleLabel = new TextBlock { Text = "Agent Role", Margin = new Thickness(0, 0, 0, 3) };
+        panel.Children.Add(ui.RoleLabel);
         ui.Role = new ComboBox { Margin = new Thickness(0, 0, 0, 6), ItemTemplate = ChoiceTemplate(withIcon: false) };
         panel.Children.Add(ui.Role);
 
-        // 狀態列（執行中／已結束＋重新啟動）只有既有的組才有；新開的組不留空白
+        // 狀態列（執行中／已結束／未啟用＋套用後會怎樣＋重新啟動）只有既有的組才有；新開的組不留空白
         var foot = new DockPanel { Height = 26, Visibility = _group == null ? Visibility.Collapsed : Visibility.Visible };
         ui.Restart = new Button { Content = Loc.T("ma.dlgRestart"), Padding = new Thickness(10, 0, 10, 0), Visibility = Visibility.Collapsed };
         DockPanel.SetDock(ui.Restart, Dock.Right);
-        int idx = i;
-        ui.Restart.Click += (_, _) => ToggleRestart(idx);
+        ui.Restart.Click += (_, _) => { _ui[idx].WantRestart = !_ui[idx].WantRestart; RefreshSlot(idx); };
         foot.Children.Add(ui.Restart);
-        ui.Status = new TextBlock { Foreground = new SolidColorBrush(Color.FromRgb(0x9A, 0x9A, 0x9A)), FontSize = 12 };
+        ui.Status = new TextBlock { Foreground = StatusText, FontSize = 12 };
         foot.Children.Add(ui.Status);
         panel.Children.Add(foot);
 
-        ui.Enable.Checked += (_, _) => UpdateEnabled(idx);
-        ui.Enable.Unchecked += (_, _) => UpdateEnabled(idx);
+        ui.Enable.Checked += (_, _) => RefreshSlot(idx);
+        ui.Enable.Unchecked += (_, _) => RefreshSlot(idx);
+        ui.Backend.SelectionChanged += (_, _) => RefreshSlot(idx);
+        ui.Role.SelectionChanged += (_, _) => RefreshSlot(idx);
 
         return new Border
         {
@@ -215,85 +229,98 @@ public partial class MultiAgentDialog : Window
         return false;
     }
 
-    private void ApplyInitial(int i, MultiAgentSetup? saved)
+    private static string KeyOf(ComboBox box) => (box.SelectedItem as Choice)?.Key ?? "";
+
+    /// <summary>格 index 的預設 CLI；這台找不到就用清單第一個。</summary>
+    private static void SelectDefaultBackend(ComboBox box, int index)
+    {
+        if (!Select(box, DefaultBackends[index - 1]) && box.Items.Count > 0) box.SelectedIndex = 0;
+    }
+
+    private void ApplyInitial(int i)
     {
         var ui = _ui[i];
         int index = i + 1;
-        string[] defaultRoles = RoleLibrary.BuiltInRoles;
+        string defaultRole = RoleLibrary.BuiltInRoles[i];
+        ui.Id.Text = $"Agent-x{index}";   // 組號開組時才決定（1～9）；既有的組也照這樣顯示，與新開時一致
 
-        if (_group != null)
+        if (_group == null)
         {
-            var slot = _group.Slots[i];
-            ui.Id.Text = slot.AgentId;
-            var list = new List<Choice>(_backends);
-            if (!string.IsNullOrEmpty(slot.Backend) && !list.Any(c => c.Key == slot.Backend))
-                list.Add(new Choice(slot.Backend, slot.BackendName, slot.Backend + ".png"));   // 執行中的 CLI 這台已找不到也照樣顯示
-            ui.Backend.ItemsSource = list;
-            if (slot.Tab != null)
-            {
-                Select(ui.Backend, slot.Backend);
-                Select(ui.Role, slot.Role);
-                ui.Enable.IsChecked = true;
-                ui.Enable.IsEnabled = false;
-                if (slot.Tab.Session != null)
-                {
-                    ui.Locked = true;
-                    ui.Backend.IsEnabled = ui.Role.IsEnabled = false;
-                    ui.Status.Text = Loc.T("ma.dlgRunning");
-                }
-                else
-                {
-                    ui.Exited = true;
-                    ui.Status.Text = Loc.T("ma.stateExited");
-                    ui.Restart.Visibility = Visibility.Visible;
-                    ui.Backend.IsEnabled = ui.Role.IsEnabled = false;   // 按「重新啟動」才能改
-                }
-            }
-            else
-            {
-                if (!Select(ui.Backend, slot.Backend) && list.Count > 0) ui.Backend.SelectedIndex = DefaultBackendIndex(index, list);
-                if (!Select(ui.Role, string.IsNullOrEmpty(slot.Role) && !slot.Enabled ? defaultRoles[i] : slot.Role)) Select(ui.Role, defaultRoles[i]);
-                ui.Enable.IsChecked = false;
-                ui.Status.Text = Loc.T("ma.dlgNotRunning");
-                UpdateEnabled(i);
-            }
+            ui.Backend.ItemsSource = _backends;
+            SelectDefaultBackend(ui.Backend, index);
+            Select(ui.Role, defaultRole);
+            ui.Enable.IsChecked = index <= 2;
+            ui.Enable.IsEnabled = index != 1;   // 格 1（下方全寬那一格）一定啟用
             return;
         }
 
-        // 新開一組：組號按確定時才決定 → 先顯示 Agent-?1
-        ui.Id.Text = $"Agent-?{index}";
-        ui.Backend.ItemsSource = _backends;
-        var ss = saved?.Slots[i];
-        if (ss == null || !Select(ui.Backend, ss.Backend))
-            if (_backends.Count > 0) ui.Backend.SelectedIndex = DefaultBackendIndex(index, _backends);
-        if (ss == null || !Select(ui.Role, ss.Role)) Select(ui.Role, defaultRoles[i]);
-        ui.Enable.IsChecked = index == 1 || (ss?.Enabled ?? index == 2);
-        if (index == 1) ui.Enable.IsEnabled = false;   // 格 1 一定啟用（下方全寬那一格）
-        UpdateEnabled(i);
+        var slot = _group.Slots[i];
+        var list = new List<Choice>(_backends);
+        if (!string.IsNullOrEmpty(slot.Backend) && !list.Any(c => c.Key == slot.Backend))
+            list.Add(new Choice(slot.Backend, slot.BackendName, slot.Backend + ".png"));   // 用過的 CLI 這台已找不到也照樣顯示
+        ui.Backend.ItemsSource = list;
+        if (slot.Tab != null)
+        {
+            ui.State = slot.Tab.Session != null ? SlotState.Running : SlotState.Exited;
+            ui.OrigBackend = slot.Backend;
+            ui.OrigRole = slot.Role;
+            Select(ui.Backend, slot.Backend);
+            Select(ui.Role, slot.Role);
+            ui.Enable.IsChecked = true;
+            ui.Enable.IsEnabled = index != 1;   // 格 1 不能關（其他格取消勾選＝套用後關掉那個 agent）
+        }
+        else
+        {
+            ui.State = SlotState.NotRunning;
+            // 從沒設定過＝預設；之前開過又被關掉的格＝沿用它上次的 CLI／角色
+            if (string.IsNullOrEmpty(slot.Backend) || !Select(ui.Backend, slot.Backend)) SelectDefaultBackend(ui.Backend, index);
+            if (string.IsNullOrEmpty(slot.Backend) || !Select(ui.Role, slot.Role)) Select(ui.Role, defaultRole);
+            ui.Enable.IsChecked = false;
+        }
     }
 
-    /// <summary>預設 CLI：有 ClaudeCode 優先給格 1、有 Codex 優先給格 2，其餘＝清單第一個。</summary>
-    private static int DefaultBackendIndex(int index, List<Choice> list)
-    {
-        string want = index == 1 ? "claude-code" : index == 2 ? "codex" : "";
-        int k = list.FindIndex(c => c.Key == want);
-        return k >= 0 ? k : 0;
-    }
-
-    private void UpdateEnabled(int i)
+    /// <summary>既有組這格按「套用」後會怎樣。</summary>
+    private SlotAction ActionOf(int i)
     {
         var ui = _ui[i];
-        if (ui.Locked || ui.Exited) return;
+        bool on = ui.Enable.IsChecked == true;
+        if (ui.State == SlotState.NotRunning) return on ? SlotAction.Start : SlotAction.None;
+        if (!on) return SlotAction.Close;
+        bool changed = !string.Equals(KeyOf(ui.Backend), ui.OrigBackend, StringComparison.OrdinalIgnoreCase)
+                    || !string.Equals(KeyOf(ui.Role), ui.OrigRole, StringComparison.OrdinalIgnoreCase);
+        return changed || ui.WantRestart ? SlotAction.Restart : SlotAction.None;
+    }
+
+    /// <summary>依「啟用」與目前的選擇更新這一格：可不可以改、灰字、狀態列。</summary>
+    private void RefreshSlot(int i)
+    {
+        if (!_ready) return;
+        var ui = _ui[i];
         bool on = ui.Enable.IsChecked == true;
         ui.Backend.IsEnabled = ui.Role.IsEnabled = on;
-    }
+        // 下拉的文字被黑字樣式固定住（見 XAML 註解），停用時改用半透明呈現灰階
+        ui.Backend.Opacity = ui.Role.Opacity = on ? 1.0 : 0.45;
+        ui.Enable.Foreground = ui.CliLabel.Foreground = ui.RoleLabel.Foreground = on ? NormalText : GrayText;
+        ui.Id.Foreground = on ? ui.IdBrush : GrayText;
 
-    private void ToggleRestart(int i)
-    {
-        var ui = _ui[i];
-        ui.WantRestart = !ui.WantRestart;
-        ui.Backend.IsEnabled = ui.Role.IsEnabled = ui.WantRestart;
-        ui.Restart.Content = ui.WantRestart ? Loc.T("ma.dlgRestartOn") : Loc.T("ma.dlgRestart");
+        if (_group == null) return;
+        ui.Restart.Visibility = on && ui.State != SlotState.NotRunning ? Visibility.Visible : Visibility.Collapsed;
+        ui.Restart.Content = Loc.T(ui.WantRestart ? "ma.dlgRestartOn" : "ma.dlgRestart");
+        string status = ui.State switch
+        {
+            SlotState.Running => Loc.T("ma.dlgRunning"),
+            SlotState.Exited => Loc.T("ma.dlgExited"),
+            _ => Loc.T(on ? "ma.dlgNotStarted" : "ma.dlgNotRunning")
+        };
+        string? will = ActionOf(i) switch
+        {
+            SlotAction.Start => "ma.dlgWillStart",
+            SlotAction.Restart => "ma.dlgWillRestart",
+            SlotAction.Close => "ma.dlgWillClose",
+            _ => null
+        };
+        ui.Status.Text = will == null ? status : status + Loc.T(will);
+        ui.Status.Foreground = on ? StatusText : GrayText;
     }
 
     // ---------- 按鈕 ----------
@@ -336,27 +363,34 @@ public partial class MultiAgentDialog : Window
         }
 
         var result = new MultiAgentSetup { Dir = _group?.Dir ?? dir };
+        var endsConversation = new List<string>();   // 執行中、套用後會關閉或重新啟動的 agent（先確認）
         for (int i = 0; i < 4; i++)
         {
             var ui = _ui[i];
             bool enabled = ui.Enable.IsChecked == true;
-            string backend = (ui.Backend.SelectedItem as Choice)?.Key ?? "";
-            string role = (ui.Role.SelectedItem as Choice)?.Key ?? "";
-            bool needsBackend = _group == null ? enabled : (ui.WantRestart || (!ui.Locked && !ui.Exited && enabled));
-            if (needsBackend && string.IsNullOrEmpty(backend))
+            string backend = KeyOf(ui.Backend);
+            var act = _group == null ? (enabled ? SlotAction.Start : SlotAction.None) : ActionOf(i);
+            if ((act is SlotAction.Start or SlotAction.Restart) && string.IsNullOrEmpty(backend))
             {
                 Warn(string.Format(Loc.T("ma.dlgNeedBackend"), ui.Id.Text));
                 return;
             }
-            result.Slots[i] = new AgentSlotSetup { Enabled = enabled, Backend = backend, Role = role };
-            if (_group != null && (ui.WantRestart || (!ui.Locked && !ui.Exited && enabled))) result.Launch.Add(i + 1);
+            result.Slots[i] = new AgentSlotSetup { Enabled = enabled, Backend = backend, Role = KeyOf(ui.Role) };
+            if (_group == null) continue;
+            if (act is SlotAction.Start or SlotAction.Restart) result.Launch.Add(i + 1);
+            if (act == SlotAction.Close) result.Close.Add(i + 1);
+            if (ui.State == SlotState.Running && (act is SlotAction.Close or SlotAction.Restart))
+                endsConversation.Add(string.Format(Loc.T(act == SlotAction.Close ? "ma.applyClose" : "ma.applyRestart"),
+                    _group.Slots[i].Label));   // 用 pane 標題上的全名（Agent-12 · Software Engineer · Codex），對得上是哪一格
         }
 
-        if (_group == null)
+        if (_group != null)
         {
-            try { AppSettings.Current.MultiAgentLastSetup = JsonSerializer.Serialize(result); AppSettings.Current.Save(); } catch { }
+            if (result.Launch.Count == 0 && result.Close.Count == 0) { DialogResult = false; return; }   // 沒有要變動的 → 當作取消
+            if (endsConversation.Count > 0 &&
+                MessageBox.Show(this, string.Format(Loc.T("ma.applyAsk"), string.Join("\n", endsConversation)), Loc.T("ma.title"),
+                    MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
         }
-        else if (result.Launch.Count == 0) { DialogResult = false; return; }   // 既有組沒有要變動的 → 當作取消
 
         Result = result;
         DialogResult = true;

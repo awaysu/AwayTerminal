@@ -618,7 +618,7 @@ public partial class MainWindow : Window, IRemoteHost
                     CloseKey = e.CloseKey, CloseCount = e.CloseCount
                 }, string.IsNullOrWhiteSpace(e.Dir) ? null : e.Dir);   // 遠端開啟帶桌面目錄、不跳資料夾框
                 break;
-            case "multiagent":   // 1.2.0：開設定視窗、預填上次的資料夾（不在了就空白）
+            case "multiagent":   // 1.2.0：用上次的資料夾直接開設定視窗（資料夾不在了＝先跳資料夾選擇）
                 OpenMultiAgent(Directory.Exists(e.Dir) ? e.Dir : null);
                 break;
         }

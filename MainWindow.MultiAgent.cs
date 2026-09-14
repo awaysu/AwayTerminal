@@ -71,11 +71,13 @@ public partial class MainWindow
     // ---------- 開一組 ----------
     private void OpenMultiAgent_Click(object sender, RoutedEventArgs e) => OpenMultiAgent(null);
 
-    /// <summary>New → Multi-Agent（dir 給定＝紀錄重開，設定視窗預填該資料夾）。</summary>
+    /// <summary>New → 代理團隊：先選專案資料夾（和其他「啟動前選擇資料夾」的連線一樣）→ 設定視窗。dir 給定＝紀錄重開，直接開設定視窗。</summary>
     private void OpenMultiAgent(string? dir)
     {
         if (DeferUntilWebReady(() => OpenMultiAgent(dir), "OpenMultiAgent")) return;
         if (AgentGroup.NextFreeNumber(_agentGroups) == 0) { Info(Loc.T("ma.tooMany")); return; }
+        dir ??= PickWorkDir(Loc.T("ma.pickDir"));
+        if (dir == null) { Web.Focus(); return; }
         var dlg = new MultiAgentDialog(dir, null) { Owner = this };
         if (dlg.ShowDialog() != true || dlg.Result is not { } setup) { Web.Focus(); return; }
         if (OpenAgentGroup(setup) == null) return;
@@ -450,11 +452,12 @@ public partial class MainWindow
     }
 
     // ---------- 分頁右鍵 ----------
-    /// <summary>「Multi-Agent 設定…」：補開沒啟用的格、重新啟動已結束的格（可改 CLI／角色）。</summary>
+    /// <summary>「代理團隊設定…」：啟動沒啟用的格、關掉取消勾選的格、改了 CLI／角色（或按「重新啟動」）的格重新啟動。
+    /// 會結束執行中 agent 的變更，設定視窗按「套用」時已經確認過。</summary>
     private void AgentSetup_Click(object sender, RoutedEventArgs e)
     {
         if (TabOf(sender)?.Agent?.Group is not { } g) return;
-        var dlg = new MultiAgentDialog(null, g) { Owner = this };
+        var dlg = new MultiAgentDialog(g.Dir, g) { Owner = this };
         if (dlg.ShowDialog() != true || dlg.Result is not { } r) { Web.Focus(); return; }
         ApplyAgentSetup(g, r);
     }
@@ -462,20 +465,31 @@ public partial class MainWindow
     private void ApplyAgentSetup(AgentGroup g, MultiAgentSetup r)
     {
         if (!_agentGroups.Contains(g)) return;
-        var launch = r.Launch.Where(i => i is >= 1 and <= 4).Distinct().OrderBy(i => i).ToList();
+        var close = r.Close.Where(i => i is >= 1 and <= 4).Distinct().ToList();
+        var launch = r.Launch.Where(i => i is >= 1 and <= 4 && !close.Contains(i)).Distinct().OrderBy(i => i).ToList();
+        bool wasActive = _active?.Agent?.Group == g;
         var fresh = new List<AgentSlot>();
+        var closed = new List<string>();
         bool rosterChanged = false;
         _suspendRelink = g;
         try
         {
+            foreach (int i in close)
+            {
+                var s = g.Slots[i - 1];
+                if (s.Tab != null) RemoveTabSilently(s.Tab);   // 執行中＝結束那個 CLI；已結束＝收掉那一格
+                rosterChanged |= s.Enabled;
+                s.Enabled = false;
+                s.Queue.Clear();
+                closed.Add(s.AgentId);
+            }
             foreach (int i in launch)
             {
                 var s = g.Slots[i - 1];
                 var ss = r.Slots[i - 1];
                 if (s.Tab != null)
                 {
-                    if (s.Tab.Session != null) continue;   // 執行中的不動
-                    RemoveTabSilently(s.Tab);               // 已結束：關掉舊分頁、同一格重開
+                    RemoveTabSilently(s.Tab);   // 執行中或已結束：關掉舊分頁、同一格用新設定重開（角色是啟動時注入的，改角色也得重開）
                     rosterChanged |= s.Backend != ss.Backend || s.Role != ss.Role;
                 }
                 else rosterChanged = true;
@@ -497,6 +511,8 @@ public partial class MainWindow
         foreach (var s in fresh) LaunchSlot(g, s);
         if (!g.Running.Any()) { DisbandAgentGroup(g); return; }
         LinkAgentGroup(g);
+        // 關掉的那格若是作用中分頁，RemoveTabSilently 會跳到清單裡的下一個分頁（可能是別的分頁）→ 拉回這一組
+        if (wasActive && _active?.Agent?.Group != g && g.RowTab != null) SelectTab(FocusTargetOf(g.RowTab));
 
         // 通知 PM（沒有 PM 角色就是代表列那一格）：隊友名單變了、角色檔已更新（它是啟動時讀的，要它重讀 Runtime Context）
         if (rosterChanged && g.Bus != null)
@@ -508,7 +524,7 @@ public partial class MainWindow
                     $"The team roster changed. Enabled agents now: {Roster(g)}.\n\n" +
                     $"Your role file {pm.RoleFile} has been regenerated. Re-read its Runtime Context section before assigning more work.");
         }
-        Diag.Log($"ma setup team {g.Number}: launched {string.Join(",", fresh.Select(s => s.AgentId))}");
+        Diag.Log($"ma setup team {g.Number}: launched {string.Join(",", fresh.Select(s => s.AgentId))} closed {string.Join(",", closed)}");
     }
 
     /// <summary>「暫停投遞／繼續投遞」：繼續＝訊息數歸零、補送暫停期間收到的信。</summary>
