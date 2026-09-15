@@ -147,6 +147,8 @@
                                         <Separator />
                                         <MenuItem Header="{Binding Path=[ma.menuPauseItem], Source={x:Static loc:LocProxy.Instance}}" Tag="pause" Click="AgentDelivery_Click" />
                                     </MenuItem>
+                                    <MenuItem Header="{Binding Path=[ma.menuStop], Source={x:Static loc:LocProxy.Instance}}" Click="AgentStop_Click"
+                                              Visibility="{Binding AgentRowVisibility}" />
                                     <MenuItem Header="{Binding Path=[ma.menuOpenBus], Source={x:Static loc:LocProxy.Instance}}" Click="AgentOpenBus_Click"
                                               Visibility="{Binding AgentRowVisibility}" />
                                     <Separator />

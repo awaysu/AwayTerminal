@@ -644,7 +644,7 @@ public partial class MainWindow : Window, IRemoteHost
             imeQuietMs = s.ImeQuietMs,   // claude 分頁靜止閘門門檻（見 AppSettings.ImeQuietMs / terminal.js）
             restoreLines = s.RestoreBufferLines,   // 關閉時每個分頁保留的 scrollback 行數（q…save；1.0.45）
             // 1.2.0 Multi-Agent pane 狀態標籤（E 協定 0～3）
-            agentStates = new[] { Loc.T("ma.stateIdle"), Loc.T("ma.stateBusy"), Loc.T("ma.stateQueued"), Loc.T("ma.stateExited") }
+            agentStates = new[] { Loc.T("ma.stateIdle"), Loc.T("ma.stateBusy"), Loc.T("ma.stateQueued"), Loc.T("ma.stateExited"), Loc.T("ma.stateBusyQueued") }
         });
         PostToWeb("T" + json);
     }

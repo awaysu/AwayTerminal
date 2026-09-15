@@ -403,14 +403,16 @@ public partial class MainWindow
         if (limit) FlashIfInactive();
     }
 
-    /// <summary>pane 標題的狀態標籤（E 協定；只在變了才送）：0 閒置、1 忙碌、2 有信待投遞、3 已結束。</summary>
+    /// <summary>pane 標題的狀態標籤（E 協定；只在變了才送）：0 閒置、1 忙碌、2 有信待投遞、3 已結束、4 忙碌且有信待投遞。
+    /// 4 是使用者回報後補的：信只在閒置時投遞，原本忙碌蓋掉「有信待送」，PM 寄了暫停信、對方沒停也看不出信還在排隊。</summary>
     private void PostAgentState(AgentGroup g)
     {
         if (!_webReady) return;
         foreach (var s in g.Running)
         {
             var tab = s.Tab!;
-            int st = tab.Session == null ? 3 : tab.Status == TermStatus.Busy ? 1 : s.Queue.Count > 0 ? 2 : 0;
+            bool queued = s.Queue.Count > 0;
+            int st = tab.Session == null ? 3 : tab.Status == TermStatus.Busy ? (queued ? 4 : 1) : queued ? 2 : 0;
             if (st == s.PostedState) continue;
             s.PostedState = st;
             PostToWeb("E" + tab.Id + US + st);
@@ -562,6 +564,48 @@ public partial class MainWindow
         }
         Diag.Log($"ma delivery team {g.Number}: limit={g.LimitText} count={g.MessageCount} pending={g.PendingCount}");
         g.RowTab?.RaiseAgentState();
+    }
+
+    private const int StopClearDelayMs = 1000, StopPromptDelayMs = 1500;
+
+    /// <summary>右鍵「停止任務」（使用者要求）：整組每一格送 Esc 中斷正在做的事 → 1 秒後 Ctrl+U 清輸入框 → 1.5 秒時打「先停一下然後記錄目前狀態」＋Enter。
+    /// 信只在收件人閒置時投遞，PM 寄暫停信攔不住正在工作的 agent，所以要有直接中斷的入口。
+    /// <para>Ctrl+U 是 probe 實測補的：claude 還在思考、沒輸出就被 Esc 中斷時，會把剛才那則訊息放回輸入框，
+    /// 不清掉的話停止句會接在後面、合成一則重新送出（＝它繼續做原本的事）。codex 同流程（閒置／思考中／輸出中）實測 Ctrl+U 無副作用。
+    /// 閒置的格收到 Esc 也無害（claude／codex 閒置時實測照樣收下停止句並回報狀態）。</para></summary>
+    private void AgentStop_Click(object sender, RoutedEventArgs e)
+    {
+        if (TabOf(sender)?.Agent?.Group is not { } g) return;
+        var targets = g.Running.Where(s => s.Tab!.Session != null).Select(s => (Slot: s, Tab: s.Tab!, Session: s.Tab!.Session!)).ToList();
+        if (targets.Count == 0) return;
+        var now = DateTime.UtcNow;
+        foreach (var t in targets)
+        {
+            t.Session.WriteText("\x1b");
+            MarkTyped(t.Slot, now);   // 停止流程跑完前不投遞佇列裡的信（AgentReady 要距上次打字 ≥3 秒）
+        }
+        string prompt = Loc.T("ma.stopPrompt");
+        bool cleared = false;
+        var timer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(StopClearDelayMs) };
+        timer.Tick += (_, _) =>
+        {
+            if (!cleared)
+            {
+                cleared = true;
+                foreach (var t in targets) if (t.Tab.Session == t.Session) t.Session.WriteText("\x15");   // Ctrl+U
+                timer.Interval = TimeSpan.FromMilliseconds(StopPromptDelayMs - StopClearDelayMs);
+                return;
+            }
+            timer.Stop();
+            foreach (var t in targets)
+            {
+                if (t.Tab.Session != t.Session) continue;   // 這 1.5 秒內那格被重開或結束
+                SendTextThenEnter(t.Tab, prompt);
+                MarkTyped(t.Slot, DateTime.UtcNow);
+            }
+        };
+        timer.Start();
+        Diag.Log($"ma stop team {g.Number}: esc+prompt -> {string.Join(",", targets.Select(t => t.Slot.AgentId))}");
     }
 
     /// <summary>「開啟訊息資料夾」：檔案總管開專案的 .ai\bus。</summary>

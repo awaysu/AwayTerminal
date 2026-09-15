@@ -209,6 +209,10 @@ public static class Loc
         ["ma.stateBusy"] = ("忙碌", "busy"),
         ["ma.stateQueued"] = ("有信待送", "mail queued"),
         ["ma.stateExited"] = ("已結束", "ended"),
+        ["ma.stateBusyQueued"] = ("忙碌 · 有信待送", "busy · mail queued"),
+        // 分頁右鍵「停止任務」：整組每一格先送 Esc 中斷，再打這一句
+        ["ma.menuStop"] = ("停止任務", "Stop tasks"),
+        ["ma.stopPrompt"] = ("先停一下然後記錄目前狀態", "Stop for now and record the current state."),
         ["ma.tipMessages"] = ("已投遞 {0}/{1} 則", "Delivered {0}/{1}"),
         ["ma.tipPaused"] = ("已暫停（右鍵「投遞」選次數即繼續）", "Paused (right-click → Delivery → pick a limit to continue)"),
         ["ma.tipPending"] = ("待投遞 {0}", "{0} queued"),

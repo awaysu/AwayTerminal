@@ -17,7 +17,7 @@
 //               b{id}US{base64 舊內容}US{base64 分隔行}（1.0.45：把舊內容寫進分頁、再整頁推進 scrollback 並把游標歸位左上，
 //               之後才啟動新 session——兩欄皆可空＝只做「推進 scrollback」，斷線重連前用；見 applyRestore 註解）、
 //               g{下方id}US{上列比例}US{上列id,…}US{標籤|…}US{外框顏色,…}（1.2.0 Multi-Agent：把 2～4 個 pane 排成「下一上 N−1」、建立或更新）、
-//               u{id}（1.2.0 拆掉 id 所在的 Multi-Agent 外框）、E{id}US{0|1|2|3}（1.2.0 pane 標題的狀態標籤：閒置／忙碌／有信待送／已結束）
+//               u{id}（1.2.0 拆掉 id 所在的 Multi-Agent 外框）、E{id}US{0|1|2|3|4}（1.2.0 pane 標題的狀態標籤：閒置／忙碌／有信待送／已結束／忙碌且有信待送）
 //   JS -> C#（1.2.0）：G{下方id}US{上列比例} Multi-Agent 上下分隔線拖完的新比例
 (function () {
   "use strict";
@@ -34,7 +34,7 @@
   var cfg = {
     fontFamily: '"Cascadia Mono", Consolas, "Microsoft JhengHei", "微軟正黑體", monospace',
     fontSize: 14, foreground: "#e0e0e0", background: "#1e1e1e",
-    agentStates: ["閒置", "忙碌", "有信待送", "已結束"]   // Multi-Agent pane 狀態標籤文字（T 協定 agentStates 覆寫，隨語言）
+    agentStates: ["閒置", "忙碌", "有信待送", "已結束", "忙碌 · 有信待送"]   // Multi-Agent pane 狀態標籤文字（T 協定 agentStates 覆寫，隨語言）
   };
   // IME 診斷開關（追注音輸入問題用；D 協定 → C# Diag → diag.log。平時關閉）
   var IMEDBG = false;
@@ -537,7 +537,7 @@
   function updatePill(rec) {
     if (!rec.group || rec.agentState < 0) { if (rec.pill) { rec.pill.remove(); rec.pill = null; } return; }
     if (!rec.pill) { rec.pill = document.createElement("span"); rec.header.appendChild(rec.pill); }
-    var names = ["idle", "busy", "queued", "exited"];
+    var names = ["idle", "busy", "queued", "exited", "busy"];   // 4＝忙碌且有信待送（樣式同忙碌，文字不同）
     rec.pill.className = "ph-pill st-" + (names[rec.agentState] || "idle");
     rec.pill.textContent = cfg.agentStates[rec.agentState] || "";
   }
@@ -964,7 +964,7 @@
         // 關閉程式時每個分頁保留的 scrollback 行數（q…save；AppSettings.RestoreBufferLines）
         if (typeof t.restoreLines === "number" && t.restoreLines >= 0) SAVE_LINES = t.restoreLines;
         // Multi-Agent pane 狀態標籤文字（隨語言）
-        if (t.agentStates && t.agentStates.length === 4) { cfg.agentStates = t.agentStates; for (var ak in terms) updatePill(terms[ak]); }
+        if (t.agentStates && t.agentStates.length >= 4) { cfg.agentStates = t.agentStates; for (var ak in terms) updatePill(terms[ak]); }
         applyTheme();
       } catch (e) {}
     } else if (kind === "q") {

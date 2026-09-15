@@ -179,6 +179,16 @@ internal static class RoleLibrary
         sb.Append($"Never edit or delete an existing message file. Do not write anything else into {AgentMessage.BusRelDir}/.\n");
         sb.Append("Writing the file is the whole act of sending: after writing it, end your turn; AwayTerminal delivers it.\n\n");
 
+        // 使用者回報（2026-09-15）：PM 寄了暫停信就跟使用者說「已通知暫停」，但收件人正在工作、信在排隊，根本沒停
+        sb.Append("### Delivery timing\n\n");
+        sb.Append("AwayTerminal types a message into the recipient's terminal only when the recipient is idle. While the recipient is\n");
+        sb.Append("working, the message waits in a queue and is delivered after it finishes its current work. A message therefore\n");
+        sb.Append("cannot interrupt or stop an agent that is working.\n\n");
+        sb.Append($"- If the user wants agents to stop right away, tell the user to right-click the team tab and choose \"{Loc.T("ma.menuStop")}\"\n");
+        sb.Append("  (it interrupts every agent), or to press Esc in that agent's pane. Do not claim that a message has stopped anyone.\n");
+        sb.Append("- When you report a message you sent, say it was sent and will be read when the recipient is idle. Do not say the\n");
+        sb.Append("  recipient has received it, been notified, or acted on it until its reply arrives.\n\n");
+
         sb.Append("## How you receive messages\n\n");
         sb.Append("AwayTerminal types a line like this into your terminal:\n\n");
         string exampleFrom = enabled.FirstOrDefault(x => !ReferenceEquals(x, me))?.AgentId ?? "Agent-" + g.Number + "1";
