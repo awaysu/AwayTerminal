@@ -567,6 +567,23 @@ public sealed class TelegramRemote
         if (string.IsNullOrWhiteSpace(baseline)) return null;
         cur = cur.Replace("\r", "");
         var bl = baseline.Replace("\r", "").Split('\n');
+        // 先剝掉「兩邊從最底下往上一模一樣」的行（2026-09-15 使用者回報：代理團隊遠端傳訊息有收到、回覆卻沒推回手機）。
+        // Codex 的輸入框「› Ask Codex to do anything」＋模型／目錄狀態列固定在畫面最底、內容不變，新輸出插在它上面；
+        // 拿「最後 3 行」當錨點會對到最底下那幾行 → 新輸出＝空字串 → 自動推播整則不送（實錄重播：DiffNew 回 0 字）。
+        // claude 的狀態列有時鐘、每分鐘在變，所以原本碰巧沒事。完全一樣＝沒有新輸出；只有一邊是另一邊的尾巴時不剝（照舊規則）。
+        // 比對前先忽略兩邊尾端的空白列：附著當下畫面還沒滿，輸入框下面是空列；回覆後畫面滿了，輸入框貼在最底。
+        var cl = cur.Split('\n');
+        int nb = bl.Length, nc = cl.Length;
+        while (nb > 0 && bl[nb - 1].Trim().Length == 0) nb--;
+        while (nc > 0 && cl[nc - 1].Trim().Length == 0) nc--;
+        int common = 0;
+        while (common < nb && common < nc && bl[nb - 1 - common] == cl[nc - 1 - common]) common++;
+        if (common == nb && common == nc) return "";
+        if (common > 0 && common < nb && common < nc)
+        {
+            bl = bl[..(nb - common)];
+            cur = string.Join("\n", cl[..(nc - common)]);
+        }
         // 錨點=基準尾端「連續」的最後 3 行（保留中間空行、只去尾端空行）——
         // 跳行拼接會與實際畫面的相鄰關係不符，多行比對就永遠對不上。
         int end = bl.Length;
