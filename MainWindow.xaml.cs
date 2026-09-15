@@ -420,6 +420,10 @@ public partial class MainWindow : Window, IRemoteHost
         }
 
         string args = (string.IsNullOrWhiteSpace(conn.Args) ? "" : " " + conn.Args.Trim()) + extraArgs;
+        // Codex 一律關掉裝飾動畫（使用者回報，2026-09-15）：gpt-6-astra 閒置時輸入框背景「星星閃爍」每秒重畫 6～7 次（probe 實錄 ~8KB/s），
+        // 自訂分頁的忙閒＝近 1.2 秒有沒有輸出 → 做完了分頁圖示還是一直紅色；代理團隊則是畫面永不靜止、信送不出去。
+        // 使用者自己在參數寫了 tui.whimsy（例如想留動畫）就不動。只在這次啟動加，不寫回連線設定。
+        if (IsCodexExe(path) && !args.Contains("tui.whimsy", StringComparison.OrdinalIgnoreCase)) args += " -c tui.whimsy=false";
         // ClaudeCode / Codex / OpenCode → 分頁名稱用工作目錄名稱（例：AwayTerminal），其餘連線照舊「名稱(1)」。
         // 恢復分頁時 restoreTitle 優先（沿用上次看到的名稱）。
         string title = !string.IsNullOrWhiteSpace(restoreTitle) && !Tabs.Any(t => t.Title == restoreTitle)
@@ -967,6 +971,13 @@ public partial class MainWindow : Window, IRemoteHost
     private static bool IsClaudeExe(string path)
     {
         try { return Path.GetFileNameWithoutExtension(path).Contains("claude", StringComparison.OrdinalIgnoreCase); }
+        catch { return false; }
+    }
+
+    /// <summary>執行檔是 Codex CLI（codex.exe／npm 版 codex.cmd）。</summary>
+    private static bool IsCodexExe(string path)
+    {
+        try { return string.Equals(Path.GetFileNameWithoutExtension(path), "codex", StringComparison.OrdinalIgnoreCase); }
         catch { return false; }
     }
 

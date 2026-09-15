@@ -199,6 +199,11 @@ internal static class RoleLibrary
             $"{AgentMessage.BusRelDir}/0007-{exampleFrom}-to-{me.AgentId}.md")).Append("\n\n");
         sb.Append("Read that file, act according to your role, and reply by writing a new message file.\n");
         sb.Append($"You may read any file in {AgentMessage.BusRelDir}/ for context.\n");
+        // D（使用者選，2026-09-15 test3 實錄）：派 TASK-003 的信因為收件人一直忙、排了 23 分鐘才送，工程師早就自己讀信箱做完了，
+        // 晚到的投遞又讓它多花一輪重看。
+        sb.Append("A message can be delivered long after it was written. If AwayTerminal delivers a message you have already read and\n");
+        sb.Append("handled (for example you found it in the mailbox yourself), say so in one line and continue. Do not redo the work and do\n");
+        sb.Append("not reply to it again.\n");
         // 1.2.0 實測：PowerShell 5.1 的 Get-Content 預設用系統字碼頁讀，中文訊息變亂碼（Codex 在 Windows 預設 shell 就是它）
         sb.Append("Message files are UTF-8. Read and write them as UTF-8 (in Windows PowerShell use Get-Content -Raw -Encoding UTF8 <file>).\n\n");
 
@@ -221,6 +226,23 @@ internal static class RoleLibrary
             sb.Append("The other agents report to you whenever one of their tasks ends, fails, is blocked, or is stopped or paused.\n");
             sb.Append("Use those reports to keep track of where each agent is.\n\n");
         }
+
+        // B、C（使用者選，2026-09-15 test3 實錄：貪食蛇小遊戲三個 agent 花 45 分鐘以上——工程師的 GUI 驅動測試一直被別的視窗搶走焦點、
+        // 失焦自動暫停，14 分鐘都在修測試腳本；三個終端機＋使用者共用同一個 Windows 桌面，這種測試在多代理下注定不穩）
+        string askUser = ReferenceEquals(me, lead) || !lead.Enabled ? "ask the user" : $"ask {lead.AgentId} to ask the user";
+        sb.Append("## Shared desktop\n\n");
+        sb.Append("All agents and the user share one Windows desktop, so any window can lose focus at any moment.\n");
+        sb.Append("Do not run checks that need the foreground window or keyboard focus: no GUI automation that sends keystrokes or clicks\n");
+        sb.Append("to windows, no bringing windows to the front, no capturing live application windows, no tests that depend on a window\n");
+        sb.Append("keeping focus. Prefer command-line and headless checks.\n");
+        sb.Append($"If something can only be verified by looking at a window, {askUser} to check it.\n\n");
+
+        string reportStuck = ReferenceEquals(me, lead) || !lead.Enabled
+            ? "tell the user what you tried, what you found and what you need"
+            : $"report BLOCKED to {lead.AgentId} with what you tried, what you found and what you need";
+        sb.Append("## When you are stuck\n\n");
+        sb.Append("If the same problem is still unsolved after two different attempts, or after about 10 minutes, stop working on it.\n");
+        sb.Append($"Do not build more tools, scripts or test harnesses around it; {reportStuck}.\n\n");
 
         sb.Append("## Talking to the user\n\n");
         // 1.2.0 實測：「叫 Agent-12 顯示 123」→ worker 只把 123 寫進回信，自己的畫面沒顯示，使用者在那格看不到
