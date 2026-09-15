@@ -37,7 +37,8 @@ public partial class CustomConnDialog : Window
         // Codex CLI（1.1.10）：Codex 桌面版會把 CLI 裝在 %LOCALAPPDATA%\Programs\OpenAI\Codex\bin 並加進使用者 PATH；
         // npm 版（@openai/codex）是 %APPDATA%\npm\codex.cmd。參數刻意留空（不預設跳過核准／沙箱，需要的人自己加）。
         new("Codex",      new[] { "codex.exe", "codex.cmd" }, "", "codex", true),
-        new("OpenCode",   new[] { "opencode.exe", "opencode.cmd" }, "", "opencode", true),
+        // OpenCode 預設帶 --auto（使用者要求，2026-09-15）：沒被明確禁止的權限自動核准、不再每次跳詢問（同 ClaudeCode 預設 --dangerously-skip-permissions）
+        new("OpenCode",   new[] { "opencode.exe", "opencode.cmd" }, "--auto", "opencode", true),
         // Gemini CLI（1.1.11）：npm 版（@google/gemini-cli）是 %APPDATA%\npm\gemini.cmd。圖示 icon/geminicli.png；
         // 1.1.10 以前同一項叫「Gemini」、圖示 run——已加過的靠下面 AutoDetect 的「同路徑」判斷不會再重複加入。
         new("GeminiCLI",  new[] { "gemini.exe", "gemini.cmd" }, "", "geminicli", true),
