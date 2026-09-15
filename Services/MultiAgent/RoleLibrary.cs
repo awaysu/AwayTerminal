@@ -31,15 +31,43 @@ internal static class RoleLibrary
 
     public sealed record RoleInfo(string Key, string Title);
 
-    /// <summary>缺檔才從內嵌範本補（使用者改過的不動）。</summary>
+    /// <summary>缺檔就從內嵌範本補；使用者沒改過的舊版範本換成新版（改過的不動）。</summary>
     public static void EnsureDefaults() => WriteDefaults(overwrite: false);
 
     /// <summary>內建範本全部覆寫回預設（使用者自己新增的角色檔不受影響）。</summary>
     public static void RestoreDefaults() => WriteDefaults(overwrite: true);
 
+    // ---------- 範本自動更新（使用者要求，2026-09-15）----------
+    // 實錄：加 UI/UX Designer 時改了內嵌的 product-manager.md，但使用者資料目錄裡 9/14 複製出來的舊版（從沒改過）一直沒換，
+    // PM 不知道有設計師。原本「檔案存在就不動」分不出「使用者改過」和「只是舊版」。
+    // 做法：multiagent\.defaults.json 記每個檔「AwayTerminal 最後寫進去的內容雜湊」；檔案現在的雜湊＝記錄值＝使用者沒改過 → 範本變了就換新版。
+    // 還沒有記錄的舊資料目錄（1.2.0 開發期建的）改比對下面這份「以前出過的範本雜湊」（git 歷史算出來的）。
+    // 雜湊前先正規化（去 UTF-8 BOM、CRLF→LF）：範本檔在 git 工作目錄裡可能是 LF 或 CRLF，嵌進 exe 的位元組不一定一樣。
+    private const string ManifestFile = ".defaults.json";
+
+    /// <summary>以前各版內建範本的正規化 SHA-256（改範本時把「改之前」那版的雜湊加進來）。</summary>
+    private static readonly Dictionary<string, string[]> PreviousDefaults = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["common.md"] = new[]
+        {
+            "7faab5e2e9d0ce280a4351512cb616edd93a2dd8246bb0dd95c01b8ff849769f",   // f01fcaa
+            "39541db501bff4b61a779a9a8d510f8bca33ba13b5164c09fca06ce3b76081c8",   // 657fa2f
+        },
+        ["roles/product-manager.md"] = new[]
+        {
+            "70bcf377e85c1e5d913b413fc2d4456b80b7253a1dff26e5f9189838a839c57d",   // f01fcaa
+            "c49fb96726111551c280a3f29010274d0c127e60680275d66d401e11fcb2833f",   // 0565f54（加 UI/UX Designer）
+        },
+    };
+
+    private static bool _synced;   // 這次執行已經比對過雜湊（EnsureDefaults 很常被叫，之後只補缺檔）
+
     private static void WriteDefaults(bool overwrite)
     {
+        bool sync = overwrite || !_synced;
         var asm = Assembly.GetExecutingAssembly();
+        var manifest = sync ? LoadManifest() : null;
+        bool manifestChanged = false;
         foreach (var name in asm.GetManifestResourceNames())
         {
             if (!name.StartsWith(ResPrefix, StringComparison.Ordinal)) continue;
@@ -47,15 +75,74 @@ internal static class RoleLibrary
             string target = Path.Combine(Root, rel.Replace('/', Path.DirectorySeparatorChar));
             try
             {
-                if (!overwrite && File.Exists(target)) continue;
-                Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-                using var s = asm.GetManifestResourceStream(name);
-                if (s == null) continue;
-                using var fs = File.Create(target);
-                s.CopyTo(fs);
+                bool exists = File.Exists(target);
+                if (exists && !sync) continue;
+                byte[] data;
+                using (var s = asm.GetManifestResourceStream(name))
+                {
+                    if (s == null) continue;
+                    using var ms = new MemoryStream();
+                    s.CopyTo(ms);
+                    data = ms.ToArray();
+                }
+                string newHash = NormalizedHash(data);
+                if (exists && !overwrite)
+                {
+                    string cur = NormalizedHash(File.ReadAllBytes(target));
+                    if (cur != newHash)
+                    {
+                        bool untouched = manifest != null && manifest.TryGetValue(rel, out var written) ? written == cur
+                            : PreviousDefaults.TryGetValue(rel, out var olds) && olds.Contains(cur);
+                        if (!untouched) continue;   // 使用者改過 → 不動，也不改記錄（之後照樣視為使用者的版本）
+                        File.WriteAllBytes(target, data);
+                        Diag.Log($"ma role default updated {rel}");
+                    }
+                }
+                else
+                {
+                    Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+                    File.WriteAllBytes(target, data);
+                }
+                if (manifest != null && (!manifest.TryGetValue(rel, out var old) || old != newHash)) { manifest[rel] = newHash; manifestChanged = true; }
             }
             catch (Exception ex) { Diag.Log($"ma role default {rel}: {ex.Message}"); }
         }
+        if (manifest != null && manifestChanged) SaveManifest(manifest);
+        if (sync) _synced = true;
+    }
+
+    /// <summary>去 UTF-8 BOM、CRLF→LF 之後的 SHA-256（小寫十六進位）。</summary>
+    private static string NormalizedHash(byte[] bytes)
+    {
+        string s = Encoding.UTF8.GetString(bytes);
+        if (s.Length > 0 && s[0] == '\uFEFF') s = s.Substring(1);
+        s = s.Replace("\r\n", "\n");
+        return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(s))).ToLowerInvariant();
+    }
+
+    /// <summary>讀 .defaults.json；沒有＝空（沒記錄的檔改用 PreviousDefaults 判斷）；壞掉＝null（同樣用 PreviousDefaults，且不覆寫壞檔）。</summary>
+    private static Dictionary<string, string>? LoadManifest()
+    {
+        try
+        {
+            string path = Path.Combine(Root, ManifestFile);
+            if (!File.Exists(path)) return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            var d = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(path, Encoding.UTF8));
+            return d == null ? null : new Dictionary<string, string>(d, StringComparer.OrdinalIgnoreCase);
+        }
+        catch { return null; }
+    }
+
+    private static void SaveManifest(Dictionary<string, string> manifest)
+    {
+        try
+        {
+            Directory.CreateDirectory(Root);
+            File.WriteAllText(Path.Combine(Root, ManifestFile),
+                System.Text.Json.JsonSerializer.Serialize(manifest, new System.Text.Json.JsonSerializerOptions { WriteIndented = true }),
+                new UTF8Encoding(false));
+        }
+        catch (Exception ex) { Diag.Log("ma role manifest: " + ex.Message); }
     }
 
     /// <summary>roles\*.md → (key, 標題)。內建四個在前、其餘依檔名。</summary>
@@ -225,6 +312,19 @@ internal static class RoleLibrary
             sb.Append("## Reports from your teammates\n\n");
             sb.Append("The other agents report to you whenever one of their tasks ends, fails, is blocked, or is stopped or paused.\n");
             sb.Append("Use those reports to keep track of where each agent is.\n\n");
+        }
+
+        // 使用者要求（2026-09-15）：有開 UI/UX Designer 時，有畫面的任務一律先找設計師。實錄：使用者對 PM 說「用 C# 寫一個貪食蛇遊戲」，
+        // PM 直接派給工程師（它的角色檔是舊版、沒提設計師，而且規則寫「小任務 PM → SE → PM 就夠」）。
+        // 寫在執行期脈絡而不是只改 product-manager.md：資料目錄裡的舊角色檔不一定會更新，而且只有真的有開設計師才講。
+        var designer = enabled.FirstOrDefault(x => !ReferenceEquals(x, me) && x.Role == "ui-ux-designer");
+        if (designer != null && (me.Role == "product-manager" || ReferenceEquals(me, lead)))
+        {
+            sb.Append("## Design before UI implementation\n\n");
+            sb.Append($"{designer.AgentId} (UI/UX Designer) is enabled. Every task that has a user interface - new or changed windows, screens,\n");
+            sb.Append($"layouts, controls or visual style - first gets a design from {designer.AgentId}: assign the design task, wait for the result,\n");
+            sb.Append("then give the design to the agent that implements it. This applies to small tasks too.\n");
+            sb.Append("Skip the design step only when the change has no visible UI or the user asks to skip it.\n\n");
         }
 
         // B、C（使用者選，2026-09-15 test3 實錄：貪食蛇小遊戲三個 agent 花 45 分鐘以上——工程師的 GUI 驅動測試一直被別的視窗搶走焦點、
