@@ -286,7 +286,7 @@ public partial class MainWindow : Window, IRemoteHost
     {
         Title = ComposeTitle();
         BtnNew.Content = Loc.T("tb.new"); BtnNew.ToolTip = Loc.T("tip.new");
-        BtnHistory.Content = Loc.T("tb.history"); BtnHistory.ToolTip = Loc.T("tip.history");
+        BtnFavorites.Content = Loc.T("tb.favorites"); BtnFavorites.ToolTip = Loc.T("tip.favorites");
         BtnCompose.Content = Loc.T("tb.compose"); BtnCompose.ToolTip = Loc.T("tip.compose");
         BtnCopy.Content = Loc.T("tb.copy"); BtnCopy.ToolTip = Loc.T("tip.copy");
         BtnPaste.Content = Loc.T("tb.paste"); BtnPaste.ToolTip = Loc.T("tip.paste");
@@ -518,7 +518,7 @@ public partial class MainWindow : Window, IRemoteHost
 
     private static SavedTab CloneTab(SavedTab s) => new()
     {
-        Type = s.Type, Title = s.Title, Dir = s.Dir, Host = s.Host, Port = s.Port,
+        Type = s.Type, Title = s.Title, Name = s.Name, Dir = s.Dir, Host = s.Host, Port = s.Port,
         ComPort = s.ComPort, Baud = s.Baud, DataBits = s.DataBits, Parity = s.Parity,
         StopBits = s.StopBits, Flow = s.Flow, AdbSerial = s.AdbSerial, Path = s.Path,
         Args = s.Args, Icon = s.Icon, PickDir = s.PickDir, ViaPowerShell = s.ViaPowerShell,
@@ -573,29 +573,7 @@ public partial class MainWindow : Window, IRemoteHost
         catch { return dir; }
     }
 
-    /// <summary>「紀錄」按鈕：下拉顯示最近 10 次連線（圖示＋標籤），點選重開。</summary>
-    private void History_Click(object sender, RoutedEventArgs e)
-    {
-        var menu = new ContextMenu();
-        var list = AppSettings.Current.History.Take(10).ToList();
-        if (list.Count == 0)
-        {
-            menu.Items.Add(new MenuItem { Header = Loc.T("history.empty"), IsEnabled = false });
-        }
-        else
-        {
-            foreach (var h in list)
-            {
-                var entry = h;
-                var mi = MakeNewItemRaw(HistoryLabel(entry), HistoryIcon(entry));
-                mi.Click += (_, _) => ReopenHistory(entry);
-                menu.Items.Add(mi);
-            }
-        }
-        menu.PlacementTarget = (UIElement)sender;
-        menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
-        menu.IsOpen = true;
-    }
+    // 註：工具列「紀錄」按鈕 2026-09-16 改成「我的最愛」（MainWindow.Favorites.cs）。連線紀錄照記，Telegram /history 仍用它。
 
     private void ReopenHistory(SavedTab e)
     {
@@ -1637,6 +1615,15 @@ public partial class MainWindow : Window, IRemoteHost
         EchoToTab(tab.Id, "login as: ");
     }
 
+    /// <summary>主機帶 user@ → 直接啟動 ssh.exe（同開機恢復的直啟路徑），密碼照畫面提示輸入。遠端 /ssh 與我的最愛共用。</summary>
+    private void OpenSshUserAtHost(string host, int port)
+    {
+        var s = new ConPtySession { GracefulExitBytes = new byte[] { 0x04, 0x04, 0x04 } };   // SSH：Ctrl+D ×3
+        var t = StartTab(TermKind.Ssh, host, s, () => s.Start(SshCommand(host, port), _lastCols, _lastRows, null));
+        if (t != null) t.Restore = new SavedTab { Type = "ssh", Host = host, Port = port };
+        AddHistory(new SavedTab { Type = "ssh", Host = host, Port = port });
+    }
+
     private void EchoToTab(int id, string text)
         => PostToWeb("o" + id + US + Convert.ToBase64String(Encoding.UTF8.GetBytes(text)));
 
@@ -2235,14 +2222,7 @@ public partial class MainWindow : Window, IRemoteHost
         {
             if (!_webReady || string.IsNullOrWhiteSpace(host)) return (0, "");
             int before = Tabs.Count;
-            if (host.Contains('@'))
-            {
-                // 帶 user@ → 直接啟動 ssh.exe（同開機恢復的直啟路徑），密碼照畫面提示輸入
-                var s = new ConPtySession { GracefulExitBytes = new byte[] { 0x04, 0x04, 0x04 } };
-                var t = StartTab(TermKind.Ssh, host, s, () => s.Start(SshCommand(host, port), _lastCols, _lastRows, null));
-                if (t != null) t.Restore = new SavedTab { Type = "ssh", Host = host, Port = port };
-                AddHistory(new SavedTab { Type = "ssh", Host = host, Port = port });
-            }
+            if (host.Contains('@')) OpenSshUserAtHost(host, port);
             else OpenSshLoginAs(host, port);
             var tab = Tabs.Count > before ? Tabs[^1] : null;
             return tab == null ? (0, "") : (tab.Id, tab.Title);

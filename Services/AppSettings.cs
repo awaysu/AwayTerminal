@@ -26,6 +26,17 @@ public sealed class CustomConn
     public bool ViaPowerShell { get; set; } = false;  // 透過 PowerShell 執行（.cmd/需 shell 時用）
 }
 
+/// <summary>工具列「我的最愛」的一筆（2026-09-16 取代工具列「紀錄」按鈕；使用者從目前分頁「加到我的最愛」）。</summary>
+public sealed class FavoriteItem
+{
+    /// <summary>顯示名稱（加入時＝分頁名稱，「設定…」可改）。</summary>
+    public string Name { get; set; } = "";
+    /// <summary>怎麼重開：連線種類＋參數＋資料夾（同分頁恢復資訊的格式）。</summary>
+    public SavedTab Tab { get; set; } = new();
+    /// <summary>代理團隊：整組設定（MultiAgentSetup 的 JSON：資料夾、各格啟用／CLI／角色、投遞上限）；空＝一般連線。</summary>
+    public string TeamSetup { get; set; } = "";
+}
+
 /// <summary>關閉時儲存的分頁（下次開啟恢復用），同時作為「紀錄」歷史項目。</summary>
 public sealed class SavedTab
 {
@@ -227,6 +238,8 @@ public sealed class AppSettings
 
     // 連線紀錄（最近開過的連線，「紀錄」按鈕下拉用；最新在前）
     public List<SavedTab> History { get; set; } = new();
+    /// <summary>我的最愛（工具列「我的最愛」下拉的順序＝清單順序；新加入的接在最後）。History 仍照記，給 Telegram /history 用。</summary>
+    public List<FavoriteItem> Favorites { get; set; } = new();
 
     // 遠端控制（Telegram；一台 PC 一個 bot）
     public bool RemoteEnabled { get; set; } = false;
