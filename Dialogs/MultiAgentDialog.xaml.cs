@@ -143,12 +143,12 @@ public partial class MultiAgentDialog : Window
         head.Children.Add(ui.Id);
         panel.Children.Add(head);
 
-        ui.CliLabel = new TextBlock { Text = "Coding Agent", Margin = new Thickness(0, 0, 0, 3) };
+        ui.CliLabel = new TextBlock { Text = Loc.T("ma.dlgAgentType"), Margin = new Thickness(0, 0, 0, 3) };
         panel.Children.Add(ui.CliLabel);
         ui.Backend = new ComboBox { Margin = new Thickness(0, 0, 0, 8), ItemTemplate = ChoiceTemplate(withIcon: true) };
         panel.Children.Add(ui.Backend);
 
-        ui.RoleLabel = new TextBlock { Text = "Agent Role", Margin = new Thickness(0, 0, 0, 3) };
+        ui.RoleLabel = new TextBlock { Text = Loc.T("ma.dlgAgentRole"), Margin = new Thickness(0, 0, 0, 3) };
         panel.Children.Add(ui.RoleLabel);
         ui.Role = new ComboBox { Margin = new Thickness(0, 0, 0, 6), ItemTemplate = ChoiceTemplate(withIcon: false) };
         panel.Children.Add(ui.Role);
@@ -244,7 +244,7 @@ public partial class MultiAgentDialog : Window
     {
         var ui = _ui[i];
         int index = i + 1;
-        string defaultRole = RoleLibrary.BuiltInRoles[i];
+        string defaultRole = RoleLibrary.DefaultSlotRoles[i];
         ui.Id.Text = $"Agent-x{index}";   // 組號開組時才決定（1～9）；既有的組也照這樣顯示，與新開時一致
 
         if (_group == null)

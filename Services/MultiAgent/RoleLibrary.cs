@@ -22,9 +22,12 @@ internal static class RoleLibrary
     public static string CommonPath => Path.Combine(Root, "common.md");
     public static string SessionDir(int groupNumber) => Path.Combine(Root, "sessions", groupNumber.ToString());
 
-    /// <summary>內建角色在下拉裡的固定順序（其餘使用者自訂的依檔名排在後面）。前四個依序是格 1～4 的預設角色。
-    /// ui-ux-designer（使用者提供，2026-09-14）＝新增的第五個；已經複製過範本的資料目錄會由 EnsureDefaults 補上缺的檔。</summary>
-    public static readonly string[] BuiltInRoles = { "product-manager", "software-engineer", "software-architect", "qa-engineer", "ui-ux-designer" };
+    /// <summary>內建角色在下拉裡的固定順序（其餘使用者自訂的依檔名排在後面）。使用者指定 UI/UX Designer 排在 QA Engineer 上面。
+    /// ui-ux-designer（使用者提供，2026-09-14）；已經複製過範本的資料目錄會由 EnsureDefaults 補上缺的檔。</summary>
+    public static readonly string[] BuiltInRoles = { "product-manager", "software-engineer", "software-architect", "ui-ux-designer", "qa-engineer" };
+
+    /// <summary>設定視窗格 1～4 的預設角色（和下拉順序分開：格 4 仍預設 QA）。</summary>
+    public static readonly string[] DefaultSlotRoles = { "product-manager", "software-engineer", "software-architect", "qa-engineer" };
 
     public sealed record RoleInfo(string Key, string Title);
 
@@ -173,7 +176,7 @@ internal static class RoleLibrary
         sb.Append($"to: {sampleTo}\n");
         sb.Append("type: TASK_RESULT        # TASK | TASK_RESULT | QUESTION | ANSWER | REVIEW_REQUEST | REVIEW_RESULT | BLOCKED | INFO\n");
         sb.Append("task: TASK-001\n");
-        sb.Append("status: completed        # completed | failed | blocked | pass | fail  (only for results)\n");
+        sb.Append("status: completed        # completed | failed | blocked | stopped | paused | pass | fail  (only for results)\n");
         sb.Append("files_changed:\n  - path/to/file\n");
         sb.Append("---\n(body)\n```\n\n");
         sb.Append($"Never edit or delete an existing message file. Do not write anything else into {AgentMessage.BusRelDir}/.\n");
@@ -199,9 +202,29 @@ internal static class RoleLibrary
         // 1.2.0 實測：PowerShell 5.1 的 Get-Content 預設用系統字碼頁讀，中文訊息變亂碼（Codex 在 Windows 預設 shell 就是它）
         sb.Append("Message files are UTF-8. Read and write them as UTF-8 (in Windows PowerShell use Get-Content -Raw -Encoding UTF8 <file>).\n\n");
 
+        // 使用者要求（2026-09-15）：格 2～4 的任務不管是完成、失敗、被停止、被暫停，一律回報給格 1（下方全寬、使用者對話的那一格）。
+        // 「停止任務」打進去的「先停一下然後記錄目前狀態」不是從信箱來的，也要回報——否則 Agent-x1 不知道各格停在哪。
+        var lead = g.Slots[0];
+        if (!ReferenceEquals(me, lead) && lead.Enabled)
+        {
+            sb.Append($"## Always report to {lead.AgentId}\n\n");
+            sb.Append($"{lead.AgentId} ({lead.RoleTitle}) coordinates this team and is the agent the user talks to.\n");
+            sb.Append("Whenever a task you are working on ends for any reason - completed, failed, blocked, stopped, interrupted or paused,\n");
+            sb.Append("including when the user or AwayTerminal tells you to stop or pause, and even if the task did not come from the mailbox -\n");
+            sb.Append($"write a message to {lead.AgentId} with what happened, the current state and what is left to do.\n");
+            sb.Append("Use type TASK_RESULT (status completed or failed) for finished work, BLOCKED when you cannot continue,\n");
+            sb.Append("and INFO with status stopped or paused when you were told to stop or pause.\n\n");
+        }
+        else if (hasWorker)
+        {
+            sb.Append("## Reports from your teammates\n\n");
+            sb.Append("The other agents report to you whenever one of their tasks ends, fails, is blocked, or is stopped or paused.\n");
+            sb.Append("Use those reports to keep track of where each agent is.\n\n");
+        }
+
         sb.Append("## Talking to the user\n\n");
         // 1.2.0 實測：「叫 Agent-12 顯示 123」→ worker 只把 123 寫進回信，自己的畫面沒顯示，使用者在那格看不到
-        sb.Append("Only the Product Manager takes requests from the user and asks the user questions; workers report to the Product Manager\n");
+        sb.Append($"Only {lead.AgentId} takes requests from the user and asks the user questions; the other agents report to {lead.AgentId}\n");
         sb.Append("with a message file. The user can still see every agent's terminal, so a worker also shows its work in its own terminal:\n");
         sb.Append("when a task asks you to show, print or display something, output it in your terminal reply as well as in your result message.\n");
         sb.Append("Write terminal replies in the user's language.\n");
