@@ -1484,8 +1484,8 @@ public partial class MainWindow : Window, IRemoteHost
                     bool submittedThisBusy = t.LastSubmitUtc >= since.AddSeconds(-2);
                     bool echoFromTyping = !submittedThisBusy && (now - t.LastInputUtc).TotalSeconds < 2.5;
                     bool longEnough = submittedThisBusy ? busyDur >= 0.8 : busyDur >= 3;
-                    if (!echoFromTyping && longEnough && t.Agent == null)   // Multi-Agent 分頁不支援遠端（1.2.0）
-                        _remote.OnTabIdle(t.Id, t.Title);
+                    if (!echoFromTyping && longEnough && RemoteVisible(t))   // 代理團隊只有 Agent-x1 會推播
+                        _remote.OnTabIdle(t.Id, RemoteTitle(t));
                     _busySince.Remove(t.Id);
                 }
             }
@@ -2307,15 +2307,27 @@ public partial class MainWindow : Window, IRemoteHost
         => Dispatcher.Invoke(() =>
         {
             var tab = FindTab(tabId);
-            if (tab == null || tab.Agent != null) return false;   // Multi-Agent 分頁不支援遠端（1.2.0）
-            RemoveTabSilently(tab);   // 手機端已下指令 → 不再跳 PC 端確認框，直接走優雅結束流程
+            if (tab == null || !RemoteVisible(tab)) return false;
+            // 手機端已下指令（TelegramRemote 先出過確認按鈕）→ 不再跳 PC 端確認框，直接走優雅結束流程。
+            // 代理團隊的 Agent-x1＝整組一起關（分頁列上本來就是一組一列、✕ 也是整組）
+            if (tab.Agent?.Group is { } g) CloseAgentGroup(g, ask: false);
+            else RemoveTabSilently(tab);
             return true;
         });
 
-    // 1.2.0：Multi-Agent 分頁不支援遠端（使用者決定）→ 不列給手機，/goto 選不到、也收不到完成推播
+    // 代理團隊的遠端（使用者要求，2026-09-15；1.2.0 起原本整組不支援遠端）：只和 Agent-x1（格 1、下方全寬、使用者對話的那一格）溝通——
+    // 手機的分頁清單一組只列 Agent-x1 一項（標題帶組名與 Agent ID），打字／按鍵／完成推播都只對它；其他格不列、送不進去。
+    // 巨集仍不支援；/history 也不列代理團隊（重開要跳資料夾與設定視窗，手機做不到）。
+    private static bool RemoteVisible(TerminalTab t) => t.Agent == null || t.Agent.Index == 1;
+
+    /// <summary>手機上看到的分頁名稱：代理團隊＝「組名（代理團隊 Agent-11）」。</summary>
+    private static string RemoteTitle(TerminalTab t) =>
+        t.Agent is { } a ? $"{a.Group.Title}（{Loc.T("ma.title")} {a.AgentId}）" : t.Title;
+
     IReadOnlyList<RemoteTabInfo> IRemoteHost.SnapshotTabs()
-        => Dispatcher.Invoke(() => (IReadOnlyList<RemoteTabInfo>)Tabs.Where(t => t.Agent == null).Select(
-               t => new RemoteTabInfo(t.Id, t.Title, t.Status == TermStatus.Busy, t.Kind.ToString())).ToList());
+        => Dispatcher.Invoke(() => (IReadOnlyList<RemoteTabInfo>)Tabs.Where(RemoteVisible).Select(
+               t => new RemoteTabInfo(t.Id, RemoteTitle(t), t.Status == TermStatus.Busy,
+                                      t.Agent != null ? RemoteTabInfo.MultiAgentKind : t.Kind.ToString())).ToList());
 
     DateTime IRemoteHost.GetTabActivityUtc(int tabId)
         => Dispatcher.Invoke(() =>
@@ -2329,8 +2341,8 @@ public partial class MainWindow : Window, IRemoteHost
         => Dispatcher.Invoke(() =>
         {
             var tab = FindTab(tabId);
-            if (tab == null || tab.Agent != null) return false;   // Multi-Agent 分頁不支援遠端（1.2.0）
-            if (enter) tab.LastSubmitUtc = DateTime.UtcNow;   // 遠端送出的指令也算「送出」，完成後照推
+            if (tab == null || !RemoteVisible(tab)) return false;   // 代理團隊只能送給 Agent-x1
+            if (enter) tab.LastSubmitUtc = DateTime.UtcNow;   // 遠端送出的指令也算「送出」，完成後照推（代理團隊的投遞也會等它 3 秒，免得信和手機訊息打在一起）
             if (tab.Session == null && tab.LoginBuffer != null)
             { HandleLoginInput(tab, enter ? text + "\r" : text); return true; }   // SSH「login as:」：帳號從遠端回覆也能登入
             if (tab.Session == null) return false;
@@ -2352,7 +2364,7 @@ public partial class MainWindow : Window, IRemoteHost
         => Dispatcher.Invoke(() =>
         {
             var tab = FindTab(tabId);
-            if (tab?.Session == null || tab.Agent != null) return false;   // Multi-Agent 分頁不支援遠端（1.2.0）
+            if (tab?.Session == null || !RemoteVisible(tab)) return false;   // 代理團隊只能送給 Agent-x1
             byte[]? b = keyName switch
             {
                 "ctrl-c" => new byte[] { 0x03 },

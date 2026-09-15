@@ -38,7 +38,11 @@ public interface IRemoteHost
 }
 
 /// <summary>分頁快照（給遠端列表/狀態用）。</summary>
-public sealed record RemoteTabInfo(int Id, string Title, bool Busy, string Kind);
+public sealed record RemoteTabInfo(int Id, string Title, bool Busy, string Kind)
+{
+    /// <summary>代理團隊（Agent-x1 代表整組）的 Kind 值；/close 會整組一起關，確認文字要講清楚。</summary>
+    public const string MultiAgentKind = "MultiAgent";
+}
 
 /// <summary>
 /// Telegram 遠端控制。自寫 HttpClient long polling（getUpdates/sendMessage），無第三方相依。
@@ -643,22 +647,26 @@ public sealed class TelegramRemote
     private async Task DoClose(string arg)
     {
         var tabs = _host.SnapshotTabs();
-        int targetId; string title;
+        RemoteTabInfo target;
         if (int.TryParse(arg, out int idx))
         {
             if (tabs.Count == 0) { await SendAsync("目前沒有開啟的分頁。"); return; }
             if (idx < 1 || idx > tabs.Count) { await SendAsync($"編號要在 1~{tabs.Count} 之間。/goto 看編號。"); return; }
-            targetId = tabs[idx - 1].Id; title = tabs[idx - 1].Title;
+            target = tabs[idx - 1];
         }
         else
         {
             if (_currentTabId == 0) { await SendAsync("尚未附著分頁。/close <編號> 指定要關哪個，或先 /goto。"); return; }
             var cur = tabs.FirstOrDefault(t => t.Id == _currentTabId);
             if (cur == null) { _currentTabId = 0; await SendAsync("分頁已不存在。"); return; }
-            targetId = cur.Id; title = cur.Title;
+            target = cur;
         }
+        int targetId = target.Id;
+        string what = target.Kind == RemoteTabInfo.MultiAgentKind
+            ? "（整個代理團隊的所有 agent 會一起關閉）"
+            : "（會結束該分頁執行中的程式）";
         // 誤觸保險：先出確認按鈕，點「確定關閉」（callback close:{id}）才真的關
-        await SendAsync($"確定要關閉 [{title}] 嗎？（會結束該分頁執行中的程式）",
+        await SendAsync($"確定要關閉 [{target.Title}] 嗎？{what}",
             buttons: new List<List<(string Text, string Data)>>
             { new() { ("✅ 確定關閉", $"close:{targetId}"), ("✖ 取消", "noop") } });
     }

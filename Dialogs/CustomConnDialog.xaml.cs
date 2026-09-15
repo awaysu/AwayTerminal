@@ -37,11 +37,12 @@ public partial class CustomConnDialog : Window
         // Codex CLI（1.1.10）：Codex 桌面版會把 CLI 裝在 %LOCALAPPDATA%\Programs\OpenAI\Codex\bin 並加進使用者 PATH；
         // npm 版（@openai/codex）是 %APPDATA%\npm\codex.cmd。參數刻意留空（不預設跳過核准／沙箱，需要的人自己加）。
         new("Codex",      new[] { "codex.exe", "codex.cmd" }, "", "codex", true),
-        new("WSL",        new[] { "wsl.exe" }, "", "wsl", false),
         new("OpenCode",   new[] { "opencode.exe", "opencode.cmd" }, "", "opencode", true),
         // Gemini CLI（1.1.11）：npm 版（@google/gemini-cli）是 %APPDATA%\npm\gemini.cmd。圖示 icon/geminicli.png；
         // 1.1.10 以前同一項叫「Gemini」、圖示 run——已加過的靠下面 AutoDetect 的「同路徑」判斷不會再重複加入。
         new("GeminiCLI",  new[] { "gemini.exe", "gemini.cmd" }, "", "geminicli", true),
+        // 順序＝自動偵測加入清單的順序（使用者指定 2026-09-15：四個 AI CLI 在前，WSL 移到 GeminiCLI 後面）
+        new("WSL",        new[] { "wsl.exe" }, "", "wsl", false),
         new("Aider",      new[] { "aider.exe", "aider.cmd" }, "", "run", true),
         // ADB：v1.0.18 起不再是內建選單項目，改成一般自訂連線。參數固定 shell；
         // 若機器上接了兩台以上裝置，MainWindow.OpenCustom 會偵測到執行檔是 adb 而

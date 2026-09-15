@@ -354,7 +354,8 @@ public partial class MainWindow
             && tab.LastOutputUtc > s.LaunchedUtc
             && (now - tab.LastOutputUtc).TotalMilliseconds >= (viaPs ? 3000 : 2000)
             && (now - s.LastDeliveredUtc).TotalSeconds >= 3
-            && (now - tab.LastInputUtc).TotalSeconds >= 3;
+            && (now - tab.LastInputUtc).TotalSeconds >= 3
+            && (now - tab.LastSubmitUtc).TotalSeconds >= 3;   // 遠端（Telegram）剛送出訊息給 Agent-x1：別在 Enter 送達前把信打進去
     }
 
     private static void MarkTyped(AgentSlot s, DateTime now)
