@@ -54,7 +54,10 @@ public partial class MainWindow
         if (tab == null) return null;
         if (tab.Agent?.Group is { } g)
         {
-            var setup = new MultiAgentSetup { Dir = g.Dir, MaxMessages = g.MaxMessages, IdleCheckMinutes = g.IdleCheckMinutes };
+            var setup = new MultiAgentSetup
+            {
+                Dir = g.Dir, MaxMessages = g.MaxMessages, IdleCheckMinutes = g.IdleCheckMinutes, Rounds = g.Rounds
+            };
             for (int i = 0; i < 4; i++)
             {
                 var s = g.Slots[i];
@@ -63,7 +66,7 @@ public partial class MainWindow
             return new FavoriteItem
             {
                 Name = g.Title,
-                Tab = new SavedTab { Type = "multiagent", Title = g.Title, Dir = g.Dir },
+                Tab = new SavedTab { Type = g.IsChat ? "chatroom" : "multiagent", Title = g.Title, Dir = g.Dir },
                 TeamSetup = JsonSerializer.Serialize(setup)
             };
         }
@@ -99,7 +102,7 @@ public partial class MainWindow
     /// <summary>同一個連線（種類＋主機／路徑＋目錄）只收一筆。</summary>
     private static string FavoriteKey(FavoriteItem f)
     {
-        if (!string.IsNullOrEmpty(f.TeamSetup)) return "team|" + f.Tab.Dir + "|" + f.TeamSetup;
+        if (!string.IsNullOrEmpty(f.TeamSetup)) return "team|" + f.Tab.Type + "|" + f.Tab.Dir + "|" + f.TeamSetup;   // 同資料夾的代理團隊與聊天室各算一筆
         var e = f.Tab;
         return e.Type switch
         {
@@ -109,8 +112,7 @@ public partial class MainWindow
         };
     }
 
-    internal static string FavoriteIcon(FavoriteItem f) =>
-        !string.IsNullOrEmpty(f.TeamSetup) ? "multi-agent.png" : HistoryIcon(f.Tab);
+    internal static string FavoriteIcon(FavoriteItem f) => HistoryIcon(f.Tab);   // 代理團隊／AI 聊天室的 Type 也在 HistoryIcon 裡
 
     /// <summary>下拉 tooltip／設定視窗第二行：連線種類＋位置。</summary>
     internal static string FavoriteDetail(FavoriteItem f)
@@ -125,7 +127,7 @@ public partial class MainWindow
                     members = string.Join("／", s.Slots.Where(x => x is { Enabled: true }).Select(x => AwayTerminal.Services.MultiAgent.AdapterRegistry.ByKey(x.Backend)?.DisplayName ?? x.Backend));
             }
             catch { }
-            return $"{Loc.T("ma.title")}  {e.Dir}" + (members.Length > 0 ? $"  ({members})" : "");
+            return $"{Loc.T(e.Type == "chatroom" ? "chat.title" : "ma.title")}  {e.Dir}" + (members.Length > 0 ? $"  ({members})" : "");
         }
         return e.Type switch
         {
@@ -151,8 +153,14 @@ public partial class MainWindow
             if (setup?.Slots is not { Length: 4 }) { Info(Loc.T("fav.teamBroken")); return; }
             if (!Directory.Exists(setup.Dir)) { Info(string.Format(Loc.T("ma.dlgFolderMissing"), setup.Dir)); return; }
             if (AgentGroup.NextFreeNumber(_agentGroups) == 0) { Info(Loc.T("ma.tooMany")); return; }
-            if (OpenAgentGroup(setup, title: f.Name) != null)
-                AddHistory(new SavedTab { Type = "multiagent", Title = Loc.T("ma.title"), Dir = setup.Dir });
+            bool chat = f.Tab.Type == "chatroom";
+            var opened = OpenAgentGroup(setup, title: f.Name, mode: chat ? GroupMode.Chat : GroupMode.Team);
+            if (opened == null) return;
+            AddHistory(new SavedTab
+            {
+                Type = chat ? "chatroom" : "multiagent", Title = Loc.T(chat ? "chat.title" : "ma.title"), Dir = setup.Dir
+            });
+            if (chat) AskChatTopic(opened);   // 聊天室開好就問主題（同 New → AI聊天室）
             return;
         }
         var e = CloneTab(f.Tab);

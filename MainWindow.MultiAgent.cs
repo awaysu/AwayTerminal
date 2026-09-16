@@ -5,6 +5,7 @@ using AwayTerminal.Dialogs;
 using AwayTerminal.Localization;
 using AwayTerminal.Models;
 using AwayTerminal.Services;
+using AwayTerminal.Services.ChatRoom;
 using AwayTerminal.Services.MultiAgent;
 
 namespace AwayTerminal;
@@ -87,33 +88,34 @@ public partial class MainWindow
     /// <summary>依設定開一組：組號 → .gitignore → 組合每格角色檔（名單要完整，先全部組好）→ 依格號啟動 → 綁組 → 開始監看信箱。
     /// restore（恢復分頁）＝格號 → 上次存的 SavedTab（執行檔／參數／scrollback／開啟時間）。</summary>
     private AgentGroup? OpenAgentGroup(MultiAgentSetup setup, string? key = null, int preferredNumber = 0, double ratio = 0.5,
-                                       Dictionary<int, SavedTab>? restore = null, string? title = null)
+                                       Dictionary<int, SavedTab>? restore = null, string? title = null, GroupMode mode = GroupMode.Team,
+                                       string? chatFolder = null)
     {
         int number = AgentGroup.NextFreeNumber(_agentGroups, preferredNumber);
         if (number == 0) { Info(Loc.T("ma.tooMany")); return null; }
         var g = new AgentGroup(key ?? Guid.NewGuid().ToString("N"), number, setup.Dir)
         {
             Ratio = AgentGroup.ClampRatio(ratio), MaxMessages = Math.Max(0, setup.MaxMessages),
-            IdleCheckMinutes = Math.Max(0, setup.IdleCheckMinutes)
+            IdleCheckMinutes = Math.Max(0, setup.IdleCheckMinutes),
+            Mode = mode, Rounds = Math.Max(1, setup.Rounds),
+            // 恢復分頁時沿用上次那場的紀錄資料夾（新開＝現在的時間）
+            ChatFolder = mode == GroupMode.Chat ? (string.IsNullOrWhiteSpace(chatFolder) ? NewChatFolder() : chatFolder!) : ""
         };
         for (int i = 0; i < 4; i++)
         {
             var s = g.Slots[i];
             var ss = setup.Slots[i] ?? new AgentSlotSetup();
-            s.Enabled = ss.Enabled || (restore == null && i == 0);   // 新開的組格 1 一定啟用
+            s.Enabled = ss.Enabled || (restore == null && i == 0);   // 新開的組格 1 一定啟用（聊天室＝主持人）
             s.Backend = ss.Backend;
             s.Role = ss.Role;
-            s.RoleTitle = RoleLibrary.TitleOf(ss.Role);
+            s.RoleTitle = g.IsChat ? ChatRoleLibrary.TitleOf(ss.Role) : RoleLibrary.TitleOf(ss.Role);
         }
-        g.Title = !string.IsNullOrWhiteSpace(title) && !Tabs.Any(t => t.Title == title) ? title : DirTabName(setup.Dir, Loc.T("ma.title"));
+        g.Title = !string.IsNullOrWhiteSpace(title) && !Tabs.Any(t => t.Title == title)
+            ? title : DirTabName(setup.Dir, Loc.T(g.IsChat ? "chat.title" : "ma.title"));
 
-        MessageBus.EnsureGitIgnore(setup.Dir);
-        RoleLibrary.ClearSession(number);
-        foreach (var s in g.Slots.Where(x => x.Enabled))
-        {
-            try { RoleLibrary.Compose(g, s); }
-            catch (Exception ex) { Diag.Log($"ma compose {s.AgentId}: {ex.Message}"); }
-        }
+        MessageBus.EnsureGitIgnore(setup.Dir);   // .ai/ 底下同時放信箱與討論紀錄
+        if (g.IsChat) ChatRoleLibrary.ClearSession(number); else RoleLibrary.ClearSession(number);
+        foreach (var s in g.Slots.Where(x => x.Enabled)) ComposeRole(g, s);
 
         _agentGroups.Add(g);
         foreach (var s in g.Slots.Where(x => x.Enabled))
@@ -125,9 +127,9 @@ public partial class MainWindow
             return null;
         }
         LinkAgentGroup(g);
-        StartBus(g);
+        if (!g.IsChat) StartBus(g);   // 聊天室不用信箱：由 AwayTerminal 主持輪流發言（MainWindow.ChatRoom.cs）
         if (g.RowTab != null) SelectTab(g.RowTab);
-        Diag.Log($"ma open team {g.Number} dir={g.Dir} agents={string.Join(",", g.Running.Select(s => $"{s.AgentId}:{s.Backend}:{s.Role}"))}");
+        Diag.Log($"ma open {(g.IsChat ? "chat" : "team")} {g.Number} dir={g.Dir} agents={string.Join(",", g.Running.Select(s => $"{s.AgentId}:{s.Backend}:{s.Role}"))}");
         return g;
     }
 
@@ -154,13 +156,13 @@ public partial class MainWindow
             return null;
         }
 
-        if (string.IsNullOrEmpty(s.RoleFile) || !File.Exists(s.RoleFile))
-        {
-            try { RoleLibrary.Compose(g, s); } catch (Exception ex) { Diag.Log($"ma compose {s.AgentId}: {ex.Message}"); }
-        }
+        if (string.IsNullOrEmpty(s.RoleFile) || !File.Exists(s.RoleFile)) ComposeRole(g, s);
         string roleText = "";
         try { roleText = File.ReadAllText(s.RoleFile, Encoding.UTF8); } catch { }
         var launch = adapter.BuildLaunch(conn, s, roleText);
+        // 聊天室的 Codex 要能上網查資料（情報研究員；claude／gemini 內建、opencode 走 --auto）
+        if (g.IsChat && s.Backend == "codex" && !(conn.Args ?? "").Contains("--search", StringComparison.OrdinalIgnoreCase))
+            launch = launch with { ExtraArgs = launch.ExtraArgs + " --search" };
 
         _restoreBufferForNextTab = saved != null ? LoadRestoreBuffer(saved) : null;
         _restoreOpenedForNextTab = saved == null || saved.OpenedUtc == default ? null : saved.OpenedUtc;
@@ -181,6 +183,17 @@ public partial class MainWindow
         Diag.Log($"ma launch {s.AgentId} backend={s.Backend} role={s.Role} path={conn.Path} viaPs={conn.ViaPowerShell} " +
                  $"role-inject={(launch.FirstMessage == null ? "flag" : "typed")} args+={launch.ExtraArgs.Length}");
         return tab;
+    }
+
+    /// <summary>組合一位的角色檔：代理團隊走 RoleLibrary、聊天室走 ChatRoleLibrary。</summary>
+    private static void ComposeRole(AgentGroup g, AgentSlot s)
+    {
+        try
+        {
+            if (g.IsChat) ChatRoleLibrary.Compose(g, s);
+            else RoleLibrary.Compose(g, s);
+        }
+        catch (Exception ex) { Diag.Log($"ma compose {s.AgentId}: {ex.Message}"); }
     }
 
     /// <summary>綁組／重綁：順序整理、標題（代表列＝組名、其餘＝Agent ID）、分頁列只留一列、前端排版（g 協定）。</summary>
@@ -306,6 +319,23 @@ public partial class MainWindow
         var now = DateTime.UtcNow;
         foreach (var g in _agentGroups.ToList())
         {
+            if (g.IsChat)   // AI 聊天室：不投遞信，改由 AwayTerminal 主持輪流發言
+            {
+                foreach (var s in g.Running.ToList())
+                    if (s.Tab!.Session != null && s.PendingFirstMessage != null && AgentReady(s, now))
+                    {
+                        SendTextThenEnter(s.Tab, s.PendingFirstMessage);   // OpenCode／Gemini：角色靠第一句打進去
+                        s.PendingFirstMessage = null;
+                        s.RoleInjected = true;
+                        MarkTyped(s, now);
+                        s.DeliveryChecked = true;
+                        Diag.Log($"chat role-inject typed {s.AgentId}");
+                    }
+                try { ChatRoomTick(g, now); } catch (Exception ex) { Diag.Log("chat tick: " + ex.Message); }
+                PostAgentState(g);
+                g.RowTab?.RaiseAgentState();
+                continue;
+            }
             foreach (var s in g.Running.ToList())
             {
                 var tab = s.Tab!;
@@ -480,12 +510,12 @@ public partial class MainWindow
     }
 
     // ---------- 分頁右鍵 ----------
-    /// <summary>「代理團隊設定…」：啟動沒啟用的格、關掉取消勾選的格、改了 CLI／角色（或按「重新啟動」）的格重新啟動。
+    /// <summary>「代理團隊設定…／聊天室設定…」：啟動沒啟用的格、關掉取消勾選的格、改了 CLI／角色（或按「重新啟動」）的格重新啟動。
     /// 會結束執行中 agent 的變更，設定視窗按「套用」時已經確認過。</summary>
     private void AgentSetup_Click(object sender, RoutedEventArgs e)
     {
         if (TabOf(sender)?.Agent?.Group is not { } g) return;
-        var dlg = new MultiAgentDialog(g.Dir, g) { Owner = this };
+        var dlg = new MultiAgentDialog(g.Dir, g, g.Mode) { Owner = this };
         if (dlg.ShowDialog() != true || dlg.Result is not { } r) { Web.Focus(); return; }
         ApplyAgentSetup(g, r);
     }
@@ -537,7 +567,7 @@ public partial class MainWindow
                 s.Enabled = true;
                 s.Backend = ss.Backend;
                 s.Role = ss.Role;
-                s.RoleTitle = RoleLibrary.TitleOf(ss.Role);
+                s.RoleTitle = g.IsChat ? ChatRoleLibrary.TitleOf(ss.Role) : RoleLibrary.TitleOf(ss.Role);
                 s.Queue.Clear();
                 fresh.Add(s);
             }
@@ -547,7 +577,7 @@ public partial class MainWindow
         // 名單變了 → 每格的角色檔（隊友名單）都重組；新開的格用新檔啟動
         foreach (var s in g.Slots.Where(x => x.Enabled))
         {
-            try { RoleLibrary.Compose(g, s); } catch (Exception ex) { Diag.Log($"ma compose {s.AgentId}: {ex.Message}"); }
+            ComposeRole(g, s);
         }
         foreach (var s in fresh) LaunchSlot(g, s);
         if (!g.Running.Any()) { DisbandAgentGroup(g); return; }
@@ -657,7 +687,12 @@ public partial class MainWindow
             Diag.Log($"ma restore skipped: folder missing '{first.Dir}'");
             return;
         }
-        var setup = new MultiAgentSetup { Dir = first.Dir, MaxMessages = first.AgentMaxMessages, IdleCheckMinutes = first.AgentIdleCheck };
+        var setup = new MultiAgentSetup
+        {
+            Dir = first.Dir, MaxMessages = first.AgentMaxMessages, IdleCheckMinutes = first.AgentIdleCheck,
+            Rounds = first.AgentRounds > 0 ? first.AgentRounds : AgentGroup.DefaultRounds
+        };
+        var mode = first.AgentMode == 1 ? GroupMode.Chat : GroupMode.Team;
         var bySlot = new Dictionary<int, SavedTab>();
         foreach (var st in entries)
         {
@@ -666,6 +701,8 @@ public partial class MainWindow
             setup.Slots[st.AgentIndex - 1] = new AgentSlotSetup { Enabled = true, Backend = st.AgentBackend, Role = st.AgentRole };
         }
         if (bySlot.Count == 0) return;
-        OpenAgentGroup(setup, first.AgentKey, first.AgentGroupNumber, first.AgentRatio, bySlot, first.Title);
+        // 聊天室恢復：沿用同一份討論紀錄，但討論進度不回來（CLI 都是新 session）→ 停在「等主題」，
+        // 使用者右鍵「開始討論／換主題…」就接著同一個 transcript.md 往下寫
+        OpenAgentGroup(setup, first.AgentKey, first.AgentGroupNumber, first.AgentRatio, bySlot, first.Title, mode, first.AgentChatFolder);
     }
 }

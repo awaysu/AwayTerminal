@@ -2,6 +2,22 @@ using AwayTerminal.Services.MultiAgent;
 
 namespace AwayTerminal.Models;
 
+/// <summary>一組的用途：代理團隊（信箱分工）或 AI 聊天室（輪流討論）。</summary>
+public enum GroupMode { Team, Chat }
+
+/// <summary>AI 聊天室的進行階段。</summary>
+public enum ChatPhase
+{
+    /// <summary>等使用者給主題。</summary>
+    NeedTopic,
+    /// <summary>輪流發言中。</summary>
+    Discussing,
+    /// <summary>已請主持人寫結論。</summary>
+    Concluding,
+    /// <summary>結論寫完了。</summary>
+    Done,
+}
+
 /// <summary>
 /// 一個 Multi-Agent 分頁（1.2.0）：2～4 個 agent（各自是一個獨立的 <see cref="TerminalTab"/>，session／xterm／log／恢復畫面都照一般分頁）
 /// 綁成一組。右側分頁列只顯示 <see cref="RowTab"/> 那一列；終端機區「下一上 N−1」（下＝最小格號、通常是 Agent-x1）。
@@ -59,6 +75,47 @@ public sealed class AgentGroup
 
     /// <summary>上限的顯示文字（分頁列小字、tooltip）：數字或 ∞。</summary>
     public string LimitText => MaxMessages > 0 ? MaxMessages.ToString() : "∞";
+
+    // ---------- AI 聊天室（1.2.3；沿用同一個 AgentGroup／pane 排版，只是不走信箱投遞，改由 AwayTerminal 主持輪流發言）----------
+    /// <summary>這一組是代理團隊還是 AI 聊天室。</summary>
+    public GroupMode Mode { get; set; } = GroupMode.Team;
+
+    public bool IsChat => Mode == GroupMode.Chat;
+
+    /// <summary>聊天室：討論迴數（一迴＝每個人各發言一次）。</summary>
+    public int Rounds { get; set; } = DefaultRounds;
+
+    public const int DefaultRounds = 5;
+
+    /// <summary>設定視窗可選的迴數。</summary>
+    public static readonly int[] RoundChoices = { 3, 5, 8, 10 };
+
+    /// <summary>聊天室：某一位超過這麼多分鐘沒發言就跳過他這一迴（在紀錄註明）。</summary>
+    public const int TurnTimeoutMinutes = 5;
+
+    /// <summary>討論紀錄資料夾（相對專案資料夾）。</summary>
+    public const string ChatRelDir = ".ai/chat";
+
+    /// <summary>這場討論的資料夾名（開聊天室時的時間，例 20260916-1152）。</summary>
+    public string ChatFolder { get; set; } = "";
+
+    /// <summary>使用者給的主題（還沒給＝空）。</summary>
+    public string Topic { get; set; } = "";
+
+    /// <summary>目前第幾迴（1 起）。</summary>
+    public int Round { get; set; } = 1;
+
+    /// <summary>這一迴輪到參加者清單裡的第幾位（0 起）。</summary>
+    public int Speaker { get; set; }
+
+    /// <summary>聊天室進行到哪個階段。</summary>
+    public ChatPhase Phase { get; set; } = ChatPhase.NeedTopic;
+
+    /// <summary>目前這一輪是什麼時候請他發言的（用來判斷逾時跳過；default＝還沒請）。</summary>
+    public DateTime TurnAskedUtc { get; set; }
+
+    /// <summary>使用者按了「結束討論」：這一輪結束後就去寫結論。</summary>
+    public bool EndRequested { get; set; }
 
     /// <summary>閒置檢查（使用者要求，2026-09-16：格 2～4 有時會停著）：整組閒置這麼多分鐘，就請 Agent-x1 問大家目前的狀況。0＝不檢查。</summary>
     public int IdleCheckMinutes { get; set; } = DefaultIdleCheckMinutes;

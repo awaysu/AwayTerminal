@@ -134,12 +134,23 @@
                                         <MenuItem Header="Aa 範例文字" Foreground="#C0CAF5" Background="#1A1B26" Tag="#C0CAF5|#1A1B26" Click="MenuColor_Click" />
                                         <MenuItem Header="Aa 範例文字" Foreground="#EBDBB2" Background="#282828" Tag="#EBDBB2|#282828" Click="MenuColor_Click" />
                                     </MenuItem>
-                                    <!-- 1.2.0 Multi-Agent（代理團隊）：設定、投遞（次數上限／暫停；打開時勾目前狀態）、開信箱資料夾（只有代理團隊那一列顯示）-->
+                                    <!-- 1.2.0 Multi-Agent（代理團隊）：設定、投遞（次數上限／暫停；打開時勾目前狀態）、開信箱資料夾（只有整組那一列顯示）。
+                                         1.2.3：設定對兩種都有；投遞／停止任務／信箱只有代理團隊，聊天室換成開始討論／結束討論／插話／開紀錄資料夾 -->
                                     <Separator Visibility="{Binding AgentRowVisibility}" />
                                     <MenuItem Header="{Binding Path=[ma.menuSetup], Source={x:Static loc:LocProxy.Instance}}" Click="AgentSetup_Click"
-                                              Visibility="{Binding AgentRowVisibility}" />
+                                              Visibility="{Binding TeamRowVisibility}" />
+                                    <MenuItem Header="{Binding Path=[chat.menuSetup], Source={x:Static loc:LocProxy.Instance}}" Click="AgentSetup_Click"
+                                              Visibility="{Binding ChatRowVisibility}" />
+                                    <MenuItem Header="{Binding Path=[chat.menuTopic], Source={x:Static loc:LocProxy.Instance}}" Click="ChatTopic_Click"
+                                              Visibility="{Binding ChatRowVisibility}" />
+                                    <MenuItem Header="{Binding Path=[chat.menuSay], Source={x:Static loc:LocProxy.Instance}}" Click="ChatSay_Click"
+                                              Visibility="{Binding ChatRowVisibility}" />
+                                    <MenuItem Header="{Binding Path=[chat.menuEnd], Source={x:Static loc:LocProxy.Instance}}" Click="ChatEnd_Click"
+                                              Visibility="{Binding ChatRowVisibility}" />
+                                    <MenuItem Header="{Binding Path=[chat.menuOpenFolder], Source={x:Static loc:LocProxy.Instance}}" Click="ChatOpenFolder_Click"
+                                              Visibility="{Binding ChatRowVisibility}" />
                                     <MenuItem Header="{Binding Path=[ma.menuDelivery], Source={x:Static loc:LocProxy.Instance}}"
-                                              Visibility="{Binding AgentRowVisibility}" SubmenuOpened="AgentDelivery_SubmenuOpened">
+                                              Visibility="{Binding TeamRowVisibility}" SubmenuOpened="AgentDelivery_SubmenuOpened">
                                         <MenuItem Header="10" Tag="10" Click="AgentDelivery_Click" />
                                         <MenuItem Header="30" Tag="30" Click="AgentDelivery_Click" />
                                         <MenuItem Header="50" Tag="50" Click="AgentDelivery_Click" />
@@ -149,9 +160,9 @@
                                         <MenuItem Header="{Binding Path=[ma.menuPauseItem], Source={x:Static loc:LocProxy.Instance}}" Tag="pause" Click="AgentDelivery_Click" />
                                     </MenuItem>
                                     <MenuItem Header="{Binding Path=[ma.menuStop], Source={x:Static loc:LocProxy.Instance}}" Click="AgentStop_Click"
-                                              Visibility="{Binding AgentRowVisibility}" />
+                                              Visibility="{Binding TeamRowVisibility}" />
                                     <MenuItem Header="{Binding Path=[ma.menuOpenBus], Source={x:Static loc:LocProxy.Instance}}" Click="AgentOpenBus_Click"
-                                              Visibility="{Binding AgentRowVisibility}" />
+                                              Visibility="{Binding TeamRowVisibility}" />
                                     <Separator />
                                     <MenuItem Header="{Binding Path=[menu.close], Source={x:Static loc:LocProxy.Instance}}" Click="MenuClose_Click" />
                                 </ContextMenu>

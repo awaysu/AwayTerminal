@@ -208,6 +208,9 @@ public partial class MainWindow : Window, IRemoteHost
             s2.AgentRatio = ag?.Group.Ratio ?? 0.5;
             s2.AgentMaxMessages = ag?.Group.MaxMessages ?? AgentGroup.DefaultMaxMessages;
             s2.AgentIdleCheck = ag?.Group.IdleCheckMinutes ?? AgentGroup.DefaultIdleCheckMinutes;
+            s2.AgentMode = ag?.Group.IsChat == true ? 1 : 0;                       // 1.2.3：聊天室要連討論進度一起回來
+            s2.AgentRounds = ag?.Group.Rounds ?? AgentGroup.DefaultRounds;
+            s2.AgentChatFolder = ag?.Group.ChatFolder ?? "";
             s2.BufferFile = "";
             if (bufs.TryGetValue(t.Id, out var text) && !string.IsNullOrEmpty(text))
             {
@@ -331,9 +334,12 @@ public partial class MainWindow : Window, IRemoteHost
 
         // 註：ADB 自 v1.0.18 起**不再是內建項目**，改由自訂連線決定（自訂視窗的
         // 「自動偵測」可一鍵加入）。刪光自訂連線後這一區就是空的，符合預期。
-        // 「自訂…」上方一律加分隔線 → 開管理視窗；Multi-Agent（1.2.0）放在它上面（一律列出，沒有可用的 CLI 時設定視窗會說明）
+        // 代理團隊（1.2.0）與 AI 聊天室（1.2.3）一律列出（沒有可用的 CLI 時設定視窗會說明）；
+        // 使用者指定：AI聊天室在代理團隊下面，它與「自訂…」之間再一條分隔線
         menu.Items.Add(new Separator());
         menu.Items.Add(MakeNewItem("ma.title", "multi-agent.png", OpenMultiAgent_Click));
+        menu.Items.Add(MakeNewItem("chat.title", "chatroom.png", OpenChatRoom_Click));
+        menu.Items.Add(new Separator());
         var manage = MakeNewItemRaw(Loc.T("menu.custom"), "settings.png");
         manage.Click += Custom_Click;
         menu.Items.Add(manage);
@@ -549,6 +555,7 @@ public partial class MainWindow : Window, IRemoteHost
         "adb" => "ADB" + (string.IsNullOrEmpty(e.AdbSerial) ? "" : " " + e.AdbSerial),
         "custom" => e.Title,
         "multiagent" => Loc.T("ma.title") + " — " + ShortDir(e.Dir),
+        "chatroom" => Loc.T("chat.title") + " — " + ShortDir(e.Dir),
         _ => e.Title
     };
 
@@ -556,6 +563,7 @@ public partial class MainWindow : Window, IRemoteHost
     {
         "ps" => "powershell.png",
         "multiagent" => "multi-agent.png",
+        "chatroom" => "chatroom.png",
         "claude" => "claude-code.png",
         "ssh" or "telnet" => "ssh-telnet.png",
         "com" => "com.png",
@@ -604,6 +612,9 @@ public partial class MainWindow : Window, IRemoteHost
                 break;
             case "multiagent":   // 1.2.0：用上次的資料夾直接開設定視窗（資料夾不在了＝先跳資料夾選擇）
                 OpenMultiAgent(Directory.Exists(e.Dir) ? e.Dir : null);
+                break;
+            case "chatroom":     // 1.2.3：AI 聊天室，同上
+                OpenChatRoom(Directory.Exists(e.Dir) ? e.Dir : null);
                 break;
         }
     }

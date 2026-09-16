@@ -95,6 +95,10 @@ public sealed class TerminalTab : INotifyPropertyChanged
     /// <summary>分頁列上代表整組的那一列（組內格號最小、有分頁的那格）。</summary>
     private bool IsAgentRow => _agent != null && ReferenceEquals(_agent.Group.RowTab, this);
     public Visibility AgentRowVisibility => IsAgentRow ? Visibility.Visible : Visibility.Collapsed;
+    /// <summary>代理團隊那一列（右鍵的投遞／停止任務／訊息資料夾只給團隊用）。</summary>
+    public Visibility TeamRowVisibility => IsAgentRow && !_agent!.Group.IsChat ? Visibility.Visible : Visibility.Collapsed;
+    /// <summary>AI 聊天室那一列（右鍵的主題／結束討論／插話／紀錄資料夾）。</summary>
+    public Visibility ChatRowVisibility => IsAgentRow && _agent!.Group.IsChat ? Visibility.Visible : Visibility.Collapsed;
     /// <summary>分頁右鍵「巨集」：Multi-Agent 分頁不支援（使用者決定）→ 藏起來。</summary>
     public Visibility NotAgentVisibility => _agent == null ? Visibility.Visible : Visibility.Collapsed;
     /// <summary>分頁列那一列尾端的小字（刻意短）：已投遞 3 則＝「✉3/30」（不限＝「✉3/∞」）、暫停＝「⏸3/30」；還沒投遞過＝空。</summary>
@@ -104,6 +108,14 @@ public sealed class TerminalTab : INotifyPropertyChanged
         {
             if (!IsAgentRow) return "";
             var g = _agent!.Group;
+            if (g.IsChat)   // 聊天室：第幾迴／共幾迴（1.2.3）
+                return g.Phase switch
+                {
+                    ChatPhase.NeedTopic => Loc.T("chat.stNeedTopic"),
+                    ChatPhase.Discussing => $"💬{Math.Min(g.Round, g.Rounds)}/{g.Rounds}",
+                    ChatPhase.Concluding => Loc.T("chat.stConcluding"),
+                    _ => Loc.T("chat.stDone"),
+                };
             if (g.Paused) return $"⏸{g.MessageCount}/{g.LimitText}";
             return g.MessageCount > 0 ? $"✉{g.MessageCount}/{g.LimitText}" : "";
         }
@@ -111,6 +123,7 @@ public sealed class TerminalTab : INotifyPropertyChanged
     public void RaiseAgent()
     {
         Raise(nameof(Agent)); Raise(nameof(AgentRowVisibility)); Raise(nameof(NotAgentVisibility));
+        Raise(nameof(TeamRowVisibility)); Raise(nameof(ChatRowVisibility));
         RaiseAgentState(); Raise(nameof(KindTip));
     }
     /// <summary>投遞數／暫停／各格忙閒變了：分頁列那一列的小字、右鍵選單文字、tooltip、圖示重畫。</summary>
@@ -124,13 +137,25 @@ public sealed class TerminalTab : INotifyPropertyChanged
     {
         var g = _agent!.Group;
         var sb = new System.Text.StringBuilder();
-        sb.Append(Loc.T("ma.title")).Append("  ").Append(g.Dir);
+        sb.Append(Loc.T(g.IsChat ? "chat.title" : "ma.title")).Append("  ").Append(g.Dir);
+        if (g.IsChat && !string.IsNullOrWhiteSpace(g.Topic)) sb.Append('\n').Append(g.Topic);
         foreach (var s in g.Running)
         {
             string st = s.Tab!.Session == null ? Loc.T("ma.stateExited")
                       : s.Tab.Status == TermStatus.Busy ? Loc.T("ma.stateBusy") : Loc.T("ma.stateIdle");
             sb.Append('\n').Append(s.AgentId).Append("  ").Append(s.RoleTitle).Append("  ").Append(s.BackendName).Append("  ").Append(st);
             if (s.Queue.Count > 0) sb.Append("  · ").Append(string.Format(Loc.T("ma.tipPending"), s.Queue.Count));
+        }
+        if (g.IsChat)
+        {
+            sb.Append('\n').Append(g.Phase switch
+            {
+                ChatPhase.NeedTopic => Loc.T("chat.tipNeedTopic"),
+                ChatPhase.Discussing => string.Format(Loc.T("chat.tipRound"), Math.Min(g.Round, g.Rounds), g.Rounds),
+                ChatPhase.Concluding => Loc.T("chat.tipConcluding"),
+                _ => Loc.T("chat.tipDone"),
+            });
+            return sb.ToString();
         }
         sb.Append('\n').Append(string.Format(Loc.T("ma.tipMessages"), g.MessageCount, g.LimitText));
         if (g.Paused) sb.Append("  · ").Append(Loc.T("ma.tipPaused"));
@@ -200,7 +225,7 @@ public sealed class TerminalTab : INotifyPropertyChanged
         get
         {
             string d = KindDetail;
-            string kind = IsAgentRow ? Loc.T("ma.title") : Loc.T(KindKey);   // Multi-Agent 那一列的圖示是整組
+            string kind = IsAgentRow ? Loc.T(_agent!.Group.IsChat ? "chat.title" : "ma.title") : Loc.T(KindKey);   // 整組那一列的圖示＝代理團隊／聊天室
             return string.IsNullOrEmpty(d) ? kind : $"{kind}  {d}";
         }
     }
@@ -244,7 +269,7 @@ public sealed class TerminalTab : INotifyPropertyChanged
         }
     }
     public ImageSource StatusIcon => IsAgentRow
-        ? IconTint.Get("multi-agent.png", _agent!.Group.AnyBusy ? BusyColor : ReadyColor)
+        ? IconTint.Get(_agent!.Group.IsChat ? "chatroom.png" : "multi-agent.png", _agent!.Group.AnyBusy ? BusyColor : ReadyColor)
         : IconTint.Get(_iconFile, _status == TermStatus.Busy ? BusyColor : ReadyColor);
 
     // 記錄 log 中（分頁 tooltip 註明；右鍵選單開始/停止）

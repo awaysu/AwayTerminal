@@ -30,6 +30,8 @@ public sealed class MultiAgentSetup
     public int MaxMessages { get; set; } = AgentGroup.DefaultMaxMessages;
     /// <summary>閒置檢查分鐘數（0＝不檢查）。</summary>
     public int IdleCheckMinutes { get; set; } = AgentGroup.DefaultIdleCheckMinutes;
+    /// <summary>AI 聊天室：討論迴數。</summary>
+    public int Rounds { get; set; } = AgentGroup.DefaultRounds;
 }
 
 /// <summary>
@@ -73,26 +75,52 @@ public partial class MultiAgentDialog : Window
 
     private readonly AgentGroup? _group;
     private readonly string _dir;
+    private readonly bool _chat;   // AI 聊天室（角色庫、上面那一列、驗證規則都不一樣）
     private readonly SlotUi[] _ui = new SlotUi[4];
     private readonly List<Choice> _backends;
     private bool _ready;   // 初始化完成前（設 ItemsSource／預選）的 SelectionChanged 不處理
 
     public MultiAgentSetup? Result { get; private set; }
 
-    public MultiAgentDialog(string dir, AgentGroup? existing)
+    public MultiAgentDialog(string dir, AgentGroup? existing, GroupMode mode = GroupMode.Team)
     {
         InitializeComponent();
         _group = existing;
         _dir = existing?.Dir ?? dir;
+        _chat = (existing?.Mode ?? mode) == GroupMode.Chat;
 
-        // 資料夾在開視窗前就選好了（New → 代理團隊先跳資料夾選擇），視窗裡不再有資料夾欄位，標題顯示完整路徑
-        Title = $"{Loc.T("ma.title")} — {_dir}";
+        // 資料夾在開視窗前就選好了（New → 代理團隊／AI 聊天室先跳資料夾選擇），視窗裡不再有資料夾欄位，標題顯示完整路徑
+        Title = $"{Loc.T(_chat ? "chat.title" : "ma.title")} — {_dir}";
         RestoreRolesBtn.Content = Loc.T("ma.dlgRestoreRoles");
         OpenRolesBtn.Content = Loc.T("ma.dlgOpenRoles");
         OkBtn.Content = Loc.T(existing == null ? "ma.dlgOpen" : "ma.dlgApply");
         CancelBtn.Content = Loc.T("ma.dlgCancel");
-        HintText.Text = Loc.T("ma.dlgHint");
+        HintText.Text = Loc.T(_chat ? "chat.dlgHint" : "ma.dlgHint");
 
+        if (_chat) InitChatRow(existing);
+        else InitTeamRows(existing);
+
+        // 這台電腦找得到的 Coding Agent（沿用自訂連線或自動偵測；見 ICodingAgentAdapter.Resolve），順序 ClaudeCode／Codex／OpenCode／GeminiCLI
+        _backends = AdapterRegistry.All.Where(a => a.Resolve() != null)
+            .Select(a => new Choice(a.Key, a.DisplayName, a.Key + ".png")).ToList();
+
+        for (int i = 0; i < 4; i++) SlotGrid.Children.Add(BuildSlot(i));
+        FillRoles();
+        for (int i = 0; i < 4; i++) ApplyInitial(i);
+        _ready = true;
+        for (int i = 0; i < 4; i++) RefreshSlot(i);
+
+        if (_backends.Count == 0 && existing == null)
+        {
+            NoBackendText.Text = Loc.T("ma.dlgNoBackend");
+            NoBackendText.Visibility = Visibility.Visible;
+            OkBtn.IsEnabled = false;
+        }
+    }
+
+    /// <summary>代理團隊：投遞限制次數＋閒置檢查兩列。</summary>
+    private void InitTeamRows(AgentGroup? existing)
+    {
         // 投遞限制次數：10／30／50／100／不限；新開的組預設 30，既有的組＝它目前的值（不在選項裡就補一項）
         LimitLabel.Text = Loc.T("ma.dlgLimit");
         LimitHint.Text = Loc.T("ma.dlgLimitHint");
@@ -116,23 +144,21 @@ public partial class MultiAgentDialog : Window
         IdleBox.ItemTemplate = ChoiceTemplate(withIcon: false);
         IdleBox.ItemsSource = idles;
         Select(IdleBox, curIdle.ToString());
+    }
 
-        // 這台電腦找得到的 Coding Agent（沿用自訂連線或自動偵測；見 ICodingAgentAdapter.Resolve），順序 ClaudeCode／Codex／OpenCode／GeminiCLI
-        _backends = AdapterRegistry.All.Where(a => a.Resolve() != null)
-            .Select(a => new Choice(a.Key, a.DisplayName, a.Key + ".png")).ToList();
-
-        for (int i = 0; i < 4; i++) SlotGrid.Children.Add(BuildSlot(i));
-        FillRoles();
-        for (int i = 0; i < 4; i++) ApplyInitial(i);
-        _ready = true;
-        for (int i = 0; i < 4; i++) RefreshSlot(i);
-
-        if (_backends.Count == 0 && existing == null)
-        {
-            NoBackendText.Text = Loc.T("ma.dlgNoBackend");
-            NoBackendText.Visibility = Visibility.Visible;
-            OkBtn.IsEnabled = false;
-        }
+    /// <summary>AI 聊天室：第一列改成「討論迴數」（3／5／8／10，預設 5），第二列隱藏。</summary>
+    private void InitChatRow(AgentGroup? existing)
+    {
+        IdleRow.Visibility = Visibility.Collapsed;
+        LimitLabel.Text = Loc.T("chat.dlgRounds");
+        LimitHint.Text = Loc.T("chat.dlgRoundsHint");
+        LimitHint.ToolTip = LimitHint.Text;
+        var rounds = AgentGroup.RoundChoices.Select(n => new Choice(n.ToString(), string.Format(Loc.T("chat.rounds"), n), null)).ToList();
+        int cur = existing?.Rounds ?? AgentGroup.DefaultRounds;
+        if (!AgentGroup.RoundChoices.Contains(cur)) rounds.Insert(0, new Choice(cur.ToString(), string.Format(Loc.T("chat.rounds"), cur), null));
+        LimitBox.ItemTemplate = ChoiceTemplate(withIcon: false);
+        LimitBox.ItemsSource = rounds;
+        Select(LimitBox, cur.ToString());
     }
 
     private static SolidColorBrush Frozen(byte r, byte g, byte b)
@@ -158,12 +184,12 @@ public partial class MultiAgentDialog : Window
         head.Children.Add(ui.Id);
         panel.Children.Add(head);
 
-        ui.CliLabel = new TextBlock { Text = Loc.T("ma.dlgAgentType"), Margin = new Thickness(0, 0, 0, 3) };
+        ui.CliLabel = new TextBlock { Text = Loc.T(_chat ? "chat.dlgAiType" : "ma.dlgAgentType"), Margin = new Thickness(0, 0, 0, 3) };
         panel.Children.Add(ui.CliLabel);
         ui.Backend = new ComboBox { Margin = new Thickness(0, 0, 0, 8), ItemTemplate = ChoiceTemplate(withIcon: true) };
         panel.Children.Add(ui.Backend);
 
-        ui.RoleLabel = new TextBlock { Text = Loc.T("ma.dlgAgentRole"), Margin = new Thickness(0, 0, 0, 3) };
+        ui.RoleLabel = new TextBlock { Text = Loc.T(_chat ? "chat.dlgRole" : "ma.dlgAgentRole"), Margin = new Thickness(0, 0, 0, 3) };
         panel.Children.Add(ui.RoleLabel);
         ui.Role = new ComboBox { Margin = new Thickness(0, 0, 0, 6), ItemTemplate = ChoiceTemplate(withIcon: false) };
         panel.Children.Add(ui.Role);
@@ -231,7 +257,8 @@ public partial class MultiAgentDialog : Window
     private void FillRoles()
     {
         var roles = new List<Choice> { new("", Loc.T("ma.dlgRoleNone"), null) };
-        roles.AddRange(RoleLibrary.ListRoles().Select(r => new Choice(r.Key, r.Title, null)));
+        var src = _chat ? Services.ChatRoom.ChatRoleLibrary.ListRoles() : RoleLibrary.ListRoles();
+        roles.AddRange(src.Select(r => new Choice(r.Key, r.Title, null)));
         for (int i = 0; i < 4; i++)
         {
             string? cur = (_ui[i].Role.SelectedItem as Choice)?.Key;
@@ -259,7 +286,7 @@ public partial class MultiAgentDialog : Window
     {
         var ui = _ui[i];
         int index = i + 1;
-        string defaultRole = RoleLibrary.DefaultSlotRoles[i];
+        string defaultRole = _chat ? Services.ChatRoom.ChatRoleLibrary.DefaultSlotRoles[i] : RoleLibrary.DefaultSlotRoles[i];
         ui.Id.Text = $"Agent-x{index}";   // 組號開組時才決定（1～9）；既有的組也照這樣顯示，與新開時一致
 
         if (_group == null)
@@ -344,28 +371,41 @@ public partial class MultiAgentDialog : Window
     // ---------- 按鈕 ----------
     private void RestoreRoles_Click(object sender, RoutedEventArgs e)
     {
-        if (MessageBox.Show(this, Loc.T("ma.dlgRestoreRolesAsk"), Loc.T("ma.title"), MessageBoxButton.YesNo, MessageBoxImage.Question)
+        if (MessageBox.Show(this, Loc.T("ma.dlgRestoreRolesAsk"), DlgTitle, MessageBoxButton.YesNo, MessageBoxImage.Question)
             != MessageBoxResult.Yes) return;
-        RoleLibrary.RestoreDefaults();
+        if (_chat) Services.ChatRoom.ChatRoleLibrary.RestoreDefaults();
+        else RoleLibrary.RestoreDefaults();
         FillRoles();
     }
 
     private void OpenRoles_Click(object sender, RoutedEventArgs e)
     {
-        RoleLibrary.EnsureDefaults();
-        try { System.Diagnostics.Process.Start("explorer.exe", $"\"{RoleLibrary.RolesDir}\""); } catch { }
+        string dir;
+        if (_chat) { Services.ChatRoom.ChatRoleLibrary.EnsureDefaults(); dir = Services.ChatRoom.ChatRoleLibrary.RolesDir; }
+        else { RoleLibrary.EnsureDefaults(); dir = RoleLibrary.RolesDir; }
+        try { System.Diagnostics.Process.Start("explorer.exe", $"\"{dir}\""); } catch { }
     }
+
+    private string DlgTitle => Loc.T(_chat ? "chat.title" : "ma.title");
 
     private void Ok_Click(object sender, RoutedEventArgs e)
     {
         if (_group == null && !Directory.Exists(_dir)) { Warn(string.Format(Loc.T("ma.dlgFolderMissing"), _dir)); return; }   // 開著視窗時資料夾被刪／改名
 
-        var result = new MultiAgentSetup
+        var result = new MultiAgentSetup { Dir = _dir };
+        if (_chat)
         {
-            Dir = _dir,
-            MaxMessages = int.TryParse(KeyOf(LimitBox), out int limit) ? Math.Max(0, limit) : AgentGroup.DefaultMaxMessages,
-            IdleCheckMinutes = int.TryParse(KeyOf(IdleBox), out int idle) ? Math.Max(0, idle) : AgentGroup.DefaultIdleCheckMinutes
-        };
+            // 聊天室：第一列是討論迴數；投遞上限／閒置檢查用不到，沿用既有值（新開＝預設）
+            result.Rounds = int.TryParse(KeyOf(LimitBox), out int rounds) && rounds > 0 ? rounds : AgentGroup.DefaultRounds;
+            result.MaxMessages = _group?.MaxMessages ?? AgentGroup.DefaultMaxMessages;
+            result.IdleCheckMinutes = _group?.IdleCheckMinutes ?? AgentGroup.DefaultIdleCheckMinutes;
+        }
+        else
+        {
+            result.MaxMessages = int.TryParse(KeyOf(LimitBox), out int limit) ? Math.Max(0, limit) : AgentGroup.DefaultMaxMessages;
+            result.IdleCheckMinutes = int.TryParse(KeyOf(IdleBox), out int idle) ? Math.Max(0, idle) : AgentGroup.DefaultIdleCheckMinutes;
+            result.Rounds = _group?.Rounds ?? AgentGroup.DefaultRounds;
+        }
         var endsConversation = new List<string>();   // 執行中、套用後會關閉或重新啟動的 agent（先確認）
         for (int i = 0; i < 4; i++)
         {
@@ -387,13 +427,16 @@ public partial class MultiAgentDialog : Window
                     _group.Slots[i].Label));   // 用 pane 標題上的全名（Agent-12 · Software Engineer · Codex），對得上是哪一格
         }
 
+        // 聊天室至少要兩個人才討論得起來（使用者要求：最少 2 位、最多 4 位）
+        if (_chat && result.Slots.Count(s => s.Enabled) < 2) { Warn(Loc.T("chat.dlgNeedTwo")); return; }
+
         if (_group != null)
         {
             if (result.Launch.Count == 0 && result.Close.Count == 0 && result.MaxMessages == _group.MaxMessages
-                && result.IdleCheckMinutes == _group.IdleCheckMinutes)
+                && result.IdleCheckMinutes == _group.IdleCheckMinutes && result.Rounds == _group.Rounds)
             { DialogResult = false; return; }   // 沒有要變動的 → 當作取消
             if (endsConversation.Count > 0 &&
-                MessageBox.Show(this, string.Format(Loc.T("ma.applyAsk"), string.Join("\n", endsConversation)), Loc.T("ma.title"),
+                MessageBox.Show(this, string.Format(Loc.T("ma.applyAsk"), string.Join("\n", endsConversation)), DlgTitle,
                     MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
         }
 
@@ -401,5 +444,5 @@ public partial class MultiAgentDialog : Window
         DialogResult = true;
     }
 
-    private void Warn(string msg) => MessageBox.Show(this, msg, Loc.T("ma.title"), MessageBoxButton.OK, MessageBoxImage.Warning);
+    private void Warn(string msg) => MessageBox.Show(this, msg, DlgTitle, MessageBoxButton.OK, MessageBoxImage.Warning);
 }

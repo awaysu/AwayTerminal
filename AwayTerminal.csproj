@@ -10,7 +10,7 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>app.ico</ApplicationIcon>
     <!-- 版本：每交付一版 +0.0.1（顯示在「關於」）。P0=0.0.1 … P4=0.0.4，微調=0.0.5 -->
-    <Version>1.2.2</Version>
+    <Version>1.2.3</Version>
     <AssemblyTitle>AwayTerminal</AssemblyTitle>
     <Company>Chih-Wei Su (Awaysu)</Company>
     <Copyright>Copyright (c) 2026 Chih-Wei Su (Awaysu)</Copyright>
@@ -53,6 +53,7 @@
        %LOCALAPPDATA%\AwayTerminal\multiagent\ 讓使用者改。LogicalName 固定前綴 MultiAgent/（預設資源名會把資料夾的 - 等字元改掉）。 -->
   <ItemGroup>
     <EmbeddedResource Include="Resources\MultiAgent\**\*.md" LogicalName="MultiAgent/%(RecursiveDir)%(Filename)%(Extension)" />
+    <EmbeddedResource Include="Resources\ChatRoom\**\*.md" LogicalName="ChatRoom/%(RecursiveDir)%(Filename)%(Extension)" />
   </ItemGroup>
 
   <!-- 工具列 / 視窗 icon 內嵌為 WPF 資源 -->
