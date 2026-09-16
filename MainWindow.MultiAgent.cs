@@ -99,7 +99,7 @@ public partial class MainWindow
             IdleCheckMinutes = Math.Max(0, setup.IdleCheckMinutes),
             Mode = mode, Rounds = Math.Max(1, setup.Rounds),
             // 恢復分頁時沿用上次那場的紀錄資料夾（新開＝現在的時間）
-            ChatFolder = mode == GroupMode.Chat ? (string.IsNullOrWhiteSpace(chatFolder) ? NewChatFolder() : chatFolder!) : ""
+            ChatFolder = mode == GroupMode.Chat ? (string.IsNullOrWhiteSpace(chatFolder) ? NewChatFolder(setup.Dir) : chatFolder!) : ""
         };
         for (int i = 0; i < 4; i++)
         {
@@ -118,8 +118,11 @@ public partial class MainWindow
         foreach (var s in g.Slots.Where(x => x.Enabled)) ComposeRole(g, s);
 
         _agentGroups.Add(g);
-        foreach (var s in g.Slots.Where(x => x.Enabled))
-            LaunchSlot(g, s, restore != null && restore.TryGetValue(s.Index, out var st) ? st : null);
+        bool anyFailed = false;
+        foreach (var s in g.Slots.Where(x => x.Enabled).ToList())
+            if (LaunchSlot(g, s, restore != null && restore.TryGetValue(s.Index, out var st) ? st : null) == null)
+            { s.Enabled = false; anyFailed = true; }   // CLI 找不到／被移除：不能留在名單裡（角色檔、我的最愛、設定視窗都會以為他在）
+        if (anyFailed) foreach (var s in g.Slots.Where(x => x.Enabled)) ComposeRole(g, s);   // 隊友名單重組（打字注入的還沒讀、旗標注入的下次重啟會讀到）
         if (!g.Running.Any())
         {
             _agentGroups.Remove(g);
@@ -140,7 +143,10 @@ public partial class MainWindow
         if (adapter == null) { Diag.Log($"ma launch {s.AgentId}: unknown backend '{s.Backend}'"); return null; }
 
         CustomConn? conn = null;
-        if (saved != null && !string.IsNullOrWhiteSpace(saved.Path) && (saved.ViaPowerShell || File.Exists(saved.Path)))
+        // 絕對路徑一律要存在（npm 版的 .cmd 也一樣——CLI 移除了還開 PowerShell 分頁跑不存在的 .cmd，格會顯示「執行中」、信打進 shell）；
+        // 只有「靠 PATH 找」的裸名才交給 PowerShell 解析
+        if (saved != null && !string.IsNullOrWhiteSpace(saved.Path) &&
+            (Path.IsPathRooted(saved.Path) ? File.Exists(saved.Path) : saved.ViaPowerShell))
             conn = new CustomConn
             {
                 Name = string.IsNullOrWhiteSpace(saved.Name) ? adapter.DisplayName : saved.Name,
@@ -322,7 +328,10 @@ public partial class MainWindow
             if (g.IsChat)   // AI 聊天室：不投遞信，改由 AwayTerminal 主持輪流發言
             {
                 foreach (var s in g.Running.ToList())
-                    if (s.Tab!.Session != null && s.PendingFirstMessage != null && AgentReady(s, now))
+                {
+                    if (s.Tab!.Session == null) continue;
+                    ResendEnterIfSwallowed(s, now);   // 發言提示那一行的 Enter 被吞＝等 5 分鐘才跳過，補送比較划算
+                    if (s.PendingFirstMessage != null && AgentReady(s, now))
                     {
                         SendTextThenEnter(s.Tab, s.PendingFirstMessage);   // OpenCode／Gemini：角色靠第一句打進去
                         s.PendingFirstMessage = null;
@@ -331,6 +340,7 @@ public partial class MainWindow
                         s.DeliveryChecked = true;
                         Diag.Log($"chat role-inject typed {s.AgentId}");
                     }
+                }
                 try { ChatRoomTick(g, now); } catch (Exception ex) { Diag.Log("chat tick: " + ex.Message); }
                 PostAgentState(g);
                 g.RowTab?.RaiseAgentState();
@@ -340,19 +350,7 @@ public partial class MainWindow
             {
                 var tab = s.Tab!;
                 if (tab.Session == null) continue;
-
-                // Enter 補送：打完那一行 10 秒後，收件人除了打字回顯之外沒有再輸出＝Enter 可能沒送出去
-                // （claude 把整塊當貼上、CR 變換行，1.1.10 實測過）→ 單獨再送一次 Enter。沒有重打整行，不會重複投遞。
-                if (!s.DeliveryChecked && (now - s.LastDeliveredUtc).TotalSeconds >= 10)
-                {
-                    s.DeliveryChecked = true;
-                    if ((tab.LastOutputUtc - s.LastDeliveredUtc).TotalSeconds < 2)
-                    {
-                        tab.Session.WriteText("\r");
-                        Diag.Log($"ma resend-enter {s.AgentId}");
-                    }
-                }
-
+                ResendEnterIfSwallowed(s, now);
                 if (!AgentReady(s, now)) continue;
 
                 if (s.PendingFirstMessage != null)   // OpenCode／Gemini：角色靠第一句打進去（保底注入）
@@ -416,6 +414,20 @@ public partial class MainWindow
         s.DeliveryChecked = false;
     }
 
+    /// <summary>Enter 補送：打完那一行 10 秒後，對方除了打字回顯之外沒有再輸出＝Enter 可能沒送出去
+    /// （claude 把整塊當貼上、CR 變換行，1.1.10 實測過）→ 單獨再送一次 Enter。沒有重打整行，不會重複投遞。代理團隊與聊天室共用。</summary>
+    private static void ResendEnterIfSwallowed(AgentSlot s, DateTime now)
+    {
+        var tab = s.Tab!;
+        if (s.DeliveryChecked || tab.Session == null || (now - s.LastDeliveredUtc).TotalSeconds < 10) return;
+        s.DeliveryChecked = true;
+        if ((tab.LastOutputUtc - s.LastDeliveredUtc).TotalSeconds < 2)
+        {
+            tab.Session.WriteText("\r");
+            Diag.Log($"ma resend-enter {s.AgentId}");
+        }
+    }
+
     /// <summary>把這格佇列裡的信一次送出：一封＝「訊息 #n from … 請讀 …」；多封＝「你有 k 則新訊息：請依序讀 …」。每封都記進 .delivered、計數。</summary>
     private void DeliverQueued(AgentGroup g, AgentSlot s, DateTime now)
     {
@@ -439,7 +451,10 @@ public partial class MainWindow
             line = string.Format(Loc.T("ma.deliverMany"), batch.Count, string.Join(Loc.Lang == "en" ? ", " : "、", batch.Select(b => b.RelPath)));
         }
         SendTextThenEnter(s.Tab!, line);
-        foreach (var m in batch) g.Bus?.MarkDelivered(m.FileName);
+        // to: all 的信同一個物件排在每個收件人的佇列裡：要等最後一個收件人也拿到才記「已投遞」，
+        // 否則中途關程式（.delivered 已寫）重開後還沒收到的人永遠收不到
+        foreach (var m in batch)
+            if (!g.Slots.Any(x => x.Queue.Contains(m))) g.Bus?.MarkDelivered(m.FileName);
         g.MessageCount += batch.Count;
         MarkTyped(s, now);
         Diag.Log($"ma deliver #{g.DeliverySeq} -> {s.AgentId} ({string.Join(", ", batch.Select(b => b.FileName))}) count={g.MessageCount}/{g.LimitText}");
@@ -536,6 +551,12 @@ public partial class MainWindow
             g.AllIdleSinceUtc = default;
             Diag.Log($"ma setup team {g.Number}: idlecheck={(g.IdleCheckMinutes > 0 ? g.IdleCheckMinutes + "min" : "off")}");
         }
+        if (g.IsChat && r.Rounds != g.Rounds)   // 聊天室的討論迴數：討論中改也行（下一次換人時依新值判斷要不要收尾）
+        {
+            g.Rounds = Math.Max(1, r.Rounds);
+            Diag.Log($"ma setup chat {g.Number}: rounds={g.Rounds} (now round {g.Round})");
+            g.RowTab?.RaiseAgentState();
+        }
         var close = r.Close.Where(i => i is >= 1 and <= 4).Distinct().ToList();
         var launch = r.Launch.Where(i => i is >= 1 and <= 4 && !close.Contains(i)).Distinct().OrderBy(i => i).ToList();
         bool wasActive = _active?.Agent?.Group == g;
@@ -579,7 +600,10 @@ public partial class MainWindow
         {
             ComposeRole(g, s);
         }
-        foreach (var s in fresh) LaunchSlot(g, s);
+        bool anyFailed = false;
+        foreach (var s in fresh)
+            if (LaunchSlot(g, s) == null) { s.Enabled = false; anyFailed = true; }   // 同 OpenAgentGroup：啟動失敗的格不留在名單裡
+        if (anyFailed) foreach (var s in g.Slots.Where(x => x.Enabled)) ComposeRole(g, s);
         if (!g.Running.Any()) { DisbandAgentGroup(g); return; }
         LinkAgentGroup(g);
         // 關掉的那格若是作用中分頁，RemoveTabSilently 會跳到清單裡的下一個分頁（可能是別的分頁）→ 拉回這一組
@@ -701,8 +725,8 @@ public partial class MainWindow
             setup.Slots[st.AgentIndex - 1] = new AgentSlotSetup { Enabled = true, Backend = st.AgentBackend, Role = st.AgentRole };
         }
         if (bySlot.Count == 0) return;
-        // 聊天室恢復：沿用同一份討論紀錄，但討論進度不回來（CLI 都是新 session）→ 停在「等主題」，
-        // 使用者右鍵「開始討論／換主題…」就接著同一個 transcript.md 往下寫
+        // 聊天室恢復：討論進度不回來（CLI 都是新 session）→ 停在「等主題」。沿用上次的紀錄資料夾指標（右鍵「開啟討論紀錄資料夾」
+        // 開得到上一場），但下一次「開始討論」看到裡面已有 transcript.md 會開新的資料夾＝新的一場，舊紀錄原封不動
         OpenAgentGroup(setup, first.AgentKey, first.AgentGroupNumber, first.AgentRatio, bySlot, first.Title, mode, first.AgentChatFolder);
     }
 }

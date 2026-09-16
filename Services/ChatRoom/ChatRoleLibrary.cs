@@ -218,7 +218,8 @@ internal static class ChatRoleLibrary
         sb.Append($"- 共用討論紀錄：{AgentGroup.ChatRelDir}/{g.ChatFolder}/transcript.md（所有人的發言，AwayTerminal 依序接進去）\n");
         sb.Append($"- 你的發言檔：{AgentGroup.ChatRelDir}/{g.ChatFolder}/r{{迴數}}-{me.AgentId}.md（例：r1-{me.AgentId}.md）\n");
         sb.Append("- 路徑都是相對於專案資料夾。檔案一律 UTF-8（Windows PowerShell 讀檔請用 Get-Content -Raw -Encoding UTF8）。\n\n");
-        sb.Append("輪到你時，AwayTerminal 會在你的畫面打一行字，告訴你第幾迴、要讀哪一份紀錄。照著做：\n");
+        sb.Append("輪到你時，AwayTerminal 會在你的畫面打一行字，告訴你第幾迴、要讀哪一份紀錄、發言要寫到哪個檔案。\n");
+        sb.Append("**檔案路徑一律以那一行給的為準**（使用者換主題時，討論紀錄會換到新的資料夾，上面寫的路徑就過期了）。照著做：\n");
         sb.Append("讀紀錄 → 想清楚你要回應誰 → 把發言寫進上面那個檔案（300 字以內）→ 結束這一輪。\n");
         sb.Append("不要修改別人的發言檔，也不要改 transcript.md。\n\n");
 

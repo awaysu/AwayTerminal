@@ -114,6 +114,12 @@ public sealed class AgentGroup
     /// <summary>目前這一輪是什麼時候請他發言的（用來判斷逾時跳過；default＝還沒請）。</summary>
     public DateTime TurnAskedUtc { get; set; }
 
+    /// <summary>目前這一輪請的是哪一位（Agent ID）：等他發言期間名單若變了（設定視窗加人／關人），靠這個找回他而不是靠索引。</summary>
+    public string AskedAgentId { get; set; } = "";
+
+    /// <summary>這一輪什麼時候輪到他的（還沒開口問就開始算）：一直忙碌問不到也要在 <see cref="TurnTimeoutMinutes"/> 後跳過，不讓整場停住。</summary>
+    public DateTime TurnStartedUtc { get; set; }
+
     /// <summary>使用者按了「結束討論」：這一輪結束後就去寫結論。</summary>
     public bool EndRequested { get; set; }
 

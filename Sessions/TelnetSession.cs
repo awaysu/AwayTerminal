@@ -81,29 +81,39 @@ public sealed class TelnetSession : ITerminalSession
         finally { if (!_disposed) { try { Exited?.Invoke(); } catch { } } }
     }
 
+    // IAC 解析狀態要跨 ReadAsync 的 chunk 保留：協商序列（IAC WILL opt／IAC SB … IAC SE／轉義的 FF FF）落在讀取邊界上時，
+    // 舊寫法把後半當成資料印到畫面（0xFB 0x01…變亂碼）、協商也沒回應。
+    private enum IacState { Data, Iac, Option, Sb, SbIac }
+    private IacState _iac = IacState.Data;
+    private byte _iacCmd;
+
     private byte[] ProcessIncoming(byte[] buf, int len)
     {
         var data = new List<byte>(len);
-        int i = 0;
-        while (i < len)
+        for (int i = 0; i < len; i++)
         {
-            byte b = buf[i++];
-            if (b != IAC) { data.Add(b); continue; }
-            if (i >= len) break;
-            byte cmd = buf[i++];
-            if (cmd == IAC) { data.Add(IAC); continue; } // 轉義的 0xFF
-            if (cmd is WILL or WONT or DO or DONT)
+            byte b = buf[i];
+            switch (_iac)
             {
-                if (i >= len) break;
-                RespondOption(cmd, buf[i++]);
-            }
-            else if (cmd == SB)
-            {
-                while (i < len)
-                {
-                    if (buf[i] == IAC && i + 1 < len && buf[i + 1] == SE) { i += 2; break; }
-                    i++;
-                }
+                case IacState.Data:
+                    if (b == IAC) _iac = IacState.Iac; else data.Add(b);
+                    break;
+                case IacState.Iac:
+                    if (b == IAC) { data.Add(IAC); _iac = IacState.Data; }            // 轉義的 0xFF
+                    else if (b is WILL or WONT or DO or DONT) { _iacCmd = b; _iac = IacState.Option; }
+                    else if (b == SB) _iac = IacState.Sb;
+                    else _iac = IacState.Data;                                        // NOP／GA／AYT… 兩位元組指令：丟掉
+                    break;
+                case IacState.Option:
+                    RespondOption(_iacCmd, b);
+                    _iac = IacState.Data;
+                    break;
+                case IacState.Sb:
+                    if (b == IAC) _iac = IacState.SbIac;                               // 子協商內容一律略過
+                    break;
+                case IacState.SbIac:
+                    _iac = b == SE ? IacState.Data : IacState.Sb;                      // IAC SE 結束；IAC IAC＝資料裡的 FF，留在子協商
+                    break;
             }
         }
         return data.ToArray();
@@ -120,16 +130,16 @@ public sealed class TelnetSession : ITerminalSession
 
     public void Write(ReadOnlySpan<byte> data)
     {
-        if (_stream == null) return;
-        try
+        var stream = _stream;
+        if (stream == null || data.Length == 0) return;
+        // 先轉義再一次送出：NoDelay 下逐 byte WriteByte＝每個字一個 TCP 封包、一次 syscall（貼 4KB＝上千個封包，小型 telnet 裝置會掉）
+        var buf = new List<byte>(data.Length + 8);
+        foreach (var b in data)
         {
-            foreach (var b in data)
-            {
-                if (b == IAC) _stream.WriteByte(IAC); // 轉義
-                _stream.WriteByte(b);
-            }
-            _stream.Flush();
+            if (b == IAC) buf.Add(IAC); // 轉義
+            buf.Add(b);
         }
+        try { stream.Write(System.Runtime.InteropServices.CollectionsMarshal.AsSpan(buf)); stream.Flush(); }
         catch { }
     }
 

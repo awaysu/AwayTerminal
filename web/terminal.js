@@ -197,8 +197,8 @@
     header.addEventListener("dragend", function () { suppressClick = true; });
     // 點標題：放大成整頁 / 再點一次回到分割
     header.addEventListener("click", function () {
+      if (suppressClick) { suppressClick = false; return; }   // 拖曳結束的那一下不算點擊——分頁模式的組標題也可拖，旗標得在 mode 判斷前清掉
       if (mode === "tab") return;
-      if (suppressClick) { suppressClick = false; return; }
       // Multi-Agent 的各格同一個顯示單位：點任一格的標題都是放大／還原整組
       zoomed = (zoomed && terms[zoomed] && terms[id] && unitEl(terms[zoomed]) === unitEl(terms[id])) ? null : id;
       layout();
@@ -742,7 +742,11 @@
   // q…save：序列化最後 SAVE_LINES 行 scrollback＋可視區（含顏色）。只取正常畫面（alt screen 裡的 vim/top 不存）、
   // 不帶模式切換序列（bracketed paste／應用程式游標鍵等模式應由新 session 自己設定，別替它預設）。
   function saveBuffer(rec) {
-    try { return rec.ser.serialize({ scrollback: SAVE_LINES, excludeAltBuffer: true, excludeModes: true }); }
+    try {
+      // 舊內容還沒倒回 xterm（視窗還沒量到尺寸就關程式）：要存的就是那一份，別把空的 xterm 序列化蓋掉上次的 scrollback
+      if (rec.pendingRestore !== null) return new TextDecoder("utf-8").decode(rec.pendingRestore);
+      return rec.ser.serialize({ scrollback: SAVE_LINES, excludeAltBuffer: true, excludeModes: true });
+    }
     catch (e) { return ""; }
   }
   function b64ToBytes(b64) {
@@ -785,7 +789,7 @@
   var sbEl = document.getElementById("searchbar");
   var sbInput = document.getElementById("search-input");
   var sbCount = document.getElementById("search-count");
-  var sHits = [], sIdx = -1, sTimer = null;
+  var sHits = [], sIdx = -1, sTimer = null, sPane = null;   // sPane＝這批命中屬於哪個 pane（切了 pane 要重找）
 
   function openSearch() {
     sbEl.style.display = "flex";
@@ -801,7 +805,7 @@
   // 收集 active pane 的全部命中（不分大小寫）。先用 translateToString 快篩，
   // 命中的行再逐 cell 建「字串索引 ↔ 欄位」對映（中文等寬字佔 2 欄，直接用字串索引選取會偏）。
   function runSearch() {
-    sHits = []; sIdx = -1;
+    sHits = []; sIdx = -1; sPane = active;
     var q = sbInput.value;
     var rec = active && terms[active];
     if (!q || !rec) { sbCount.textContent = ""; return; }
@@ -814,8 +818,9 @@
       for (var c = 0; c < line.length; c++) {
         var cell = line.getCell(c);
         if (!cell || cell.getWidth() === 0) continue;   // 寬字第二欄的佔位 cell
-        map.push(c);
-        str += (cell.getChars() || " ");
+        var chs = cell.getChars() || " ";
+        for (var u = 0; u < chs.length; u++) map.push(c);   // emoji／組合字元一格佔多個 UTF-16 單位：每個單位都對回同一欄，後面的命中才不會偏
+        str += chs;
       }
       var low = str.toLowerCase(), from = 0, at;
       while ((at = low.indexOf(lq, from)) >= 0) {
@@ -830,6 +835,7 @@
     }
   }
   function gotoHit(delta) {
+    if (sPane !== active) runSearch();   // 命中是別的 pane 的（分割模式點了另一格再按 Enter）：對現在的 pane 重找，別拿舊座標去選
     var rec = active && terms[active];
     if (!rec || !sHits.length) { sbCount.textContent = sbInput.value ? "0/0" : ""; return; }
     if (sIdx === -1 && delta < 0) sIdx = 0;   // 第一次就按「上一個」→ 從最後一筆開始
@@ -905,6 +911,7 @@
       // 恢復緩衝區／推進 scrollback：b{id}US{base64 舊內容}US{base64 分隔行}（兩欄皆可空＝只推）。見 applyRestore。
       var b1 = rest.indexOf(US); var bid = rest.slice(0, b1);
       var rb = terms[bid]; if (!rb) return;
+      if (rb.pendingRestore !== null) applyRestore(rb, bid);   // 上一份還沒倒回去（恢復後馬上重連）：先把它和扣住的輸出寫進去，不能直接丟掉
       var bRest = rest.slice(b1 + 1), b2 = bRest.indexOf(US);
       var bPayload = b2 < 0 ? bRest : bRest.slice(0, b2), bSep = b2 < 0 ? "" : bRest.slice(b2 + 1);
       rb.pendingRestore = b64ToBytes(bPayload);
@@ -957,6 +964,14 @@
         var t = JSON.parse(rest);
         if (t.fontFamily) cfg.fontFamily = t.fontFamily;
         if (t.fontSize) cfg.fontSize = t.fontSize;
+        if (t.search) {   // 搜尋列文字隨語言（index.html 裡的預設是中文）
+          try {
+            sbInput.placeholder = t.search.placeholder || sbInput.placeholder;
+            document.getElementById("search-prev").title = t.search.prev || "";
+            document.getElementById("search-next").title = t.search.next || "";
+            document.getElementById("search-close").title = t.search.close || "";
+          } catch (_) {}
+        }
         if (t.foreground) cfg.foreground = t.foreground;
         if (t.background) cfg.background = t.background;
         // 靜止閘門門檻（設定可調；0=關閉閘門，立即送）。用 typeof 判斷，允許 0。

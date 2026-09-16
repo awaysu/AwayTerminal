@@ -49,11 +49,15 @@ public partial class MainWindow
 
     private void StartChatDiscussion(AgentGroup g, string topic)
     {
+        // 這個資料夾已經有一場討論（換主題、或恢復分頁接回來的那場）→ 開新的資料夾，舊的發言檔／結論不會被當成這一場的
+        if (File.Exists(ChatPath(g, "transcript.md"))) g.ChatFolder = NewChatFolder(g.Dir);
         g.Topic = topic;
         g.Round = 1;
         g.Speaker = 0;
         g.EndRequested = false;
         g.TurnAskedUtc = default;
+        g.AskedAgentId = "";
+        g.TurnStartedUtc = DateTime.UtcNow;
         g.Phase = ChatPhase.Discussing;
         foreach (var s in g.Slots.Where(x => x.Enabled))
         {
@@ -69,8 +73,8 @@ public partial class MainWindow
         g.RowTab?.RaiseAgentState();
     }
 
-    /// <summary>參加者（依格號；第 1 位＝主持人）。</summary>
-    private static IEnumerable<AgentSlot> ChatSpeakers(AgentGroup g) => g.Running.Where(s => s.Tab!.Session != null);
+    /// <summary>參加者（依格號；第 1 位＝主持人）。session 已結束的格也算在名單裡（索引才不會跳動），輪到他時直接跳過、不等 5 分鐘。</summary>
+    private static IEnumerable<AgentSlot> ChatSpeakers(AgentGroup g) => g.Running;
 
     private static string ChatPath(AgentGroup g, string file) =>
         Path.Combine(g.Dir, ".ai", "chat", g.ChatFolder, file);
@@ -98,42 +102,86 @@ public partial class MainWindow
         if (g.Phase == ChatPhase.Concluding)
         {
             var host = speakers[0];
+            if (host.Tab!.Session == null)   // 主持人已結束：沒人能寫結論，直接收場並在紀錄註明
+            {
+                WriteTranscript(g, string.Format(Loc.T("chat.trHostGone"), host.AgentId));
+                FinishChat(g, timedOut: true);
+                return;
+            }
             if (g.TurnAskedUtc == default)
             {
-                if (!AgentReady(host, now)) return;
+                if (!AgentReady(host, now))
+                {
+                    if (g.TurnStartedUtc != default && (now - g.TurnStartedUtc).TotalMinutes >= AgentGroup.TurnTimeoutMinutes * 2)
+                        FinishChat(g, timedOut: true);   // 主持人一直忙到問不了：收場（同結論逾時）
+                    return;
+                }
                 SendTextThenEnter(host.Tab!, string.Format(Loc.T("chat.conclusionPrompt"),
                     g.Round - 1, ChatRelPath(g, "transcript.md"), ChatRelPath(g, "conclusion.md")));
                 MarkTyped(host, now);
                 g.TurnAskedUtc = now;
+                g.AskedAgentId = host.AgentId;
                 Diag.Log($"chat CHAT-{g.Number}: asked {host.AgentId} for conclusion");
                 return;
             }
-            if (ReadFinished(ChatPath(g, "conclusion.md"), now) is not { } conclusion)
+            if (ReadFinished(ChatPath(g, "conclusion.md"), g.TurnAskedUtc, now) is not { } conclusion)
             {
                 if ((now - g.TurnAskedUtc).TotalMinutes >= AgentGroup.TurnTimeoutMinutes * 2) FinishChat(g, timedOut: true);
                 return;
             }
-            WriteTranscript(g, $"## {Loc.T("chat.trConclusion")}（{speakers[0].AgentId} {speakers[0].RoleTitle}）\n\n{conclusion}");
+            WriteTranscript(g, $"## {Loc.T("chat.trConclusion")}（{host.AgentId} {host.RoleTitle}）\n\n{conclusion}");
             FinishChat(g, timedOut: false);
             return;
         }
 
-        // 討論中：g.Speaker 這一位還沒發言 → 請他發言 → 等他的檔案
-        if (g.Speaker >= speakers.Count) { AdvanceChatTurn(g, speakers.Count); return; }
-        var slot = speakers[g.Speaker];
+        // 討論中。使用者按了「結束討論」而下一位還沒被問到 → 不再多問一個人，直接去寫結論
+        if (g.TurnAskedUtc == default && g.EndRequested) { ConcludeChat(g, "user"); return; }
+        AgentSlot slot;
+        if (g.TurnAskedUtc != default)
+        {
+            // 問過某位、等他發言：一律先用 Agent ID 找回他（期間名單變了索引會跑掉——這要在「索引超出範圍」的判斷之前做，
+            // 否則最後一位在等發言時前面有人被關掉，他的那一輪會被整個略過）；他自己被關掉了就換下一位
+            int idx = speakers.FindIndex(x => x.AgentId == g.AskedAgentId);
+            if (idx < 0) { AdvanceChatTurn(g, speakers.Count); return; }
+            g.Speaker = idx;
+            slot = speakers[idx];
+        }
+        else
+        {
+            if (g.Speaker >= speakers.Count) { AdvanceChatTurn(g, speakers.Count); return; }
+            slot = speakers[g.Speaker];
+        }
         string file = $"r{g.Round}-{slot.AgentId}.md";
+        if (slot.Tab!.Session == null)   // 這一格已結束（問之前或問之後都一樣）：不等 5 分鐘，跳過並在紀錄註明
+        {
+            WriteTranscript(g, string.Format(Loc.T("chat.trEnded"), g.Round, slot.AgentId));
+            Diag.Log($"chat CHAT-{g.Number}: {slot.AgentId} has exited, skipped on round {g.Round}");
+            AdvanceChatTurn(g, speakers.Count);
+            return;
+        }
         if (g.TurnAskedUtc == default)
         {
-            if (!AgentReady(slot, now)) return;
+            if (!AgentReady(slot, now))
+            {
+                // 一直忙碌（畫面不停重繪之類）連問都問不到：等滿逾時一樣跳過並註明，5 分鐘逾時才不會只保護「問了以後」
+                if (g.TurnStartedUtc != default && (now - g.TurnStartedUtc).TotalMinutes >= AgentGroup.TurnTimeoutMinutes)
+                {
+                    WriteTranscript(g, string.Format(Loc.T("chat.trSkipped"), g.Round, slot.AgentId, AgentGroup.TurnTimeoutMinutes));
+                    Diag.Log($"chat CHAT-{g.Number}: {slot.AgentId} never became idle on round {g.Round}, skipped");
+                    AdvanceChatTurn(g, speakers.Count);
+                }
+                return;
+            }
             SendTextThenEnter(slot.Tab!, string.Format(Loc.T("chat.turnPrompt"), g.Round, g.Rounds, slot.RoleTitle,
                 ChatRelPath(g, "transcript.md"), ChatRelPath(g, file)));
             MarkTyped(slot, now);
             g.TurnAskedUtc = now;
+            g.AskedAgentId = slot.AgentId;
             Diag.Log($"chat CHAT-{g.Number}: round {g.Round}/{g.Rounds} -> {slot.AgentId} ({slot.RoleTitle})");
             g.RowTab?.RaiseAgentState();
             return;
         }
-        if (ReadFinished(ChatPath(g, file), now) is { } said)
+        if (ReadFinished(ChatPath(g, file), g.TurnAskedUtc, now) is { } said)
         {
             WriteTranscript(g, $"## {string.Format(Loc.T("chat.trTurn"), g.Round, slot.AgentId, slot.RoleTitle)}\n\n{said}");
             AdvanceChatTurn(g, speakers.Count);
@@ -151,25 +199,39 @@ public partial class MainWindow
     private void AdvanceChatTurn(AgentGroup g, int speakerCount)
     {
         g.TurnAskedUtc = default;
+        g.AskedAgentId = "";
+        g.TurnStartedUtc = DateTime.UtcNow;
         g.Speaker++;
         if (g.Speaker < speakerCount && !g.EndRequested) { g.RowTab?.RaiseAgentState(); return; }
         g.Speaker = 0;
         g.Round++;
-        if (g.EndRequested || g.Round > g.Rounds)
-        {
-            g.Phase = ChatPhase.Concluding;
-            Diag.Log($"chat CHAT-{g.Number}: discussion ended（{(g.EndRequested ? "user" : "rounds")}）→ conclusion");
-        }
+        if (g.EndRequested || g.Round > g.Rounds) ConcludeChat(g, g.EndRequested ? "user" : "rounds");
+        else g.RowTab?.RaiseAgentState();
+    }
+
+    /// <summary>進入「寫結論」階段。Round 在這之後＝「跑完的迴數＋1」（結論提示用 Round−1 說共幾迴）。</summary>
+    private void ConcludeChat(AgentGroup g, string why)
+    {
+        g.TurnAskedUtc = default;
+        g.AskedAgentId = "";
+        g.TurnStartedUtc = DateTime.UtcNow;
+        if (g.Phase == ChatPhase.Discussing && g.Speaker > 0) g.Round++;   // 這一迴已經有人講過＝算一迴（從 AdvanceChatTurn 來的已經加過）
+        g.Speaker = 0;
+        g.Phase = ChatPhase.Concluding;
+        Diag.Log($"chat CHAT-{g.Number}: discussion ended（{why}）→ conclusion");
         g.RowTab?.RaiseAgentState();
     }
 
-    /// <summary>讀「寫完了」的檔案（最後修改 ≥1 秒前才算寫完，避免讀到一半），讀完刪不掉也沒關係。null＝還沒有／還在寫。</summary>
-    private static string? ReadFinished(string path, DateTime now)
+    /// <summary>讀「寫完了」的檔案：一定要是 askedUtc（我們開口問）之後才寫的——恢復分頁或同一個資料夾再開一場時，上一場留下的舊檔不能當成這一場的發言；
+    /// 而且最後修改 ≥1 秒前才算寫完（避免讀到一半）。null＝還沒有／還在寫／是舊檔。</summary>
+    private static string? ReadFinished(string path, DateTime askedUtc, DateTime now)
     {
         try
         {
             if (!File.Exists(path)) return null;
-            if ((now - File.GetLastWriteTimeUtc(path)).TotalMilliseconds < 1000) return null;
+            var written = File.GetLastWriteTimeUtc(path);
+            if (written < askedUtc.AddSeconds(-2)) return null;   // 舊檔（FAT／網路磁碟的 mtime 只有 2 秒解析度，留餘裕）
+            if ((now - written).TotalMilliseconds < 1000) return null;
             string text = File.ReadAllText(path, Encoding.UTF8).Trim();
             return text.Length == 0 ? null : text;
         }
@@ -180,7 +242,8 @@ public partial class MainWindow
     {
         g.Phase = ChatPhase.Done;
         g.TurnAskedUtc = default;
-        Diag.Log($"chat CHAT-{g.Number}: finished{(timedOut ? " (conclusion timed out)" : "")}");
+        g.AskedAgentId = "";
+        Diag.Log($"chat CHAT-{g.Number}: finished{(timedOut ? " (no conclusion)" : "")}");
         g.RowTab?.RaiseAgentState();
         FlashIfInactive();
     }
@@ -190,11 +253,10 @@ public partial class MainWindow
     private void ChatTopic_Click(object sender, RoutedEventArgs e)
     {
         if (TabOf(sender)?.Agent?.Group is not { } g || !g.IsChat) return;
-        if (g.Phase == ChatPhase.Discussing &&
+        if (g.Phase is ChatPhase.Discussing or ChatPhase.Concluding &&
             MessageBox.Show(this, Loc.T("chat.newTopicAsk"), Loc.T("chat.title"), MessageBoxButton.YesNo, MessageBoxImage.Question)
             != MessageBoxResult.Yes) return;
-        if (g.Phase is ChatPhase.Discussing or ChatPhase.Concluding or ChatPhase.Done)
-            g.ChatFolder = NewChatFolder();   // 換主題＝開新的討論紀錄
+        // 新的討論紀錄資料夾由 StartChatDiscussion 在「真的給了主題」之後才開——這裡先換，使用者按取消就會讓進行中的那場指到空資料夾
         AskChatTopic(g);
     }
 
@@ -213,6 +275,8 @@ public partial class MainWindow
     private void ChatSay_Click(object sender, RoutedEventArgs e)
     {
         if (TabOf(sender)?.Agent?.Group is not { } g || !g.IsChat) return;
+        // 還沒有主題時插話會先建出 transcript.md，之後「開始討論」看到檔案就換新資料夾＝那句話誰也看不到；結束後插話也沒人會讀
+        if (g.Phase is not (ChatPhase.Discussing or ChatPhase.Concluding)) { Info(Loc.T("chat.sayNotNow")); return; }
         var dlg = new InputDialog(Loc.T("chat.title"), Loc.T("chat.sayPrompt"), "", multiline: true) { Owner = this };
         if (dlg.ShowDialog() != true || string.IsNullOrWhiteSpace(dlg.Value)) { Web.Focus(); return; }
         WriteTranscript(g, $"## {Loc.T("chat.trUserSaid")}\n\n{dlg.Value.Trim()}");
@@ -229,5 +293,15 @@ public partial class MainWindow
         catch (Exception ex) { Diag.Log("chat open folder: " + ex.Message); }
     }
 
-    internal static string NewChatFolder() => DateTime.Now.ToString("yyyyMMdd-HHmm");
+    /// <summary>這場討論的資料夾名＝現在的時間；同一分鐘內已經有一場（同資料夾開兩間、連續換主題）就補 -2、-3，不共用。</summary>
+    internal static string NewChatFolder(string projectDir)
+    {
+        string stamp = DateTime.Now.ToString("yyyyMMdd-HHmm"), name = stamp;
+        try
+        {
+            for (int n = 2; Directory.Exists(Path.Combine(projectDir, ".ai", "chat", name)); n++) name = $"{stamp}-{n}";
+        }
+        catch { }
+        return name;
+    }
 }

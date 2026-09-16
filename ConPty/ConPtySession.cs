@@ -100,16 +100,24 @@ public sealed class ConPtySession : ITerminalSession
         }
     }
 
+    // 輸入管線的 FileStream 有 4KB 緩衝、不是執行緒安全：UI 打字、巨集 sendln、Telegram 指令、Dispose 的 Ctrl+C 可能同時寫，
+    // 兩邊同時看到 _writePos==0 會互相蓋掉位元組（按鍵消失）或把緩衝推過頭（ArgumentException）
+    private readonly object _writeLock = new();
+
     public void Write(ReadOnlySpan<byte> data)
     {
         if (_writeStream == null) return;
         try
         {
-            _writeStream.Write(data);
-            _writeStream.Flush();
+            lock (_writeLock)
+            {
+                _writeStream.Write(data);
+                _writeStream.Flush();
+            }
         }
         catch (IOException) { }
         catch (ObjectDisposedException) { }
+        catch (ArgumentException) { }
     }
 
     public void WriteText(string text) => Write(Encoding.UTF8.GetBytes(text));
@@ -135,8 +143,11 @@ public sealed class ConPtySession : ITerminalSession
         {
             if (_writeStream != null && GracefulExitBytes.Length > 0)
             {
-                _writeStream.Write(GracefulExitBytes, 0, GracefulExitBytes.Length);
-                _writeStream.Flush();
+                lock (_writeLock)
+                {
+                    _writeStream.Write(GracefulExitBytes, 0, GracefulExitBytes.Length);
+                    _writeStream.Flush();
+                }
                 Thread.Sleep(60);
             }
         }

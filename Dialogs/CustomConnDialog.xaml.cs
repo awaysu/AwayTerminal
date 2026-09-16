@@ -389,8 +389,10 @@ public partial class CustomConnDialog : Window
             MessageBoxButton.YesNo, MessageBoxImage.Question);
         if (r != MessageBoxResult.Yes) return;
         int idx = _items.IndexOf(_editing);
-        _items.Remove(_editing);
-        _editing = null;
+        // 同 PromptDialog：移除會同步觸發 SelectionChanged，編輯區髒著會再問一次「尚未儲存」→ 刻意刪除，不問
+        _switching = true;
+        try { _dirty = false; _items.Remove(_editing); _editing = null; }
+        finally { _switching = false; }
         Commit();
 
         if (_items.Count > 0)

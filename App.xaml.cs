@@ -35,6 +35,20 @@ public partial class App : Application
 
     protected override void OnStartup(StartupEventArgs e)
     {
+        // UI 執行緒上沒接住的例外：記進 diag.log、給使用者看得懂的訊息，不要跳 .NET 的當機框直接死掉（分頁全丟）。
+        // 只擋 UI 執行緒這一層；背景執行緒的例外（session／輪詢）各自有 try/catch。
+        DispatcherUnhandledException += (_, ev) =>
+        {
+            Services.Diag.Log("unhandled: " + ev.Exception);
+            try
+            {
+                MessageBox.Show(Localization.Loc.T("msg.unhandled") + "\n\n" + ev.Exception.GetType().Name + ": " + ev.Exception.Message,
+                    "AwayTerminal", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+            catch { }
+            ev.Handled = true;
+        };
+
         // 檔案總管右鍵「用 AwayTerminal 開啟」：已有實例在跑就把資料夾交給它、本行程直接結束（不開第二個視窗）。
         string? openDir = ParseOpenDir(e.Args);
         if (openDir != null)

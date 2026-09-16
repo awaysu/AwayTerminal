@@ -201,7 +201,9 @@ public sealed class TelegramRemote
     {
         try
         {
-            using var resp = await _http.GetAsync($"https://api.telegram.org/bot{_token}/getUpdates?timeout=0", ct);
+            // offset=-1＝只要「最後一則」：預設一次最多回 100 則，關著超過 100 則訊息時 offset 會停在第 101 則，
+            // 第一次輪詢就把 101～N 當成現在的指令全部重播（打進附著的分頁、/close…）
+            using var resp = await _http.GetAsync($"https://api.telegram.org/bot{_token}/getUpdates?timeout=0&offset=-1", ct);
             if (!resp.IsSuccessStatusCode) return;
             string json = await resp.Content.ReadAsStringAsync(ct);
             using var doc = JsonDocument.Parse(json);
@@ -251,6 +253,7 @@ public sealed class TelegramRemote
             var p = data.Split(':', 2);
             string kind = p[0];
             string arg = p.Length > 1 ? p[1] : "";
+            if (kind != "new") _newPendingCount = 0;   // 同斜線指令：按了別的按鈕＝/new 清單作廢，下一個純數字不再被當成「選連線」
             switch (kind)
             {
                 case "goto": await DoGoto(arg); break;
@@ -550,8 +553,10 @@ public sealed class TelegramRemote
         // /more 翻頁狀態：以全文為緩衝；sent 是全文尾端（增量的瘦身結果與全文瘦身可能微差 → 取 max 保護）
         _moreBuf = allFull; _moreTabId = _currentTabId; _morePos = Math.Max(0, allFull.Length - sent.Length);
         string head = header == null ? "" : EscHtml(header) + "\n";
-        // 畫面是選擇題（❯ N. 選單）→ 附上選項按鈕，點了直接選
-        var opts = MenuOptions(sent);
+        // 畫面是選擇題（❯ N. 選單）→ 附上選項按鈕，點了直接選。
+        // 選單的「Enter to select · ↑/↓ to navigate」導航列在 TidyForPhone 已被當雜訊濾掉，所以「是不是選單」要看瘦身前的文字
+        // （增量模式看這次新增的那段、快照模式看整個畫面），選項文字才從瘦身後的 sent 取
+        var opts = MenuOptions(sent, diff ?? raw);
         var btns = opts.Count >= 2
             ? BtnRows(opts.Select(o => (o.Label, $"opt:{_currentTabId}:{o.Num}")), 3)
             : null;
@@ -625,11 +630,11 @@ public sealed class TelegramRemote
         return cur[lineStart..];  // 行變長（prompt 上打了指令）→ 含此行一起推
     }
 
-    /// <summary>從畫面文字解析選擇題選項（「N. 文字」行；需有選單導航列才視為選單）。</summary>
-    private static List<(int Num, string Label)> MenuOptions(string screen)
+    /// <summary>從畫面文字解析選擇題選項（「N. 文字」行）。<paramref name="signatureSource"/>（瘦身前的文字）要有選單導航列才視為選單。</summary>
+    private static List<(int Num, string Label)> MenuOptions(string screen, string signatureSource)
     {
         var res = new List<(int, string)>();
-        if (!System.Text.RegularExpressions.Regex.IsMatch(screen, @"to navigate|Enter to select")) return res;
+        if (!System.Text.RegularExpressions.Regex.IsMatch(signatureSource, @"to navigate|Enter to select")) return res;
         var seen = new HashSet<int>();
         foreach (System.Text.RegularExpressions.Match m in
                  System.Text.RegularExpressions.Regex.Matches(screen, @"(?m)^\s*(?:❯\s*)?(\d{1,2})\.\s+(.+)$"))
@@ -648,7 +653,7 @@ public sealed class TelegramRemote
         { await SendAsync("先 /last 拿到最新輸出，再用 /more 往前翻。"); return; }
         if (_morePos <= 0)
         { await SendAsync("已經到最舊的內容了（畫面緩衝約 400 行）。"); return; }
-        int end = _morePos;
+        int end = Math.Min(_morePos, _moreBuf.Length);   // 完成推播可能在 /more 進來的同時換掉了 _moreBuf（更短）→ 夾住免得越界
         int start = Math.Max(0, end - 3000);
         if (start > 0)
         {
@@ -722,11 +727,8 @@ public sealed class TelegramRemote
         new(@"^[·✢✣✤✥✳✶✻✽＊*+]+$"),                              // spinner 殘影（如 ✢*✶）
         new(@"^[·✢✣✤✥✳✶✻✽*+\s]*\S{1,30}…\s*(\(.*)?$"),           // spinner 動詞行（Inferring… / ✢ Inferring… (40s · ↓ 3.3…）
         new(@"^\(\d+s( ·.*)?$"),                                 // spinner 括號統計殘段（(40s · ↓ 3.3）
-        new(@"^[·✢✣✤✥✳✶✻✽*+]\s?[A-Za-z()\[\]-]{0,15}$"),         // spinner 字形+短英文殘字（✣ Sock-hop / ✻ Sock- / * B）
-        new(@"^[·✢✣✤✥✳✶✻✽*+]\s?\S{1,20}$"),                      // spinner 字形+單一短 token（含重音/中文，如 ✻ Flambéi）
         new(@"^(←\s*)?\d+ agents?$"),                            // 狀態列 agents 碎片（← 3 agents / 3 agents）
         new(@"connecting…"),                                     // 連線中提示（/rc connecting…）
-        new(@"^[a-z][a-z-]{0,5}$"),                              // 小寫短碎片（hopp / k-ho / illo / oing）
         new(@"^(Mon|Tue|Wed|Thu|Fri|Sat|Sun) (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) +\d"), // 狀態列日期
         new(@"^⎿\s+Tip: "),                                      // 小提示列
         new(@"^❯\s*Try """),                                     // 輸入框的建議 placeholder
@@ -743,8 +745,6 @@ public sealed class TelegramRemote
         new(@"[╭╮╰╯]"),                                          // 含方框角字元的行（歡迎框標題+邊線合併行）
         new(@"^Welcome back .{0,30}!$"),                         // claude 歡迎行
         new(@"^[▀-▟]{2,}"),                            // claude 開場 logo banner（▐▛███▛█ Claude Code…）
-        new(@"^[A-Za-z]$"),                                      // 單一字母殘字（F）
-        new(@"^[一-鿿]$"),                               // 單一中文字殘字（選單導航動畫殘影）
         new(@"^[▀-▟\s]+$"),                            // 方塊字元行（claude logo 殘影）
         new(@"^[·✢✣✤✥✳✶✻✽*+\s]*\S+ for (\d+m )?\d+s$"),          // 完成計時行（✻ Crunched for 3s / 1m 36s）
         new(@"^\d{1,2}:\d{2}( \|.*)?$"),                         // 狀態列時間/用量行（5:03 / 2:04 | Fable 5 | …）
@@ -753,8 +753,25 @@ public sealed class TelegramRemote
         new(@"↓ [\d.]+k? tokens"),                               // spinner token 統計（· ↓ 3.0k tokens …）
         new(@"\| 5h: \d|\| 7d: \d|resets in \d"),                // 狀態列用量截斷段（9 | Fable 5 | 5h: 51）
         new(@"^⎿\s+[a-z]\S{0,14}$"),                             // ⎿ 小寫短殘字（⎿ cleaned；保留 ⎿ Added/Read/(No output)）
+    };
+
+    // 「碎片」規則＝針對 claude 一類 TUI 逐格重繪留下的殘影寫的，只在畫面看起來是 TUI（IsTuiScreen）時才套用。
+    // 套在一般 shell 會把合法輸出整行吃掉：git branch 的「* main」「  dev」、whoami 的「awaysu」、echo $? 的「0」、ls 的單字母檔名——
+    // 自動推播沒剩內容就整則不送，手機端看起來就是「遠端沒反應」。SSH 到遠端跑 claude 的畫面一樣有 ❯/⎿ 記號，照常過濾。
+    private static readonly System.Text.RegularExpressions.Regex[] TuiFragmentRes =
+    {
+        new(@"^[·✢✣✤✥✳✶✻✽*+]\s?[A-Za-z()\[\]-]{0,15}$"),         // spinner 字形+短英文殘字（✣ Sock-hop / ✻ Sock- / * B）
+        new(@"^[·✢✣✤✥✳✶✻✽*+]\s?\S{1,20}$"),                      // spinner 字形+單一短 token（含重音/中文，如 ✻ Flambéi）
+        new(@"^[a-z][a-z-]{0,5}$"),                              // 小寫短碎片（hopp / k-ho / illo / oing）
+        new(@"^[A-Za-z]$"),                                      // 單一字母殘字（F）
+        new(@"^[一-鿿]$"),                               // 單一中文字殘字（選單導航動畫殘影）
         new(@"^[\d()\[\]{}.,;:'""-]{1,3}$"),                     // 孤立碎片行（) 2 3 …重繪殘留）
     };
+
+    private static readonly char[] TuiGlyphs = { '❯', '⎿', '✻', '✢', '✶', '✽', '⏵', '◉' };
+
+    /// <summary>畫面上有 claude 一類 TUI 的記號（提示符 ❯、工具輸出 ⎿、spinner 字形、狀態列 ⏵⏵／◉）＝TUI 畫面。</summary>
+    private static bool IsTuiScreen(string s) => s.IndexOfAny(TuiGlyphs) >= 0;
 
     // 選擇題/確認框的內容行：剝邊框後保留（❯ 選中項、「1. 」編號選項、問句）
     private static readonly System.Text.RegularExpressions.Regex QuestionLineRe =
@@ -794,6 +811,7 @@ public sealed class TelegramRemote
         var outLines = new List<string>();
         bool prevBlank = true;
         bool inTable = false;   // 是否位於「有邊框的表格」區間內（只有這裡面的 │ 列才攤平）
+        bool tui = IsTuiScreen(s);   // 碎片規則與前綴去重只對 TUI 畫面做（見 TuiFragmentRes 註解）
         foreach (var raw in s.Replace("\r", "").Split('\n'))
         {
             string line = raw.TrimEnd();
@@ -822,25 +840,30 @@ public sealed class TelegramRemote
             // （真資料表已在上面處理；選擇題框走上一段；一般答覆文字用 ASCII | 不用 │，不受影響）
             if (bare.IndexOf('│') >= 0) continue;
 
-            if (bare.Length > 0 && Array.Exists(NoiseLineRes, re => re.IsMatch(bare))) continue;
+            if (bare.Length > 0 && (Array.Exists(NoiseLineRes, re => re.IsMatch(bare)) ||
+                                    (tui && Array.Exists(TuiFragmentRes, re => re.IsMatch(bare))))) continue;
             bool blank = line.Length == 0;
             if (blank && prevBlank) continue;
             outLines.Add(line);
             prevBlank = blank;
         }
         // 前綴去重：TUI 逐格重繪會留下同一行在不同寬度的截斷殘影（● PowerSh / ● PowerShell(Sta / 完整行）。
-        // 以「空白收斂」後比較，某行是另一較長行的前綴 → 殘影，刪掉。
-        var keys = new List<string>(outLines.Count);
-        foreach (var l in outLines)
-            keys.Add(System.Text.RegularExpressions.Regex.Replace(l.Trim(), @"\s+", " "));
-        for (int i = outLines.Count - 1; i >= 0; i--)
+        // 以「空白收斂」後比較，某行是另一較長行的前綴 → 殘影，刪掉。只對 TUI 畫面做：一般 shell 的
+        // 「README」與「README.md」、「int x;」與「int x; // note」都是真的兩行，不能刪。
+        if (tui)
         {
-            if (keys[i].Length < 4) continue;                    // 太短的另有碎片規則
-            for (int j = 0; j < outLines.Count; j++)
+            var keys = new List<string>(outLines.Count);
+            foreach (var l in outLines)
+                keys.Add(System.Text.RegularExpressions.Regex.Replace(l.Trim(), @"\s+", " "));
+            for (int i = outLines.Count - 1; i >= 0; i--)
             {
-                if (j == i || keys[j].Length <= keys[i].Length) continue;
-                if (keys[j].StartsWith(keys[i], StringComparison.Ordinal))
-                { outLines.RemoveAt(i); keys.RemoveAt(i); break; }
+                if (keys[i].Length < 4) continue;                    // 太短的另有碎片規則
+                for (int j = 0; j < outLines.Count; j++)
+                {
+                    if (j == i || keys[j].Length <= keys[i].Length) continue;
+                    if (keys[j].StartsWith(keys[i], StringComparison.Ordinal))
+                    { outLines.RemoveAt(i); keys.RemoveAt(i); break; }
+                }
             }
         }
         while (outLines.Count > 0 && outLines[^1].Length == 0) outLines.RemoveAt(outLines.Count - 1);
@@ -933,7 +956,14 @@ public sealed class TelegramRemote
         "/plain on|off  提問時請 AI 用純文字回答、不要表格（預設關；表格本來就會自動攤平）\n" +
         "/exit  離開分頁檢視（不關分頁；附著後閒置 10 分鐘會靜默自動離開）";
 
-    private static string Clip(string s, int max) => s.Length <= max ? s : s.Substring(s.Length - max);
+    /// <summary>取尾端 max 個字；切點落在代理對中間（emoji）就往後一格，免得訊息開頭出現 �。</summary>
+    private static string Clip(string s, int max)
+    {
+        if (s.Length <= max) return s;
+        int start = s.Length - max;
+        if (char.IsLowSurrogate(s[start])) start++;
+        return s.Substring(start);
+    }
 
     private async Task SendPhotoAsync(byte[] png)
     {
@@ -1018,7 +1048,13 @@ public sealed class TelegramRemote
     private static List<List<(string Text, string Data)>> BtnRows(IEnumerable<(string Text, string Data)> btns, int perRow)
         => btns.Chunk(perRow).Select(c => c.ToList()).ToList();
 
-    private static string Trunc(string s, int n) => s.Length <= n ? s : s[..(n - 1)] + "…";
+    private static string Trunc(string s, int n)
+    {
+        if (s.Length <= n) return s;
+        int end = n - 1;
+        if (end > 0 && char.IsHighSurrogate(s[end - 1])) end--;   // 別把 emoji 切一半
+        return s[..end] + "…";
+    }
 
     /// <summary>設定用：抓最近一則訊息的 chat id（讓使用者免手查）。找不到回 null。</summary>
     public static async Task<long?> TryGetLatestChatId(string token)

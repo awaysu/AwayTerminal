@@ -273,8 +273,11 @@ public partial class MainWindow : Window, IRemoteHost
         foreach (var t in claudeTabs)
         {
             t.LastOutputUtc = DateTime.UtcNow;      // 重置活動計時
-            t.Session!.WriteText(prompt + "\r");
+            t.Session!.WriteText(prompt);
         }
+        // 文字與 Enter 一定分開送（1.1.10 實測：一次寫入「文字＋CR」claude 會當成貼上、CR 變成輸入框換行、沒送出）
+        await Task.Delay(RemoteEnterDelayMs);
+        foreach (var t in claudeTabs) t.Session?.WriteText("\r");
 
         await Task.Delay(2500);                     // 給 claude 一點時間開始處理
         var deadline = DateTime.UtcNow.AddSeconds(180); // 最多等 3 分鐘
@@ -542,6 +545,7 @@ public partial class MainWindow : Window, IRemoteHost
         "adb" => "adb|" + e.AdbSerial,
         "custom" => "custom|" + e.Title + "|" + e.Path,
         "multiagent" => "multiagent|" + e.Dir,
+        "chatroom" => "chatroom|" + e.Dir,
         _ => e.Type + "|" + e.Title
     };
 
@@ -638,7 +642,9 @@ public partial class MainWindow : Window, IRemoteHost
             imeQuietMs = s.ImeQuietMs,   // claude 分頁靜止閘門門檻（見 AppSettings.ImeQuietMs / terminal.js）
             restoreLines = s.RestoreBufferLines,   // 關閉時每個分頁保留的 scrollback 行數（q…save；1.0.45）
             // 1.2.0 Multi-Agent pane 狀態標籤（E 協定 0～3）
-            agentStates = new[] { Loc.T("ma.stateIdle"), Loc.T("ma.stateBusy"), Loc.T("ma.stateQueued"), Loc.T("ma.stateExited"), Loc.T("ma.stateBusyQueued") }
+            agentStates = new[] { Loc.T("ma.stateIdle"), Loc.T("ma.stateBusy"), Loc.T("ma.stateQueued"), Loc.T("ma.stateExited"), Loc.T("ma.stateBusyQueued") },
+            // Ctrl+F 搜尋列的文字（index.html 預設中文；隨語言）
+            search = new { placeholder = Loc.T("search.placeholder"), prev = Loc.T("search.prev"), next = Loc.T("search.next"), close = Loc.T("search.close") }
         });
         PostToWeb("T" + json);
     }
@@ -652,10 +658,21 @@ public partial class MainWindow : Window, IRemoteHost
         ApplyWebDefaultBg(); // 避免 WebView2 內容未畫出前露出白底
 
         string userData = Path.Combine(AppPaths.DataDir, "WebView2");   // 測試模式（AWAYTERMINAL_DATA_DIR）與正式版分開
-        Directory.CreateDirectory(userData);
-
-        var env = await CoreWebView2Environment.CreateAsync(null, userData);
-        await Web.EnsureCoreWebView2Async(env);
+        try
+        {
+            Directory.CreateDirectory(userData);
+            var env = await CoreWebView2Environment.CreateAsync(null, userData);
+            await Web.EnsureCoreWebView2Async(env);
+        }
+        catch (Exception ex)
+        {
+            // async void 裡丟出來＝直接跳 .NET 的當機框。最常見＝免安裝版在沒有 WebView2 Runtime 的電腦上
+            // （安裝檔會順便裝，zip 不會）→ 說清楚缺什麼、給下載頁，然後結束（沒有 WebView2 這個程式什麼都做不了）。
+            Diag.Log("WebView2 init failed: " + ex);
+            MessageBox.Show(this, Loc.T("msg.webview2Fail") + "\n\n" + ex.Message, "AwayTerminal", MessageBoxButton.OK, MessageBoxImage.Error);
+            Environment.Exit(1);
+            return;
+        }
 
         var core = Web.CoreWebView2;
         core.Settings.AreDevToolsEnabled = true;
@@ -1121,6 +1138,8 @@ public partial class MainWindow : Window, IRemoteHost
         PostToWeb("x" + tab.Id);
         try { (tab.Macro as MacroRunner)?.Stop(); } catch { }
         try { (tab.Logger as SessionLogger)?.Dispose(); } catch { }
+        tab.ReconnectTimer?.Stop();
+        tab.ReconnectTimer = null;
         // session 收尾（Ctrl+C ×2 + 終止）移到背景執行緒，關分頁不卡 UI
         var session = tab.Session;
         tab.Session = null;
@@ -1235,10 +1254,14 @@ public partial class MainWindow : Window, IRemoteHost
         tab.ReconnectAttempt++;
         int delay = Math.Min(30, 3 * tab.ReconnectAttempt);
         EchoToTab(tab.Id, "\r\n\x1b[33m" + string.Format(Loc.T("term.reconnect"), delay) + "\x1b[0m\r\n");
+        // 一個分頁同時只能有一條重連鏈：舊的計時器先停掉（否則手動 Enter 一次就多一條鏈，各自倒數、各自印「n 秒後重連」）
+        tab.ReconnectTimer?.Stop();
         var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(delay) };
+        tab.ReconnectTimer = timer;
         timer.Tick += (_, _) =>
         {
             timer.Stop();
+            if (ReferenceEquals(tab.ReconnectTimer, timer)) tab.ReconnectTimer = null;
             var t = FindTab(tab.Id);
             if (t == null || t.Session != null) return;   // 已被關閉或已重連
             TryReconnect(t);
@@ -1253,6 +1276,8 @@ public partial class MainWindow : Window, IRemoteHost
         var st = tab.Restore;
         if (st == null || tab.Session != null) return;
         tab.ReconnectAttempt = 0;
+        tab.ReconnectTimer?.Stop();   // 自動重連的倒數作廢，改成現在立刻連（失敗再由 TryReconnect 重新排一條）
+        tab.ReconnectTimer = null;
         if (tab.Kind == TermKind.Ssh && !st.Host.Contains('@'))
         {
             PostToWeb("b" + tab.Id + US + US);   // 舊畫面先推進 scrollback（同 TryReconnect）
@@ -1696,8 +1721,18 @@ public partial class MainWindow : Window, IRemoteHost
                 try { s.Start(SshCommand(target, tab.PendingPort), tab.Cols, tab.Rows, null); }
                 catch (Exception ex)
                 {
+                    // 開失敗（ssh.exe 不在 PATH 等）的 session 不能留在分頁上：Start 丟例外時讀取迴圈沒起來、Exited 永遠不會發，
+                    // 之後所有打字都被 Session?.WriteText 無聲吞掉、Enter 也到不了 ManualReconnect＝分頁變磚。
+                    // 同 TryReconnect 的收尾：取下、背景 Dispose，然後回到「login as:」讓使用者重試（主機／埠都還在）。
+                    tab.Session = null;
+                    _ = System.Threading.Tasks.Task.Run(() => { try { s.Dispose(); } catch { } });
                     MessageBox.Show(this, Loc.T("msg.connectFail") + "\n" + ex.Message, "AwayTerminal",
                         MessageBoxButton.OK, MessageBoxImage.Error);
+                    if (FindTab(tab.Id) != null && tab.Session == null)
+                    {
+                        tab.LoginBuffer = new StringBuilder();
+                        EchoToTab(tab.Id, "\r\nlogin as: ");
+                    }
                 }
                 return;
             }
@@ -2256,7 +2291,8 @@ public partial class MainWindow : Window, IRemoteHost
     IReadOnlyList<string> IRemoteHost.ListHistory()
         => Dispatcher.Invoke(() =>
         {
-            _remoteHistList = AppSettings.Current.History.Where(h => h.Type != "multiagent").Take(10).ToList();   // Multi-Agent 不支援遠端（1.2.0）
+            // 代理團隊／AI 聊天室不列（1.2.0／1.2.3）：重開要跳設定視窗（modal），從手機觸發會把輪詢執行緒卡在 Dispatcher.Invoke 直到有人在電腦前按掉
+            _remoteHistList = AppSettings.Current.History.Where(h => h.Type is not ("multiagent" or "chatroom")).Take(10).ToList();
             return (IReadOnlyList<string>)_remoteHistList.Select(e => e.Type switch
             {
                 "ssh" => "SSH " + e.Host,          // 手機純文字列表沒有圖示 → ssh/telnet 補型態前綴
@@ -2314,7 +2350,7 @@ public partial class MainWindow : Window, IRemoteHost
 
     /// <summary>手機上看到的分頁名稱：代理團隊＝「組名（代理團隊 Agent-11）」。</summary>
     private static string RemoteTitle(TerminalTab t) =>
-        t.Agent is { } a ? $"{a.Group.Title}（{Loc.T("ma.title")} {a.AgentId}）" : t.Title;
+        t.Agent is { } a ? $"{a.Group.Title}（{Loc.T(a.Group.IsChat ? "chat.title" : "ma.title")} {a.AgentId}）" : t.Title;
 
     IReadOnlyList<RemoteTabInfo> IRemoteHost.SnapshotTabs()
         => Dispatcher.Invoke(() => (IReadOnlyList<RemoteTabInfo>)Tabs.Where(RemoteVisible).Select(
@@ -2608,7 +2644,7 @@ public partial class MainWindow : Window, IRemoteHost
         panel.Children.Add(new TextBlock
         { Text = Loc.T("about.thirdParty") + ":", Foreground = gray, Margin = new Thickness(0, 14, 0, 0) });
         panel.Children.Add(new TextBlock
-        { Text = "xterm.js 5.5.0 (MIT)", Foreground = gray, Margin = new Thickness(0, 2, 0, 0) });
+        { Text = "xterm.js 6.0.0 (MIT)", Foreground = gray, Margin = new Thickness(0, 2, 0, 0) });   // web/vendor/xterm.js＝@xterm/xterm@6.0.0
         panel.Children.Add(new TextBlock
         { Text = ".NET Runtime 9 (MIT)／Microsoft Edge WebView2", Foreground = gray, Margin = new Thickness(0, 2, 0, 0) });
 

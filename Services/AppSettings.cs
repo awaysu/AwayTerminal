@@ -268,20 +268,39 @@ public sealed class AppSettings
     private static AppSettings? _current;
     public static AppSettings Current => _current ??= Load();
 
+    /// <summary>settings.json 存在但讀不到（防毒／備份程式正鎖著、磁碟暫時不在）：這一次執行用預設值撐著，但 Save() 一律不寫——
+    /// 否則 EnsureDefaults 第一次 Save 就會用預設值把好端端的設定（自訂連線、我的最愛、Telegram token…）整個蓋掉。</summary>
+    private static bool _suppressSave;
+
     public static AppSettings Load()
     {
-        try
+        if (File.Exists(FilePath))
         {
-            if (File.Exists(FilePath))
+            // 「讀不到」和「讀到了但壞掉」要分開處理：前者不是損毀、絕不能拿預設值覆寫
+            string? text = null;
+            for (int attempt = 0; attempt < 3 && text == null; attempt++)
             {
-                var s = JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(FilePath));
+                try { text = File.ReadAllText(FilePath); }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { Thread.Sleep(150); }
+            }
+            if (text == null)
+            {
+                _suppressSave = true;
+                Diag.Log("settings.json exists but could not be read; using defaults for this run, saving disabled");
+                var tmp = new AppSettings();
+                tmp.EnsureDefaults();
+                return tmp;
+            }
+            try
+            {
+                var s = JsonSerializer.Deserialize<AppSettings>(text);
                 if (s != null) { s.EnsureDefaults(); return s; }
             }
-        }
-        catch
-        {
-            // 檔案存在但解析失敗（截斷/損毀）→ 先留一份 .bad 備份，別讓底下的預設值 Save 直接蓋掉使用者設定
-            try { File.Copy(FilePath, FilePath + ".bad", true); } catch { }
+            catch
+            {
+                // 解析失敗（截斷/損毀）→ 先留一份 .bad 備份，再退預設值
+                try { File.Copy(FilePath, FilePath + ".bad", true); } catch { }
+            }
         }
         var def = new AppSettings();
         def.EnsureDefaults();
@@ -354,6 +373,7 @@ public sealed class AppSettings
 
     public void Save()
     {
+        if (_suppressSave) return;   // 見 Load：檔案讀不到那一次不寫回
         try
         {
             Directory.CreateDirectory(Dir);

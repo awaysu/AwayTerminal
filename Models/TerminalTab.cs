@@ -77,6 +77,8 @@ public sealed class TerminalTab : INotifyPropertyChanged
     public bool AutoReconnect { get; set; }
     /// <summary>連續重連次數（退避延遲用；一收到輸出就歸零）。</summary>
     public int ReconnectAttempt { get; set; }
+    /// <summary>自動重連的倒數計時器（一個分頁同時只有一條；手動 Enter 或關分頁時停掉）。</summary>
+    public System.Windows.Threading.DispatcherTimer? ReconnectTimer { get; set; }
 
     /// <summary>此分頁的記錄器（null = 未記錄）。</summary>
     public object? Logger { get; set; }

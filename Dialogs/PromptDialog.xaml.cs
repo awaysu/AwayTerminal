@@ -322,8 +322,10 @@ public partial class PromptDialog : Window
             MessageBoxButton.YesNo, MessageBoxImage.Question);
         if (r != MessageBoxResult.Yes) return;
 
-        _items.Remove(_editing);
-        _editing = null;
+        // 移除選中項會同步觸發 SelectionChanged；編輯區若正髒著會再跳一次「尚未儲存」（存了還寫進已刪的物件）→ 刻意刪除，不問
+        _switching = true;
+        try { _dirty = false; _items.Remove(_editing); _editing = null; }
+        finally { _switching = false; }
         RefreshView();
         RefreshGroupChoices();
         Persist();

@@ -27,10 +27,11 @@ internal static class ProcessTree
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern IntPtr CreateToolhelp32Snapshot(uint dwFlags, uint th32ProcessID);
 
-    [DllImport("kernel32.dll", SetLastError = true)]
+    // 結構宣告是 Unicode（szExeFile 260 個 WCHAR），匯出函式也要綁 W 版；綁 ANSI 版時 PID 欄位剛好在同位移才沒事，szExeFile 讀到會是垃圾
+    [DllImport("kernel32.dll", SetLastError = true, EntryPoint = "Process32FirstW")]
     private static extern bool Process32First(IntPtr hSnapshot, ref PROCESSENTRY32 lppe);
 
-    [DllImport("kernel32.dll", SetLastError = true)]
+    [DllImport("kernel32.dll", SetLastError = true, EntryPoint = "Process32NextW")]
     private static extern bool Process32Next(IntPtr hSnapshot, ref PROCESSENTRY32 lppe);
 
     [DllImport("kernel32.dll", SetLastError = true)]

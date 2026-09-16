@@ -102,7 +102,8 @@
             </Grid>
 
             <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,12,0,0">
-                <Button x:Name="SendBtn" Content="送出" Width="84" Height="30" Click="Send_Click" IsDefault="True" Margin="0,0,8,0" />
+                <!-- 不設 IsDefault：在標題／群組欄按 Enter 會把字串送進終端機（勾了「送出後送 Enter」還會直接執行）-->
+                <Button x:Name="SendBtn" Content="送出" Width="84" Height="30" Click="Send_Click" Margin="0,0,8,0" />
                 <Button x:Name="SaveBtn" Content="儲存" Width="84" Height="30" Click="Save_Click" Margin="0,0,8,0" />
                 <Button x:Name="BackBtn" Content="返回" Width="84" Height="30" Click="Back_Click" />
             </StackPanel>

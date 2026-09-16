@@ -9,7 +9,11 @@ public sealed class SerialSession : ITerminalSession
 {
     private SerialPort? _port;
     private Thread? _reader;
+    private Thread? _writer;
     private volatile bool _disposed;
+    // 寫入走專用執行緒：流量控制被對方擋住（CTS 沒接、XOFF、裝置沒電）時 SerialPort.Write 會等滿 WriteTimeout（2 秒）
+    // 才丟例外，直接在 UI 執行緒寫＝每個按鍵凍 2 秒、貼上凍好幾秒。佇列保序。
+    private readonly System.Collections.Concurrent.BlockingCollection<byte[]> _writeQueue = new();
 
     public event Action<byte[]>? Output;
     public event Action? Exited;
@@ -36,6 +40,22 @@ public sealed class SerialSession : ITerminalSession
         // 專用執行緒直接 blocking read（比 DataReceived 事件即時、無延遲）
         _reader = new Thread(ReadLoop) { IsBackground = true, Name = "COM-read" };
         _reader.Start();
+        _writer = new Thread(WriteLoop) { IsBackground = true, Name = "COM-write" };
+        _writer.Start();
+    }
+
+    private void WriteLoop()
+    {
+        try
+        {
+            foreach (var arr in _writeQueue.GetConsumingEnumerable())
+            {
+                if (_disposed) break;
+                try { _port?.Write(arr, 0, arr.Length); }
+                catch { /* 逾時（對方擋住）或已關閉：丟掉這一筆，不卡任何人 */ }
+            }
+        }
+        catch { }
     }
 
     private void ReadLoop()
@@ -65,12 +85,9 @@ public sealed class SerialSession : ITerminalSession
 
     public void Write(ReadOnlySpan<byte> data)
     {
-        try
-        {
-            var arr = data.ToArray();
-            _port?.Write(arr, 0, arr.Length);
-        }
-        catch { }
+        if (_disposed || data.Length == 0) return;
+        try { _writeQueue.Add(data.ToArray()); }
+        catch { }   // 已 CompleteAdding（關閉中）
     }
 
     public void WriteText(string text) => Write(Encoding.UTF8.GetBytes(text));
@@ -87,6 +104,7 @@ public sealed class SerialSession : ITerminalSession
     {
         if (_disposed) return;
         _disposed = true;
+        try { _writeQueue.CompleteAdding(); } catch { }
         try
         {
             if (_port != null)

@@ -69,17 +69,32 @@ public sealed partial class MacroRunner
     [GeneratedRegex(@"\x1b\][\s\S]*?(?:\x07|\x1b\\)|\x1b[@-Z\\-_]|\x1b\[[0-?]*[ -/]*[@-~]")]
     private static partial Regex AnsiRegex();
 
+    // 跨 chunk 的 ESC 序列殘留（同 SessionLogger）與「已修剪掉的字元總數」——wait 記的是絕對位置，修剪後才對得回來
+    private string _escCarry = "";
+    private long _trimmed;
+
     private void OnOutput(byte[] data)
     {
         var chars = new char[_utf8.GetCharCount(data, 0, data.Length, false)];
         _utf8.GetChars(data, 0, data.Length, chars, 0, false);
-        string t = AnsiRegex().Replace(new string(chars), "");
+        string t;
         lock (_bufLock)
         {
+            t = _escCarry + new string(chars);
+            _escCarry = Logging.SessionLogger.SplitIncompleteEscape(ref t, AnsiRegex());
+            t = AnsiRegex().Replace(t, "");
             _buf.Append(t);
-            if (_buf.Length > 400_000) _buf.Remove(0, _buf.Length - 200_000);
+            if (_buf.Length > 400_000)
+            {
+                int cut = _buf.Length - 200_000;
+                _buf.Remove(0, cut);
+                _trimmed += cut;
+            }
         }
     }
+
+    /// <summary>目前緩衝區尾端的絕對位置（從巨集開始算起、含已修剪掉的）。呼叫端須持有 _bufLock。</summary>
+    private long AbsEnd => _trimmed + _buf.Length;
 
     public void Start() => _ = Task.Run(RunAsync);
     public void Stop() { try { _cts.Cancel(); } catch { } }
@@ -430,13 +445,19 @@ public sealed partial class MacroRunner
     private async Task<int> WaitForAny(List<string> targets)
     {
         if (targets.Count == 0) return 0;
-        int start; lock (_bufLock) start = _buf.Length;
+        // 記絕對位置：等待期間緩衝區被修剪（400K→200K）時，舊寫法的相對位置會指到修剪前的座標——
+        // 不是搜到等待前的舊提示（wait 立刻回 1、下一句太早送出）就是漏看前 start 個新字元
+        long start; lock (_bufLock) start = AbsEnd;
         long secs = GetInt("timeout");
         var deadline = DateTime.UtcNow.AddSeconds(secs > 0 ? secs : 300);
         while (!_cts.IsCancellationRequested && DateTime.UtcNow < deadline)
         {
             string chunk;
-            lock (_bufLock) chunk = start <= _buf.Length ? _buf.ToString(start, _buf.Length - start) : _buf.ToString();
+            lock (_bufLock)
+            {
+                int rel = (int)Math.Clamp(start - _trimmed, 0, _buf.Length);
+                chunk = _buf.ToString(rel, _buf.Length - rel);
+            }
             for (int i = 0; i < targets.Count; i++)
                 if (!string.IsNullOrEmpty(targets[i]) && chunk.Contains(targets[i])) return i + 1;
             await Delay(50).ConfigureAwait(false);
@@ -445,12 +466,12 @@ public sealed partial class MacroRunner
     }
     private async Task WaitForBytes(int n)
     {
-        int start; lock (_bufLock) start = _buf.Length;
+        long start; lock (_bufLock) start = AbsEnd;
         long secs = GetInt("timeout");
         var deadline = DateTime.UtcNow.AddSeconds(secs > 0 ? secs : 300);
         while (!_cts.IsCancellationRequested && DateTime.UtcNow < deadline)
         {
-            int have; lock (_bufLock) have = _buf.Length - start;
+            long have; lock (_bufLock) have = AbsEnd - start;
             if (have >= n) return;
             await Delay(50).ConfigureAwait(false);
         }
@@ -679,9 +700,32 @@ public sealed partial class MacroRunner
             for (; i < rest.Length; i++) { if (rest[i] == '(') depth++; else if (rest[i] == ')') { depth--; if (depth == 0) { i++; break; } } }
             return (rest.Substring(0, i), rest.Substring(i).Trim());
         }
-        int sp = rest.IndexOf(' ');
-        return sp < 0 ? (rest, "") : (rest.Substring(0, sp), rest.Substring(sp + 1).Trim());
+        // 條件式本身可以有空白（TeraTerm：`if result = 1 goto ok`）：找第一個是「指令字」的 token——它之前全是條件、它起是指令。
+        // 舊寫法切在第一個空白，cond=`result`、cmd=`= 1 goto ok`，指令沒人認得＝分支永遠不執行、也不報錯。
+        int pos = 0;
+        while (pos < rest.Length)
+        {
+            int sp = rest.IndexOf(' ', pos);
+            if (sp < 0) break;
+            int next = sp + 1;
+            while (next < rest.Length && rest[next] == ' ') next++;
+            int wend = rest.IndexOf(' ', next);
+            if (wend < 0) wend = rest.Length;
+            if (CommandWords.Contains(rest.Substring(next, wend - next)))
+                return (rest.Substring(0, sp).Trim(), rest.Substring(next).Trim());
+            pos = next;
+        }
+        int sp0 = rest.IndexOf(' ');
+        return sp0 < 0 ? (rest, "") : (rest.Substring(0, sp0), rest.Substring(sp0 + 1).Trim());
     }
+
+    /// <summary>單行 if 後面可以接的指令字（ExecLine 的 case）。</summary>
+    private static readonly HashSet<string> CommandWords = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "sendln", "send", "sendbreak", "pause", "mpause", "wait", "waitln", "waitn", "flushrecv",
+        "messagebox", "statusbox", "yesnobox", "inputbox", "goto", "call", "return", "end", "exit",
+        "strlen", "strconcat", "strcopy", "strcompare", "tolower", "toupper", "sprintf", "break", "continue",
+    };
     private static List<string> SplitRawTokens(string s)
         => new(s.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
 
