@@ -218,6 +218,13 @@ public static class Loc
         ["ma.dlgLimit"] = ("投遞限制次數", "Delivery limit"),
         ["ma.dlgLimitHint"] = ("投遞這麼多則訊息後自動暫停（右鍵「投遞」可繼續），避免 agent 之間來回停不下來",
                                "Delivery pauses after this many messages (right-click → Delivery to continue), so agents can't loop forever"),
+        // 閒置檢查（使用者要求，2026-09-16：格 2～4 有時會停著）
+        ["ma.dlgIdleCheck"] = ("閒置檢查", "Idle check"),
+        ["ma.dlgIdleHint"] = ("整組閒置這麼久，就請 Agent-x1 問大家目前的狀況", "When the whole team has been idle this long, Agent-x1 is asked to check on everyone"),
+        ["ma.idleOff"] = ("不檢查", "Off"),
+        ["ma.idleMinutes"] = ("{0} 分鐘", "{0} min"),
+        ["ma.idleCheckPrompt"] = ("[AwayTerminal] 團隊目前全部閒置。請逐一問每個 agent 現在是否還有任務在進行、卡在哪裡，需要的話重新指派或回報給我。",
+                                  "[AwayTerminal] The whole team is idle. Ask each agent whether it still has a task running and where it is stuck, then reassign or report back as needed."),
         ["ma.menuOpenBus"] = ("開啟訊息資料夾", "Open message folder"),
         ["ma.closeConfirm"] = ("確定要關閉「{0}」？（{1} 個 agent 一起關閉）", "Close \"{0}\"? ({1} agents are closed together)"),
         ["ma.stateIdle"] = ("閒置", "idle"),

@@ -60,6 +60,17 @@ public sealed class AgentGroup
     /// <summary>上限的顯示文字（分頁列小字、tooltip）：數字或 ∞。</summary>
     public string LimitText => MaxMessages > 0 ? MaxMessages.ToString() : "∞";
 
+    /// <summary>閒置檢查（使用者要求，2026-09-16：格 2～4 有時會停著）：整組閒置這麼多分鐘，就請 Agent-x1 問大家目前的狀況。0＝不檢查。</summary>
+    public int IdleCheckMinutes { get; set; } = DefaultIdleCheckMinutes;
+
+    public const int DefaultIdleCheckMinutes = 30;
+
+    /// <summary>設定視窗可選的分鐘數（0＝不檢查）。</summary>
+    public static readonly int[] IdleCheckChoices = { 15, 30, 60, 0 };
+
+    /// <summary>整組從什麼時候開始全部閒置（default＝現在不是全閒置）。</summary>
+    public DateTime AllIdleSinceUtc { get; set; }
+
     /// <summary>本次程式執行內的投遞序號（「訊息 #n」用，從 1 起）。</summary>
     public int DeliverySeq { get; set; }
 

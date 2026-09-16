@@ -28,6 +28,8 @@ public sealed class MultiAgentSetup
     public List<int> Close { get; set; } = new();
     /// <summary>投遞限制次數（0＝不限）。</summary>
     public int MaxMessages { get; set; } = AgentGroup.DefaultMaxMessages;
+    /// <summary>閒置檢查分鐘數（0＝不檢查）。</summary>
+    public int IdleCheckMinutes { get; set; } = AgentGroup.DefaultIdleCheckMinutes;
 }
 
 /// <summary>
@@ -101,6 +103,19 @@ public partial class MultiAgentDialog : Window
         LimitBox.ItemTemplate = ChoiceTemplate(withIcon: false);
         LimitBox.ItemsSource = limits;
         Select(LimitBox, curLimit.ToString());
+
+        // 閒置檢查：15／30／60 分鐘／不檢查；新開的組預設 30，既有的組＝它目前的值
+        IdleLabel.Text = Loc.T("ma.dlgIdleCheck");
+        IdleHint.Text = Loc.T("ma.dlgIdleHint");
+        IdleHint.ToolTip = IdleHint.Text;
+        var idles = AgentGroup.IdleCheckChoices
+            .Select(n => new Choice(n.ToString(), n > 0 ? string.Format(Loc.T("ma.idleMinutes"), n) : Loc.T("ma.idleOff"), null)).ToList();
+        int curIdle = existing?.IdleCheckMinutes ?? AgentGroup.DefaultIdleCheckMinutes;
+        if (!AgentGroup.IdleCheckChoices.Contains(curIdle))
+            idles.Insert(0, new Choice(curIdle.ToString(), string.Format(Loc.T("ma.idleMinutes"), curIdle), null));
+        IdleBox.ItemTemplate = ChoiceTemplate(withIcon: false);
+        IdleBox.ItemsSource = idles;
+        Select(IdleBox, curIdle.ToString());
 
         // 這台電腦找得到的 Coding Agent（沿用自訂連線或自動偵測；見 ICodingAgentAdapter.Resolve），順序 ClaudeCode／Codex／OpenCode／GeminiCLI
         _backends = AdapterRegistry.All.Where(a => a.Resolve() != null)
@@ -348,7 +363,8 @@ public partial class MultiAgentDialog : Window
         var result = new MultiAgentSetup
         {
             Dir = _dir,
-            MaxMessages = int.TryParse(KeyOf(LimitBox), out int limit) ? Math.Max(0, limit) : AgentGroup.DefaultMaxMessages
+            MaxMessages = int.TryParse(KeyOf(LimitBox), out int limit) ? Math.Max(0, limit) : AgentGroup.DefaultMaxMessages,
+            IdleCheckMinutes = int.TryParse(KeyOf(IdleBox), out int idle) ? Math.Max(0, idle) : AgentGroup.DefaultIdleCheckMinutes
         };
         var endsConversation = new List<string>();   // 執行中、套用後會關閉或重新啟動的 agent（先確認）
         for (int i = 0; i < 4; i++)
@@ -373,7 +389,8 @@ public partial class MultiAgentDialog : Window
 
         if (_group != null)
         {
-            if (result.Launch.Count == 0 && result.Close.Count == 0 && result.MaxMessages == _group.MaxMessages)
+            if (result.Launch.Count == 0 && result.Close.Count == 0 && result.MaxMessages == _group.MaxMessages
+                && result.IdleCheckMinutes == _group.IdleCheckMinutes)
             { DialogResult = false; return; }   // 沒有要變動的 → 當作取消
             if (endsConversation.Count > 0 &&
                 MessageBox.Show(this, string.Format(Loc.T("ma.applyAsk"), string.Join("\n", endsConversation)), Loc.T("ma.title"),

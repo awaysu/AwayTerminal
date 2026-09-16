@@ -10,7 +10,7 @@ using AwayTerminal.Services;
 namespace AwayTerminal;
 
 /// <summary>
-/// 工具列「我的最愛」（使用者要求，2026-09-16；取代「紀錄」按鈕，圖示 icon/download.png）。
+/// 工具列「我的最愛」（使用者要求，2026-09-16；取代「紀錄」按鈕，圖示 icon/favorite.png）。
 /// 下拉＝各筆最愛（圖示＋名稱，點了直接開）→ 分隔線 →「加到我的最愛：目前分頁」→「設定…」（改名稱、刪除）。
 /// <para>一筆最愛＝分頁的恢復資訊（SavedTab）複本：PowerShell 記目前所在目錄（提示行解析到的 CwdPath）、自訂連線記實際工作目錄
 /// （重開不再跳資料夾選擇）、SSH 登入後記 user@host（重開直接連）。代理團隊記整組設定（MultiAgentSetup JSON），重開不跳設定視窗。</para>
@@ -34,7 +34,7 @@ public partial class MainWindow
         menu.Items.Add(new Separator());
 
         var candidate = FavoriteFromTab(_active);
-        var add = MakeNewItemRaw(candidate == null ? Loc.T("fav.add") : string.Format(Loc.T("fav.addNamed"), candidate.Name), "download.png");
+        var add = MakeNewItemRaw(candidate == null ? Loc.T("fav.add") : string.Format(Loc.T("fav.addNamed"), candidate.Name), "favorite.png");
         add.IsEnabled = candidate != null;   // 沒有分頁、或這個分頁沒有可重開的資訊 → 灰掉
         if (candidate != null) add.Click += (_, _) => AddFavorite(candidate);
         menu.Items.Add(add);
@@ -54,7 +54,7 @@ public partial class MainWindow
         if (tab == null) return null;
         if (tab.Agent?.Group is { } g)
         {
-            var setup = new MultiAgentSetup { Dir = g.Dir, MaxMessages = g.MaxMessages };
+            var setup = new MultiAgentSetup { Dir = g.Dir, MaxMessages = g.MaxMessages, IdleCheckMinutes = g.IdleCheckMinutes };
             for (int i = 0; i < 4; i++)
             {
                 var s = g.Slots[i];

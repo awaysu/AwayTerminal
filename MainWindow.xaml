@@ -61,7 +61,7 @@
             <StackPanel Orientation="Horizontal">
                 <Button x:Name="BtnNew" Style="{StaticResource ToolBtn}" Click="New_Click" Tag="pack://application:,,,/icon/new-connecting.png">新連接</Button>
                 <!-- 我的最愛（2026-09-16 取代「紀錄」）：下拉＝各筆最愛 → 分隔線 → 加到我的最愛 → 設定… -->
-                <Button x:Name="BtnFavorites" Style="{StaticResource ToolBtn}" Click="Favorites_Click" Tag="pack://application:,,,/icon/download.png">我的最愛</Button>
+                <Button x:Name="BtnFavorites" Style="{StaticResource ToolBtn}" Click="Favorites_Click" Tag="pack://application:,,,/icon/favorite.png">我的最愛</Button>
                 <Rectangle Style="{StaticResource Sep}" />
                 <!-- 輸入文字（1.0.46）：開 ComposeDialog 先打好文字或選常用字串再送到目前分頁（取代分頁列「…」與右側快速輸入抽屜）-->
                 <Button x:Name="BtnCompose" Style="{StaticResource ToolBtn}" Click="Compose_Click" Tag="pack://application:,,,/icon/compose.png">輸入文字</Button>

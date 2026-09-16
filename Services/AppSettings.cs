@@ -84,6 +84,8 @@ public sealed class SavedTab
     public double AgentRatio { get; set; } = 0.5;
     /// <summary>投遞限制次數（0＝不限；舊檔沒有這欄＝30）。</summary>
     public int AgentMaxMessages { get; set; } = 30;
+    /// <summary>閒置檢查分鐘數（0＝不檢查；舊檔沒有這欄＝30）。</summary>
+    public int AgentIdleCheck { get; set; } = 30;
 }
 
 /// <summary>整個程式的設定與歷史，存成一個 JSON（%LOCALAPPDATA%\AwayTerminal\settings.json）。</summary>

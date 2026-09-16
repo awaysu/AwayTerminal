@@ -207,6 +207,7 @@ public partial class MainWindow : Window, IRemoteHost
             s2.AgentBackend = ag?.Backend ?? "";
             s2.AgentRatio = ag?.Group.Ratio ?? 0.5;
             s2.AgentMaxMessages = ag?.Group.MaxMessages ?? AgentGroup.DefaultMaxMessages;
+            s2.AgentIdleCheck = ag?.Group.IdleCheckMinutes ?? AgentGroup.DefaultIdleCheckMinutes;
             s2.BufferFile = "";
             if (bufs.TryGetValue(t.Id, out var text) && !string.IsNullOrEmpty(text))
             {

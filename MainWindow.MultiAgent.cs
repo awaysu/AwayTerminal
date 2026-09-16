@@ -93,7 +93,8 @@ public partial class MainWindow
         if (number == 0) { Info(Loc.T("ma.tooMany")); return null; }
         var g = new AgentGroup(key ?? Guid.NewGuid().ToString("N"), number, setup.Dir)
         {
-            Ratio = AgentGroup.ClampRatio(ratio), MaxMessages = Math.Max(0, setup.MaxMessages)
+            Ratio = AgentGroup.ClampRatio(ratio), MaxMessages = Math.Max(0, setup.MaxMessages),
+            IdleCheckMinutes = Math.Max(0, setup.IdleCheckMinutes)
         };
         for (int i = 0; i < 4; i++)
         {
@@ -338,9 +339,30 @@ public partial class MainWindow
                 if (g.LimitReached) { PauseAgentGroup(g, limit: true); continue; }
                 DeliverQueued(g, s, now);
             }
+            CheckTeamIdle(g, now);
             PostAgentState(g);
             g.RowTab?.RaiseAgentState();
         }
+    }
+
+    /// <summary>閒置檢查（使用者要求，2026-09-16）：整組（≥2 格在跑、都不忙、沒有信在排隊、沒暫停）連續閒置 IdleCheckMinutes 分鐘，
+    /// 就打一句話給 Agent-x1，要它逐一問大家目前的狀況——格 2～4 有時會自己停著，PM 又在等它們回信，兩邊就卡住。
+    /// 送出後重新計時；不算進投遞則數（這是 AwayTerminal 自己問的，不是 agent 之間的信）。</summary>
+    private void CheckTeamIdle(AgentGroup g, DateTime now)
+    {
+        if (g.IdleCheckMinutes <= 0 || g.Paused) { g.AllIdleSinceUtc = default; return; }
+        var running = g.Running.Where(s => s.Tab!.Session != null).ToList();
+        var lead = running.FirstOrDefault(s => s.Index == 1);
+        bool allIdle = lead != null && running.Count >= 2
+                    && running.All(s => s.Tab!.Status != TermStatus.Busy && s.Queue.Count == 0 && s.PendingFirstMessage == null);
+        if (!allIdle) { g.AllIdleSinceUtc = default; return; }
+        if (g.AllIdleSinceUtc == default) { g.AllIdleSinceUtc = now; return; }
+        if ((now - g.AllIdleSinceUtc).TotalMinutes < g.IdleCheckMinutes) return;
+        if (!AgentReady(lead!, now)) return;   // 使用者剛在那格打字／剛投遞過 → 等下一輪
+        SendTextThenEnter(lead!.Tab!, Loc.T("ma.idleCheckPrompt"));
+        MarkTyped(lead!, now);
+        g.AllIdleSinceUtc = now;
+        Diag.Log($"ma idlecheck team {g.Number}: asked {lead!.AgentId} after {g.IdleCheckMinutes} min idle");
     }
 
     /// <summary>這一格現在可以打字給它嗎：CLI 啟動後有畫過東西、已經靜止一陣子、剛打過字的等它開始工作、使用者沒在打字。
@@ -477,6 +499,12 @@ public partial class MainWindow
             if (g.Paused && g.PausedByLimit && !g.LimitReached) g.Paused = g.PausedByLimit = false;   // 因為到上限而暫停、上限調高了＝接著送（計數照舊）
             Diag.Log($"ma setup team {g.Number}: limit={g.LimitText} count={g.MessageCount} paused={g.Paused}");
             g.RowTab?.RaiseAgentState();
+        }
+        if (r.IdleCheckMinutes != g.IdleCheckMinutes)
+        {
+            g.IdleCheckMinutes = Math.Max(0, r.IdleCheckMinutes);
+            g.AllIdleSinceUtc = default;
+            Diag.Log($"ma setup team {g.Number}: idlecheck={(g.IdleCheckMinutes > 0 ? g.IdleCheckMinutes + "min" : "off")}");
         }
         var close = r.Close.Where(i => i is >= 1 and <= 4).Distinct().ToList();
         var launch = r.Launch.Where(i => i is >= 1 and <= 4 && !close.Contains(i)).Distinct().OrderBy(i => i).ToList();
@@ -629,7 +657,7 @@ public partial class MainWindow
             Diag.Log($"ma restore skipped: folder missing '{first.Dir}'");
             return;
         }
-        var setup = new MultiAgentSetup { Dir = first.Dir, MaxMessages = first.AgentMaxMessages };
+        var setup = new MultiAgentSetup { Dir = first.Dir, MaxMessages = first.AgentMaxMessages, IdleCheckMinutes = first.AgentIdleCheck };
         var bySlot = new Dictionary<int, SavedTab>();
         foreach (var st in entries)
         {
