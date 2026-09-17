@@ -197,7 +197,7 @@ public partial class MainWindow : Window, IRemoteHost
         {
             var s2 = t.Restore!;
             s2.Title = t.Title;
-            s2.OpenedUtc = t.StartUtc;   // 1.1.4：存原始開啟時間，恢復後 tooltip 仍顯示最初開啟時刻
+            s2.OpenedUtc = t.StartUtc;   // 1.1.4：存原始開啟時間，恢復後 tooltip 的執行時長（1.2.5 日:時:分）接著算、不歸零
             // 1.2.0 Multi-Agent：各格存同一個組代號＋格號／組號／角色／CLI／比例，恢復時整組重開
             var ag = t.Agent;
             s2.AgentKey = ag?.Group.Key ?? "";

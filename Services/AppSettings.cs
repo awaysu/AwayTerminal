@@ -66,8 +66,8 @@ public sealed class SavedTab
     /// <summary>關閉時存下的 scrollback 檔名（1.0.45；位於 AppSettings.RestoreDir，xterm 序列化文字、含 ANSI 顏色）。
     /// 空＝沒存。只有 SavedTabs 用，History 不帶。</summary>
     public string BufferFile { get; set; } = "";
-    /// <summary>分頁原始開啟時間（UTC，1.1.4）：恢復分頁時填回 TerminalTab.StartUtc，讓 tooltip 顯示「最初開啟」
-    /// 的時刻而非本次恢復的時刻。default(DateTime)＝沒存（舊檔／History）→ 恢復時用當下時間。只有 SavedTabs 用。</summary>
+    /// <summary>分頁原始開啟時間（UTC，1.1.4）：恢復分頁時填回 TerminalTab.StartUtc，讓 tooltip 的執行時長
+    /// （1.2.5 起「日:時:分」）從最初開啟算起而非本次恢復才歸零。default(DateTime)＝沒存（舊檔／History）→ 恢復時用當下時間。只有 SavedTabs 用。</summary>
     public DateTime OpenedUtc { get; set; }
     /// <summary>Multi-Agent 分頁（1.2.0）：同一組各格存同一個代號（空＝一般分頁）。SavedTabs 恢復時依此重新開組。
     /// History 另用 Type="multiagent"＋Dir 記一筆「Multi-Agent — 資料夾」。</summary>

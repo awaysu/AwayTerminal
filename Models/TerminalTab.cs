@@ -31,8 +31,8 @@ public sealed class TerminalTab : INotifyPropertyChanged
     /// 不推播（使用者實測「改在 App 發問沒丟給手機」）；只要這段忙碌期間有送出過，就視為真工作、照推。</summary>
     public DateTime LastSubmitUtc { get; set; }
 
-    /// <summary>分頁開啟時間（tooltip 顯示「開啟 HH:mm」用）。可設：恢復分頁時填回原始開啟時間，
-    /// 讓重開程式後 tooltip 仍顯示這個分頁「最初開啟」的時刻，而非本次恢復的時刻（1.1.4 使用者要求）。</summary>
+    /// <summary>分頁開啟時間（tooltip 顯示「執行 日:時:分」的起點，1.2.5）。可設：恢復分頁時填回原始開啟時間，
+    /// 讓重開程式後 tooltip 的執行時長仍從這個分頁「最初開啟」算起，而非本次恢復才歸零（1.1.4 機制沿用）。</summary>
     public DateTime StartUtc { get; set; } = DateTime.UtcNow;
 
     /// <summary>收到終端機鈴聲後、等待使用者輸入中（Claude 完成）→ 強制綠燈。</summary>
@@ -232,14 +232,15 @@ public sealed class TerminalTab : INotifyPropertyChanged
         }
     }
 
-    // tooltip：完整名稱 + 開啟時刻（時鐘 HH:mm，本機時區），例：AwayPhotoRawEditor_Swift  開啟 14:12；
+    // tooltip：完整名稱 + 執行了多久（日:時:分），例：AwayPhotoRawEditor_Swift  執行 0:02:15、跨日 1:03:27；
     // 第二行＝目前路徑（shell 分頁）；記錄 log／巨集執行中也在這裡註明（1.1.2 起分頁列不再放 log／巨集圖示）。
-    // 1.1.4 起改顯示「實際開啟的時間點」而非經過時長（使用者要求）——StartUtc 恢復分頁時會填回原始開啟時間。
+    // 1.1.4 為「開啟 HH:mm」（開啟時刻）；1.2.5 依使用者要求改回經過時長、格式「日:時:分」——
+    // StartUtc 恢復分頁時會填回原始開啟時間，所以重開程式後時長接著算、不歸零。狀態輪詢每 0.6s RefreshRuntime。
     public string ToolTipText
     {
         get
         {
-            var sb = new System.Text.StringBuilder($"{_title}  {Loc.T("tip.tabOpened")} {StartUtc.ToLocalTime():HH:mm}");
+            var sb = new System.Text.StringBuilder($"{_title}  {Loc.T("tip.tabElapsed")} {ElapsedText}");
             if (IsAgentRow) sb.Append('\n').Append(AgentGroupTip());   // Multi-Agent（1.2.0）：資料夾＋各格狀態＋訊息數
             if (!string.IsNullOrEmpty(CwdPath) && CwdPath != _title) sb.Append('\n').Append(CwdPath);
             if (_isLogging) sb.Append('\n').Append(Loc.T("tip.tabLogging"));
@@ -253,7 +254,18 @@ public sealed class TerminalTab : INotifyPropertyChanged
     public string TitleTag => _agent != null ? $"{_agent.AgentId} {_agent.BackendName}"   // Multi-Agent：［Agent-12 Codex］
         : Restore is { Type: "custom", Name: var nm } && !string.IsNullOrWhiteSpace(nm) ? nm : Loc.T(KindKey);
 
-    /// <summary>供狀態輪詢定期呼叫：更新 tooltip 的開啟時刻文字（語言切換時 tip.tabOpened/KindTip 也靠這裡）。</summary>
+    /// <summary>從 StartUtc 到現在的執行時長，格式「日:時:分」（日不補零、時分兩位；未來時間／時鐘倒退視為 0）。</summary>
+    public string ElapsedText
+    {
+        get
+        {
+            long mins = (long)(DateTime.UtcNow - StartUtc).TotalMinutes;
+            if (mins < 0) mins = 0;
+            return $"{mins / 1440}:{mins / 60 % 24:D2}:{mins % 60:D2}";
+        }
+    }
+
+    /// <summary>供狀態輪詢定期呼叫：更新 tooltip 的執行時長文字（語言切換時 tip.tabElapsed/KindTip 也靠這裡）。</summary>
     public void RefreshRuntime() { Raise(nameof(ToolTipText)); Raise(nameof(KindTip)); }
 
     // 狀態：Ready=綠(可輸入)、Busy=紅(跑程式；1.0.42 由橘改紅，與工作列彈跳球同色)。
