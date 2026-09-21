@@ -117,7 +117,9 @@
       // IME 水位（1.1.9，見 setupImeGuard）：claude/一般分頁的 IME 文字都經這裡。d 若對得上 textarea「尚未送出」的
       // 內容＝xterm 正常從 textarea 送出→推進水位後照送；它前面若還夾著沒送過的字（前一筆漏送、使用者又接著打）先補送、保序。
       // d 若「已在水位後方」＝補救計時器已搶先送過同一段（xterm 的延遲送出比 40ms 補救更晚才落地）→ 抑制，避免重複送兩次。
-      if (rec0.ta && isTypedText(d)) {
+      // 貼上（rec0.pasting，見 doPaste）不經 textarea、水位對不上——不能套這個檢查，否則單行純文字貼上會被當成「已送過」整段丟掉
+      //（1.2.6 修：一般分頁、程式沒開 bracketed paste 時，工具列／右鍵貼上單行文字完全沒反應）。
+      if (rec0.ta && !rec0.pasting && isTypedText(d)) {
         var rest0 = taUnsent(rec0), k0 = rest0.indexOf(d);
         if (k0 < 0) { dbgLog(id, "ime-already-sent " + JSON.stringify(d)); return; } // 補救已送過：不重複
         if (k0 > 0 && !rec0.composing) { var missed = rest0.slice(0, k0); dbgLog(id, "ime-rescue ondata " + JSON.stringify(missed)); emitTyped(rec0, id, missed, true); }
@@ -231,11 +233,13 @@
       if (!/^(Shift|Control|Alt|Meta|CapsLock)$/.test(e.key)) rk.appSel = "";   // 打字＝程式那邊的反白通常已消失，別再拿舊選取去複製
     }, true);
 
-    // claude 分頁：瀏覽器原生貼上（Ctrl+V）也要走 doPaste（capture 階段先於 xterm 的 textarea 監聽）。
+    // 瀏覽器原生貼上（Ctrl+V／Shift+Insert）一律走 doPaste（capture 階段先於 xterm 的 textarea 監聽）：
+    // claude 分頁要 ESC+CR 軟換行；一般分頁交給 xterm 自己處理的話，onData 會被 IME 水位當成「已送過」丟掉、
+    // 再由 textarea 裡殘留的貼上文字觸發補救送出（少了 bracketed paste 包裝）。preventDefault＝文字不進 textarea。
     // 搜尋列在 document 層級、不在 el 內，不受影響。
     el.addEventListener("paste", function (e) {
       var rp = terms[id];
-      if (!rp || !rp.claudePaste) return; // 非 claude 分頁照舊交給 xterm
+      if (!rp) return;
       e.preventDefault(); e.stopPropagation();
       var txt = "";
       try { txt = e.clipboardData.getData("text/plain") || ""; } catch (_) {}
@@ -406,7 +410,9 @@
       qPush(rec, id, "\x1b[I", PACE_MS, true); // 同樣先吸收懸置狀態（Ctrl+C 待確認時貼上整段被吞，實測）
       qPush(rec, id, t, 0, true);              // 貼上整段一次送（gate：等 claude 靜止再送）
     } else {
-      rec.term.paste(text);
+      // xterm.paste() 會同步觸發 onData；pasting 旗標讓 onData 跳過 IME 水位檢查（貼上的文字不在 textarea 裡）
+      rec.pasting = true;
+      try { rec.term.paste(text); } finally { rec.pasting = false; }
     }
   }
 

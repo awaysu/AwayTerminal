@@ -97,7 +97,7 @@ public partial class MainWindow : Window, IRemoteHost
         return dup;
     }
 
-    /// <summary>這條連線是不是 ClaudeCode / Codex / OpenCode / GeminiCLI（分頁改用資料夾名稱，見 DirTabName）。
+    /// <summary>這條連線是不是 ClaudeCode / Codex / OpenCode / GeminiCLI / QwenCode（分頁改用資料夾名稱，見 DirTabName）。
     /// 先看圖示 key（「自動偵測」加入的就是 claude-code / codex / opencode / geminicli），使用者換過圖示或
     /// 手動新增的則看執行檔名。其餘連線（PowerShell / WSL / ADB / Aider…）維持原本命名。</summary>
     private static bool UsesDirTitle(string path, string icon)
@@ -109,7 +109,8 @@ public partial class MainWindow : Window, IRemoteHost
             return exe.Contains("claude", StringComparison.OrdinalIgnoreCase)
                 || exe.Contains("codex", StringComparison.OrdinalIgnoreCase)
                 || exe.Contains("opencode", StringComparison.OrdinalIgnoreCase)
-                || exe.Contains("gemini", StringComparison.OrdinalIgnoreCase);
+                || exe.Contains("gemini", StringComparison.OrdinalIgnoreCase)
+                || exe.Contains("qwen", StringComparison.OrdinalIgnoreCase);
         }
         catch { return false; }
     }
@@ -175,12 +176,20 @@ public partial class MainWindow : Window, IRemoteHost
     /// 之後存設定、終止子行程（不送 Ctrl+C、不等待）、Environment.Exit(0)（跳過 WebView2 冗長 teardown）。</summary>
     private async Task FinishExitAsync(bool restore)
     {
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        long tCapture, tSave, tNotify;
+        // 1.2.6：確認離開就先把視窗藏起來＝使用者看到的是「立刻關掉」；存 scrollback／設定、Telegram 離線通知、
+        // 收 session、WebView2 teardown（實測 Environment.Exit 本身就要約 0.4 秒）都在看不見的狀態下做完。
+        // 藏起來的 WebView2 照樣處理訊息（q…save 回得來，實測）。
+        try { Hide(); } catch { }
         var tabs = restore ? Tabs.Where(t => t.Restore != null).ToList() : new List<TerminalTab>();
         var bufs = new Dictionary<int, string>();
         if (tabs.Count > 0 && AppSettings.Current.RestoreBufferLines > 0)
         {
             try { bufs = await CaptureBuffersAsync(tabs, 2500); } catch (Exception ex) { Diag.Log("capture buffers: " + ex.Message); }
         }
+
+        tCapture = sw.ElapsedMilliseconds;
 
         // 暫存目錄每次重寫：舊檔全清，不累積
         string dir = AppSettings.RestoreDir;
@@ -222,12 +231,14 @@ public partial class MainWindow : Window, IRemoteHost
         }
         AppSettings.Current.SavedTabs = saved;
         AppSettings.Current.Save();
+        tSave = sw.ElapsedMilliseconds;
 
         // 快速收尾：終止子行程（不送 Ctrl+C、不等待），然後立即結束程式
         _statusTimer?.Stop();
         _bounceTimer?.Stop();
         _remote?.NotifyOfflineBlocking();   // 關閉前先告知手機「遠端離線」（使用者選項；只有遠端在跑才送）
         _remote?.Stop();
+        tNotify = sw.ElapsedMilliseconds;
         foreach (var t in Tabs)
         {
             try { (t.Macro as MacroRunner)?.Stop(); } catch { }
@@ -239,6 +250,14 @@ public partial class MainWindow : Window, IRemoteHost
             }
             catch { }
         }
+        Diag.Log($"exit: tabs={Tabs.Count} capture={tCapture}ms save={tSave - tCapture}ms notify={tNotify - tSave}ms dispose={sw.ElapsedMilliseconds - tNotify}ms");
+        // 看門狗：Environment.Exit 要跑 finalizer／DLL 卸載／WebView2 收尾，偶爾會拖很久甚至卡死（視窗已藏、行程卻留著）；
+        // 該存的都存完了，1.5 秒還沒走完就直接砍掉自己。
+        new Thread(() =>
+        {
+            Thread.Sleep(1500);
+            try { System.Diagnostics.Process.GetCurrentProcess().Kill(); } catch { }
+        }) { IsBackground = true }.Start();
         Environment.Exit(0); // 立即終止，msedgewebview2 等子程序會隨之結束
     }
 
@@ -660,9 +679,12 @@ public partial class MainWindow : Window, IRemoteHost
         string userData = Path.Combine(AppPaths.DataDir, "WebView2");   // 測試模式（AWAYTERMINAL_DATA_DIR）與正式版分開
         try
         {
+            long tLoaded = SinceProcessStartMs();
             Directory.CreateDirectory(userData);
             var env = await CoreWebView2Environment.CreateAsync(null, userData);
             await Web.EnsureCoreWebView2Async(env);
+            // 啟動耗時（自行程啟動起算，1.2.6）：之後再有人說「開很慢」，看 diag.log 就知道慢在視窗、WebView2 還是前端（web ready 那行）
+            Diag.Log($"startup: window loaded +{tLoaded}ms, webview2 ready +{SinceProcessStartMs()}ms");
         }
         catch (Exception ex)
         {
@@ -678,6 +700,10 @@ public partial class MainWindow : Window, IRemoteHost
         core.Settings.AreDevToolsEnabled = true;
         core.Settings.IsStatusBarEnabled = false;
         core.Settings.IsSwipeNavigationEnabled = false;
+        // 1.2.6 啟動加速：關掉 SmartScreen 信譽檢查。只載入本機的 https://app/（虛擬主機），外部連結一律交給系統瀏覽器；
+        // 開著的話每次啟動 Navigate 後要等它查完才 commit——實測（公司網路）index.html 19ms 就回應、卻卡到 2020ms 才開始解析，
+        // 每次都剛好 2 秒（逾時）。關掉後 Navigate → web ready 由約 2.1 秒降到約 0.1 秒。舊版 Runtime 沒這個屬性 → 吞掉。
+        try { core.Settings.IsReputationCheckingRequired = false; } catch { }
 
         _webRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "web"));
         core.SetVirtualHostNameToFolderMapping("app", _webRoot, CoreWebView2HostResourceAccessKind.Allow);
@@ -704,6 +730,12 @@ public partial class MainWindow : Window, IRemoteHost
         // 並開 IPC 管線——之後從右鍵再啟動的 AwayTerminal.exe 會把資料夾轉交過來、由這個實例開分頁
         ShellIntegration.Apply(AppSettings.Current.ExplorerMenu, Loc.T("shell.menuText"));
         IpcPipe.StartServer(line => Dispatcher.InvokeAsync(() => HandleIpcLine(line)));
+    }
+
+    private static long SinceProcessStartMs()
+    {
+        try { return (long)(DateTime.Now - System.Diagnostics.Process.GetCurrentProcess().StartTime).TotalMilliseconds; }
+        catch { return -1; }
     }
 
     // ---------- 檔案總管右鍵「用 AwayTerminal 開啟」（1.0.45）----------
@@ -754,7 +786,7 @@ public partial class MainWindow : Window, IRemoteHost
         if (msg == "ready")
         {
             _webReady = true;
-            Diag.Log("web ready");
+            Diag.Log($"web ready +{SinceProcessStartMs()}ms");
             PostTheme();
             // 只恢復上次存下的分頁；沒有就保持空白（不再硬開一個預設 PowerShell）
             var saved = AppSettings.Current.SavedTabs;

@@ -42,6 +42,9 @@ public partial class CustomConnDialog : Window
         // Gemini CLI（1.1.11）：npm 版（@google/gemini-cli）是 %APPDATA%\npm\gemini.cmd。圖示 icon/geminicli.png；
         // 1.1.10 以前同一項叫「Gemini」、圖示 run——已加過的靠下面 AutoDetect 的「同路徑」判斷不會再重複加入。
         new("GeminiCLI",  new[] { "gemini.exe", "gemini.cmd" }, "", "geminicli", true),
+        // Qwen Code（1.2.6，使用者要求）：npm 版（@qwen-code/qwen-code）是 %APPDATA%\npm\qwen.cmd。參數同 Gemini 留空
+        // （要跳過核准的人自己加 --yolo）。還沒有專屬圖示 → 先用 run；分頁名稱用資料夾名（MainWindow.UsesDirTitle 以執行檔名判斷）。
+        new("QwenCode",   new[] { "qwen.exe", "qwen.cmd" }, "", "run", true),
         // 順序＝自動偵測加入清單的順序（使用者指定 2026-09-15：四個 AI CLI 在前，WSL 移到 GeminiCLI 後面）
         new("WSL",        new[] { "wsl.exe" }, "", "wsl", false),
         new("Aider",      new[] { "aider.exe", "aider.cmd" }, "", "run", true),
