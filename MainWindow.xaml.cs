@@ -98,11 +98,11 @@ public partial class MainWindow : Window, IRemoteHost
     }
 
     /// <summary>這條連線是不是 ClaudeCode / Codex / OpenCode / GeminiCLI / QwenCode（分頁改用資料夾名稱，見 DirTabName）。
-    /// 先看圖示 key（「自動偵測」加入的就是 claude-code / codex / opencode / geminicli），使用者換過圖示或
+    /// 先看圖示 key（「自動偵測」加入的就是 claude-code / codex / opencode / geminicli / qwen），使用者換過圖示或
     /// 手動新增的則看執行檔名。其餘連線（PowerShell / WSL / ADB / Aider…）維持原本命名。</summary>
     private static bool UsesDirTitle(string path, string icon)
     {
-        if (icon is "claude-code" or "opencode" or "codex" or "geminicli") return true;
+        if (icon is "claude-code" or "opencode" or "codex" or "geminicli" or "qwen") return true;
         try
         {
             string exe = Path.GetFileNameWithoutExtension(path);
@@ -319,7 +319,6 @@ public partial class MainWindow : Window, IRemoteHost
         BtnCopyAll.Content = Loc.T("tb.copyall"); BtnCopyAll.ToolTip = Loc.T("tip.copyall");
         BtnClear.Content = Loc.T("tb.clear"); BtnClear.ToolTip = Loc.T("tip.clear");
         BtnPage.Content = Loc.T("tb.page"); BtnPage.ToolTip = Loc.T("tip.page");
-        BtnPrompt.Content = Loc.T("tb.prompt"); BtnPrompt.ToolTip = Loc.T("tip.prompt");
         BtnRemote.Content = Loc.T("tb.remote"); BtnRemote.ToolTip = Loc.T("tip.remote");
         BtnSettings.Content = Loc.T("tb.settings"); BtnSettings.ToolTip = Loc.T("tip.settings");
         BtnAbout.Content = Loc.T("tb.about"); BtnAbout.ToolTip = Loc.T("tip.about");
@@ -1819,10 +1818,9 @@ public partial class MainWindow : Window, IRemoteHost
     }
 
     /// <summary>分頁列尾端 ▲：上拉列出所有分頁供選擇。</summary>
-    /// <summary>工具列「輸入文字」（1.0.30 為分頁列最左「…」，1.0.46 移到工具列並併入常用字串）：
+    /// <summary>工具列「輸入文字」（1.0.30 為分頁列最左「…」，1.0.46 移到工具列；1.2.7 常用字串功能移除）：
     /// 開輸入框先把文字打好（IME 在一般 TextBox 裡組字、不經 xterm/ConPTY），按「送出」才整段貼進作用中分頁——
-    /// 繞過 claude 逐鍵解析造成的重複／亂碼。視窗上方可選常用字串「插入」文字框或「直接送出」（視窗留著可連送，
-    /// 依該字串的 SendEnter）。都走 SendSnippet（claude 分頁換行→ESC+CR 軟換行；送 Enter 則 200ms 後補 CR）。</summary>
+    /// 繞過 claude 逐鍵解析造成的重複／亂碼。走 SendSnippet（claude 分頁換行→ESC+CR 軟換行；送 Enter 則 200ms 後補 CR）。</summary>
     private void Compose_Click(object sender, RoutedEventArgs e)
     {
         if (_active == null)
@@ -1830,8 +1828,7 @@ public partial class MainWindow : Window, IRemoteHost
             ShowCopyFeedback((FrameworkElement)sender, Loc.T("compose.noTab"));   // 不無聲返回
             return;
         }
-        var dlg = new ComposeDialog(AppSettings.Current.ComposeSendEnter, AppSettings.Current.Prompts,
-                                    (content, enter) => SendSnippet(content, enter)) { Owner = this };
+        var dlg = new ComposeDialog(AppSettings.Current.ComposeSendEnter) { Owner = this };
         if (dlg.ShowDialog() != true) { Web.Focus(); return; }
         AppSettings.Current.ComposeSendEnter = dlg.SendEnter;
         AppSettings.Current.Save();
@@ -2146,16 +2143,6 @@ public partial class MainWindow : Window, IRemoteHost
     }
 
     // ---------- 工具列：設定群組（P3 / P4 補齊）----------
-    private void Prompt_Click(object sender, RoutedEventArgs e)
-    {
-        var dlg = new PromptDialog { Owner = this };
-        if (dlg.ShowDialog() == true && dlg.ContentToSend != null)
-        {
-            SendSnippet(dlg.ContentToSend, dlg.SendEnterToSend);
-            Web.Focus();
-        }
-    }
-
     private void Remote_Click(object sender, RoutedEventArgs e)
     {
         var dlg = new RemoteDialog { Owner = this };

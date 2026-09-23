@@ -16,7 +16,7 @@ public partial class CustomConnDialog : Window
 {
     // 可選的圖示（對應 icon\{key}.png）
     private static readonly string[] IconKeys =
-        { "powershell", "ssh-telnet", "adb", "wsl", "git", "docker", "claude-code", "codex", "opencode", "geminicli", "python", "run", "none" };
+        { "powershell", "ssh-telnet", "adb", "wsl", "git", "docker", "claude-code", "codex", "opencode", "geminicli", "qwen", "python", "run", "none" };
     private const string DefaultIcon = "run";
 
     /// <summary>自動偵測用的已知工具（在 PATH 與常見安裝位置尋找）。1.2.0 起 Multi-Agent 的 adapter 也用它（internal）。</summary>
@@ -43,8 +43,8 @@ public partial class CustomConnDialog : Window
         // 1.1.10 以前同一項叫「Gemini」、圖示 run——已加過的靠下面 AutoDetect 的「同路徑」判斷不會再重複加入。
         new("GeminiCLI",  new[] { "gemini.exe", "gemini.cmd" }, "", "geminicli", true),
         // Qwen Code（1.2.6，使用者要求）：npm 版（@qwen-code/qwen-code）是 %APPDATA%\npm\qwen.cmd。參數同 Gemini 留空
-        // （要跳過核准的人自己加 --yolo）。還沒有專屬圖示 → 先用 run；分頁名稱用資料夾名（MainWindow.UsesDirTitle 以執行檔名判斷）。
-        new("QwenCode",   new[] { "qwen.exe", "qwen.cmd" }, "", "run", true),
+        // （要跳過核准的人自己加 --yolo）。1.2.7 起圖示 icon/qwen.png（1.2.6 暫用 run）；分頁名稱用資料夾名（MainWindow.UsesDirTitle）。
+        new("QwenCode",   new[] { "qwen.exe", "qwen.cmd" }, "", "qwen", true),
         // 順序＝自動偵測加入清單的順序（使用者指定 2026-09-15：四個 AI CLI 在前，WSL 移到 GeminiCLI 後面）
         new("WSL",        new[] { "wsl.exe" }, "", "wsl", false),
         new("Aider",      new[] { "aider.exe", "aider.cmd" }, "", "run", true),
@@ -392,7 +392,7 @@ public partial class CustomConnDialog : Window
             MessageBoxButton.YesNo, MessageBoxImage.Question);
         if (r != MessageBoxResult.Yes) return;
         int idx = _items.IndexOf(_editing);
-        // 同 PromptDialog：移除會同步觸發 SelectionChanged，編輯區髒著會再問一次「尚未儲存」→ 刻意刪除，不問
+        // 移除會同步觸發 SelectionChanged，編輯區髒著會再問一次「尚未儲存」→ 刻意刪除，不問
         _switching = true;
         try { _dirty = false; _items.Remove(_editing); _editing = null; }
         finally { _switching = false; }

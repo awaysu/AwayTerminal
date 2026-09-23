@@ -73,7 +73,6 @@
                 <Rectangle Style="{StaticResource Sep}" />
                 <Button x:Name="BtnSplit" Style="{StaticResource ToolBtn}" Click="Split_Click" Tag="pack://application:,,,/icon/arrange.png">分割</Button>
                 <Rectangle Style="{StaticResource Sep}" />
-                <Button x:Name="BtnPrompt" Style="{StaticResource ToolBtn}" Click="Prompt_Click" Tag="pack://application:,,,/icon/prompts.png">常用字串</Button>
                 <Button x:Name="BtnRemote" Style="{StaticResource ToolBtn}" Click="Remote_Click" Tag="pack://application:,,,/icon/remote-settings.png">遠端</Button>
                 <Button x:Name="BtnSettings" Style="{StaticResource ToolBtn}" Click="Settings_Click" Tag="pack://application:,,,/icon/settings.png">其他設定</Button>
                 <Rectangle Style="{StaticResource Sep}" />
