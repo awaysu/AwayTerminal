@@ -82,15 +82,15 @@ public sealed class AgentGroup
 
     public bool IsChat => Mode == GroupMode.Chat;
 
-    /// <summary>聊天室：討論迴數（一迴＝每個人各發言一次）。</summary>
+    /// <summary>聊天室：討論回合（一回合＝每個人各發言一次）。</summary>
     public int Rounds { get; set; } = DefaultRounds;
 
-    public const int DefaultRounds = 5;
+    public const int DefaultRounds = 3;   // 1.2.8：5 → 3（使用者要求）
 
-    /// <summary>設定視窗可選的迴數。</summary>
+    /// <summary>設定視窗可選的回合數。</summary>
     public static readonly int[] RoundChoices = { 3, 5, 8, 10 };
 
-    /// <summary>聊天室：某一位超過這麼多分鐘沒發言就跳過他這一迴（在紀錄註明）。</summary>
+    /// <summary>聊天室：某一位超過這麼多分鐘沒發言就跳過他這一回合（在紀錄註明）。</summary>
     public const int TurnTimeoutMinutes = 5;
 
     /// <summary>討論紀錄資料夾（相對專案資料夾）。</summary>
@@ -102,10 +102,10 @@ public sealed class AgentGroup
     /// <summary>使用者給的主題（還沒給＝空）。</summary>
     public string Topic { get; set; } = "";
 
-    /// <summary>目前第幾迴（1 起）。</summary>
+    /// <summary>目前第幾回合（1 起）。</summary>
     public int Round { get; set; } = 1;
 
-    /// <summary>這一迴輪到參加者清單裡的第幾位（0 起）。</summary>
+    /// <summary>這一回合輪到參加者清單裡的第幾位（0 起）。</summary>
     public int Speaker { get; set; }
 
     /// <summary>聊天室進行到哪個階段。</summary>

@@ -12,10 +12,10 @@ namespace AwayTerminal;
 /// <summary>
 /// AI 聊天室（1.2.3，使用者設計）：2～4 個 AI（ClaudeCode／Codex／OpenCode／GeminiCLI）各帶一個角色，針對使用者給的主題輪流討論。
 /// <para>畫面與分頁沿用代理團隊那一套（<see cref="AgentGroup"/>、下一上 N−1 的 pane、分頁列一組一列、恢復分頁、我的最愛）；
-/// 差別在於不走 <c>.ai/bus</c> 信箱，而是由 AwayTerminal 主持：輪到誰就在那一格打一行「第 N 迴輪到你」，
+/// 差別在於不走 <c>.ai/bus</c> 信箱，而是由 AwayTerminal 主持：輪到誰就在那一格打一行「第 N 回合輪到你」，
 /// 它把發言寫成檔案，AwayTerminal 接進共用的 <c>.ai/chat/&lt;時間&gt;/transcript.md</c>，再換下一位。</para>
-/// <para>迴數跑完（或右鍵「結束討論」）→ 請主持人（第 1 位）讀完紀錄寫 <c>conclusion.md</c>。
-/// 某位超過 <see cref="AgentGroup.TurnTimeoutMinutes"/> 分鐘沒發言就跳過他這一迴並記進紀錄，不讓整場停住。</para>
+/// <para>回合數跑完（或右鍵「結束討論」）→ 請主持人（第 1 位）讀完紀錄寫 <c>conclusion.md</c>。
+/// 某位超過 <see cref="AgentGroup.TurnTimeoutMinutes"/> 分鐘沒發言就跳過他這一回合並記進紀錄，不讓整場停住。</para>
 /// </summary>
 public partial class MainWindow
 {
@@ -37,7 +37,7 @@ public partial class MainWindow
         AskChatTopic(g);
     }
 
-    /// <summary>問主題（可以按取消，之後右鍵「開始討論…」再給）。給了就寫討論紀錄的開頭並開始第 1 迴。</summary>
+    /// <summary>問主題（可以按取消，之後右鍵「開始討論…」再給）。給了就寫討論紀錄的開頭並開始第 1 回合。</summary>
     private void AskChatTopic(AgentGroup g)
     {
         // 主題常常是一整段（背景、限制、想要的結論）→ 多行輸入框（使用者要求，2026-09-16）
@@ -195,7 +195,7 @@ public partial class MainWindow
         }
     }
 
-    /// <summary>換下一位；一迴走完換下一迴；迴數跑完（或使用者按了結束）就去寫結論。</summary>
+    /// <summary>換下一位；一回合走完換下一回合；回合數跑完（或使用者按了結束）就去寫結論。</summary>
     private void AdvanceChatTurn(AgentGroup g, int speakerCount)
     {
         g.TurnAskedUtc = default;
@@ -209,13 +209,13 @@ public partial class MainWindow
         else g.RowTab?.RaiseAgentState();
     }
 
-    /// <summary>進入「寫結論」階段。Round 在這之後＝「跑完的迴數＋1」（結論提示用 Round−1 說共幾迴）。</summary>
+    /// <summary>進入「寫結論」階段。Round 在這之後＝「跑完的回合數＋1」（結論提示用 Round−1 說共幾回合）。</summary>
     private void ConcludeChat(AgentGroup g, string why)
     {
         g.TurnAskedUtc = default;
         g.AskedAgentId = "";
         g.TurnStartedUtc = DateTime.UtcNow;
-        if (g.Phase == ChatPhase.Discussing && g.Speaker > 0) g.Round++;   // 這一迴已經有人講過＝算一迴（從 AdvanceChatTurn 來的已經加過）
+        if (g.Phase == ChatPhase.Discussing && g.Speaker > 0) g.Round++;   // 這一回合已經有人講過＝算一回合（從 AdvanceChatTurn 來的已經加過）
         g.Speaker = 0;
         g.Phase = ChatPhase.Concluding;
         Diag.Log($"chat CHAT-{g.Number}: discussion ended（{why}）→ conclusion");

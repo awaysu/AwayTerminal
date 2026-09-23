@@ -37,7 +37,7 @@
         <!-- 專案資料夾在開視窗前就選好了（同其他「啟動前選擇資料夾」的連線），這裡不再有資料夾欄位；視窗標題顯示完整路徑 -->
 
         <!-- 投遞限制次數、閒置檢查（整組一個值；Agent-x1 那格的正上方，左邊對齊格子外框）。
-             AI 聊天室用同一列放「討論迴數」，第二列隱藏 -->
+             AI 聊天室用同一列放「討論回合」，第二列隱藏 -->
         <DockPanel x:Name="LimitRow" Margin="4,0,4,6">
             <TextBlock x:Name="LimitLabel" Text="投遞限制次數" Margin="0,0,10,0" />
             <ComboBox x:Name="LimitBox" Width="110" />

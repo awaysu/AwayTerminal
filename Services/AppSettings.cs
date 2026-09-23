@@ -80,8 +80,8 @@ public sealed class SavedTab
     public int AgentIdleCheck { get; set; } = 30;
     /// <summary>1.2.3：這一組是代理團隊（0）還是 AI 聊天室（1）。舊檔沒有這欄＝代理團隊。</summary>
     public int AgentMode { get; set; }
-    /// <summary>AI 聊天室：討論迴數。</summary>
-    public int AgentRounds { get; set; } = 5;
+    /// <summary>AI 聊天室：討論回合。</summary>
+    public int AgentRounds { get; set; } = Models.AgentGroup.DefaultRounds;
     /// <summary>AI 聊天室：這場討論的紀錄資料夾名（.ai/chat/&lt;這個&gt;/），恢復時接著同一份紀錄。</summary>
     public string AgentChatFolder { get; set; } = "";
 }

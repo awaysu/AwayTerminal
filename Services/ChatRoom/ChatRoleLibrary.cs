@@ -208,7 +208,7 @@ internal static class ChatRoleLibrary
         sb.Append($"你用的 AI：{me.BackendName}\n");
         sb.Append($"聊天室編號：CHAT-{g.Number}\n");
         sb.Append($"專案資料夾：{g.Dir}\n");
-        sb.Append($"討論迴數：{g.Rounds} 迴（一迴＝每個人各發言一次；使用者可以提前結束）\n");
+        sb.Append($"討論回合：{g.Rounds} 回合（一回合＝每個人各發言一次；使用者可以提前結束）\n");
         sb.Append("參加者：\n");
         foreach (var x in joined)
             sb.Append($"  - {x.AgentId.PadRight(w1)}  {x.RoleTitle.PadRight(w2)}  ({x.BackendName}){(ReferenceEquals(x, me) ? "   ← 你" : "")}\n");
@@ -216,9 +216,9 @@ internal static class ChatRoleLibrary
 
         sb.Append("## 討論紀錄與你的發言\n\n");
         sb.Append($"- 共用討論紀錄：{AgentGroup.ChatRelDir}/{g.ChatFolder}/transcript.md（所有人的發言，AwayTerminal 依序接進去）\n");
-        sb.Append($"- 你的發言檔：{AgentGroup.ChatRelDir}/{g.ChatFolder}/r{{迴數}}-{me.AgentId}.md（例：r1-{me.AgentId}.md）\n");
+        sb.Append($"- 你的發言檔：{AgentGroup.ChatRelDir}/{g.ChatFolder}/r{{回合數}}-{me.AgentId}.md（例：r1-{me.AgentId}.md）\n");
         sb.Append("- 路徑都是相對於專案資料夾。檔案一律 UTF-8（Windows PowerShell 讀檔請用 Get-Content -Raw -Encoding UTF8）。\n\n");
-        sb.Append("輪到你時，AwayTerminal 會在你的畫面打一行字，告訴你第幾迴、要讀哪一份紀錄、發言要寫到哪個檔案。\n");
+        sb.Append("輪到你時，AwayTerminal 會在你的畫面打一行字，告訴你第幾回合、要讀哪一份紀錄、發言要寫到哪個檔案。\n");
         sb.Append("**檔案路徑一律以那一行給的為準**（使用者換主題時，討論紀錄會換到新的資料夾，上面寫的路徑就過期了）。照著做：\n");
         sb.Append("讀紀錄 → 想清楚你要回應誰 → 把發言寫進上面那個檔案（300 字以內）→ 結束這一輪。\n");
         sb.Append("不要修改別人的發言檔，也不要改 transcript.md。\n\n");

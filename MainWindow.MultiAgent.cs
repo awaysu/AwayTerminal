@@ -551,7 +551,7 @@ public partial class MainWindow
             g.AllIdleSinceUtc = default;
             Diag.Log($"ma setup team {g.Number}: idlecheck={(g.IdleCheckMinutes > 0 ? g.IdleCheckMinutes + "min" : "off")}");
         }
-        if (g.IsChat && r.Rounds != g.Rounds)   // 聊天室的討論迴數：討論中改也行（下一次換人時依新值判斷要不要收尾）
+        if (g.IsChat && r.Rounds != g.Rounds)   // 聊天室的討論回合：討論中改也行（下一次換人時依新值判斷要不要收尾）
         {
             g.Rounds = Math.Max(1, r.Rounds);
             Diag.Log($"ma setup chat {g.Number}: rounds={g.Rounds} (now round {g.Round})");

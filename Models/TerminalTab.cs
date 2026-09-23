@@ -110,7 +110,7 @@ public sealed class TerminalTab : INotifyPropertyChanged
         {
             if (!IsAgentRow) return "";
             var g = _agent!.Group;
-            if (g.IsChat)   // 聊天室：第幾迴／共幾迴（1.2.3）
+            if (g.IsChat)   // 聊天室：第幾回合／共幾回合（1.2.3）
                 return g.Phase switch
                 {
                     ChatPhase.NeedTopic => Loc.T("chat.stNeedTopic"),

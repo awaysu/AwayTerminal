@@ -30,7 +30,7 @@ public sealed class MultiAgentSetup
     public int MaxMessages { get; set; } = AgentGroup.DefaultMaxMessages;
     /// <summary>閒置檢查分鐘數（0＝不檢查）。</summary>
     public int IdleCheckMinutes { get; set; } = AgentGroup.DefaultIdleCheckMinutes;
-    /// <summary>AI 聊天室：討論迴數。</summary>
+    /// <summary>AI 聊天室：討論回合。</summary>
     public int Rounds { get; set; } = AgentGroup.DefaultRounds;
 }
 
@@ -146,7 +146,7 @@ public partial class MultiAgentDialog : Window
         Select(IdleBox, curIdle.ToString());
     }
 
-    /// <summary>AI 聊天室：第一列改成「討論迴數」（3／5／8／10，預設 5），第二列隱藏。</summary>
+    /// <summary>AI 聊天室：第一列改成「討論回合」（3／5／8／10，預設 3），第二列隱藏。</summary>
     private void InitChatRow(AgentGroup? existing)
     {
         IdleRow.Visibility = Visibility.Collapsed;
@@ -254,15 +254,27 @@ public partial class MultiAgentDialog : Window
         public object ConvertBack(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture) => System.Windows.Data.Binding.DoNothing;
     }
 
+    /// <summary>AI 聊天室的主持人角色 key：固定由 Agent-x1 擔任（1.2.8，使用者要求；結論也由第 1 位寫）。</summary>
+    private const string ChatHostRole = "host";
+
     private void FillRoles()
     {
         var roles = new List<Choice> { new("", Loc.T("ma.dlgRoleNone"), null) };
         var src = _chat ? Services.ChatRoom.ChatRoleLibrary.ListRoles() : RoleLibrary.ListRoles();
         roles.AddRange(src.Select(r => new Choice(r.Key, r.Title, null)));
+        // 聊天室：Agent-x1 只有「主持人」一個選項（下拉停用）；其他格不能再選主持人（一場只有一位）
+        List<Choice>? hostOnly = null, others = null;
+        if (_chat)
+        {
+            var host = roles.FirstOrDefault(c => c.Key == ChatHostRole) ?? new Choice(ChatHostRole, Loc.T("chat.hostRole"), null);
+            hostOnly = new List<Choice> { host };
+            others = roles.Where(c => c.Key != ChatHostRole).ToList();
+        }
         for (int i = 0; i < 4; i++)
         {
             string? cur = (_ui[i].Role.SelectedItem as Choice)?.Key;
-            _ui[i].Role.ItemsSource = roles;
+            _ui[i].Role.ItemsSource = !_chat ? roles : i == 0 ? hostOnly : others;
+            if (_chat && i == 0) { Select(_ui[i].Role, ChatHostRole); continue; }
             if (cur != null) Select(_ui[i].Role, cur);
         }
     }
@@ -294,6 +306,7 @@ public partial class MultiAgentDialog : Window
             ui.Backend.ItemsSource = _backends;
             SelectDefaultBackend(ui.Backend, index);
             Select(ui.Role, defaultRole);
+            if (_chat && i == 0) Select(ui.Role, ChatHostRole);
             ui.Enable.IsChecked = index <= 2;
             ui.Enable.IsEnabled = index != 1;   // 格 1（下方全寬那一格）一定啟用
             return;
@@ -311,6 +324,7 @@ public partial class MultiAgentDialog : Window
             ui.OrigRole = slot.Role;
             Select(ui.Backend, slot.Backend);
             Select(ui.Role, slot.Role);
+            if (_chat && i == 0) Select(ui.Role, ChatHostRole);   // 舊版聊天室 x1 可能選過別的角色 → 套用時改回主持人（會重新啟動 x1）
             ui.Enable.IsChecked = true;
             ui.Enable.IsEnabled = index != 1;   // 格 1 不能關（其他格取消勾選＝套用後關掉那個 agent）
         }
@@ -320,6 +334,7 @@ public partial class MultiAgentDialog : Window
             // 從沒設定過＝預設；之前開過又被關掉的格＝沿用它上次的 CLI／角色
             if (string.IsNullOrEmpty(slot.Backend) || !Select(ui.Backend, slot.Backend)) SelectDefaultBackend(ui.Backend, index);
             if (string.IsNullOrEmpty(slot.Backend) || !Select(ui.Role, slot.Role)) Select(ui.Role, defaultRole);
+            if (_chat && i == 0) Select(ui.Role, ChatHostRole);
             ui.Enable.IsChecked = false;
         }
     }
@@ -343,6 +358,7 @@ public partial class MultiAgentDialog : Window
         var ui = _ui[i];
         bool on = ui.Enable.IsChecked == true;
         ui.Backend.IsEnabled = ui.Role.IsEnabled = on;
+        if (_chat && i == 0) { ui.Role.IsEnabled = false; ui.Role.ToolTip = Loc.T("chat.hostFixed"); }   // 聊天室 x1 固定主持人
         // 下拉的文字被黑字樣式固定住（見 XAML 註解），停用時改用半透明呈現灰階
         ui.Backend.Opacity = ui.Role.Opacity = on ? 1.0 : 0.45;
         ui.Enable.Foreground = ui.CliLabel.Foreground = ui.RoleLabel.Foreground = on ? NormalText : GrayText;
@@ -395,7 +411,7 @@ public partial class MultiAgentDialog : Window
         var result = new MultiAgentSetup { Dir = _dir };
         if (_chat)
         {
-            // 聊天室：第一列是討論迴數；投遞上限／閒置檢查用不到，沿用既有值（新開＝預設）
+            // 聊天室：第一列是討論回合；投遞上限／閒置檢查用不到，沿用既有值（新開＝預設）
             result.Rounds = int.TryParse(KeyOf(LimitBox), out int rounds) && rounds > 0 ? rounds : AgentGroup.DefaultRounds;
             result.MaxMessages = _group?.MaxMessages ?? AgentGroup.DefaultMaxMessages;
             result.IdleCheckMinutes = _group?.IdleCheckMinutes ?? AgentGroup.DefaultIdleCheckMinutes;
@@ -418,7 +434,7 @@ public partial class MultiAgentDialog : Window
                 Warn(string.Format(Loc.T("ma.dlgNeedBackend"), ui.Id.Text));
                 return;
             }
-            result.Slots[i] = new AgentSlotSetup { Enabled = enabled, Backend = backend, Role = KeyOf(ui.Role) };
+            result.Slots[i] = new AgentSlotSetup { Enabled = enabled, Backend = backend, Role = _chat && i == 0 ? ChatHostRole : KeyOf(ui.Role) };
             if (_group == null) continue;
             if (act is SlotAction.Start or SlotAction.Restart) result.Launch.Add(i + 1);
             if (act == SlotAction.Close) result.Close.Add(i + 1);
