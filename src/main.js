@@ -16,7 +16,8 @@ import { WebLinksAddon } from '@xterm/addon-web-links';
 import { SerializeAddon } from '@xterm/addon-serialize';
 import { invoke, Channel } from '@tauri-apps/api/core';
 
-import { bridgeReady, log } from './bridge.js';
+import { bridgeReady, log, createSession } from './bridge.js';
+import { initTabBar, currentTabState } from './tabbar.js';
 
 // --- terminal.js 期待的全域（沿用 UMD 的命名空間形狀，這樣 terminal.js 一個字都不用改）---
 window.Terminal = Terminal;
@@ -65,6 +66,51 @@ function awayDump(lines = 6, id = null) {
   return tail;
 }
 window.awayDump = awayDump;
+
+/** `?verify=N` 用：再開一條 shell 分頁。 */
+async function createExtraSession() {
+  const info = await createSession({ kind: 'shell' });
+  return info.id;
+}
+
+/**
+ * 多分頁驗證：每條分頁各自有沒有輸出、有沒有 fit 到正確尺寸。
+ * 等到每條都讀得到內容（最多 10 秒）再一次報告，避免「還沒到」被當成「沒有」。
+ */
+async function awayVerify() {
+  const term = window.AwayTerm;
+  if (!term) return;
+  for (let i = 0; i < 20; i++) {
+    await new Promise((r) => setTimeout(r, 500));
+    const ids = term.ids();
+    if (ids.length && ids.every((id) => term.tail(id, 1).length > 0)) break;
+  }
+  // 檢視三態：分頁 → 分割 → 分欄 → 分頁 各切一次，每次記下每個 pane 的欄列數，
+  // 確認切完都有重新 fit（TASK-003 的 `s{id}`／refit 教訓）。三次剛好轉回原本的模式。
+  for (let i = 0; i < 3; i++) {
+    const mode = await invoke('view_mode_cycle');
+    await new Promise((r) => setTimeout(r, 700));
+    const sizes = term
+      .ids()
+      .map((id) => { const s = term.size(id); return `${id}:${s ? `${s.cols}x${s.rows}` : '?'}`; })
+      .join('  ');
+    log(`[verify] 檢視模式 ${mode}  pane 尺寸 ${sizes}`);
+  }
+
+  const st = currentTabState();
+  const lines = [`[verify] 多分頁狀態  檢視模式=${st.viewMode}  作用中=${st.activeId}`];
+  for (const t of st.tabs) {
+    lines.push(`[verify] tab ${t.id} 「${t.title}」 kind=${t.kind} busy=${t.busy} cwd=${t.cwdPath || '-'}`);
+  }
+  for (const id of term.ids()) {
+    const size = term.size(id);
+    const tail = term.tail(id, 2);
+    lines.push(`[verify] pane ${id}  ${size ? `${size.cols}x${size.rows}` : '?'}  ${tail.length} 行`);
+    for (const t of tail) lines.push(`[verify]   | ${t}`);
+  }
+  log(lines.join('\n'));
+}
+window.awayVerify = awayVerify;
 
 // ------------------------------------------------------------- IPC bench
 //
@@ -182,6 +228,9 @@ window.awayBenchSmall = awayBenchSmall;
 (async () => {
   // host→JS 的 listener 要在 terminal.js 送 `ready` 之前掛好
   await bridgeReady;
+  // 分頁列也要先掛好 `tab-state` 的 listener：第一條 session 是 terminal.js 送出
+  // `ready` 之後才建的，那一刻就會 emit 第一筆狀態，晚掛就漏掉第一列。
+  await initTabBar();
 
   const params = new URLSearchParams(location.search);
 
@@ -199,6 +248,18 @@ window.awayBenchSmall = awayBenchSmall;
       await awayBenchSmall(200);
     } catch (e) {
       log(`[IPC bench] 失敗：${e}`);
+    }
+  }
+
+  // 多分頁端到端驗證（`?verify=N`）：再開 N 條 shell，等提示字元出來，
+  // 然後把每條的 buffer 尾端與欄列數報到後端 log。不需要視窗焦點、不用 GUI 自動化。
+  const verify = parseInt(params.get('verify') || '', 10);
+  if (verify > 0) {
+    try {
+      for (let i = 0; i < verify; i++) await createExtraSession();
+      await awayVerify();
+    } catch (e) {
+      log(`[verify] 失敗：${e && e.stack ? e.stack : e}`);
     }
   }
 

@@ -1075,6 +1075,9 @@
     writeOutput: writeOutput,
     doPaste: doPaste,
     hasTerm: function (id) { return !!terms[id]; },
+    ids: function () { var out = []; for (var k in terms) out.push(k); return out; },
+    // 端到端驗證用：某分頁目前的欄列數（多分頁各自有沒有 fit 正確）
+    size: function (id) { var r = terms[id]; return r ? { cols: r.term.cols, rows: r.term.rows } : null; },
     // 端到端驗證用（不需視窗焦點）：回傳某分頁 buffer 的純文字尾端
     tail: function (id, lines) {
       var rec = terms[id] || (active && terms[active]);

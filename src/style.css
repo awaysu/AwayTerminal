@@ -70,3 +70,120 @@ html, body { height: 100%; margin: 0; background: #1e1e1e; overflow: hidden; }
 }
 #searchbar button:hover { background: #4a4a50; }
 #search-count { color: #aaa; min-width: 34px; text-align: center; }
+
+/* ===========================================================================
+   TASK-004：工具列 + 右側分頁列。
+   這一段**不是**從舊版搬過來的——舊版這塊是 WPF（MainWindow.xaml），不在 webview 裡。
+   顏色、尺寸、圓角都照舊版 XAML 與 Models/TerminalTab.cs 的值抄。
+   =========================================================================== */
+
+[hidden] { display: none !important; }
+
+/* 刻意不設 background：terminal.js 的 updateBodyBg() 會把 body 底色換成作用中分頁的
+   背景色（逐分頁配色用），#app 蓋一層就看不到了。 */
+#app { position: absolute; inset: 0; display: flex; flex-direction: column; }
+
+/* 功能列（舊版 Border Background="#2D2D30" Padding="4"）*/
+#toolbar {
+  flex: 0 0 auto; display: flex; align-items: center; gap: 4px; padding: 4px 6px;
+  background: #2d2d30; user-select: none;
+  font: 12px "Microsoft JhengHei", "微軟正黑體", sans-serif;
+}
+.tool-spacer { flex: 1 1 auto; }
+.tool-btn {
+  background: #3a3a3d; color: #e0e0e0; border: 0; border-radius: 4px;
+  padding: 5px 12px; cursor: pointer; font-size: 12px; font-family: inherit;
+}
+.tool-btn:hover { background: #50505a; }
+/* 分頁列顯示／隱藏的小箭頭（舊版 TabPanelToggle，壓在工具列最右端）*/
+.tool-arrow {
+  width: 30px; height: 18px; padding: 0; border: 0; border-radius: 3px;
+  background: #3a3a3d; color: #FDFFB0; cursor: pointer; font-size: 10px; line-height: 1;
+}
+.tool-arrow:hover { background: #50505a; }
+
+#main { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: row; }
+
+/* 終端機畫面（舊版 TermFrame：黃框、Margin 4,0,4,4）。#terminals 用 absolute 填滿它 */
+#termframe {
+  flex: 1 1 auto; min-width: 200px; position: relative;
+  border: 1px solid #FDFFB0; margin: 0 4px 4px 4px; box-sizing: border-box;
+}
+/* 分割／分欄模式：外框讓給各 pane 自己的黃框（舊版 Split_Click 換 BorderBrush）*/
+#termframe.split-mode { border-color: #333333; }
+
+/* 拖曳區（舊版 GridSplitter Width=5 Background="#2D2D30"）*/
+#tabsplitter { flex: 0 0 5px; background: #2d2d30; cursor: col-resize; margin-bottom: 4px; }
+body.col-resizing { cursor: col-resize; user-select: none; }
+
+/* 分頁列表框（舊版 TabPanel Background="#252528" Margin 0,0,4,4）*/
+#tabpanel {
+  flex: 0 0 auto; width: 220px; min-width: 120px; background: #252528;
+  margin: 0 4px 4px 0; overflow-y: auto; overflow-x: hidden;
+  font: 14px "Microsoft JhengHei", "微軟正黑體", sans-serif;
+}
+#tabstrip { padding: 4px; }
+.tab-empty { color: #777; font-size: 12px; padding: 8px 4px; line-height: 1.6; }
+
+/* 一列分頁（舊版 DataTemplate 的 Border + DockPanel）：
+   作用中＝終端機同色底 #1E1E1E ＋ 黃框；非作用中＝灰底 #333337 無框 */
+.tab-row {
+  display: flex; align-items: center; gap: 0;
+  background: #333337; border: 1px solid #333337; border-radius: 4px;
+  margin: 0 0 4px 0; padding: 6px 8px; cursor: pointer; user-select: none;
+}
+.tab-row.active { background: #1e1e1e; border-color: #FDFFB0; }
+.tab-row.drag-over { outline: 1px dashed #FDFFB0; outline-offset: -2px; }
+.tab-row .tab-icon {
+  flex: 0 0 auto; display: flex; width: 20px; height: 20px; margin-right: 7px;
+  /* 閒置＝淡綠、忙碌＝淡紅（舊版 TerminalTab.ReadyColor / BusyColor，Material 200 級）*/
+  color: #A5D6A7;
+}
+.tab-row .tab-icon.busy { color: #EF9A9A; }
+.tab-row .tab-icon svg { width: 100%; height: 100%; fill: currentColor; }
+.tab-row .tab-title {
+  flex: 1 1 auto; min-width: 0; color: #888888; font-size: 14px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.tab-row.active .tab-title { color: #EDEDED; }
+.tab-row .tab-close {
+  flex: 0 0 auto; width: 22px; height: 22px; margin-left: 6px; padding: 0;
+  background: transparent; border: 0; color: #AAAAAA; cursor: pointer; font-size: 13px; line-height: 1;
+}
+.tab-row .tab-close:hover { color: #ffffff; }
+
+/* 彈出選單（分頁右鍵、新分頁下拉）*/
+.popup-menu {
+  position: fixed; z-index: 200; min-width: 140px; padding: 4px 0;
+  background: #2d2d30; border: 1px solid #555; border-radius: 4px;
+  box-shadow: 0 2px 10px rgba(0,0,0,.6);
+  font: 13px "Microsoft JhengHei", "微軟正黑體", sans-serif; color: #e0e0e0; user-select: none;
+}
+.popup-menu .menu-item { padding: 6px 16px; cursor: pointer; white-space: nowrap; }
+.popup-menu .menu-item:hover { background: #45472e; color: #ffffff; }
+.popup-menu .menu-sep { height: 1px; margin: 4px 0; background: #555; }
+
+/* 頁內對話框（取代舊版 WPF InputDialog / MessageBox）*/
+#modal {
+  position: fixed; inset: 0; z-index: 300; display: flex; align-items: center; justify-content: center;
+  background: rgba(0,0,0,.45);
+  font: 13px "Microsoft JhengHei", "微軟正黑體", sans-serif;
+}
+#modal-form {
+  min-width: 320px; max-width: 70vw; padding: 16px 18px;
+  background: #2d2d30; border: 1px solid #FDFFB0; border-radius: 6px; color: #e0e0e0;
+}
+#modal-title { font-size: 14px; color: #FDFFB0; margin-bottom: 8px; }
+#modal-prompt { margin-bottom: 8px; white-space: pre-wrap; word-break: break-all; }
+#modal-input {
+  width: 100%; box-sizing: border-box; background: #1e1e1e; color: #e0e0e0;
+  border: 1px solid #555; outline: none; padding: 5px 6px; font-size: 13px; font-family: inherit;
+}
+#modal-input:focus { border-color: #FDFFB0; }
+.modal-buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+.modal-buttons button {
+  min-width: 68px; padding: 5px 12px; cursor: pointer; font-size: 13px; font-family: inherit;
+  background: #3a3a3d; color: #e0e0e0; border: 1px solid #555; border-radius: 4px;
+}
+.modal-buttons button:hover { background: #50505a; }
+#modal-ok { border-color: #FDFFB0; }

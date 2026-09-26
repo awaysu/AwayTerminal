@@ -31,15 +31,63 @@
   </script>
 </head>
 <body>
-  <!-- DOM 結構與 id/class 全部照舊版 web/index.html——terminal.js 直接 querySelector 這些名字 -->
-  <div id="terminals"></div>
-  <div id="searchbar">
-    <input id="search-input" type="text" placeholder="搜尋" />
-    <span id="search-count"></span>
-    <button id="search-prev" title="上一個 (Shift+Enter)">▲</button>
-    <button id="search-next" title="下一個 (Enter)">▼</button>
-    <button id="search-close" title="關閉 (Esc)">✕</button>
+  <!-- 版面照舊版 MainWindow.xaml：上方工具列 ＋ 左邊終端機（黃框）＋ 可拖寬的右側分頁列。
+       #terminals / #searchbar 的 id 與內部 class 全部照舊版 web/index.html——
+       terminal.js 直接 querySelector 這些名字，不可以改。 -->
+  <div id="app">
+    <div id="toolbar">
+      <button id="btn-new" type="button" class="tool-btn">新分頁 ▾</button>
+      <button id="btn-view" type="button" class="tool-btn">視窗分割</button>
+      <span class="tool-spacer"></span>
+      <button id="btn-tabpanel" type="button" class="tool-arrow">▲</button>
+    </div>
+
+    <div id="main">
+      <!-- 終端機（黃框）：#terminals 用 position:absolute inset:0 填滿它 -->
+      <div id="termframe">
+        <div id="terminals"></div>
+        <div id="searchbar">
+          <input id="search-input" type="text" placeholder="搜尋" />
+          <span id="search-count"></span>
+          <button id="search-prev" title="上一個 (Shift+Enter)">▲</button>
+          <button id="search-next" title="下一個 (Enter)">▼</button>
+          <button id="search-close" title="關閉 (Esc)">✕</button>
+        </div>
+      </div>
+
+      <!-- 拖曳區：改變右側列表框寬度（拖完存設定，同舊版 TabSplitter） -->
+      <div id="tabsplitter"></div>
+
+      <div id="tabpanel"><div id="tabstrip"></div></div>
+    </div>
   </div>
+
+  <!-- 分頁右鍵選單（舊版 ContextMenu：更改名稱 / 關閉） -->
+  <div id="tab-menu" class="popup-menu" hidden>
+    <div class="menu-item" data-act="rename">更改名稱</div>
+    <div class="menu-sep"></div>
+    <div class="menu-item" data-act="close">關閉</div>
+  </div>
+
+  <!-- 新分頁下拉（舊版 New 下拉；SSH / 連接埠 / WSL / ADB 之後補在這裡） -->
+  <div id="new-menu" class="popup-menu" hidden>
+    <div class="menu-item" data-kind="shell">PowerShell</div>
+    <div class="menu-item" data-kind="custom">自訂指令…</div>
+  </div>
+
+  <!-- 頁內對話框：取代舊版的 WPF InputDialog / MessageBox -->
+  <div id="modal" hidden>
+    <form id="modal-form">
+      <div id="modal-title"></div>
+      <div id="modal-prompt"></div>
+      <input id="modal-input" type="text" autocomplete="off" spellcheck="false" />
+      <div class="modal-buttons">
+        <button id="modal-ok" type="submit">確定</button>
+        <button id="modal-cancel" type="button">取消</button>
+      </div>
+    </form>
+  </div>
+
   <script type="module" src="/src/main.js"></script>
 </body>
 </html>

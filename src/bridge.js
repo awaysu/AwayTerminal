@@ -20,8 +20,8 @@ const listeners = [];
 /** 還沒 makeTerm 就先到的輸出：暫存，等 `n` 處理完再補寫。 */
 const pendingOut = new Map();
 
-/** 目前這條 session 的 id（本階段只有一條；分頁 UI 是之後的任務）。 */
-let firstSessionId = null;
+/** 目前開著的 session id（TASK-004：多分頁，不再是單一個 firstSessionId）。 */
+const openSessions = new Set();
 
 function log(msg) {
   invoke('log_line', { msg: String(msg) }).catch(() => {});
@@ -103,6 +103,7 @@ function postMessage(raw) {
       const cols = parseInt(wh[0], 10);
       const rows = parseInt(wh[1], 10);
       if (!(cols > 0 && rows > 0)) return;
+      lastSize = { cols, rows };
       invoke('session_resize', { id, cols, rows }).catch(() => {});
       return;
     }
@@ -119,65 +120,125 @@ function postMessage(raw) {
       }
       return;
     }
+    case 'p':
+      // p{id}：使用者在分割模式點了某個 pane → 設為作用中。後端**不回送 `s`**（避免迴圈）
+      invoke('pane_selected', { id: Number(rest) }).catch(() => {});
+      return;
+    case 'k': {
+      // k{id1},{id2},…：pane 拖曳後的新順序。後端**不回送 `K`**
+      const ids = rest
+        .split(',')
+        .map((s) => Number(s))
+        .filter((n) => Number.isFinite(n));
+      invoke('pane_reordered', { ids }).catch(() => {});
+      return;
+    }
+    case 'z':
+      // z{size}：Ctrl+滾輪縮放後的字級 → 存設定（後端有防抖）
+      invoke('pane_font_size', { size: Number(rest) }).catch(() => {});
+      return;
+    case 'a': {
+      // a{id}US{kind}US{text}：對 q 的回覆。目前後端只用 cwd（shell 分頁自動改名）
+      const k1 = rest.indexOf(US);
+      if (k1 < 0) return;
+      const k2 = rest.indexOf(US, k1 + 1);
+      if (k2 < 0) return;
+      invoke('pane_answer', {
+        id: Number(rest.slice(0, k1)),
+        kind: rest.slice(k1 + 1, k2),
+        text: rest.slice(k2 + 1),
+      }).catch(() => {});
+      return;
+    }
     case 'D':
       // 診斷（terminal.js 的 dbgLog）→ 後端 log，等效舊版的 diag.log
       log(`[diag] ${rest}`);
       return;
     default:
-      // p / k / z / G / a / m / U 等尚未接上的：交給 Rust 記 log（不靜靜丟掉）
+      // U / m / G 等尚未接上的：交給 Rust 記 log（不靜靜丟掉）
       invoke('host_message', { msg }).catch(() => {});
       return;
   }
 }
 
-// ------------------------------------------------------------- 啟動流程
+// ------------------------------------------------------------- 開新連線
 
 /**
- * terminal.js 載完會送 `ready`（檔案最後一行）。之後：
- *   1. `host_ready` → Rust emit `T{json}` 設定
- *   2. 依 URL 參數決定第一條 session（`?cmd=<指令>`，預設 PowerShell）
- *   3. `session_create` 建好後 Rust emit `n{id}US{title}US{flags}` → terminal.js makeTerm
- *   4. makeTerm 之後 terminal.js 自己 fit 並送 `r{id}US{cols},{rows}` 回來
- * 尺寸：`n` 之前還沒有 term，所以先用一個合理的預設值開 PTY，`r` 到了立刻校正
- *（同舊版：C# 建分頁時用預設尺寸開 session，之後靠 `r` 校正）。
+ * 最後一次由前端回報的尺寸。新分頁用它開 PTY（同舊版的 `_lastCols/_lastRows`，
+ * 踩雷紀錄：「初始尺寸勿寫死 80×24」）。第一條連線還沒有任何 pane，用 120×30 起手，
+ * `n` 之後 terminal.js 自己 fit 再送 `r` 校正。
  */
-async function onReady() {
-  await invoke('host_ready');
+let lastSize = { cols: 120, rows: 30 };
 
-  const params = new URLSearchParams(location.search);
-  const cmd = params.get('cmd');
-
+/**
+ * 開一條連線。`kind`＝`shell`（PowerShell）或 `custom`（帶 `command`）。
+ *
+ * 輸出走 Channel：Rust 送 ArrayBuffer＝畫面資料，送 JSON 物件＝結束事件。
+ * **channel 可能比 `session_create` 的回覆更早送資料**，所以 id 還不知道時先扣住。
+ */
+export async function createSession(opts = {}) {
+  const holder = { id: null, pending: [] };
   const onEvent = new Channel();
   onEvent.onmessage = (m) => {
     if (m instanceof ArrayBuffer) {
-      onOutput(firstSessionId, new Uint8Array(m));
+      const u8 = new Uint8Array(m);
+      if (holder.id === null) {
+        holder.pending.push(u8);
+        return;
+      }
+      onOutput(holder.id, u8);
       return;
     }
     if (m && m.kind === 'exit') {
       const code = m.exitCode === null || m.exitCode === undefined ? '?' : m.exitCode;
       log(`[bridge] session ${m.id} 結束，exit code ${code}`);
+      openSessions.delete(m.id);
       const term = window.AwayTerm;
       if (term && term.hasTerm(m.id)) {
         term.writeOutput(
           m.id,
-          new TextEncoder().encode(`\r\n\x1b[33m[行程已結束，exit code ${code}]\x1b[0m\r\n`)
+          new TextEncoder().encode(`\r\n\x1b[90m[行程已結束，exit code ${code}]\x1b[0m\r\n`)
         );
       }
     }
   };
 
   const info = await invoke('session_create', {
-    kind: cmd ? 'custom' : 'powershell',
-    command: cmd || null,
-    cols: 120,
-    rows: 30,
-    cwd: null,
+    kind: opts.kind || 'shell',
+    command: opts.command || null,
+    title: opts.title || null,
+    cols: lastSize.cols,
+    rows: lastSize.rows,
+    cwd: opts.cwd || null,
     onEvent,
   });
-  firstSessionId = info.id;
+
+  holder.id = info.id;
+  openSessions.add(info.id);
+  for (const c of holder.pending) onOutput(info.id, c);
+  holder.pending.length = 0;
+
   log(
-    `[bridge] session ${info.id} pid=${info.pid} shell=${info.shell} flags=${info.flags || '-'} backend=${info.backend}`
+    `[bridge] session ${info.id} pid=${info.pid} shell=${info.shell} flags=${info.flags || '-'} backend=${info.backend} title=${info.title}`
   );
+  return info;
+}
+
+// ------------------------------------------------------------- 啟動流程
+
+/**
+ * terminal.js 載完會送 `ready`（檔案最後一行）。之後：
+ *   1. `host_ready` → Rust 依 settings.json emit `T{json}`
+ *   2. 依 URL 參數決定第一條 session（`?cmd=<指令>`，預設 PowerShell）
+ *   3. `session_create` 建好後 Rust emit `n{id}…` 與 `s{id}` → terminal.js makeTerm + 選取
+ *   4. 之後 terminal.js 自己 fit 並送 `r{id}US{cols},{rows}` 回來
+ */
+async function onReady() {
+  await invoke('host_ready');
+
+  const params = new URLSearchParams(location.search);
+  const cmd = params.get('cmd');
+  await createSession(cmd ? { kind: 'custom', command: cmd } : { kind: 'shell' });
 }
 
 // ------------------------------------------------------------- host → JS
@@ -207,12 +268,12 @@ window.AwayBridge = AwayBridge;
 /** main.js 會 await 這個，確保 host→JS 的 listener 在 terminal.js 送 ready 之前就掛好。 */
 export const bridgeReady = installHostListener();
 
-/** 頁面卸載（dev 的 Vite 重載）時收掉 session，否則舊的 pwsh + OpenConsole 會留到程式結束。 */
+/** 頁面卸載（dev 的 Vite 重載）時收掉所有 session，否則舊的 pwsh + OpenConsole 會留到程式結束。 */
 window.addEventListener('beforeunload', () => {
-  if (firstSessionId === null) return;
-  const id = firstSessionId;
-  firstSessionId = null;
-  invoke('session_close', { id }).catch(() => {});
+  for (const id of [...openSessions]) {
+    openSessions.delete(id);
+    invoke('tab_close', { id }).catch(() => {});
+  }
 });
 
 export { log };

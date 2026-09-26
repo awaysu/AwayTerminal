@@ -2,15 +2,24 @@
 //!
 //! 語意對得上舊版的 C#↔JS 字串協定（建立 / 輸入 / 尺寸 / 輸出 / 結束），
 //! 但傳輸改成 tauri command + `Channel`，輸出走原始位元組、不再經 base64。
+//!
+//! 分頁管理（TASK-004）分成兩組，**不要混用**：
+//!   - `tab_*`：分頁列 UI 按下去的動作 → 改模型 **並** 發對應的舊協定給 `terminal.js`。
+//!   - `pane_*`：`terminal.js` 那邊先發生的事（`p` / `k`）→ 只改模型，**不回送**，
+//!     否則會和前端打乒乓（舊版 `case 'p'` 的註解就是「不回送避免迴圈」）。
 
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 use tauri::ipc::{Channel, InvokeResponseBody};
-use tauri::State;
+use tauri::{AppHandle, State};
 
+use crate::host::emit_host;
 use crate::output::OutputPump;
 use crate::pty::{self, shell, SpawnOptions};
 use crate::session::{ExitInfo, SessionManager};
+use crate::settings::{AppSettings, SettingsStore};
+use crate::tabs::{self, Tab, TabKind, TabManager};
 
 /// `session_create` 的回覆。
 #[derive(serde::Serialize)]
@@ -71,30 +80,51 @@ pub fn conpty_backend() -> String {
     pty::backend_name()
 }
 
+// ------------------------------------------------------------------ 連線
+
+/// 新分頁的預設工作目錄：桌面（同舊版 `ReopenHistory` 的 `deskDir()`）。
+///
+/// 舊版從工具列開 PowerShell 會先跳資料夾選擇視窗；那個對話框屬於之後的任務，
+/// 在它做出來之前用桌面當預設，跟舊版的後備路徑一致。
+fn default_cwd() -> Option<String> {
+    let home = std::env::var("USERPROFILE")
+        .or_else(|_| std::env::var("HOME"))
+        .ok()?;
+    let desktop = std::path::Path::new(&home).join("Desktop");
+    if desktop.is_dir() {
+        Some(desktop.to_string_lossy().to_string())
+    } else {
+        Some(home)
+    }
+}
+
 /// 開一條連線。
 ///
-/// - `kind = "powershell"`：pwsh 優先、否則 powershell。
-/// - `kind = "custom"`：用 `command` 給的指令（`?cmd=claude` 這類 dev 測試入口）。
+/// - `kind = "shell"`（舊稱 `powershell`）：pwsh 優先、否則 powershell。
+/// - `kind = "custom"`：用 `command` 給的指令（分頁列「自訂指令…」與 `?cmd=` 這類 dev 入口）。
 ///
-/// 建好之後會 emit 舊協定的 `n{id}US{title}[US{flags}]`，由 `terminal.js` 的
-/// `makeTerm` 建立 pane。**先 emit `n` 再 spawn PTY**，讓 pane 盡量先存在；
-/// 即使 event 慢到後面，`bridge.js` 也會把先到的輸出扣住不丟（見那邊的 pendingOut）。
+/// 建好之後依序 emit 舊協定的 `n{id}US{title}[US{flags}]` 與 `s{id}`——
+/// **`s` 不能漏**：少了它 `terminal.js` 的 `active` 會留在 null、`refit()` 直接 return，
+/// pane 永遠不 fit 也不回報尺寸（TASK-003 實際踩過）。
 // tauri command 的參數是前端傳來的具名欄位，攤平是這個框架的慣例；
 // 包成 struct 會讓 JS 那邊變成 `{ args: {...} }`，反而難讀。
 #[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub fn session_create(
-    app: tauri::AppHandle,
+    app: AppHandle,
     kind: String,
     command: Option<String>,
+    title: Option<String>,
     cols: u16,
     rows: u16,
     cwd: Option<String>,
     on_event: Channel<InvokeResponseBody>,
     manager: State<'_, SessionManager>,
+    tabs_state: State<'_, Arc<TabManager>>,
 ) -> Result<SessionInfo, String> {
     let sh = match kind.as_str() {
-        "powershell" => shell::powershell().ok_or_else(|| {
+        // "powershell" 是 TASK-003 的舊名，留著相容 `?cmd=` 之前的呼叫
+        "shell" | "powershell" => shell::powershell().ok_or_else(|| {
             "找不到 pwsh.exe 或 powershell.exe（PATH 與 System32 都沒有）".to_string()
         })?,
         "custom" => {
@@ -108,31 +138,57 @@ pub fn session_create(
         other => return Err(format!("尚未支援的連線種類：{other}")),
     };
 
+    let is_claude = shell::is_claude_exe(&sh.exe);
+    let tab_kind = match kind.as_str() {
+        "shell" | "powershell" => TabKind::PowerShell,
+        _ if is_claude => TabKind::Claude,
+        _ => TabKind::Custom,
+    };
+    let work_dir = cwd.or_else(default_cwd);
+
+    // 分頁名稱（舊版）：PowerShell 走 NextName("PowerShell(1)")；
+    // claude 這類「以資料夾命名」的連線走 DirTabName；其餘 NextName(執行檔名)。
+    let tab_title = match title.map(|t| t.trim().to_string()).filter(|t| !t.is_empty()) {
+        Some(t) => t,
+        None => match tab_kind {
+            TabKind::PowerShell => tabs_state.next_name("PowerShell"),
+            TabKind::Claude => {
+                tabs_state.dir_tab_name(work_dir.as_deref().unwrap_or(""), &sh.title)
+            }
+            _ => tabs_state.next_name(&sh.title),
+        },
+    };
+
     let id = manager.next_id();
 
     // 舊版 n 協定第三欄 flags：`c`＝claude 分頁（貼上走 ESC+CR，見 terminal.js doPaste）。
     // 舊版是 C# 的 IsClaudeExe（檔名含 claude）判斷，這裡照同一個規則。
-    let flags = if shell::is_claude_exe(&sh.exe) { "c" } else { "" };
-    let title = sh.title.clone();
+    let flags = if is_claude { "c" } else { "" };
     let n_msg = if flags.is_empty() {
-        format!("n{id}\x1f{title}")
+        format!("n{id}\x1f{tab_title}")
     } else {
-        format!("n{id}\x1f{title}\x1f{flags}")
+        format!("n{id}\x1f{tab_title}\x1f{flags}")
     };
-    crate::host::emit_host(&app, n_msg);
+    emit_host(&app, n_msg);
     // 建完一定要再送 `s{id}`（舊版 MainWindow.xaml.cs 的 AddTab → SelectTab）。
-    // 少了它 `terminal.js` 的 `active` 會留在 null → `refit()` 直接 return → pane 永遠不 fit、
-    // 不送 `r` 校正尺寸，`awayDump()` 也讀不到 buffer（實測就是這個症狀）。
-    crate::host::emit_host(&app, format!("s{id}"));
+    emit_host(&app, format!("s{id}"));
 
     // 輸出批次合併：讀取執行緒只把 bytes 丟進 pump，由 pump 執行緒合併後送一包。
     // 這同時避開 tauri 的門檻——`InvokeResponseBody::Raw` 小於 1024 bytes 會被序列化成
     // JSON 數字陣列用 eval 送，合併後的大包才走 fetch 自訂協定拿到真正的二進位。
     let pump = Arc::new(OutputPump::start(on_event.clone()));
 
+    // 狀態燈要知道「最後一次有輸出是什麼時候」。這條路一個 chunk 走一次，
+    // 所以用 AtomicU64 直接寫，不去搶分頁清單的鎖（見 tabs.rs 的註解）。
+    let last_output = Arc::new(std::sync::atomic::AtomicU64::new(tabs::now_ms()));
+
     let on_output = {
         let pump = pump.clone();
-        Arc::new(move |bytes: &[u8]| pump.push(bytes)) as crate::session::OnOutput
+        let last_output = last_output.clone();
+        Arc::new(move |bytes: &[u8]| {
+            last_output.store(tabs::now_ms(), Ordering::Relaxed);
+            pump.push(bytes);
+        }) as crate::session::OnOutput
     };
     let on_exit = {
         let pump = pump.clone();
@@ -156,32 +212,54 @@ pub fn session_create(
             command_line: sh.command_line.clone(),
             cols,
             rows,
-            cwd,
+            cwd: work_dir.clone(),
             graceful_exit_bytes: SpawnOptions::default_graceful_exit_bytes(),
         },
         on_output,
         on_exit,
     )
-    .map_err(|e| format!("啟動 {} 失敗：{e}", sh.exe.display()))?;
+    .map_err(|e| {
+        // 建不起來就把已經送出的 `n` 收回去，否則前端會留一個沒有連線的空 pane
+        emit_host(&app, format!("x{id}"));
+        format!("啟動 {} 失敗：{e}", sh.exe.display())
+    })?;
 
     let info = SessionInfo {
         id,
         pid: session.pid(),
-        command_line: sh.command_line,
+        command_line: sh.command_line.clone(),
         shell: sh.name.clone(),
         backend: session.backend_name().to_string(),
         flags: flags.to_string(),
-        title,
+        title: tab_title.clone(),
     };
     println!(
-        "[AwayTerminal] session {} started: pid={} shell={} flags={} backend={}",
+        "[AwayTerminal] session {} started: pid={} shell={} flags={} backend={} title={}",
         info.id,
         info.pid,
         info.shell,
         if info.flags.is_empty() { "-" } else { &info.flags },
-        info.backend
+        info.backend,
+        info.title,
     );
+
+    tabs_state.insert(Tab {
+        id,
+        kind: tab_kind,
+        title: tab_title,
+        title_locked: false,
+        cwd_path: String::new(),
+        flags: flags.to_string(),
+        pid: info.pid,
+        started_at: tabs::now_ms(),
+        last_output,
+        busy: false,
+        command_line: sh.command_line,
+        backend: info.backend.clone(),
+    });
+    tabs_state.set_active(id);
     manager.insert(id, session);
+    tabs::emit_state(&app, &tabs_state);
     Ok(info)
 }
 
@@ -209,14 +287,157 @@ pub fn session_resize(id: u32, cols: u16, rows: u16, manager: State<'_, SessionM
 }
 
 #[tauri::command]
-pub fn session_close(id: u32, manager: State<'_, SessionManager>) {
+pub fn session_list(manager: State<'_, SessionManager>) -> Vec<u32> {
+    manager.ids()
+}
+
+// --------------------------------------------------------------- 分頁 UI
+
+/// 關分頁。順序照舊版 `RemoveTabSilently`：先 `x{id}` 讓前端拆掉 pane，
+/// 再在背景關 session（送優雅結束鍵 Ctrl+C ×3、等 60ms、才強制收尾），
+/// 最後把作用中換到原位置的分頁並送 `s`。
+///
+/// 關閉確認（舊版的 Yes/No MessageBox）在前端做，這裡只負責關。
+#[tauri::command]
+pub fn tab_close(
+    app: AppHandle,
+    id: u32,
+    manager: State<'_, SessionManager>,
+    tabs_state: State<'_, Arc<TabManager>>,
+) {
+    emit_host(&app, format!("x{id}"));
+    let next = tabs_state.remove(id);
     if let Some(s) = manager.remove(id) {
         // close() 會 sleep（優雅結束鍵 60ms），別卡在 IPC 執行緒上
         std::thread::spawn(move || s.close());
     }
+    if let Some(next) = next {
+        emit_host(&app, format!("s{next}"));
+    }
+    tabs::emit_state(&app, &tabs_state);
 }
 
+/// 分頁列點一列 → 設為作用中並通知前端（`s{id}`）。
 #[tauri::command]
-pub fn session_list(manager: State<'_, SessionManager>) -> Vec<u32> {
-    manager.ids()
+pub fn tab_select(app: AppHandle, id: u32, tabs_state: State<'_, Arc<TabManager>>) {
+    if !tabs_state.set_active(id) {
+        return;
+    }
+    emit_host(&app, format!("s{id}"));
+    tabs::emit_state(&app, &tabs_state);
+}
+
+/// 改名（舊版右鍵「更改名稱」）：鎖住標題不再依目前目錄自動改，並送 `t` 同步 pane 標題。
+#[tauri::command]
+pub fn tab_rename(app: AppHandle, id: u32, title: String, tabs_state: State<'_, Arc<TabManager>>) {
+    let title = title.trim().to_string();
+    if title.is_empty() {
+        return;
+    }
+    if tabs_state.set_title(id, &title, true) {
+        emit_host(&app, format!("t{id}\x1f{title}"));
+    }
+    tabs::emit_state(&app, &tabs_state);
+}
+
+/// 分頁列拖曳排序 → 存新順序並用 `K` 同步分割／分欄模式的 pane 順序（舊版 `Tab_DragDrop`）。
+#[tauri::command]
+pub fn tabs_reorder(app: AppHandle, ids: Vec<u32>, tabs_state: State<'_, Arc<TabManager>>) {
+    tabs_state.reorder(&ids);
+    let order = tabs_state.ids();
+    let list = order
+        .iter()
+        .map(|i| i.to_string())
+        .collect::<Vec<_>>()
+        .join(",");
+    emit_host(&app, format!("K{list}"));
+    tabs::emit_state(&app, &tabs_state);
+}
+
+/// 檢視三態循環：分頁 → 分割 → 分欄 → 分頁（舊版 `Split_Click`）。回傳新模式。
+#[tauri::command]
+pub fn view_mode_cycle(
+    app: AppHandle,
+    tabs_state: State<'_, Arc<TabManager>>,
+    settings: State<'_, Arc<SettingsStore>>,
+) -> String {
+    let mode = tabs_state.cycle_view_mode();
+    emit_host(&app, format!("L{mode}"));
+    settings.update(|s| s.view_mode = mode.clone());
+    tabs::emit_state(&app, &tabs_state);
+    mode
+}
+
+/// 設定檔目前的內容（前端啟動時讀一次，套用分頁列寬度／顯示等）。
+#[tauri::command]
+pub fn settings_get(settings: State<'_, Arc<SettingsStore>>) -> AppSettings {
+    settings.get()
+}
+
+/// 分頁列寬度／顯示狀態（舊版 `TabSplitter_DragCompleted` / `TabPanelToggle_Click`）。
+#[tauri::command]
+pub fn tab_panel_set(
+    visible: Option<bool>,
+    width: Option<f64>,
+    settings: State<'_, Arc<SettingsStore>>,
+) {
+    settings.update(|s| {
+        if let Some(v) = visible {
+            s.tab_panel_visible = v;
+        }
+        if let Some(w) = width {
+            s.tab_panel_width = w.round().max(120.0);
+        }
+    });
+}
+
+// ------------------------------------------------- terminal.js 先發生的事
+
+/// `p{id}`：使用者在分割模式點了某個 pane。只改模型，**不回送 `s`**（避免迴圈）。
+#[tauri::command]
+pub fn pane_selected(app: AppHandle, id: u32, tabs_state: State<'_, Arc<TabManager>>) {
+    if tabs_state.set_active(id) {
+        tabs::emit_state(&app, &tabs_state);
+    }
+}
+
+/// `k{ids}`：pane 拖曳後的新順序。只改模型，**不回送 `K`**。
+#[tauri::command]
+pub fn pane_reordered(app: AppHandle, ids: Vec<u32>, tabs_state: State<'_, Arc<TabManager>>) {
+    tabs_state.reorder(&ids);
+    tabs::emit_state(&app, &tabs_state);
+}
+
+/// `z{size}`：Ctrl+滾輪縮放後的字級。照舊版只接受 6~40 並存進設定
+/// （存檔有防抖，見 settings.rs——一路滾不會每格寫一次檔）。
+#[tauri::command]
+pub fn pane_font_size(size: u32, settings: State<'_, Arc<SettingsStore>>) {
+    if let Some(size) = AppSettings::clamp_font_size(size) {
+        settings.update(|s| s.font_size = size);
+    }
+}
+
+/// `a{id}US{kind}US{text}`：前端對 `q` 的回覆。
+///
+/// 目前只處理 `cwd`（提示字元行 → shell 分頁自動改名成目前目錄名稱，舊版 1.1.2）。
+/// 其餘 kind（`sel`/`all`/`file`/`save`/`text`）屬於複製、存檔、恢復分頁與遠端，
+/// 那些功能還沒做，先記 log。
+#[tauri::command]
+pub fn pane_answer(
+    app: AppHandle,
+    id: u32,
+    kind: String,
+    text: String,
+    tabs_state: State<'_, Arc<TabManager>>,
+) {
+    if kind != "cwd" {
+        println!("[AwayTerminal] [a 未接] kind={kind} id={id} len={}", text.len());
+        return;
+    }
+    if let Some(new_title) = tabs_state.apply_cwd(id, &text) {
+        if let Some(title) = new_title {
+            emit_host(&app, format!("t{id}\x1f{title}"));
+        }
+        tabs::emit_state(&app, &tabs_state);
+    }
 }

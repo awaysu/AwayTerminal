@@ -39,7 +39,7 @@ git -C . diff --no-index reference/AwayTerminal/web/terminal.js src/terminal.js
 | **改了什麼** | ① 新增 `function writeOutput(id, bytes)`（第 913 行），內容就是原本寫在 `o` 分支裡的那三行；② `o` 分支改叫 `writeOutput(id, bytes)`（少了一個區域變數 `rec`）；③ 檔尾加 `window.AwayTerm = { writeOutput, doPaste, hasTerm, tail }`。 |
 | **為什麼** | 新版輸出走 Tauri 的二進位 channel（bytes 直達，不經 `o{id}US{base64}` 字串也不經 `atob`），bridge 收到 `Uint8Array` 要能直接呼叫同一段寫入邏輯。 |
 | **影響範圍** | **`pendingRestore` / `held` / `lastOutMs` 三者的邏輯一字未改**，只是換了位置：<br>• `pendingRestore !== null` → 推進 `held`，等 `applyRestore()` 補寫（1.0.45 恢復分頁）<br>• `lastOutMs = performance.now()` → 靜止閘門用（1.0.43）<br>`o` 字串分支保留可用（`atob` 那段還在），只是這個專案不會再送它。 |
-| **`tail()` 是新增的** | 純讀取 `term.buffer.active` 回傳純文字尾端，給 `main.js` 的 `awayDump()` 做端到端驗證（共用桌面、不能搶焦點，所以不靠看視窗）。不影響任何既有行為。 |
+| **`tail()` / `ids()` / `size()` 是新增的** | 純讀取的驗證出口，給 `main.js` 的 `awayDump()` / `awayVerify()` 用（共用桌面、不能搶焦點，所以不靠看視窗）：`tail()` 回 buffer 尾端純文字、`ids()` 回目前有哪些 pane、`size()` 回某個 pane 的欄列數（確認多分頁各自 fit 正確）。三個都不改任何狀態。 |
 
 ### 沒有改的地方（刻意）
 
@@ -47,9 +47,10 @@ git -C . diff --no-index reference/AwayTerminal/web/terminal.js src/terminal.js
   `WebLinksAddon` / `SerializeAddon` 全域 → 新版在 `main.js` 先 `window.Terminal = Terminal`、
   `window.FitAddon = { FitAddon }` …（**維持 UMD 命名空間的形狀**）再 `import('./terminal.js')`。
   所以 `terminal.js` 的 `new FitAddon.FitAddon()` 這類寫法不用改。
-- `SearchAddon`：舊版的 Ctrl+F 搜尋是 `terminal.js` **自己實作**的
-  （`openSearch` / `runSearch` / `gotoHit`，直接掃 `term.buffer`），不是 search addon。
-  所以新版也沒裝 `@xterm/addon-search`，行為與舊版一致。
+- **⚠️ 刻意不裝 `@xterm/addon-search`，之後也不要「補裝」**：舊版的 Ctrl+F 搜尋是
+  `terminal.js` **自己實作**的（`openSearch` / `runSearch` / `gotoHit`，直接掃
+  `term.buffer`，含 emoji／組合字元的欄位對位修正，見踩雷紀錄第⑮條），不是 search addon。
+  裝了 addon 只會多一套語意不同的搜尋，反而偏離舊版行為。
 
 ---
 
