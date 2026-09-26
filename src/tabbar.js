@@ -18,6 +18,7 @@ import { T, fmt, iconSvg, elapsedText } from './strings.js';
 import { createSession, log } from './bridge.js';
 import { initConns, openManager, currentConns, reload as reloadConns } from './conns.js';
 import { initConnDialog, openConnDialog, parseHostPort } from './sshdlg.js';
+import { initComDialog, openComDialog } from './comdlg.js';
 import { initFavs, addConnFavorite } from './favs.js';
 
 const MIN_PANEL_WIDTH = 120; // 舊版 TabPanelMinWidth
@@ -781,6 +782,27 @@ async function newSession(kind) {
       return;
     }
 
+    // 連接埠（舊版是獨立的 ComDialog，不在 SSH/Telnet 的「類型」裡）
+    if (kind === 'com') {
+      const s = await invoke('settings_get');
+      const r = await openComDialog({
+        port: s.comPort,
+        baud: s.comBaud,
+        dataBits: s.comDataBits,
+        parity: s.comParity,
+        stopBits: s.comStopBits,
+        flow: s.comFlow,
+        autoReconnect: s.autoReconnect,
+      });
+      if (!r) return;
+      if (r.action === 'favorite') {
+        await addConnFavorite('com', r.params);
+        return;
+      }
+      await createSession({ kind: 'com', com: r.params });
+      return;
+    }
+
     const title = kind === 'shell' ? T['dlg.pickDirPs'] : T['dlg.pickDirCustom'];
     let command = null;
     if (kind === 'custom') {
@@ -1041,6 +1063,7 @@ export async function initTabBar() {
   setText(el.newMenu, '[data-kind="shell"]', T['tb.powershell']);
   setText(el.newMenu, '[data-kind="ssh"]', T['tb.ssh']);
   setText(el.newMenu, '[data-kind="ssh-quick"]', T['sd.quick']);
+  setText(el.newMenu, '[data-kind="com"]', T['tb.com'] + '…');
   setText(el.newMenu, '[data-kind="custom"]', T['tb.customCmd']);
   setText(el.tabMenu, '[data-act="rename"]', T['menu.rename']);
   setText(el.tabMenu, '[data-act="log"]', T['menu.log']);
@@ -1085,6 +1108,7 @@ export async function initTabBar() {
   installHostKeyDialog();
   installWeakAlgoDialog();
   await initConnDialog();
+  initComDialog();
   await initFavs({
     createSession,
     askText,

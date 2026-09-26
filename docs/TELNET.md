@@ -19,8 +19,8 @@
 | 連不上：紅字印錯誤 + 觸發 `Exited`（勾了自動重連就接手） | `ConnectAndReadAsync` 的 catch | 同 | ✅ 一樣 |
 | `WILL ECHO`／`WILL SGA` → 回 `DO`；其餘 `WILL` → 回 `DONT` | `RespondOption` | 同（`Iac::respond`） | ✅ 一樣 |
 | `DO SGA` → 回 `WILL`；其餘 `DO` → 回 `WONT` | 同上 | 同（多了 `DO NAWS`，見第 2 節） | ✅ 一樣 |
-| `WONT`／`DONT` **不回應** | 同上（`else return;`） | 同 | ✅ 一樣（PuTTY 會回，見第 4 節） |
-| 子協商（`IAC SB … IAC SE`）內容一律略過 | `IacState.Sb` / `SbIac` | 同 | ✅ 一樣 |
+| `WONT`／`DONT` **不回應** | 同上（`else return;`） | **改成會回**（PM 在 TASK-011 決定照 PuTTY），但只在狀態真的改變時 | ⚠️ 見第 2b 節 |
+| 子協商（`IAC SB … IAC SE`）內容一律略過 | `IacState.Sb` / `SbIac` | **TTYPE 以外**一律略過（要答 TTYPE 就得看內容，有 64 bytes 上限） | ⚠️ 見第 2a 節 |
 | IAC 解析狀態**跨讀取邊界保留** | `_iac` 欄位＋那段註解 | `Iac` 是有狀態的結構，`read` 之間不重設 | ✅ 一樣（單元測試＋probe 各一條） |
 | 收到的 `IAC IAC` ＝資料裡的一個 `0xFF` | `IacState.Iac` | 同 | ✅ 一樣 |
 | `IAC NOP`／`GA`／`AYT` 這類兩位元組指令丟掉 | 同上 `else` | 同 | ✅ 一樣 |
@@ -52,6 +52,38 @@
 
 對方沒答應 NAWS 就**不送**子協商（RFC 要求先 `DO`）。
 
+## 2a. TTYPE：回報終端機類型（TASK-011 新增）
+
+RFC 1091。舊版不認這個選項（`WILL TTYPE` 一律回 `DONT`），PM 在 TASK-011 決定補上，
+理由是「最常影響畫面的一條」——遠端不知道我們是什麼終端機時會少送顏色與功能鍵序列。
+
+1. 連上就送 `IAC WILL TTYPE`（和 NAWS 一起，同 PuTTY）。
+2. 對方回 `IAC DO TTYPE` ＝談成。
+3. 對方送 `IAC SB TTYPE SEND IAC SE` → 我們回 `IAC SB TTYPE IS xterm IAC SE`。
+
+**回 `xterm`**，和 PuTTY 的預設一樣：xterm.js 就是照 xterm 的能力做的，回別的名字
+（例如 `ansi`）會讓遠端少送東西。
+
+⚠️ 伺服器主動說 `IAC WILL TTYPE`（它要告訴我們**它的**類型）仍然回 `DONT`——
+那是另一件事，別搞混（有單元測試 `server_offering_its_own_ttype_is_declined` 釘住）。
+
+為了看得到 `SB TTYPE SEND`，子協商內容現在會先收起來（上限 64 bytes，**一定要有上限**，
+不然對方一直送就會讓我們無限長大），`IAC SE` 到了再決定要不要回。TTYPE 以外的還是丟掉。
+
+## 2b. 回應 `WONT` / `DONT`（TASK-011 新增）
+
+舊版完全不回（`RespondOption` 的 `else return;`）。PuTTY 會回，PM 決定照 PuTTY。
+
+⚠️ **只在狀態真的改變時回答**：對方說「我不做 X」而我們本來就沒請它做 X，回答沒有意義，
+而且兩邊都「有來有往」時會變成無限乒乓（RFC 854 明文要求只在改變狀態時回應）。
+所以我們記得自己說過哪些 `DO`／`WILL`：
+
+| 收到 | 條件 | 回 |
+|---|---|---|
+| `WONT x` | 我們說過 `DO x` | `DONT x`（並忘掉 x） |
+| `DONT x` | 我們說過 `WILL x` | `WONT x`（並忘掉 x；x 是 NAWS 時同時停止送尺寸） |
+| 其餘 | — | **不回** |
+
 ## 3. 「連上了」怎麼判斷
 
 重連的退避次數要在「真的連上」時歸零。Telnet 沒有 SSH 的 shell channel，
@@ -68,9 +100,9 @@
 
 | 項目 | PuTTY 怎麼做 | 舊版 | 不做會怎樣 | 建議 |
 |---|---|---|---|---|
-| **`TERMINAL-TYPE`（TTYPE，選項 24）** | 回 `xterm`（Terminal-type 設定可改） | 不認（回 `DONT`） | 遠端可能當成 dumb 終端或 `ansi`，顏色／功能鍵可能不對 | **建議做**：三行程式，而且是最常影響畫面的一條 |
+| ~~`TERMINAL-TYPE`（TTYPE）~~ | 回 `xterm` | 不認 | — | ✅ **已做**（TASK-011，見第 2a 節） |
 | **Enter 送什麼** | 非 BINARY 模式送 `CR LF`（RFC 854 的 NVT）；也有「Telnet 換行用 CR NUL」的選項 | 送單一 `CR` | 有些老設備吃不到換行（一直沒反應），或反而多一行 | **建議：先照舊版**（使用者的設備現在能用）。真遇到問題時做成每條連線可選 |
-| 回應 `WONT`／`DONT` | 會回（RFC 要求對狀態改變作答） | 不回 | 嚴格實作的伺服器可能重送，或等我們的答案 | 低風險，可做可不做 |
+| ~~回應 `WONT`／`DONT`~~ | 會回 | 不回 | — | ✅ **已做**（TASK-011，見第 2b 節） |
 | `IAC AYT`（Are You There） | 「Telnet 特殊指令」選單可送 | 沒有 | 少一個手動探測的工具 | 不做（沒有 UI 位置） |
 | 特殊指令選單（`IP`／`ABORT`／`EOF`…） | 有一整個選單 | 沒有 | 少一組手動指令 | 不做 |
 | BINARY（選項 0） | 可談 | 沒有 | 8-bit 資料仍然過得去（我們不改位元組），只有極端情況有差 | 不做 |
@@ -84,10 +116,11 @@ cd src-tauri && cargo run --example telnet_probe
 ```
 
 測試伺服器在**同一支程式裡**（`127.0.0.1` 的臨時埠），**不連任何外部主機**。
-2026-09-27 的結果：**17 PASS / 0 FAIL**。
+2026-09-27 的結果：**20 PASS / 0 FAIL**（TASK-011 加了 TTYPE 與 WONT／DONT 三條）。
 
 驗的項目：連上／收資料／「連上了」只回報一次、`DO NAWS` → `WILL NAWS`＋尺寸、
 resize 重送 NAWS、尺寸沒變不重送、`WILL ECHO`→`DO`／`WILL TTYPE`→`DONT`、
+連上也主動提供 TTYPE、`SB TTYPE SEND`→`IS xterm`、`WONT`／`DONT` 只在狀態改變時回答、
 `DO SGA`→`WILL`／其餘 `DO`→`WONT`、協商序列切在封包邊界、送出的 `0xFF` 轉義、
 收到的 `IAC IAC` 還原、Enter 送單一 CR、中文 UTF-8 跨封包不裂、
 伺服器斷線 → 結束事件正好一次、重連到同一台、重連後 NAWS 用新尺寸、連不上 → 紅字＋結束。

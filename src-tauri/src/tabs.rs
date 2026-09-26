@@ -103,6 +103,8 @@ pub struct Tab {
     pub bg: Option<String>,
     /// 這個分頁的輸出管線與 log 槽。斷線重連要沿用它們（同一條 channel）。
     pub out: Option<Arc<crate::output::OutputPump>>,
+    /// TTL 巨集的輸入／輸出攔截槽（TASK-011 只留介面，見 `src/tap.rs`）。
+    pub tap: crate::tap::TapSlot,
     /// 最後一次由前端回報的尺寸（重連時用，同舊版 `tab.Cols/Rows`）。
     pub cols: u16,
     pub rows: u16,
@@ -129,6 +131,8 @@ pub struct SessionParts {
     pub pump: Arc<crate::output::OutputPump>,
     pub logger: Arc<Mutex<Option<Arc<crate::logging::Logger>>>>,
     pub last_output: Arc<AtomicU64>,
+    /// TTL 巨集的攔截槽（現在一定是空的，見 `src/tap.rs`）。
+    pub tap: crate::tap::TapSlot,
     pub cols: u16,
     pub rows: u16,
 }
@@ -413,9 +417,15 @@ impl TabManager {
             pump: t.out.clone()?,
             logger: t.logger.clone(),
             last_output: t.last_output.clone(),
+            tap: t.tap.clone(),
             cols: t.cols,
             rows: t.rows,
         })
+    }
+
+    /// 這個分頁的攔截槽（TTL 巨集用；分頁不存在時回 `None`）。
+    pub fn tap_of(&self, id: u32) -> Option<crate::tap::TapSlot> {
+        self.lock().tabs.get(&id).map(|t| t.tap.clone())
     }
 
     /// 這個分頁目前記住的尺寸。
@@ -454,6 +464,7 @@ impl TabManager {
                     kind: match conn {
                         crate::reconnect::ConnParams::Ssh(_) => "ssh".to_string(),
                         crate::reconnect::ConnParams::Telnet(_) => "telnet".to_string(),
+                        crate::reconnect::ConnParams::Com(_) => "com".to_string(),
                     },
                     conn: Some(conn.clone()),
                     ..base
@@ -502,6 +513,11 @@ impl TabManager {
     /// 只要 Telnet 那一種。
     pub fn telnet_params_of(&self, id: u32) -> Option<crate::telnet::TelnetParams> {
         self.conn_params_of(id).and_then(|c| c.as_telnet().cloned())
+    }
+
+    /// 只要 COM 那一種。
+    pub fn com_params_of(&self, id: u32) -> Option<crate::com::ComParams> {
+        self.conn_params_of(id).and_then(|c| c.as_com().cloned())
     }
 
     /// 登入之後把帳號記進參數：重連就不必再問 `login as:`
@@ -762,6 +778,7 @@ mod tests {
             fg: None,
             bg: None,
             out: None,
+            tap: Default::default(),
             cols: 80,
             rows: 24,
             conn: Some(crate::reconnect::ConnParams::Ssh(Default::default())),

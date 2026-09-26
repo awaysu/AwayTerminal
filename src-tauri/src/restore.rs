@@ -42,14 +42,14 @@ pub const SEP_FORMAT: &str = "──── 以上為上次關閉前的紀錄（{
 #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct SavedTab {
-    /// `shell` | `conn` | `ssh` | `telnet`（對得上 `session_create` 的 `kind`）。
+    /// `shell` | `conn` | `ssh` | `telnet` | `com`（對得上 `session_create` 的 `kind`）。
     pub kind: String,
     pub title: String,
     /// `shell`／`conn`：工作目錄（**沙盒之前**的那個；沙盒會自己重新準備）。
     pub dir: String,
     /// `conn`：自訂連線的名稱。
     pub conn_name: String,
-    /// 遠端連線的參數（`ssh`／`telnet`）。
+    /// 遠端／裝置連線的參數（`ssh`／`telnet`／`com`）。
     pub conn: Option<crate::reconnect::ConnParams>,
     /// scrollback 的檔名（位於 [`dir_of`]）。空＝沒存到。
     pub buffer_file: String,

@@ -228,6 +228,7 @@ async function awayVerify() {
 
   await verifySshPath();
   await verifyTelnetPath();
+  await verifyComPath();
   await verifyRestore();
   await verifySandbox();
 }
@@ -414,6 +415,44 @@ async function verifyTelnetPath() {
     lines.push(`[verify] 提示按 Enter 重連：${text.includes('按 Enter')}`);
     lines.push(`[verify] 標題是 host:port：${info.title === '127.0.0.1:1'}（同舊版 OpenTelnetDirect）`);
     await invoke('tab_close', { id: info.id });
+  } catch (e) {
+    lines.push(`[verify] 失敗：${e}`);
+  }
+  log(lines.join('\n'));
+}
+
+/**
+ * 連接埠（COM）的 **app 端路徑**驗證（協定與 session 邏輯由
+ * `cargo run --example com_probe` 驗，13 項，不需要硬體）。
+ *
+ * 這裡驗的是「沒有裝置時的行為」：開一個**一定不存在**的埠 → `session_create` 要回錯誤
+ * （同舊版 `SerialPort.Open()` 丟例外 → 分頁被移除 + 跳錯誤視窗），不可以留一個死分頁。
+ * 順便把 `com_ports()` 在這台機器上的結果印出來。
+ */
+async function verifyComPath() {
+  const lines = ['[verify] 連接埠（app 端路徑）'];
+  try {
+    const cat = await invoke('com_ports');
+    lines.push(
+      `[verify] 埠列舉：${cat.ports.length} 個` +
+        (cat.ports.length ? ` → ${cat.ports.map((p) => p.label).join('、')}` : '（這台機器沒有序列埠）'),
+    );
+    lines.push(
+      `[verify] 選項清單：鮑率 ${cat.bauds.length} 個、同位 ${cat.parities.join('/')}、` +
+        `停止位元 ${cat.stopBits.join('/')}、流量控制 ${cat.flows.join('/')}`,
+    );
+
+    const before = currentTabState().tabs.length;
+    let failed = '';
+    try {
+      // COM999 不會存在（舊版同樣是開不起來就跳錯誤、不留分頁）
+      await createSession({ kind: 'com', com: { port: 'COM999', baud: 115200 } });
+    } catch (e) {
+      failed = String(e);
+    }
+    const after = currentTabState().tabs.length;
+    lines.push(`[verify] 開不存在的埠有回錯誤：${failed !== ''}（${failed}）`);
+    lines.push(`[verify] 沒有留下死分頁：${after === before}（分頁數 ${before} → ${after}）`);
   } catch (e) {
     lines.push(`[verify] 失敗：${e}`);
   }

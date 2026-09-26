@@ -99,6 +99,7 @@
     <div class="menu-item" data-kind="shell">PowerShell</div>
     <div class="menu-item" data-kind="ssh">SSH…</div>
     <div class="menu-item" data-kind="ssh-quick">快速連線（host[:port]）…</div>
+    <div class="menu-item" data-kind="com">連接埠…</div>
     <div class="menu-sep"></div>
     <div id="new-conns"></div>
     <div class="menu-item" data-kind="custom">自訂指令…</div>
@@ -284,6 +285,53 @@
         <button id="sd-ok" type="submit">連線</button>
         <button id="sd-fav" type="button">加到我的最愛</button>
         <button id="sd-cancel" type="button">取消</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- 連接埠（舊版 Dialogs/ComDialog）：Port / Baud rate / Data bits / Parity / Stop bits /
+       Flow control / 斷線自動重連 + 「回到預設」。欄位、順序、預設值都照舊版。
+       ⚠️ 選項清單由後端的 `com_ports()` 給——`serialport` 不支援的值（Mark/Space 同位、
+       1.5 停止位元、RTS/CTS+XON/XOFF）**不列出來**，列了會騙人。見 docs/COM.md。 -->
+  <div id="comdlg" hidden>
+    <form id="comdlg-box">
+      <div id="comdlg-title"></div>
+      <div class="sd-grid">
+        <label id="cd-l-port">Port</label>
+        <span class="sd-row">
+          <input id="cd-port" list="cd-port-list" type="text" autocomplete="off" spellcheck="false" />
+          <datalist id="cd-port-list"></datalist>
+          <button id="cd-refresh" type="button">重新掃描</button>
+        </span>
+
+        <label id="cd-l-baud">Baud rate</label>
+        <span class="sd-row">
+          <input id="cd-baud" list="cd-baud-list" type="text" autocomplete="off" spellcheck="false" />
+          <datalist id="cd-baud-list"></datalist>
+        </span>
+
+        <label id="cd-l-data">Data bits</label>
+        <span class="sd-row"><select id="cd-data"></select></span>
+
+        <label id="cd-l-parity">Parity</label>
+        <span class="sd-row"><select id="cd-parity"></select></span>
+
+        <label id="cd-l-stop">Stop bits</label>
+        <span class="sd-row"><select id="cd-stop"></select></span>
+
+        <label id="cd-l-flow">Flow control</label>
+        <span class="sd-row"><select id="cd-flow"></select></span>
+      </div>
+
+      <label class="sd-check"><input id="cd-reconnect" type="checkbox" /><span id="cd-l-reconnect"></span></label>
+      <div id="cd-ports-note" class="sd-hint"></div>
+
+      <div id="cd-note"></div>
+      <div class="modal-buttons">
+        <button id="cd-reset" type="button">回到預設</button>
+        <button id="cd-ok" type="submit">開啟</button>
+        <button id="cd-fav" type="button">加到我的最愛</button>
+        <button id="cd-cancel" type="button">取消</button>
       </div>
     </form>
   </div>

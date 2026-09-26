@@ -26,6 +26,7 @@ use tauri::State;
 
 use crate::settings::SettingsStore;
 use crate::ssh::conn::SshConnParams;
+use crate::com::ComParams;
 use crate::telnet::TelnetParams;
 
 /// 一筆最愛。
@@ -34,7 +35,7 @@ use crate::telnet::TelnetParams;
 pub struct FavoriteItem {
     /// 下拉裡顯示的名稱（可改）。
     pub name: String,
-    /// `shell`｜`ssh`｜`telnet`｜`conn`（自訂連線）。`com` 先留著，UI 不顯示。
+    /// `shell`｜`ssh`｜`telnet`｜`com`｜`conn`（自訂連線）。
     pub kind: String,
     /// `shell`：工作目錄。`conn`：實際工作目錄（有值就不再跳資料夾選擇）。
     pub dir: String,
@@ -44,6 +45,8 @@ pub struct FavoriteItem {
     pub ssh: Option<SshConnParams>,
     /// `telnet`：完整連線參數（Telnet 本來就沒有帳號密碼欄）。
     pub telnet: Option<TelnetParams>,
+    /// `com`：埠與鮑率等（序列埠沒有帳號密碼）。
+    pub com: Option<ComParams>,
 }
 
 impl Default for FavoriteItem {
@@ -55,6 +58,7 @@ impl Default for FavoriteItem {
             conn_name: String::new(),
             ssh: None,
             telnet: None,
+            com: None,
         }
     }
 }
@@ -69,6 +73,10 @@ pub fn key_of(f: &FavoriteItem) -> String {
         "telnet" => {
             let t = f.telnet.clone().unwrap_or_default();
             format!("telnet|{}|{}", t.host.to_lowercase(), t.port)
+        }
+        "com" => {
+            let c = f.com.clone().unwrap_or_default();
+            format!("com|{}|{}", c.port.to_lowercase(), c.baud)
         }
         "conn" => format!("conn|{}|{}", f.conn_name.to_lowercase(), f.dir.to_lowercase()),
         _ => format!("{}|{}", f.kind, f.dir.to_lowercase()),
@@ -94,6 +102,15 @@ pub fn from_tab(tabs: &crate::tabs::TabManager, id: u32) -> Option<FavoriteItem>
                 name: view.title.clone(),
                 kind: "telnet".to_string(),
                 telnet: Some(telnet),
+                ..FavoriteItem::default()
+            })
+        }
+        crate::tabs::TabKind::Com => {
+            let com = tabs.com_params_of(id)?;
+            Some(FavoriteItem {
+                name: view.title.clone(),
+                kind: "com".to_string(),
+                com: Some(com),
                 ..FavoriteItem::default()
             })
         }

@@ -80,6 +80,17 @@ pub struct AppSettings {
     /// 已經接受過「弱演算法」警告的主機（`host:port`）。照 PuTTY：接受過就不再問。
     pub ssh_weak_accepted: Vec<String>,
 
+    // ---- 連接埠（舊版 ComPort / ComBaud / ComDataBits / ComParity / ComStopBits / ComFlow）----
+    // 舊版的 COM 對話框開起來就是「上次用的值」，所以這六個欄位要存檔。
+    // 字串值照舊版（`None`／`Odd`／`Even`／`Mark`／`Space`、`One`／`Two`／`OnePointFive`、
+    // `None`／`XOnXOff`／`RequestToSend`／`RequestToSendXOnXOff`），舊 settings.json 才讀得回來。
+    pub com_port: String,
+    pub com_baud: u32,
+    pub com_data_bits: u8,
+    pub com_parity: String,
+    pub com_stop_bits: String,
+    pub com_flow: String,
+
     /// 我的最愛（舊版 `AppSettings.Favorites`）。**不存密碼**。
     pub favorites: Vec<crate::favorites::FavoriteItem>,
 
@@ -200,6 +211,13 @@ impl Default for AppSettings {
             keep_alive_mins: 10,
             auto_reconnect: false,
             ssh_weak_accepted: Vec::new(),
+            // 舊版 AppSettings 的預設：COM5 / 115200 / 8 / None / One / None
+            com_port: "COM5".to_string(),
+            com_baud: 115_200,
+            com_data_bits: 8,
+            com_parity: "None".to_string(),
+            com_stop_bits: "One".to_string(),
+            com_flow: "None".to_string(),
             favorites: Vec::new(),
             saved_tabs: Vec::new(),
             exit_restore_tabs: true,

@@ -34,6 +34,10 @@ const OPT_ECHO: u8 = 1;
 const OPT_SGA: u8 = 3;
 const OPT_NAWS: u8 = 31;
 const OPT_TTYPE: u8 = 24;
+const SB_CMD: u8 = 250;
+const SE_CMD: u8 = 240;
+const TTYPE_IS: u8 = 0;
+const TTYPE_SEND: u8 = 1;
 
 /// 一台最小 telnet 伺服器：收到的位元組全部記下來，並可以主動送任意位元組。
 struct Server {
@@ -301,6 +305,42 @@ fn main() {
         "DO SGA → WILL SGA、其餘 DO → WONT",
         sga_ok && other_ok,
         format!("SGA={sga_ok} 其他={other_ok}"),
+    );
+
+    // -------------------------------------------- 4b. TTYPE（TASK-011，PM 決定要做）
+    let offered_ttype = find(&server.received(), &[IAC, WILL, OPT_TTYPE]).is_some();
+    report(
+        "連上後也主動提供 TTYPE",
+        offered_ttype,
+        format!("收到 IAC WILL TTYPE = {offered_ttype}（同 PuTTY：連上就一起送）"),
+    );
+
+    server.send(&[IAC, DO, OPT_TTYPE]);
+    let will_ttype = count_occurrences(&server.received(), &[IAC, WILL, OPT_TTYPE]) >= 1;
+    server.send(&[IAC, SB_CMD, OPT_TTYPE, TTYPE_SEND, IAC, SE_CMD]);
+    let mut want = vec![IAC, SB_CMD, OPT_TTYPE, TTYPE_IS];
+    want.extend_from_slice(b"xterm");
+    want.extend_from_slice(&[IAC, SE_CMD]);
+    let is_ok = server.wait_for(&want, Duration::from_secs(5));
+    report(
+        "SB TTYPE SEND → SB TTYPE IS xterm",
+        will_ttype && is_ok,
+        format!("有 WILL TTYPE={will_ttype}、回了 IS xterm={is_ok}（舊版不認 TTYPE）"),
+    );
+
+    // -------------------------------------------- 4c. WONT / DONT（TASK-011，PM 決定要做）
+    // 前面已經談成 DO ECHO；對方收回 → 這是狀態改變 → 要回 DONT ECHO
+    server.send(&[IAC, WONT, OPT_ECHO]);
+    let dont_echo = server.wait_for(&[IAC, DONT, OPT_ECHO], Duration::from_secs(5));
+    // 沒談成過的東西被拒絕 → **不回**（不然兩邊有來有往就變無限乒乓）
+    let before = server.received().len();
+    server.send(&[IAC, WONT, 77, IAC, DONT, 78]);
+    std::thread::sleep(Duration::from_millis(300));
+    let quiet = server.received().len() == before;
+    report(
+        "WONT/DONT 只在狀態改變時回答",
+        dont_echo && quiet,
+        format!("收回 ECHO 有回 DONT={dont_echo}、沒談過的拒絕不回={quiet}（RFC 854）"),
     );
 
     // ---------------------------------------------------------------- 5. 協商切在封包邊界

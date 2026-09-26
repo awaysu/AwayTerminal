@@ -26,6 +26,7 @@
 //! |---|---|
 //! | SSH | `request_shell` 成功（shell channel 開起來） |
 //! | Telnet | **從 socket 讀到第一批位元組**（沒有 shell channel 可用；我們自己的訊息不經過 socket） |
+//! | COM | **開埠成功**（序列裝置可能永遠不主動說話，等輸出會讓退避永遠不歸零） |
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -36,6 +37,7 @@ use tauri::{AppHandle, Manager};
 use crate::host::emit_host;
 use crate::output::OutputPump;
 use crate::session::{ExitInfo, OnExit, OnOutput, SessionManager};
+use crate::com::ComParams;
 use crate::ssh::conn::SshConnParams;
 use crate::tabs::{self, TabManager};
 use crate::telnet::TelnetParams;
@@ -48,6 +50,7 @@ use crate::telnet::TelnetParams;
 pub enum ConnParams {
     Ssh(SshConnParams),
     Telnet(TelnetParams),
+    Com(ComParams),
 }
 
 impl ConnParams {
@@ -55,6 +58,7 @@ impl ConnParams {
         match self {
             Self::Ssh(p) => p.auto_reconnect,
             Self::Telnet(p) => p.auto_reconnect,
+            Self::Com(p) => p.auto_reconnect,
         }
     }
 
@@ -63,6 +67,7 @@ impl ConnParams {
         match self {
             Self::Ssh(p) => format!("ssh://{}:{}", p.host, p.port),
             Self::Telnet(p) => format!("telnet://{}:{}", p.host, p.port),
+            Self::Com(p) => format!("com://{}@{}", p.port, p.baud),
         }
     }
 
@@ -76,6 +81,13 @@ impl ConnParams {
     pub fn as_telnet(&self) -> Option<&TelnetParams> {
         match self {
             Self::Telnet(p) => Some(p),
+            _ => None,
+        }
+    }
+
+    pub fn as_com(&self) -> Option<&ComParams> {
+        match self {
+            Self::Com(p) => Some(p),
             _ => None,
         }
     }
@@ -227,8 +239,11 @@ fn pipeline(app: &AppHandle, id: u32, parts: &tabs::SessionParts) -> (OnOutput, 
         let pump = parts.pump.clone();
         let last_output = parts.last_output.clone();
         let logger = parts.logger.clone();
+        let tap = parts.tap.clone();
         Arc::new(move |bytes: &[u8]| {
             last_output.store(tabs::now_ms(), Ordering::Relaxed);
+            // TTL 巨集的 `wait` 要看得到輸出（現在一定是空槽，見 src/tap.rs）
+            tap.output(bytes);
             // log 先寫再餵畫面：舊版 OnSessionOutput 也是這個順序
             if let Ok(g) = logger.lock() {
                 if let Some(l) = g.as_ref() {
@@ -271,6 +286,15 @@ pub fn start(
     let session: Arc<dyn crate::session::TerminalSession> = match params {
         ConnParams::Ssh(p) => {
             crate::ssh::conn::start(app, id, p, &parts, on_output, on_exit, on_connected)?
+        }
+        ConnParams::Com(p) => {
+            // 開埠是同步的：失敗就回 Err（呼叫端會印紅字／收掉分頁，同舊版 SerialPort.Open()）
+            let (session, warnings) = crate::com::spawn(p, on_output, on_exit, Some(on_connected))?;
+            // 參數被 crate 的限制降級時要**說出來**（1.5 停止位元、Mark/Space 同位…）
+            for w in warnings {
+                echo(app, id, &format!("\r\n\x1b[33m[{w}]\x1b[0m\r\n"));
+            }
+            session
         }
         ConnParams::Telnet(p) => crate::telnet::spawn(
             crate::telnet::TelnetOptions {

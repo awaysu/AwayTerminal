@@ -40,6 +40,17 @@ const NOP: u8 = 241;
 const OPT_ECHO: u8 = 1;
 const OPT_SGA: u8 = 3;
 const OPT_NAWS: u8 = 31;
+/// 終端機類型（RFC 1091）。舊版不認，TASK-011 由 PM 決定補上。
+const OPT_TTYPE: u8 = 24;
+/// TTYPE 子協商的兩個指令：伺服器問 `SEND`，我們答 `IS <名稱>`。
+const TTYPE_IS: u8 = 0;
+const TTYPE_SEND: u8 = 1;
+/// 我們回報的終端機類型。**和 PuTTY 一樣回 `xterm`**：xterm.js 就是照 xterm 的能力做的，
+/// 回別的名字（例如 `ansi`）會讓遠端少送顏色與功能鍵序列。
+const TERM_TYPE: &[u8] = b"xterm";
+/// 子協商內容的上限。TTYPE 只需要兩個位元組，這裡留寬一點但**一定要有上限**——
+/// 不然對方一直送就會讓我們無限長大。
+const SB_MAX: usize = 64;
 
 /// 一條 Telnet 連線的參數。
 ///
@@ -87,6 +98,15 @@ pub struct Iac {
     cmd: u8,
     /// 對方同意我們送視窗大小了嗎（收到 `DO NAWS`）。
     pub naws_ok: bool,
+    /// 目前這個子協商的內容（`IAC SB` 之後、`IAC SE` 之前）。只留到 [`SB_MAX`]。
+    ///
+    /// 舊版把子協商內容**整段丟掉**——TASK-011 要答 TTYPE 就得看裡面寫什麼，
+    /// 所以改成先收起來，`IAC SE` 到了再決定要不要回。TTYPE 以外的還是丟掉。
+    sb: Vec<u8>,
+    /// 我們已經說過 `WILL` 的選項（收到 `DONT` 時才知道「這是狀態改變、要回答」）。
+    will_sent: Vec<u8>,
+    /// 我們已經說過 `DO` 的選項（同理，收到 `WONT` 時用）。
+    do_sent: Vec<u8>,
 }
 
 #[derive(Debug, Default, PartialEq, Eq, Clone, Copy)]
@@ -132,40 +152,100 @@ impl Iac {
                     self.state = State::Data;
                 }
                 State::Sb => {
-                    // 子協商內容一律略過（同舊版）
                     if b == IAC {
                         self.state = State::SbIac;
+                    } else if self.sb.len() < SB_MAX {
+                        self.sb.push(b);
                     }
                 }
                 State::SbIac => {
                     // IAC SE 結束；IAC IAC ＝子協商資料裡的 0xFF，還在子協商裡
-                    self.state = if b == SE { State::Data } else { State::Sb };
+                    if b == SE {
+                        self.finish_sb(&mut reply);
+                        self.state = State::Data;
+                    } else {
+                        if b == IAC && self.sb.len() < SB_MAX {
+                            self.sb.push(IAC);
+                        }
+                        self.state = State::Sb;
+                    }
                 }
             }
         }
         (data, reply)
     }
 
-    /// 回應一個選項協商。**規則照舊版 `RespondOption`**，只多了 `DO NAWS`。
+    /// 子協商結束（`IAC SE`）。目前只有 TTYPE 要答，其餘照舊版丟掉。
+    fn finish_sb(&mut self, out: &mut Vec<u8>) {
+        let sb = std::mem::take(&mut self.sb);
+        // `IAC SB TTYPE SEND IAC SE` → `IAC SB TTYPE IS xterm IAC SE`（RFC 1091）
+        if sb.len() >= 2 && sb[0] == OPT_TTYPE && sb[1] == TTYPE_SEND {
+            out.extend_from_slice(&[IAC, SB, OPT_TTYPE, TTYPE_IS]);
+            out.extend_from_slice(TERM_TYPE);
+            out.extend_from_slice(&[IAC, SE]);
+        }
+    }
+
+    /// 回應一個選項協商。規則照舊版 `RespondOption`，加上 TASK-011 由 PM 決定補的
+    /// `DO TTYPE` 與 `WONT`／`DONT` 的回答。
     fn respond(&mut self, cmd: u8, opt: u8, cols: u16, rows: u16, out: &mut Vec<u8>) {
         match cmd {
             WILL => {
-                let reply = if opt == OPT_ECHO || opt == OPT_SGA { DO } else { DONT };
-                out.extend_from_slice(&[IAC, reply, opt]);
+                if opt == OPT_ECHO || opt == OPT_SGA {
+                    if !self.do_sent.contains(&opt) {
+                        self.do_sent.push(opt);
+                    }
+                    out.extend_from_slice(&[IAC, DO, opt]);
+                } else {
+                    out.extend_from_slice(&[IAC, DONT, opt]);
+                }
             }
             DO => {
                 if opt == OPT_NAWS {
-                    // 新增：答應送視窗大小，並立刻送一次目前尺寸
+                    // 答應送視窗大小，並立刻送一次目前尺寸
                     self.naws_ok = true;
+                    self.note_will(OPT_NAWS);
                     out.extend_from_slice(&[IAC, WILL, OPT_NAWS]);
                     out.extend_from_slice(&naws_sb(cols, rows));
+                } else if opt == OPT_TTYPE {
+                    // 答應回報終端機類型；實際的名稱要等對方送 `SB TTYPE SEND` 才回
+                    self.note_will(OPT_TTYPE);
+                    out.extend_from_slice(&[IAC, WILL, OPT_TTYPE]);
+                } else if opt == OPT_SGA {
+                    self.note_will(OPT_SGA);
+                    out.extend_from_slice(&[IAC, WILL, OPT_SGA]);
                 } else {
-                    let reply = if opt == OPT_SGA { WILL } else { WONT };
-                    out.extend_from_slice(&[IAC, reply, opt]);
+                    out.extend_from_slice(&[IAC, WONT, opt]);
                 }
             }
-            // WONT／DONT：舊版不回應（PuTTY 會回，差異寫在 docs/TELNET.md）
+            // WONT／DONT（TASK-011 新增；舊版完全不回，PuTTY 會回）。
+            //
+            // ⚠️ **只在狀態真的改變時回答**：對方說「我不做 X」而我們本來就沒請它做 X，
+            // 回答等於沒有意義，而且兩邊都「有來有往」時會變成無限乒乓（RFC 854 明文要求
+            // 只在改變狀態時回應）。所以要記得自己說過哪些 `DO`／`WILL`。
+            WONT => {
+                if let Some(i) = self.do_sent.iter().position(|&x| x == opt) {
+                    self.do_sent.remove(i);
+                    out.extend_from_slice(&[IAC, DONT, opt]);
+                }
+            }
+            DONT => {
+                if let Some(i) = self.will_sent.iter().position(|&x| x == opt) {
+                    self.will_sent.remove(i);
+                    if opt == OPT_NAWS {
+                        self.naws_ok = false; // 對方收回 NAWS → 不要再送尺寸
+                    }
+                    out.extend_from_slice(&[IAC, WONT, opt]);
+                }
+            }
             _ => {}
+        }
+    }
+
+    /// 記下「我們說過 WILL 這個選項」（收到 `DONT` 時才知道要不要回答）。
+    fn note_will(&mut self, opt: u8) {
+        if !self.will_sent.contains(&opt) {
+            self.will_sent.push(opt);
         }
     }
 }
@@ -358,9 +438,9 @@ fn connect_and_read(
         return;
     }
 
-    // NAWS 必須自己先開口：多數 telnet 伺服器不會主動問（PuTTY 也是連上就送 WILL NAWS）。
-    // 對方回 `DO NAWS` 才會真的送尺寸（見 Iac::respond）。
-    session.write_raw(&[IAC, WILL, OPT_NAWS]);
+    // NAWS 與 TTYPE 都要自己先開口：多數 telnet 伺服器不會主動問（PuTTY 也是連上就送這幾條）。
+    // 對方回 `DO NAWS`／`DO TTYPE` 才會真的送尺寸／類型（見 Iac::respond）。
+    session.write_raw(&[IAC, WILL, OPT_NAWS, IAC, WILL, OPT_TTYPE]);
 
     if session.keepalive_mins > 0 {
         keepalive_thread(session.clone());
@@ -403,6 +483,10 @@ fn read_loop(
     on_connected: Option<OnConnected>,
 ) {
     let mut iac = Iac::default();
+    // 連上時已經主動送了 `WILL NAWS` 與 `WILL TTYPE`（見 connect_and_read）→ 要記在狀態裡，
+    // 否則對方回 `DONT NAWS` 時我們不會答、`naws_ok` 也不會收回。
+    iac.note_will(OPT_NAWS);
+    iac.note_will(OPT_TTYPE);
     let mut buf = [0u8; 8192];
     let mut first = true;
     loop {
@@ -476,12 +560,70 @@ mod tests {
         let (_, reply) = iac.process(&[IAC, DO, OPT_SGA], 80, 24);
         assert_eq!(reply, vec![IAC, WILL, OPT_SGA]);
 
-        let (_, reply) = iac.process(&[IAC, DO, 24], 80, 24);
-        assert_eq!(reply, vec![IAC, WONT, 24]);
+        let (_, reply) = iac.process(&[IAC, DO, 42], 80, 24);
+        assert_eq!(reply, vec![IAC, WONT, 42], "沒認識的 DO 一律 WONT");
+    }
 
-        // WONT / DONT：舊版不回應
+    /// `DO TTYPE` → `WILL TTYPE`，然後 `SB TTYPE SEND` → `SB TTYPE IS xterm`
+    /// （RFC 1091；舊版不認，TASK-011 由 PM 決定補上）。
+    #[test]
+    fn answers_terminal_type_with_xterm() {
+        let mut iac = Iac::default();
+        let (_, reply) = iac.process(&[IAC, DO, OPT_TTYPE], 80, 24);
+        assert_eq!(reply, vec![IAC, WILL, OPT_TTYPE]);
+
+        let (data, reply) = iac.process(&[IAC, SB, OPT_TTYPE, TTYPE_SEND, IAC, SE], 80, 24);
+        assert!(data.is_empty(), "子協商不可以出現在畫面上");
+        let mut want = vec![IAC, SB, OPT_TTYPE, TTYPE_IS];
+        want.extend_from_slice(b"xterm");
+        want.extend_from_slice(&[IAC, SE]);
+        assert_eq!(reply, want);
+    }
+
+    /// 伺服器**主動說** `WILL TTYPE`（它要告訴我們它的類型）→ 照舊版回 `DONT`。
+    /// 這和上面的 `DO TTYPE` 是兩件不同的事，別搞混。
+    #[test]
+    fn server_offering_its_own_ttype_is_declined() {
+        let mut iac = Iac::default();
+        let (_, reply) = iac.process(&[IAC, WILL, OPT_TTYPE], 80, 24);
+        assert_eq!(reply, vec![IAC, DONT, OPT_TTYPE]);
+    }
+
+    /// `WONT`／`DONT`（TASK-011 新增）：**只在狀態真的改變時回答**。
+    #[test]
+    fn refusals_are_answered_only_when_state_changes() {
+        let mut iac = Iac::default();
+        // 我們沒說過 DO ECHO / WILL SGA → 對方的拒絕不改變任何狀態 → 不回（避免無限乒乓）
         let (_, reply) = iac.process(&[IAC, WONT, OPT_ECHO, IAC, DONT, OPT_SGA], 80, 24);
-        assert!(reply.is_empty(), "舊版對 WONT/DONT 不回應");
+        assert!(reply.is_empty(), "沒有狀態改變就不該回答（RFC 854）");
+
+        // 先談成：我們回了 DO ECHO、WILL NAWS
+        iac.process(&[IAC, WILL, OPT_ECHO], 80, 24);
+        iac.process(&[IAC, DO, OPT_NAWS], 80, 24);
+        assert!(iac.naws_ok);
+
+        // 對方收回 → 這次是狀態改變 → 要回
+        let (_, reply) = iac.process(&[IAC, WONT, OPT_ECHO], 80, 24);
+        assert_eq!(reply, vec![IAC, DONT, OPT_ECHO]);
+        let (_, reply) = iac.process(&[IAC, DONT, OPT_NAWS], 80, 24);
+        assert_eq!(reply, vec![IAC, WONT, OPT_NAWS]);
+        assert!(!iac.naws_ok, "對方收回 NAWS 之後不可以再送尺寸");
+
+        // 同一條再來一次就不回了（狀態已經清掉）
+        let (_, reply) = iac.process(&[IAC, WONT, OPT_ECHO, IAC, DONT, OPT_NAWS], 80, 24);
+        assert!(reply.is_empty());
+    }
+
+    /// 子協商內容有上限，對方一直送也不會讓我們無限長大。
+    #[test]
+    fn subnegotiation_payload_is_bounded() {
+        let mut iac = Iac::default();
+        let mut junk = vec![IAC, SB, 99];
+        junk.extend(std::iter::repeat_n(b'x', SB_MAX * 4));
+        junk.extend_from_slice(&[IAC, SE]);
+        let (data, reply) = iac.process(&junk, 80, 24);
+        assert!(data.is_empty() && reply.is_empty());
+        assert!(iac.sb.is_empty(), "IAC SE 之後要清空");
     }
 
     /// `DO NAWS` → `WILL NAWS` + 尺寸子協商（新增功能，`CLAUDE.md` 定案）。

@@ -174,6 +174,24 @@ export const T = {
   'sd.addFav': '加到我的最愛',
   'sd.needHost': '請輸入主機。',
 
+  // ---- 連接埠（TASK-011；舊版 Dialogs/ComDialog + Loc 的 com.*）----
+  'tb.com': '連接埠',
+  'tip.com': '開 COM 埠',
+  'kind.com': '連接埠 (COM)',
+  'com.title': '開連接埠',
+  'com.open': '開啟',
+  'common.reset': '回到預設',
+  // 欄位名稱照舊版 XAML 的英文（使用者看到的就是這些字）
+  'cd.port': 'Port',
+  'cd.baud': 'Baud rate',
+  'cd.data': 'Data bits',
+  'cd.parity': 'Parity',
+  'cd.stop': 'Stop bits',
+  'cd.flow': 'Flow control',
+  'cd.rescan': '重新掃描',
+  'cd.needPort': '請選擇或輸入連接埠。',
+  'cd.noPorts': '目前偵測不到任何連接埠（USB 轉序列線插上後按「重新掃描」）。',
+
   // ---- 離開程式與恢復分頁（TASK-010；舊版 Dialogs/ExitDialog + 1.0.45）----
   'exit.title': '離開 AwayTerminal',
   'exit.body': '要關閉程式嗎？',

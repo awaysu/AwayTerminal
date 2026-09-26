@@ -27,6 +27,10 @@ chrono = { version = "0.4.45", features = ["clock"] }
 russh = { version = "0.63.3", default-features = false, features = ["ring", "des", "rsa", "flate2"] }
 # MD5 指紋（PuTTY 舊版格式）。russh 已經把這個版本拉進依賴樹，所以不會多編一份。
 md5 = "0.8"
+# 連接埠（COM）。⚠️ **MPL-2.0**（不是 MIT）：可以連進 MIT 專案，但散布時要附授權全文，
+# 而且**我們沒有改過它的原始碼**（改了才會觸發同檔案的 copyleft）。見 THIRD-PARTY-NOTICES.md。
+# Linux 的 `libudev` 預設功能要系統有 libudev（做 Linux 版時再處理，見 docs/COM.md）。
+serialport = "4.10.1"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = [

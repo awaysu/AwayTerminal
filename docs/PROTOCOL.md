@@ -145,6 +145,8 @@
 | `ssh_hostkey_answer(id, answer)` | 主機金鑰**與弱演算法**對話框的回覆（`acceptandstore` / `acceptonce` / `reject`）。兩者共用同一個回覆通道 |
 | `algo_catalog()` | 四組演算法的可選名稱與「在警告線下」的標記（連線對話框的「進階」區用） |
 | `session_create` 的 `kind:"telnet"` + `telnet` 參數 | 內建 Telnet。見 `docs/TELNET.md` |
+| `session_create` 的 `kind:"com"` + `com` 參數 | 連接埠（`serialport`）。見 `docs/COM.md` |
+| `com_ports()` | 目前看得到的埠（名稱＋USB 描述）與四組選項清單（鮑率／資料位元／同位／停止位元／流量控制）。**清單只含函式庫真的支援的值** |
 | `restore_list()` | 這次啟動要恢復哪些分頁（空＝開一個預設分頁）。前端照順序呼叫 `session_create(…, restore: i)` |
 | `exit_confirm(restore)` / `exit_cancel()` | 離開對話框的回覆。`exit_confirm` **必須是 async**——它要等前端把 `a…save` 送回來，同步 command 會擋住主執行緒讓 IPC 進不來（實際踩過） |
 | `restore_verify_save()` / `restore_verify_clear()` | **只給 `--verify` 用**：不關程式就走一次「存」，以及把驗證留下的紀錄清掉 |

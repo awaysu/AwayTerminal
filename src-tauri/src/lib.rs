@@ -3,6 +3,7 @@
 pub mod b64;
 pub mod bench;
 pub mod cli;
+pub mod com;
 pub mod commands;
 pub mod custom;
 pub mod favorites;
@@ -19,6 +20,7 @@ pub mod ssh;
 pub mod startup;
 pub mod status;
 pub mod tabs;
+pub mod tap;
 pub mod telnet;
 pub mod toolbar;
 
@@ -102,6 +104,7 @@ pub fn run() {
             favorites::fav_delete,
             favorites::fav_rename,
             favorites::fav_move,
+            com::com_ports,
             restore::restore_list,
             restore::exit_confirm,
             restore::exit_cancel,

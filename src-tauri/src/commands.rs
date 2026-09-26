@@ -135,12 +135,30 @@ pub struct TelnetArgs {
     pub auto_reconnect: Option<bool>,
 }
 
+/// COM（連接埠）的額外參數（`kind = "com"` 時才看）。
+///
+/// 欄位與字串值照舊版 `ComDialog` 與 `settings.json`（見 [`crate::com::ComParams`]）。
+#[derive(Default, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ComArgs {
+    /// 埠名稱（`COM5`）。省略＝用設定裡上次用的。
+    pub port: Option<String>,
+    pub baud: Option<u32>,
+    pub data_bits: Option<u8>,
+    pub parity: Option<String>,
+    pub stop_bits: Option<String>,
+    pub flow: Option<String>,
+    /// 斷線（拔線）自動重連。省略＝用設定裡的值。
+    pub auto_reconnect: Option<bool>,
+}
+
 /// 開一條連線。
 ///
 /// - `kind = "shell"`（舊稱 `powershell`）：pwsh 優先、否則 powershell。
 /// - `kind = "custom"`：用 `command` 給的指令（分頁列「自訂指令…」與 `?cmd=` 這類 dev 入口）。
 /// - `kind = "ssh"`：內建 SSH（`russh`），參數走 `ssh`（見 [`SshArgs`]）。
 /// - `kind = "telnet"`：內建 Telnet，參數走 `telnet`（見 [`TelnetArgs`]）。
+/// - `kind = "com"`：連接埠，參數走 `com`（見 [`ComArgs`]）。
 ///
 /// `restore` 是恢復分頁用的索引（[`crate::restore::restore_list`] 回傳的第幾筆）：
 /// 給了就在 `n` 之後、`s` 之前插一條 `b{id}US…`，把上次關閉前的畫面倒回去
@@ -163,6 +181,7 @@ pub fn session_create(
     cwd: Option<String>,
     ssh: Option<SshArgs>,
     telnet: Option<TelnetArgs>,
+    com: Option<ComArgs>,
     // `kind = "conn"`：要開哪一條自訂連線（依名稱）。
     conn: Option<String>,
     // 恢復分頁：要倒回哪一筆的畫面（`restore_list` 的索引）。
@@ -172,8 +191,25 @@ pub fn session_create(
     tabs_state: State<'_, Arc<TabManager>>,
     settings: State<'_, Arc<SettingsStore>>,
 ) -> Result<SessionInfo, String> {
-    if kind == "ssh" || kind == "telnet" {
-        let params = if kind == "ssh" {
+    if kind == "ssh" || kind == "telnet" || kind == "com" {
+        let params = if kind == "com" {
+            let args = com.unwrap_or_default();
+            let saved = settings.get();
+            // 省略的欄位用設定裡上次用的（同舊版 ComDialog 開起來就是上次的值）
+            crate::reconnect::ConnParams::Com(crate::com::ComParams {
+                port: args
+                    .port
+                    .map(|p| p.trim().to_string())
+                    .filter(|p| !p.is_empty())
+                    .unwrap_or(saved.com_port),
+                baud: args.baud.unwrap_or(saved.com_baud),
+                data_bits: args.data_bits.unwrap_or(saved.com_data_bits),
+                parity: args.parity.unwrap_or(saved.com_parity),
+                stop_bits: args.stop_bits.unwrap_or(saved.com_stop_bits),
+                flow: args.flow.unwrap_or(saved.com_flow),
+                auto_reconnect: args.auto_reconnect.unwrap_or(saved.auto_reconnect),
+            })
+        } else if kind == "ssh" {
             let args = ssh.ok_or_else(|| "kind=ssh 需要 ssh 參數".to_string())?;
             let host = args.host.trim().to_string();
             if host.is_empty() {
@@ -360,12 +396,17 @@ pub fn session_create(
     let logger: Arc<std::sync::Mutex<Option<Arc<crate::logging::Logger>>>> =
         Arc::new(std::sync::Mutex::new(None));
 
+    // TTL 巨集的攔截槽（現在一定是空的，見 src/tap.rs）。要在 on_output 之前建好——
+    // 那個 closure 在 spawn 當下就固定了，之後沒辦法再塞東西進去。
+    let tap = crate::tap::TapSlot::new();
     let on_output = {
         let pump = pump.clone();
         let last_output = last_output.clone();
         let logger = logger.clone();
+        let tap = tap.clone();
         Arc::new(move |bytes: &[u8]| {
             last_output.store(tabs::now_ms(), Ordering::Relaxed);
+            tap.output(bytes);
             // log 先寫再餵畫面：舊版 OnSessionOutput 也是這個順序
             if let Ok(g) = logger.lock() {
                 if let Some(l) = g.as_ref() {
@@ -453,6 +494,7 @@ pub fn session_create(
         fg: None,
         bg: None,
         out: Some(pump.clone()),
+        tap: tap.clone(),
         cols,
         rows,
         conn: None,
@@ -492,22 +534,22 @@ fn create_remote(
     manager: &SessionManager,
     tabs_state: &Arc<TabManager>,
 ) -> Result<SessionInfo, String> {
-    let (tab_kind, host, port, backend) = match &params {
-        crate::reconnect::ConnParams::Ssh(p) => (TabKind::Ssh, p.host.clone(), p.port, "russh"),
+    // (分頁種類, 預設標題, 後端名稱)
+    let (tab_kind, default_title, backend) = match &params {
+        crate::reconnect::ConnParams::Ssh(p) => (TabKind::Ssh, p.host.clone(), "russh"),
+        // Telnet 照舊版是 `host:port`（`OpenTelnetDirect`）
         crate::reconnect::ConnParams::Telnet(p) => {
-            (TabKind::Telnet, p.host.clone(), p.port, "telnet")
+            (TabKind::Telnet, format!("{}:{}", p.host, p.port), "telnet")
         }
+        // COM 照舊版是 `COM5 115200`（`OpenComDirect`）
+        crate::reconnect::ConnParams::Com(p) => (TabKind::Com, p.title(), "serialport"),
     };
     let id = manager.next_id();
-    // 分頁標題：SSH 先是 host（輸入帳號之後才變 user@host，見 on_user）；
-    // Telnet 照舊版是 `host:port`（`OpenTelnetDirect`）。
+    // SSH 的標題先是 host，輸入帳號之後才變 user@host（見 on_user）
     let tab_title = title
         .map(|t| t.trim().to_string())
         .filter(|t| !t.is_empty())
-        .unwrap_or_else(|| match tab_kind {
-            TabKind::Telnet => format!("{host}:{port}"),
-            _ => host.clone(),
-        });
+        .unwrap_or(default_title);
 
     emit_host(&app, format!("n{id}{tab_title}"));
     // 恢復分頁：畫面要在 `n` 之後、`s`／連線之前倒回去（舊版 AddTab 的順序）
@@ -535,6 +577,7 @@ fn create_remote(
         fg: None,
         bg: None,
         out: Some(pump),
+        tap: Default::default(),
         cols,
         rows,
         conn: Some(params.clone()),
@@ -579,7 +622,18 @@ fn create_remote(
 
 /// 寫入原始位元組（`term.onBinary` 用）。
 #[tauri::command]
-pub fn session_write(id: u32, data: Vec<u8>, manager: State<'_, SessionManager>) {
+pub fn session_write(
+    id: u32,
+    data: Vec<u8>,
+    manager: State<'_, SessionManager>,
+    tabs_state: State<'_, Arc<TabManager>>,
+) {
+    // TTL 巨集執行中可以吃掉鍵盤（現在一定是空槽 → 一律放行，見 src/tap.rs）
+    if let Some(tap) = tabs_state.tap_of(id) {
+        if !tap.allow_input(&data) {
+            return;
+        }
+    }
     if let Some(s) = manager.get(id) {
         s.write(&data);
     }
@@ -594,6 +648,11 @@ pub fn session_write_text(
     manager: State<'_, SessionManager>,
     tabs_state: State<'_, Arc<TabManager>>,
 ) {
+    if let Some(tap) = tabs_state.tap_of(id) {
+        if !tap.allow_input(text.as_bytes()) {
+            return;
+        }
+    }
     if let Some(s) = manager.get(id) {
         s.write(text.as_bytes());
         return;

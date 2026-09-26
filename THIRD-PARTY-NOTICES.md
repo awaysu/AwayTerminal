@@ -134,7 +134,26 @@ Notable crates pulled in by russh and shipped with it:
 
 ---
 
-## 5. Rust crates
+## 5. serialport-rs — MPL-2.0
+
+- Used for: the serial port (COM) backend, `src-tauri/src/com/`
+- Upstream: <https://github.com/serialport/serialport-rs>
+- Version: 4.10
+
+**MPL-2.0 is not MIT.** It is a *file-level* copyleft licence, which is compatible with
+shipping inside an MIT-licensed application on two conditions:
+
+1. the licence text must accompany the distribution (this NOTICES file has to be included
+   in the installers — stage 5);
+2. **if we modified any of its source files**, those files must be released under MPL-2.0.
+
+We do **not** modify `serialport`; it is used strictly as a library, so only (1) applies.
+Transitive dependencies it pulls in: `nix` (MIT) and, on macOS only, `io-kit-sys`
+(MIT OR Apache-2.0).
+
+---
+
+## 6. Rust crates
 
 Linked as dependencies, each under MIT or MIT/Apache-2.0:
 `windows-sys`, `libloading`, `serde`, `serde_json`, `tokio`, `chrono`,

@@ -280,13 +280,16 @@ TEMP 路徑印出完整結果，Documents 路徑印完 `path = …` 就停住。
 
 | # | 怎麼測 | 預期結果 | 舊版出處 | Win | mac | Linux |
 |---|---|---|---|---|---|---|
-| TN1 | `cargo run --example telnet_probe` | **17 PASS / 0 FAIL** | — | PASS | | |
+| TN1 | `cargo run --example telnet_probe` | **20 PASS / 0 FAIL** | — | PASS | | |
 | TN2 | `--verify` 的 Telnet 那一步 | 分頁 `kind=telnet`、`backend=telnet`、標題 `host:port`；連不上時原因印在終端機 | 舊版 `OpenTelnetDirect` | PASS | | |
 | TN3 | 👤 對話框類型切到 Telnet | 埠自動變 23；帳號／金鑰／Pageant／進階四列收起來 | 舊版 `TypeCombo` 切換換埠 | | | |
 | TN4 | 👤 連一台真設備 | 登入提示是**遠端**送的（不是我們印的），密碼不回顯 | Telnet 沒有自己的驗證層 | ⬜ 需真設備 | | |
 | TN5 | 協商：`WILL ECHO`／`WILL SGA` | 回 `DO`；其餘 `WILL` 回 `DONT` | `RespondOption` | PASS（probe＋單元測試） | | |
 | TN6 | 協商：`DO SGA` | 回 `WILL`；其餘 `DO` 回 `WONT` | 同上 | PASS | | |
-| TN7 | 協商：`WONT`／`DONT` | **不回應**（照舊版；PuTTY 會回，見 `docs/TELNET.md` 第 4 節） | 同上 | PASS（單元測試） | | |
+| TN7 | 協商：`WONT`／`DONT` | **會回**（`WONT x`→`DONT x`、`DONT x`→`WONT x`），但**只在狀態真的改變時**；沒談成過的拒絕不回（否則無限乒乓） | PuTTY／RFC 854（TASK-011 由 PM 決定改掉舊版行為） | PASS（probe＋單元測試） | | |
+| TN7b | 協商：`DO TTYPE` → `SB TTYPE SEND` | 回 `WILL TTYPE`，然後 `SB TTYPE IS xterm` | RFC 1091／PuTTY（TASK-011 新增） | PASS（probe＋單元測試） | | |
+| TN7c | 伺服器主動 `WILL TTYPE` | 回 `DONT`（那是它要告訴我們它的類型，和上一條是兩件事） | 照舊版 | PASS（單元測試） | | |
+| TN7d | 👤 連真設備看畫面 | 遠端知道我們是 xterm → 顏色／功能鍵正常 | TTYPE 的目的 | ⬜ 需真設備 | | |
 | TN8 | 協商序列切在封包邊界上 | 後半**不可以**變成畫面上的亂碼（`0xFB` 之類），協商照樣要回 | `TelnetSession.cs` 的 `_iac` 註解（舊版踩過） | PASS（probe＋單元測試） | | |
 | TN9 | 送出含 `0xFF` 的資料 | 轉義成 `FF FF`，而且**一次寫出**（不是逐 byte 一個封包） | `Write` 的註解 | PASS（probe） | | |
 | TN10 | 收到 `IAC IAC` | 畫面上是一個 `0xFF`，不是指令 | `IacState.Iac` | PASS（probe） | | |
@@ -304,7 +307,38 @@ TEMP 路徑印出完整結果，Documents 路徑印完 `path = …` 就停住。
 | TN22 | 👤 Telnet 分頁的狀態燈 | 遠端規則：近 0.5 秒有輸出＝紅，否則綠 | `UpdateStatuses` 的 else | | | |
 | TN23 | 👤 存成我的最愛 → 再從最愛開 | 主機／埠／保持連線／自動重連都照存的；**存檔沒有密碼欄** | 舊版 `SavedTab` | | | |
 
-## K2. 其餘連線後端：COM / WSL / ADB（待填，階段 2）
+## CM. 連接埠（COM）
+
+行為對照表、`serialport` 的限制、平台差異都在 `docs/COM.md`。
+自動驗證：`cd src-tauri && cargo run --example com_probe`（**不需要硬體**，用同程式內的管線當假裝置）。
+
+| # | 怎麼測 | 預期結果 | 舊版出處 | Win | mac | Linux |
+|---|---|---|---|---|---|---|
+| CM1 | `cargo run --example com_probe` | **13 PASS / 0 FAIL** | — | PASS | | |
+| CM2 | `--verify` 的連接埠那一步 | 列得出埠與四組選項；開不存在的埠**回錯誤且不留死分頁** | 舊版 `StartTab` 的 catch → `RemoveTabSilently` ＋錯誤視窗 | PASS | | |
+| CM3 | 👤「新分頁 ▾ → 連接埠…」 | 跳**獨立**的對話框（不是 SSH/Telnet 那個「類型」下拉），欄位順序 Port / Baud / Data / Parity / Stop / Flow ＋斷線自動重連 ＋「回到預設」 | `Dialogs/ComDialog.xaml` | | | |
+| CM4 | 👤 對話框開起來的值 | 是**上次用的**（`settings.json` 的 `comPort`…） | `AppSettings.Com*` | | | |
+| CM5 | 👤 按「回到預設」 | COM5 / 115200 / 8 / None / 1 / None；**自動重連的勾選不動** | `Reset_Click` | | | |
+| CM6 | 👤 埠下拉 | 列出實際存在的埠；**一定含設定裡那個**（就算現在沒插）；旁邊看得到 USB 描述 | `GetPortNames()` ＋加值 | | | |
+| CM7 | 👤 沒有任何埠時 | 提示「偵測不到任何連接埠…」，不是空白 | — | | | |
+| CM8 | 👤 插上線後按「重新掃描」 | 新的埠出現在清單裡 | 舊版每次開對話框重新列 | | | |
+| CM9 | 選項清單的內容 | **只有函式庫支援的值**（同位 None/Odd/Even、停止位元 1/2、流量控制 None/XON-XOFF/RTS-CTS） | 見 `docs/COM.md` 第 3 節 | PASS（`--verify` 印出來） | | |
+| CM10 | 手改 `settings.json` 放 `Mark`／`OnePointFive`／`RequestToSendXOnXOff` | 退成支援的值，**並且在終端機印一行黃字說明**（不可以安靜換掉） | — | PASS（單元測試＋probe） | | |
+| CM11 | 分頁標題 | `COM5 115200`（埠＋鮑率） | `OpenComDirect` | PASS（單元測試） | | |
+| CM12 | 👤 打字 | 原樣送出，**CR 不轉成 CR LF**、沒有本地回顯 | `SerialSession.Write` | PASS（probe） | | |
+| CM13 | 👤 貼上 4KB | 一次寫出（不是逐 byte），不卡住 | `WriteLoop` 的註解 | PASS（probe） | | |
+| CM14 | 👤 流量控制擋住時打字 | **不會凍住**（寫入在專用執行緒上，逾時 2 秒後丟掉那一筆） | 舊版同款 | ⬜ 需真設備 | | |
+| CM15 | 👤 拔線 | 結束事件正好一次 → 勾了自動重連就退避重連；沒勾就提示按 Enter | `ReadLoop` 的 finally | PASS（probe 的拔線那條） | | |
+| CM16 | 重連的「連上了」判斷 | **開埠成功**就算（不能等輸出——序列裝置可能永遠不說話） | 見「隱含契約」總則 | PASS（probe） | | |
+| CM17 | 👤 關分頁 | **不送任何優雅結束鍵**，埠馬上釋放（別的程式開得起來） | `Dispose` 只關 port | PASS（probe 驗過不送鍵） | | |
+| CM18 | 關分頁的結束事件 | 正好一次，而且**立刻**（不等讀取逾時） | `Dispose` 自己發 `Exited` | PASS（probe；第一版偷懶等逾時被抓到） | | |
+| CM19 | 👤 清畫面 | 走 `term.clear()`（沒有 shell 可下 `cls`），先問確認 | 舊版同 | | | |
+| CM20 | 👤 COM 分頁的名稱 | **不**跟著遠端目錄改（`TracksCwdTitle` 不含 Com） | 舊版同 | | | |
+| CM21 | 👤 存成我的最愛 → 從最愛開 | 埠／鮑率／其餘參數都照存的 | — | | | |
+| CM22 | 👤 恢復分頁 | 關程式再開，COM 分頁回來（畫面紀錄也在）；裝置不在了要好好報錯 | 舊版 `case "com"` | | | |
+| CM23 | 👤 `SendReset`（清畫面對 COM 送什麼） | **什麼都不送**——舊版的 `SendReset()` 是 TODO，沒有定義過行為，不要自己發明 | `SerialSession.SendReset` | ⬜ 等使用者定義 | | |
+
+## K2. 其餘連線後端：WSL / ADB（待填，階段 2）
 
 ## P. 自訂連線
 
@@ -462,6 +496,10 @@ TEMP 路徑印出完整結果，Documents 路徑印完 `path = …` 就停住。
 | 重連退避「歸零」的觸發點 | **一收到輸出**就歸零（`OnSessionOutput` 第一行） | **shell channel 開成功**才歸零（`OnConnected`） | 舊版的輸出全來自 `ssh.exe`＝一定是遠端的。新版內建 SSH，自己的狀態訊息（「連線到 …」、`login as:`、錯誤訊息）走同一條輸出 callback，照舊版寫會被誤判成「連上了」→ 退避永遠停在 3 秒（`--verify` 抓到）。目的一樣，判斷更精確 |
 | SSH 連線對話框的欄位 | 類型／主機／埠／保持連線／自動重連 | 多了帳號、金鑰檔、Pageant、進階（演算法四組 + 環境變數） | 舊版這些只能靠 `ssh.exe` 命令列參數；內建 SSH 之後沒有命令列可下，只能做進對話框。**密碼欄兩邊都沒有**（當場問、不存檔） |
 | 我的最愛的主機歷史 | 主機欄是可編輯下拉，記最近連過的主機 | **沒有**（只有我的最愛） | 我的最愛已經涵蓋「常連的」。若使用者回報想要歷史，再補 |
+| Telnet 的 TTYPE 與 `WONT`／`DONT` | 不認 TTYPE、不回 `WONT`／`DONT` | 回 `xterm`；`WONT`／`DONT` 在狀態改變時回答 | PM 在 TASK-011 決定照 PuTTY。TTYPE 影響遠端送不送顏色與功能鍵；回答拒絕是 RFC 854 要求的（但只在改變狀態時，否則無限乒乓） |
+| COM 的讀取方式 | blocking read（`ReadTimeout = InfiniteTimeout`） | **25ms 短逾時輪詢** | `serialport` 的 `read` 要靠逾時才回得來，否則關分頁時執行緒永遠卡住。**「關分頁」不靠這個逾時**：`close()` 自己發結束事件（同舊版 `Dispose`） |
+| COM 的同位 Mark／Space、1.5 停止位元、RTS/CTS+XON/XOFF | `System.IO.Ports` 都有 | **沒有**（`serialport` 不支援）→ 清單不列、設定裡有就降級並印黃字 | 見 `docs/COM.md` 第 3 節。真的需要時要自己用 Win32 DCB 或 fork crate |
+| COM 對話框的「加到我的最愛」 | 沒有（只能從分頁加） | 有 | 和 SSH／Telnet 對話框一致 |
 | Telnet 的視窗大小 | `Resize` 是空的（`// NAWS 可選，暫略`），遠端永遠以為 80×24 | **送 NAWS**（RFC 1073） | `CLAUDE.md` 定案「Telnet 自己實作（加 NAWS）」。`vi`／`top` 才不會畫錯 |
 | 恢復 SSH 分頁 | 只印 `login as: ` 等使用者打帳號（帳號要塞進 `ssh.exe` 命令列） | **直接連**（帳號已經記在 `SshConnParams` 裡），沒有帳號才問 | 和第一次連線的行為一致。密碼兩邊都是重問 |
 | 離開對話框 | WPF `ExitDialog`，含「恢復分頁」與「更新 CLAUDE.md」兩個勾選 | 頁內對話框，只有「恢復分頁」 | 「更新 CLAUDE.md」是代理團隊的功能（階段 4），那時再補 |
@@ -480,6 +518,6 @@ TEMP 路徑印出完整結果，Documents 路徑印完 `path = …` 就停住。
 | **介面文字要照執行時的字，不是照 XAML** | 舊版 `MainWindow.xaml` 的按鈕內容只是設計時的預設值，`ApplyTexts()` 會用 `Loc.T` 全部換掉（例：XAML 寫「貼上」「清畫面」，執行時是「**純文字貼上**」「**清除畫面**」）。照 XAML 抄就會做出使用者沒見過的文字 | D1 |
 | `ssh-hostkey` event 一定要回 `ssh_hostkey_answer` | Rust 的 SSH 任務停在交握中間等答案，前端不回就卡到逾時（180 秒）才當成取消——使用者看到的是「連線很久沒反應」 | K8～K12 |
 | `ssh-weak-algo` event 也一定要回 `ssh_hostkey_answer`（兩者共用同一個回覆通道） | 同上：不回就卡 180 秒。加新的「交握中間問使用者」的事件時都要記得配一個前端 listener | K24～K26 |
-| **舊版靠外部程式（`ssh.exe`、`telnet.exe` 之類）副作用成立的規則，內建實作要重新檢查觸發點** | 照抄會得到「看起來對、其實永遠不成立／永遠成立」的條件。實際案例：舊版「**一收到輸出**就把重連退避歸零」——它的輸出全部來自 `ssh.exe`，所以等於「連上了」；內建 SSH 之後我們自己的狀態訊息（「連線到 …」、`login as:`、錯誤訊息）走同一條輸出 callback，退避永遠停在第一次的 3 秒（`--verify` 抓到）。搬 Telnet／COM／ADB 時每一條「有輸出」「行程結束」類的規則都要重新問一次「這個訊號現在還是原來的意思嗎」 | M8、M9、TN12 |
+| **舊版靠外部程式（`ssh.exe`、`telnet.exe` 之類）副作用成立的規則，內建實作要重新檢查觸發點** | 照抄會得到「看起來對、其實永遠不成立／永遠成立」的條件。實際案例：舊版「**一收到輸出**就把重連退避歸零」——它的輸出全部來自 `ssh.exe`，所以等於「連上了」；內建 SSH 之後我們自己的狀態訊息（「連線到 …」、`login as:`、錯誤訊息）走同一條輸出 callback，退避永遠停在第一次的 3 秒（`--verify` 抓到）。搬 Telnet／COM／ADB 時每一條「有輸出」「行程結束」類的規則都要重新問一次「這個訊號現在還是原來的意思嗎」 | M8、M9、TN12、CM16 |
 | 會等前端回覆的 tauri command **一定要是 `async`** | tauri 2 的同步 command 跑在**主執行緒**上；擋住主執行緒 webview 的 IPC 就進不來，前端永遠沒機會回答 → 一定逾時。實際案例：`exit_confirm` 要等 `a…save`，第一版寫成同步 → 「存下 2 個分頁」卻一個畫面都沒存到 | R1～R4 |
 | 恢復畫面的 `b{id}` 一定要在 `n{id}` 之後、`s{id}` 與啟動連線之前 | 順序錯了就不是「舊訊息在上、新連線在下」：`b` 比 `n` 早＝前端還沒有那個 pane，訊息直接丟掉；比連線晚＝新輸出被舊畫面蓋掉 | R5～R7 |

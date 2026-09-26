@@ -272,6 +272,7 @@ export async function createSession(opts = {}) {
     cwd: opts.cwd || null,
     ssh: opts.ssh || null,
     telnet: opts.telnet || null,
+    com: opts.com || null,
     conn: opts.conn || null,
     // 恢復分頁：要倒回第幾筆的畫面（`restore_list` 的索引）
     restore: opts.restore === undefined ? null : opts.restore,
