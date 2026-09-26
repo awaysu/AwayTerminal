@@ -1,8 +1,11 @@
 // AwayTerminal2 — Rust 後端
 
+pub mod b64;
 pub mod bench;
+pub mod cli;
 pub mod commands;
 pub mod host;
+pub mod logging;
 pub mod output;
 pub mod pty;
 pub mod session;
@@ -10,11 +13,13 @@ pub mod settings;
 pub mod startup;
 pub mod status;
 pub mod tabs;
+pub mod toolbar;
 
 use std::sync::Arc;
 
 use tauri::{Manager, WindowEvent};
 
+use cli::LaunchArgs;
 use session::SessionManager;
 use settings::SettingsStore;
 use tabs::TabManager;
@@ -25,8 +30,16 @@ pub fn run() {
     startup::prepare_process_environment();
     println!("[AwayTerminal] ConPTY backend: {}", pty::backend_name());
 
+    let args = LaunchArgs::from_env();
+    if args.cmd.is_some() || args.verify > 0 || args.bench {
+        println!("[AwayTerminal] 啟動參數：{args:?}");
+    }
+
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
         .manage(SessionManager::new())
+        .manage(args)
         .invoke_handler(tauri::generate_handler![
             commands::ping,
             commands::report_renderer,
@@ -48,6 +61,25 @@ pub fn run() {
             commands::pane_reordered,
             commands::pane_font_size,
             commands::pane_answer,
+            cli::launch_args,
+            toolbar::toolbar_copy,
+            toolbar::toolbar_copy_all,
+            toolbar::toolbar_copy_all_file,
+            toolbar::toolbar_copy_paste,
+            toolbar::toolbar_paste,
+            toolbar::toolbar_clear,
+            toolbar::toolbar_scroll,
+            toolbar::toolbar_search,
+            toolbar::tab_colors,
+            toolbar::save_text_to_file,
+            toolbar::pick_work_dir,
+            toolbar::open_url,
+            toolbar::log_defaults,
+            toolbar::log_pick_path,
+            toolbar::log_start,
+            toolbar::log_stop,
+            toolbar::reveal_path,
+            toolbar::temp_dir,
             host::host_ready,
             host::host_message,
             bench::bench_raw,
@@ -59,6 +91,10 @@ pub fn run() {
             // 設定檔要在任何 command 跑起來之前備好（`host_ready` 的 T{json} 直接讀它）
             let dir = app.path().app_config_dir()?;
             let store = Arc::new(SettingsStore::load(&dir));
+            // 空的 log_dir 補成「我的文件\AwayTerminalLogs」（同舊版 AppSettings.Load）
+            if let Ok(docs) = app.path().document_dir() {
+                store.fill_log_dir(&docs);
+            }
             settings::spawn_autosave(store.clone());
 
             let view_mode = store.get().view_mode;

@@ -67,10 +67,115 @@ function awayDump(lines = 6, id = null) {
 }
 window.awayDump = awayDump;
 
-/** `?verify=N` 用：再開一條 shell 分頁。 */
+/** `--verify N` 用：再開一條 shell 分頁（不跳資料夾選擇，直接用預設工作目錄）。 */
 async function createExtraSession() {
   const info = await createSession({ kind: 'shell' });
   return info.id;
+}
+
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/** 逾時就回這個值（`null`／`undefined` 都可能是正常結果，所以用一個獨一無二的哨兵）。 */
+const TIMED_OUT = Symbol('timeout');
+
+/** 給「可能永遠不回應」的 promise 包一層逾時（例如沒有焦點時的剪貼簿 API）。 */
+function withTimeout(promise, ms) {
+  return Promise.race([
+    promise.catch(() => TIMED_OUT),
+    new Promise((r) => setTimeout(() => r(TIMED_OUT), ms)),
+  ]);
+}
+
+/**
+ * 工具列功能的自動驗證（TASK-005）。三個不必目視的項目：
+ *   1. **log 記錄**：開始記錄 → 送一個會吐彩色中文的指令 → 停止 → 回報檔案路徑。
+ *      檔案內容（BOM／時間戳格式／有沒有殘留 ANSI／換行是 LF）由外面用 shell 比對。
+ *   2. **複製全部**：`toolbar_copy_all` → 讀回剪貼簿，確認拿到東西。
+ *   3. **純文字貼上**：`toolbar_paste` 送一段標記字串 → 讀 buffer 確認它出現在提示字元後面，
+ *      這證明 `v` 協定 → `doPaste` → `xterm.paste()` → PTY 整條路是通的。
+ * 另外順手驗逐分頁配色（`P` 協定會改 pane 元素的 background）。
+ */
+async function verifyToolbar(id) {
+  const term = window.AwayTerm;
+  const lines = ['[verify] 工具列'];
+  log(`[verify] 工具列開始（分頁 ${id}）`);
+
+  // ---- 1. log 記錄 ----
+  const defaults = await invoke('log_defaults', { id });
+  log(`[verify] log 預設值 ${defaults.path} ts=${defaults.timestamp} append=${defaults.append}`);
+  // 驗證刻意不用預設的「我的文件」：這台機器的防毒會擋住剛建置的 exe 寫進去
+  // （見 Logger::open_with_timeout）。驗證要的是「格式對不對」，寫 TEMP 就好。
+  const tmp = await invoke('temp_dir');
+  const logPath = `${tmp}\awayterm-verify.log`;
+  try {
+    const real = await invoke('log_start', { id, path: logPath, timestamp: true, append: false });
+    lines.push(`[verify] log 開始 → ${real}`);
+    // 會產生 ANSI（顏色）＋中文＋OSC（視窗標題）的輸出
+    await invoke('session_write_text', {
+      id,
+      text: "Write-Host \"`e[36m中文測試 AWAY_LOG_OK`e[0m\"; $Host.UI.RawUI.WindowTitle='away-log'\r",
+    });
+    await wait(2500);
+    const stopped = await invoke('log_stop', { id });
+    lines.push(`[verify] log 停止 → ${stopped}`);
+  } catch (e) {
+    lines.push(`[verify] log 失敗：${e}`);
+  }
+
+  // ---- 2. 複製全部（q…all → a…all → 剪貼簿）----
+  //
+  // ⚠️ 剪貼簿**只能半自動驗**：`navigator.clipboard.readText()` 需要視窗有焦點，
+  // 沒焦點時在 WebView2 上不是拒絕、是**不回應**（實測會把整個驗證流程卡住）。
+  // 共用桌面不能搶焦點 → 這一步包一層逾時，讀不到就標成「需要目視確認」往下走。
+  try {
+    await invoke('toolbar_copy_all', { id });
+    await wait(600);
+    const got = await withTimeout(navigator.clipboard.readText(), 1500);
+    if (got === TIMED_OUT) {
+      lines.push('[verify] 複製全部：剪貼簿讀不到（視窗沒有焦點）→ 需要目視確認');
+    } else {
+      lines.push(`[verify] 複製全部：剪貼簿 ${got.length} 字，含標記=${got.includes('AWAY_LOG_OK')}`);
+    }
+  } catch (e) {
+    lines.push(`[verify] 複製全部失敗：${e}`);
+  }
+
+  // ---- 3. 純文字貼上（v 協定）----
+  try {
+    await invoke('toolbar_paste', { id, text: 'AWAY_PASTE_OK' });
+    await wait(600);
+    const tail = term.tail(id, 3).join(' ');
+    lines.push(`[verify] 純文字貼上：buffer 含標記=${tail.includes('AWAY_PASTE_OK')}`);
+    await invoke('session_write_text', { id, text: '\u0003' }); // Ctrl+C 把那行清掉
+  } catch (e) {
+    lines.push(`[verify] 純文字貼上失敗：${e}`);
+  }
+
+  // ---- 4. 逐分頁配色（P 協定）----
+  try {
+    await invoke('tab_colors', { id, fg: '#FFFF00', bg: '#000000' });
+    await wait(200);
+    const pane = document.querySelector(`.term[data-id="${id}"]`);
+    lines.push(`[verify] 配色：pane 背景=${pane ? pane.style.background : '?'}`);
+    await invoke('tab_colors', { id, fg: '', bg: '' });
+    await wait(200);
+    lines.push(`[verify] 配色清除：pane 背景=${pane ? pane.style.background : '?'}`);
+  } catch (e) {
+    lines.push(`[verify] 配色失敗：${e}`);
+  }
+
+  // ---- 5. 翻頁（S 協定；只確認不會炸、游標仍在底部）----
+  try {
+    for (const action of ['top', 'bottom']) {
+      await invoke('toolbar_scroll', { id, action });
+      await wait(200);
+    }
+    lines.push('[verify] 翻頁 top/bottom 已送出');
+  } catch (e) {
+    lines.push(`[verify] 翻頁失敗：${e}`);
+  }
+
+  log(lines.join('\n'));
 }
 
 /**
@@ -109,6 +214,10 @@ async function awayVerify() {
     for (const t of tail) lines.push(`[verify]   | ${t}`);
   }
   log(lines.join('\n'));
+
+  // 工具列那批（log／複製全部／貼上／配色／翻頁）拿第一個分頁驗
+  const first = st.tabs[0];
+  if (first) await verifyToolbar(first.id);
 }
 window.awayVerify = awayVerify;
 
@@ -232,7 +341,22 @@ window.awayBenchSmall = awayBenchSmall;
   // `ready` 之後才建的，那一刻就會 emit 第一筆狀態，晚掛就漏掉第一列。
   await initTabBar();
 
+  // 啟動選項：URL 參數優先（方便在 devtools 直接換），其次是 CLI 參數
+  // （`AwayTerminal.exe --cmd claude` / `--verify 2` / `--bench`，見 src-tauri/src/cli.rs）。
   const params = new URLSearchParams(location.search);
+  let cli = { cmd: null, verify: 0, bench: false };
+  try {
+    cli = await invoke('launch_args');
+  } catch (e) {
+    log(`[main] 讀啟動參數失敗：${e}`);
+  }
+  const opt = {
+    cmd: params.get('cmd') || cli.cmd || null,
+    verify: parseInt(params.get('verify') || '', 10) || cli.verify || 0,
+    bench: params.get('bench') === '1' || cli.bench,
+  };
+  // bridge.js 的 onReady 會讀這個決定第一條 session 用什麼指令開
+  window.AwayLaunch = opt;
 
   // terminal.js 是舊版原檔（IIFE），載入即執行並在最後送 `ready`
   try {
@@ -242,7 +366,7 @@ window.awayBenchSmall = awayBenchSmall;
     throw e;
   }
 
-  if (params.get('bench') === '1') {
+  if (opt.bench) {
     try {
       await awayBench(1, 10);
       await awayBenchSmall(200);
@@ -251,9 +375,9 @@ window.awayBenchSmall = awayBenchSmall;
     }
   }
 
-  // 多分頁端到端驗證（`?verify=N`）：再開 N 條 shell，等提示字元出來，
+  // 多分頁端到端驗證（`--verify N` / `?verify=N`）：再開 N 條 shell，等提示字元出來，
   // 然後把每條的 buffer 尾端與欄列數報到後端 log。不需要視窗焦點、不用 GUI 自動化。
-  const verify = parseInt(params.get('verify') || '', 10);
+  const verify = opt.verify;
   if (verify > 0) {
     try {
       for (let i = 0; i < verify; i++) await createExtraSession();

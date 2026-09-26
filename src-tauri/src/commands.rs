@@ -182,11 +182,23 @@ pub fn session_create(
     // 所以用 AtomicU64 直接寫，不去搶分頁清單的鎖（見 tabs.rs 的註解）。
     let last_output = Arc::new(std::sync::atomic::AtomicU64::new(tabs::now_ms()));
 
+    // log 記錄的槽：spawn 當下先建好空的，使用者按「記錄 log…」時才填進 Logger
+    // （輸出 callback 是在這裡就固定下來的，沒有槽就沒辦法事後掛上）。
+    let logger: Arc<std::sync::Mutex<Option<Arc<crate::logging::Logger>>>> =
+        Arc::new(std::sync::Mutex::new(None));
+
     let on_output = {
         let pump = pump.clone();
         let last_output = last_output.clone();
+        let logger = logger.clone();
         Arc::new(move |bytes: &[u8]| {
             last_output.store(tabs::now_ms(), Ordering::Relaxed);
+            // log 先寫再餵畫面：舊版 OnSessionOutput 也是這個順序
+            if let Ok(g) = logger.lock() {
+                if let Some(l) = g.as_ref() {
+                    l.write(bytes);
+                }
+            }
             pump.push(bytes);
         }) as crate::session::OnOutput
     };
@@ -254,6 +266,9 @@ pub fn session_create(
         started_at: tabs::now_ms(),
         last_output,
         busy: false,
+        logger,
+        fg: None,
+        bg: None,
         command_line: sh.command_line,
         backend: info.backend.clone(),
     });
@@ -306,6 +321,14 @@ pub fn tab_close(
     tabs_state: State<'_, Arc<TabManager>>,
 ) {
     emit_host(&app, format!("x{id}"));
+    // 關分頁要先收掉 log（舊版 RemoveTabSilently 的 `(tab.Logger as SessionLogger)?.Dispose()`）
+    if let Some(slot) = tabs_state.logger_slot(id) {
+        if let Ok(mut g) = slot.lock() {
+            if let Some(l) = g.take() {
+                l.close();
+            }
+        }
+    }
     let next = tabs_state.remove(id);
     if let Some(s) = manager.remove(id) {
         // close() 會 sleep（優雅結束鍵 60ms），別卡在 IPC 執行緒上
@@ -419,9 +442,12 @@ pub fn pane_font_size(size: u32, settings: State<'_, Arc<SettingsStore>>) {
 
 /// `a{id}US{kind}US{text}`：前端對 `q` 的回覆。
 ///
-/// 目前只處理 `cwd`（提示字元行 → shell 分頁自動改名成目前目錄名稱，舊版 1.1.2）。
-/// 其餘 kind（`sel`/`all`/`file`/`save`/`text`）屬於複製、存檔、恢復分頁與遠端，
-/// 那些功能還沒做，先記 log。
+/// 這裡只處理 `cwd`（提示字元行 → shell 分頁自動改名成目前目錄名稱，舊版 1.1.2）。
+///
+/// `sel` / `selpaste` / `all` 由**前端**直接寫剪貼簿（webview 自己有 clipboard API，
+/// 不必為此多裝一個 plugin）；`file` 由前端轉呼叫 `save_text_to_file`。
+/// 剩下的 `save`（關閉程式時序列化 scrollback）與 `text`（Telegram 遠端查詢）
+/// 對應的功能還沒做，先記 log。
 #[tauri::command]
 pub fn pane_answer(
     app: AppHandle,

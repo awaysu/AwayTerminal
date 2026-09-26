@@ -44,6 +44,68 @@ export const T = {
 
   'msg.connectFail': '連線失敗',
   'msg.noTabs': '沒有分頁。按「新分頁」開一個。',
+
+  // 工具列：編輯群組（舊版 tb.* / tip.*）
+  'tb.copy': '複製',
+  'tb.paste': '純文字貼上',
+  'tb.copyall': '複製全部',
+  'tb.clear': '清除畫面',
+  'tb.page': '翻頁',
+  'tip.copy': '複製選取的文字',
+  'tip.paste': '把剪貼簿內容以純文字貼進終端機',
+  'tip.copyall': '複製全部緩衝文字',
+  'tip.clear': '清除畫面',
+  'tip.page': '捲動畫面（上/下一頁、最上/最下面）',
+
+  // 翻頁下拉（舊版 page.*）
+  'page.up': '上一頁',
+  'page.down': '下一頁',
+  'page.top': '移到最上面',
+  'page.bottom': '移到最下面',
+
+  // 終端機右鍵選單（舊版 ctx.*）
+  'ctx.copy': '複製',
+  'ctx.copyPaste': '複製且貼上',
+  'ctx.copyAllFile': '複製全部存至檔案',
+  'ctx.search': '搜尋',
+  'ctx.openUrl': '從瀏覽器開啟',
+  'ctx.copyUrl': '複製網址',
+
+  // 分頁右鍵：配色與 log（舊版 menu.*）
+  'menu.color': '配色',
+  'menu.colorDefault': '預設（設定顏色）',
+  'menu.colorSample': 'Aa 範例文字',
+  'menu.log': '記錄 log…',
+
+  // toast（舊版 toast.*，等效 ShowCopyFeedback）
+  'toast.copied': '複製成功',
+  'toast.copiedPasted': '已複製並貼上',
+  'toast.copiedAll': '已複製全部文字',
+  'toast.noSelection': '沒有選取文字',
+  'toast.noSelectionMouse': '沒有選取文字（此程式接管了滑鼠：按住 Shift 再拖曳選取）',
+  'toast.urlCopied': '已複製網址',
+  'toast.saved': '已存檔',
+
+  // 清除畫面（舊版 msg.clear*）
+  'msg.clearTitle': '清除畫面',
+  'msg.clearConfirm': '確定要清除「{0}」的畫面嗎？',
+
+  // log（舊版 dlg.logTitle / log.* / msg.*）
+  'dlg.logTitle': '記錄 log',
+  'log.path': 'log 存檔位置：',
+  'log.browse': '瀏覽…',
+  'log.timestamp': '每行前面加時間戳 [yy-MM-dd HH:mm:ss]',
+  'log.append': '檔案已存在時附加（append）',
+  'log.start': '開始記錄',
+  'log.needPath': '請輸入 log 存檔位置。',
+  'msg.stopLogAsk': '要停止記錄 log 嗎？',
+  'msg.logFail': '無法開始記錄：',
+  'msg.saveFail': '存檔失敗',
+  'tip.tabLogging': '● 記錄 log 中',
+
+  // 選工作目錄（舊版 dlg.pickDir*）
+  'dlg.pickDirPs': '選擇 PowerShell 工作目錄（可在此按「建立新資料夾」）',
+  'dlg.pickDirCustom': '選擇工作目錄（可在此按「建立新資料夾」）',
 };
 
 /** `msg.closeTabConfirm` 這類帶 {0} 的字串。 */

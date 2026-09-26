@@ -35,8 +35,17 @@
        #terminals / #searchbar 的 id 與內部 class 全部照舊版 web/index.html——
        terminal.js 直接 querySelector 這些名字，不可以改。 -->
   <div id="app">
+    <!-- 按鈕順序照舊版 MainWindow.xaml 的工具列。舊版還有「我的最愛」「輸入文字」
+         「遠端」「其他設定」「關於」，那些功能還沒做 → 這次不放佔位按鈕。 -->
     <div id="toolbar">
       <button id="btn-new" type="button" class="tool-btn">新分頁 ▾</button>
+      <span class="tool-sep"></span>
+      <button id="btn-copy" type="button" class="tool-btn">複製</button>
+      <button id="btn-paste" type="button" class="tool-btn">純文字貼上</button>
+      <button id="btn-copyall" type="button" class="tool-btn">複製全部</button>
+      <button id="btn-clear" type="button" class="tool-btn">清除畫面</button>
+      <button id="btn-page" type="button" class="tool-btn">翻頁 ▾</button>
+      <span class="tool-sep"></span>
       <button id="btn-view" type="button" class="tool-btn">視窗分割</button>
       <span class="tool-spacer"></span>
       <button id="btn-tabpanel" type="button" class="tool-arrow">▲</button>
@@ -62,9 +71,19 @@
     </div>
   </div>
 
-  <!-- 分頁右鍵選單（舊版 ContextMenu：更改名稱 / 關閉） -->
+  <!-- 分頁右鍵選單（舊版 ContextMenu：更改名稱 / 記錄 log… / 配色 ▸ / 關閉）。
+       配色的色票由 settings.palette 填進 #color-items。 -->
   <div id="tab-menu" class="popup-menu" hidden>
     <div class="menu-item" data-act="rename">更改名稱</div>
+    <div class="menu-item" data-act="log">記錄 log…</div>
+    <div class="menu-item has-sub" data-act="color">配色
+      <span class="menu-arrow">▸</span>
+      <div class="popup-menu submenu" id="color-menu">
+        <div class="menu-item" data-color="">預設（設定顏色）</div>
+        <div class="menu-sep"></div>
+        <div id="color-items"></div>
+      </div>
+    </div>
     <div class="menu-sep"></div>
     <div class="menu-item" data-act="close">關閉</div>
   </div>
@@ -75,12 +94,46 @@
     <div class="menu-item" data-kind="custom">自訂指令…</div>
   </div>
 
-  <!-- 頁內對話框：取代舊版的 WPF InputDialog / MessageBox -->
+  <!-- 翻頁下拉（舊版 Page_Click 的 ContextMenu） -->
+  <div id="page-menu" class="popup-menu" hidden>
+    <div class="menu-item" data-scroll="up">上一頁</div>
+    <div class="menu-item" data-scroll="down">下一頁</div>
+    <div class="menu-sep"></div>
+    <div class="menu-item" data-scroll="top">移到最上面</div>
+    <div class="menu-item" data-scroll="bottom">移到最下面</div>
+  </div>
+
+  <!-- 終端機右鍵選單（舊版 OnWebContextMenu，取代 webview 預設選單） -->
+  <div id="term-menu" class="popup-menu" hidden>
+    <div class="menu-item" data-term="copy">複製</div>
+    <div class="menu-item" data-term="copyPaste">複製且貼上</div>
+    <div class="menu-item" data-term="paste">純文字貼上</div>
+    <div class="menu-item" data-term="copyall">複製全部</div>
+    <div class="menu-item" data-term="copyAllFile">複製全部存至檔案</div>
+    <div class="menu-sep"></div>
+    <div class="menu-item" data-term="search">搜尋</div>
+  </div>
+
+  <!-- 網址選單（舊版 ShowUrlMenu，由 U 協定觸發） -->
+  <div id="url-menu" class="popup-menu" hidden>
+    <div class="menu-item" data-url="open">從瀏覽器開啟</div>
+    <div class="menu-item" data-url="copy">複製網址</div>
+  </div>
+
+  <!-- 複製提示（舊版 CopyPopup + ShowCopyFeedback） -->
+  <div id="toast" hidden></div>
+
+  <!-- 頁內對話框：取代舊版的 WPF InputDialog / MessageBox / LogDialog -->
   <div id="modal" hidden>
     <form id="modal-form">
       <div id="modal-title"></div>
       <div id="modal-prompt"></div>
       <input id="modal-input" type="text" autocomplete="off" spellcheck="false" />
+      <div id="modal-extra" hidden>
+        <button id="modal-browse" type="button">瀏覽…</button>
+        <label><input id="modal-check1" type="checkbox" /><span id="modal-check1-text"></span></label>
+        <label><input id="modal-check2" type="checkbox" /><span id="modal-check2-text"></span></label>
+      </div>
       <div class="modal-buttons">
         <button id="modal-ok" type="submit">確定</button>
         <button id="modal-cancel" type="button">取消</button>

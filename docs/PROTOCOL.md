@@ -16,16 +16,24 @@
 
 | 方向 | 訊息總數 | 已接 | 未接 |
 |---|---|---|---|
-| JS → host | 12 | **9** | 3 |
-| host → JS | 19 | **9**（含 `o` 以二進位 channel 取代） | 10 |
-| 合計 | **31** | **18** | **13** |
+| JS → host | 12 | **11** | 1 |
+| host → JS | 19 | **14**（含 `o` 以二進位 channel 取代） | 5 |
+| 合計 | **31** | **25** | **6** |
 
-TASK-004 新接的 9 條：JS→host 的 `p`、`k`、`z`、`a`；host→JS 的 `t`、`x`、`K`、`L`、`q`。
-（`s` 是 TASK-003 收尾時補的——那時漏掉它導致 pane 永遠不 fit，見
-`docs/REGRESSION-CHECKLIST.md`「分頁」第 1 條。）
+- TASK-004 接了 9 條：JS→host 的 `p`、`k`、`z`、`a`；host→JS 的 `t`、`x`、`K`、`L`、`q`。
+  （`s` 是 TASK-003 收尾時補的——那時漏掉它導致 pane 永遠不 fit，見
+  `docs/REGRESSION-CHECKLIST.md`「分頁」第 1 條。）
+- TASK-005 接了 7 條：JS→host 的 `U`、`m`；host→JS 的 `c`、`v`、`S`、`F`、`P`，
+  並把 `a`／`q` 的 `sel`／`selpaste`／`all`／`file` 幾個 kind 補完。
 
-未接的 13 條都不是「漏掉」，是對應的功能還沒做（工具列的複製／貼上／清畫面／翻頁／全選、
-逐分頁配色、恢復分頁、代理團隊）。前端那半邊全部保留可用，host 端一開始 emit 就會動。
+剩下的 6 條：
+
+| 訊息 | 為什麼還沒接 |
+|---|---|
+| `b` | 恢復分頁／斷線重連（階段 3） |
+| `g`、`u`、`E` | 代理團隊 Multi-Agent（階段 4） |
+| `G` | 同上（JS→host 那一半） |
+| `A` | **舊版 1.2.x 根本沒有呼叫端**——`Localization/Loc.cs` 還留著 `ctx.selectAll`（「全選」）字串，但整個 `MainWindow.xaml.cs` 沒有任何 `PostToWeb("A…")`，應該是某版把選單項移掉後留下的死協定。`terminal.js` 的 `A` 分支還在、隨時能用。照「與舊版一致包含一樣沒有」的原則，新版也不加這個按鈕；要加的話請當成新功能決定，不是搬移。 |
 
 **未接的 JS→host 訊息不會靜靜消失**：`bridge.js` 一律轉給 Rust 的 `host_message`
 指令，後端印 `[AwayTerminal] [host_message 未接] {kind} = {說明}`，
@@ -64,14 +72,14 @@ TASK-004 新接的 9 條：JS→host 的 `p`、`k`、`z`、`a`；host→JS 的 `
 | `K{id1},{id2},…` | 分頁列拖曳後的新順序（1.1.8，host→JS） | `tabs_reorder`（分頁列拖曳）。`k`（pane 拖曳）進來時**不回送** | ✅ 已接 |
 | `L{tab\|split\|columns}` | 切換分頁／分割／分欄三態 | `view_mode_cycle`（工具列按鈕，三態循環順序同舊版 `Split_Click`），並存進 `settings.json` | ✅ 已接 |
 | `T{json}` | 套用字型／顏色／`imeQuietMs`／`restoreLines`／搜尋列文字 | `host::host_ready`，內容來自 `settings.json`（TASK-004 起不再是 Rust 常數） | ✅ 已接 |
-| `q{id}US{…}` | 向前端查詢（回 `a…`） | 狀態輪詢每 600ms 送 `q{id}US cwd`（同舊版 `UpdateStatuses`）。其餘 kind 還沒送 | 🟡 部分（`cwd` 已接） |
+| `q{id}US{…}` | 向前端查詢（回 `a…`） | 狀態輪詢每 600ms 送 `cwd`（同舊版 `UpdateStatuses`）；工具列／右鍵送 `sel`（複製）、`selpaste`（複製且貼上）、`all`（複製全部）、`file`（複製全部存至檔案） | 🟡 部分（`save`＝關閉程式存 scrollback、`text`＝Telegram 遠端查詢，兩個功能都還沒做） |
 | `b{id}US{base64}US{base64}` | 恢復分頁／重連前推進 scrollback（1.0.45） | — | ⬜ 未接（恢復分頁／自動重連） |
-| `c{id}` | 清畫面 | — | ⬜ 未接（需工具列按鈕＋確認對話框） |
-| `S{id}US{up\|down\|top\|bottom}` | 捲動檢視（工具列「翻頁」） | — | ⬜ 未接（工具列） |
-| `v{id}US{base64}` | 貼上（走 `term.paste()`） | — | ⬜ 未接（工具列「純文字貼上」）。**Ctrl+V / Shift+Insert / webview 右鍵貼上不經這條**——`terminal.js` 自己攔 `paste` 事件走 `doPaste`，已經能用 |
-| `A{id}` | 全選 | — | ⬜ 未接（工具列） |
-| `F` | 開搜尋列 | — | ⬜ 未接（工具列）。**Ctrl+F 由 `terminal.js` 自己攔，已經能用** |
-| `P{id}US{fg}US{bg}` | 單一分頁配色 | — | ⬜ 未接（逐分頁配色的右鍵選單） |
+| `c{id}` | 清畫面 | `toolbar_clear`：PowerShell／SSH **不送這條**，改對 session 送 Esc → 等 60ms → Ctrl+L（黏著送會被 PSReadLine 當 escape 序列）；Telnet／COM 才送 `c` 清 xterm 緩衝。兩條路都先跳確認 | ✅ 已接 |
+| `S{id}US{up\|down\|top\|bottom}` | 捲動檢視（工具列「翻頁」） | `toolbar_scroll`（翻頁下拉：上一頁／下一頁／最上面／最下面） | ✅ 已接 |
+| `v{id}US{base64}` | 貼上（走 `term.paste()`） | `toolbar_paste`（工具列與右鍵的「純文字貼上」，以及 `selpaste` 的貼回）。**Ctrl+V / Shift+Insert 不經這條**——`terminal.js` 自己攔 `paste` 事件走 `doPaste` | ✅ 已接 |
+| `A{id}` | 全選 | — | ⬜ 未接（**舊版 1.2.x 也沒有呼叫端**，見上面的說明） |
+| `F` | 開搜尋列 | `toolbar_search`（終端機右鍵「搜尋」）。**Ctrl+F 由 `terminal.js` 自己攔，不經這條** | ✅ 已接 |
+| `P{id}US{fg}US{bg}` | 單一分頁配色 | `tab_colors`（分頁右鍵「配色 ▸」，色票來自 `settings.palette`）。`fg`/`bg` 皆空＝回到設定預設 | ✅ 已接 |
 | `g{…}` | Multi-Agent 外框排版（1.2.0） | — | ⬜ 未接（階段 4） |
 | `u{id}` | 拆掉 Multi-Agent 外框（1.2.0） | — | ⬜ 未接（階段 4） |
 | `E{id}US{0..4}` | pane 標題的代理狀態標籤（1.2.0） | — | ⬜ 未接（階段 4） |
@@ -114,7 +122,18 @@ TASK-004 新接的 9 條：JS→host 的 `p`、`k`、`z`、`a`；host→JS 的 `
 | `session_create(kind, command?, title?, cols, rows, cwd?, onEvent)` | 開連線。`kind`＝`shell`｜`custom`。回 `SessionInfo`，並附一條輸出 `Channel` |
 | `session_write(id, data)` | 寫入原始位元組（`term.onBinary` 用） |
 | `session_write_text` / `session_resize` / `session_list` | `i` / `r` 協定的實作與診斷 |
-| `tab_close(id)` | 關分頁：`x` → 背景關 session（優雅結束鍵 Ctrl+C ×3、60ms）→ `s{下一個}` |
+| `tab_close(id)` | 關分頁：`x` → 收掉 log → 背景關 session（優雅結束鍵 Ctrl+C ×3、60ms）→ `s{下一個}` |
+| `toolbar_copy` / `toolbar_copy_all` / `toolbar_copy_all_file` / `toolbar_copy_paste` | 送對應的 `q…` 查詢 |
+| `toolbar_paste(id, text)` | 送 `v…`（base64 由 `b64.rs` 編，對得上前端的 `atob`） |
+| `toolbar_clear(id)` | 清畫面（見上面 `c` 那列） |
+| `toolbar_scroll(id, action)` / `toolbar_search()` | 送 `S…` / `F` |
+| `tab_colors(id, fg, bg)` | 送 `P…` 並記在分頁模型裡 |
+| `save_text_to_file(id, text)` | 存檔對話框 + 寫檔（UTF-8 **with BOM**，同舊版 `File.WriteAllText(…, Encoding.UTF8)`） |
+| `pick_work_dir(title)` | 資料夾選擇（新分頁的工作目錄；記住 `lastDir`） |
+| `log_defaults(id)` / `log_pick_path(current)` / `log_start(…)` / `log_stop(id)` | log 記錄（見 `src-tauri/src/logging.rs` 的格式對照表） |
+| `open_url(url)` / `reveal_path(path)` | 用系統瀏覽器開網址（只放行 http/https）／在檔案總管選取檔案 |
+| `temp_dir()` | 系統暫存資料夾（`--verify` 用，以及寫入被擋時的後備位置建議） |
+| `launch_args()` | CLI 參數（`--cmd` / `--verify` / `--bench`），URL 參數優先 |
 | `tab_select(id)` / `tab_rename(id, title)` / `tabs_reorder(ids)` | 分頁列的點選／改名／拖曳排序 |
 | `view_mode_cycle()` | 檢視三態循環，回傳新模式 |
 | `tab_panel_set(visible?, width?)` | 分頁列顯示狀態／寬度 → `settings.json` |

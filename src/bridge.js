@@ -12,6 +12,9 @@
 import { invoke, Channel } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 
+import { T } from './strings.js';
+import { showUrlMenu, noteMouseHint, noSelectionToast, toast, writeClipboard } from './tabbar.js';
+
 const US = '\x1f';
 
 /** host → JS 的 listener（terminal.js 會註冊一個）。 */
@@ -138,28 +141,84 @@ function postMessage(raw) {
       invoke('pane_font_size', { size: Number(rest) }).catch(() => {});
       return;
     case 'a': {
-      // a{id}US{kind}US{text}：對 q 的回覆。目前後端只用 cwd（shell 分頁自動改名）
+      // a{id}US{kind}US{text}：對 q 的回覆
       const k1 = rest.indexOf(US);
       if (k1 < 0) return;
       const k2 = rest.indexOf(US, k1 + 1);
       if (k2 < 0) return;
-      invoke('pane_answer', {
-        id: Number(rest.slice(0, k1)),
-        kind: rest.slice(k1 + 1, k2),
-        text: rest.slice(k2 + 1),
-      }).catch(() => {});
+      onAnswer(Number(rest.slice(0, k1)), rest.slice(k1 + 1, k2), rest.slice(k2 + 1));
       return;
     }
+    case 'U':
+      // U{url}：點了終端機裡的連結 → 跳「從瀏覽器開啟／複製網址」選單（舊版 ShowUrlMenu）。
+      // 選單開在游標位置（舊版 PlacementMode.MousePoint）
+      showUrlMenu(rest, lastMouse.x, lastMouse.y);
+      return;
+    case 'm':
+      // m{id}：下一個空的選取回覆是因為程式接管了滑鼠（舊版 _selMouseHintId）
+      noteMouseHint(rest);
+      return;
     case 'D':
       // 診斷（terminal.js 的 dbgLog）→ 後端 log，等效舊版的 diag.log
       log(`[diag] ${rest}`);
       return;
     default:
-      // U / m / G 等尚未接上的：交給 Rust 記 log（不靜靜丟掉）
+      // G 等尚未接上的：交給 Rust 記 log（不靜靜丟掉）
       invoke('host_message', { msg }).catch(() => {});
       return;
   }
 }
+
+/**
+ * `q` 的回覆（`a` 協定）。舊版是 C# 端統一處理，新版按「誰做得最省」分：
+ *   - `sel` / `selpaste` / `all`：寫剪貼簿 + toast。**在前端做**——webview 自己有
+ *     clipboard API，不必為此多裝一個 tauri plugin。`selpaste` 再貼回同一個分頁
+ *     （走 `toolbar_paste` → `v` 協定，所以 claude 分頁照樣是 ESC+CR）。
+ *   - `file`：轉呼叫 Rust 的 `save_text_to_file`（存檔對話框與寫檔在後端）。
+ *   - `cwd`：轉給 Rust 改分頁名稱。
+ *   - `save` / `text`：恢復分頁與 Telegram 遠端還沒做 → Rust 記 log。
+ * toast 文字全部照舊版 `toast.*`。
+ */
+async function onAnswer(id, kind, text) {
+  if (kind === 'cwd' || kind === 'save' || kind === 'text') {
+    invoke('pane_answer', { id, kind, text }).catch(() => {});
+    return;
+  }
+
+  if (kind === 'file') {
+    try {
+      const saved = await invoke('save_text_to_file', { id, text });
+      if (saved) toast(T['toast.saved']);
+    } catch (e) {
+      log(`[bridge] 存檔失敗：${e}`);
+    }
+    return;
+  }
+
+  // sel / selpaste / all（未列出的種類舊版一律當成選取文字，照抄）
+  if (!text) {
+    toast(noSelectionToast(id));
+    return;
+  }
+  await writeClipboard(text);
+  if (kind === 'selpaste') {
+    await invoke('toolbar_paste', { id, text }).catch(() => {});
+    toast(T['toast.copiedPasted']);
+  } else {
+    toast(kind === 'all' ? T['toast.copiedAll'] : T['toast.copied']);
+  }
+}
+
+/** 網址選單要開在游標位置（舊版 PlacementMode.MousePoint）。 */
+const lastMouse = { x: 0, y: 0 };
+window.addEventListener(
+  'mousedown',
+  (e) => {
+    lastMouse.x = e.clientX;
+    lastMouse.y = e.clientY;
+  },
+  true
+);
 
 // ------------------------------------------------------------- 開新連線
 
@@ -236,8 +295,9 @@ export async function createSession(opts = {}) {
 async function onReady() {
   await invoke('host_ready');
 
-  const params = new URLSearchParams(location.search);
-  const cmd = params.get('cmd');
+  // 第一條 session：`--cmd` / `?cmd=` 指定的指令，否則預設 shell。
+  // main.js 已經把兩個來源合好放在 window.AwayLaunch（URL 優先）。
+  const cmd = (window.AwayLaunch && window.AwayLaunch.cmd) || null;
   await createSession(cmd ? { kind: 'custom', command: cmd } : { kind: 'shell' });
 }
 

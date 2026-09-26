@@ -63,8 +63,31 @@ pub struct AppSettings {
 
     pub window: WindowBounds,
 
+    // ---- log 記錄（舊版 LogDir / LogTimestamp / LogAppend）----
+    /// log 預設資料夾。空字串＝啟動時填成「我的文件\AwayTerminalLogs」（同舊版 `Load()`）。
+    pub log_dir: String,
+    pub log_timestamp: bool,
+    pub log_append: bool,
+
+    /// 上次選過的工作目錄（舊版 `LastDir`）：資料夾選擇視窗會預選它。
+    pub last_dir: String,
+
+    /// 逐分頁配色的候選色票（舊版寫死在 `MainWindow.xaml` 的右鍵選單裡，這次搬進設定讓使用者能改）。
+    ///
+    /// **「per-tab 存哪一層」的決定**：色票清單存在這裡（全域、可編輯），
+    /// 但「哪個分頁選了哪一組」只留在記憶體。理由＝分頁 id 跨重啟沒有意義，
+    /// 要持久化得等「恢復分頁」把分頁本身存下來（階段 3）。見 docs/REGRESSION-CHECKLIST.md。
+    pub palette: Vec<ColorPair>,
+
     /// `zh` | `en`（中英切換是之後的任務，先存著）。
     pub language: String,
+}
+
+/// 一組前景／背景色（逐分頁配色的色票）。
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct ColorPair {
+    pub fg: String,
+    pub bg: String,
 }
 
 impl Default for AppSettings {
@@ -80,6 +103,18 @@ impl Default for AppSettings {
             tab_panel_width: 220.0,
             view_mode: "tab".to_string(),
             window: WindowBounds::default(),
+            log_dir: String::new(),
+            log_timestamp: true,
+            log_append: true,
+            last_dir: String::new(),
+            // 舊版 MainWindow.xaml 的「配色」子選單那五組，順序照抄
+            palette: vec![
+                ColorPair { fg: "#FFFF00".into(), bg: "#000000".into() },
+                ColorPair { fg: "#F8F8F2".into(), bg: "#282A36".into() },
+                ColorPair { fg: "#C9D1D9".into(), bg: "#0D1117".into() },
+                ColorPair { fg: "#C0CAF5".into(), bg: "#1A1B26".into() },
+                ColorPair { fg: "#EBDBB2".into(), bg: "#282828".into() },
+            ],
             language: "zh".to_string(),
         }
     }
@@ -157,6 +192,20 @@ impl SettingsStore {
 
     pub fn get(&self) -> AppSettings {
         self.lock().clone()
+    }
+
+    /// 空的 `log_dir` 填成「我的文件\AwayTerminalLogs」（同舊版 `AppSettings.Load()`）。
+    /// 路徑由 Tauri 的 path resolver 給，所以 mac/Linux 也會落在各自的文件資料夾。
+    pub fn fill_log_dir(&self, documents: &Path) {
+        let mut inner = self.lock();
+        if inner.log_dir.trim().is_empty() {
+            inner.log_dir = documents
+                .join("AwayTerminalLogs")
+                .to_string_lossy()
+                .to_string();
+            drop(inner);
+            self.dirty.store(true, Ordering::Relaxed);
+        }
     }
 
     /// 改設定並排一次防抖存檔。

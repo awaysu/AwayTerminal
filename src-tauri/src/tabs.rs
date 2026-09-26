@@ -90,6 +90,17 @@ pub struct Tab {
     pub last_output: Arc<AtomicU64>,
     /// 狀態燈：忙碌（紅）／閒置（綠）。由 `status.rs` 的輪詢更新。
     pub busy: bool,
+    /// 這個分頁的 log 記錄器（`None`＝沒在記錄）。
+    ///
+    /// 用 `Arc<Mutex<...>>` 是因為 PTY 的輸出 callback 在 spawn 當下就建好了，
+    /// 而「開始記錄」是之後才按的——callback 需要一個可以事後填入的槽。
+    pub logger: Arc<Mutex<Option<Arc<crate::logging::Logger>>>>,
+    /// 逐分頁配色（`P` 協定）。`None`＝用設定的預設色。
+    ///
+    /// 只留在記憶體、不進 settings.json：分頁 id 跨重啟沒有意義，要持久化得等
+    /// 「恢復分頁」（階段 3）。色票清單本身在 `settings.palette`。
+    pub fg: Option<String>,
+    pub bg: Option<String>,
     /// 診斷用。
     pub command_line: String,
     pub backend: String,
@@ -109,6 +120,8 @@ pub struct TabView {
     pub busy: bool,
     pub started_at: u64,
     pub pid: u32,
+    /// 記錄 log 中（tooltip 會多一行「● 記錄 log 中」，同舊版 `tip.tabLogging`）。
+    pub logging: bool,
 }
 
 #[derive(Clone, serde::Serialize)]
@@ -350,6 +363,32 @@ impl TabManager {
         }
     }
 
+    /// 這個分頁目前的 log 槽（開始／停止記錄用）。
+    pub fn logger_slot(&self, id: u32) -> Option<Arc<Mutex<Option<Arc<crate::logging::Logger>>>>> {
+        self.lock().tabs.get(&id).map(|t| t.logger.clone())
+    }
+
+    /// 分頁標題（log 預設檔名、存檔預設檔名、關閉確認訊息用）。
+    pub fn title_of(&self, id: u32) -> Option<String> {
+        self.lock().tabs.get(&id).map(|t| t.title.clone())
+    }
+
+    /// 這個分頁的種類（清畫面要分「送 Esc+Ctrl+L」還是「送 `c` 清 xterm 緩衝」）。
+    pub fn kind_of(&self, id: u32) -> Option<TabKind> {
+        self.lock().tabs.get(&id).map(|t| t.kind)
+    }
+
+    /// 逐分頁配色（`P` 協定）。空字串＝清除覆寫、回到設定預設。
+    pub fn set_colors(&self, id: u32, fg: &str, bg: &str) -> bool {
+        let mut inner = self.lock();
+        let Some(tab) = inner.tabs.get_mut(&id) else {
+            return false;
+        };
+        tab.fg = (!fg.is_empty()).then(|| fg.to_string());
+        tab.bg = (!bg.is_empty()).then(|| bg.to_string());
+        true
+    }
+
     pub fn state(&self) -> TabState {
         let inner = self.lock();
         TabState {
@@ -367,6 +406,11 @@ impl TabManager {
                     busy: t.busy,
                     started_at: t.started_at,
                     pid: t.pid,
+                    logging: t
+                        .logger
+                        .lock()
+                        .map(|g| g.is_some())
+                        .unwrap_or(false),
                 })
                 .collect(),
             active_id: inner.active,
