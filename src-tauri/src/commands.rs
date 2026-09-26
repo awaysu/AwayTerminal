@@ -17,7 +17,7 @@ use tauri::{AppHandle, State};
 use crate::host::emit_host;
 use crate::output::OutputPump;
 use crate::pty::{self, shell, SpawnOptions};
-use crate::session::{ExitInfo, SessionManager};
+use crate::session::{ExitInfo, SessionManager, TerminalSession};
 use crate::settings::{AppSettings, SettingsStore};
 use crate::tabs::{self, Tab, TabKind, TabManager};
 
@@ -98,10 +98,25 @@ fn default_cwd() -> Option<String> {
     }
 }
 
+/// SSH 連線的額外參數（`kind = "ssh"` 時才看）。
+#[derive(Default, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SshArgs {
+    pub host: String,
+    pub port: Option<u16>,
+    /// 給了就不問 `login as:`（我的最愛／恢復分頁之後會用到）。
+    pub user: Option<String>,
+    /// 私鑰檔（OpenSSH 或 `.ppk`）。
+    pub key_path: Option<String>,
+    /// 要不要試 Pageant／ssh-agent。預設試（找不到就安靜跳過）。
+    pub use_agent: Option<bool>,
+}
+
 /// 開一條連線。
 ///
 /// - `kind = "shell"`（舊稱 `powershell`）：pwsh 優先、否則 powershell。
 /// - `kind = "custom"`：用 `command` 給的指令（分頁列「自訂指令…」與 `?cmd=` 這類 dev 入口）。
+/// - `kind = "ssh"`：內建 SSH（`russh`），參數走 `ssh`（見 [`SshArgs`]）。
 ///
 /// 建好之後依序 emit 舊協定的 `n{id}US{title}[US{flags}]` 與 `s{id}`——
 /// **`s` 不能漏**：少了它 `terminal.js` 的 `active` 會留在 null、`refit()` 直接 return，
@@ -118,10 +133,27 @@ pub fn session_create(
     cols: u16,
     rows: u16,
     cwd: Option<String>,
+    ssh: Option<SshArgs>,
     on_event: Channel<InvokeResponseBody>,
     manager: State<'_, SessionManager>,
     tabs_state: State<'_, Arc<TabManager>>,
+    settings: State<'_, Arc<SettingsStore>>,
 ) -> Result<SessionInfo, String> {
+    if kind == "ssh" {
+        let args = ssh.ok_or_else(|| "kind=ssh 需要 ssh 參數".to_string())?;
+        return create_ssh(
+            app,
+            args,
+            title,
+            cols,
+            rows,
+            on_event,
+            &manager,
+            &tabs_state,
+            &settings,
+        );
+    }
+
     let sh = match kind.as_str() {
         // "powershell" 是 TASK-003 的舊名，留著相容 `?cmd=` 之前的呼叫
         "shell" | "powershell" => shell::powershell().ok_or_else(|| {
@@ -275,6 +307,142 @@ pub fn session_create(
     tabs_state.set_active(id);
     manager.insert(id, session);
     tabs::emit_state(&app, &tabs_state);
+    Ok(info)
+}
+
+/// 開一條內建 SSH 連線（`russh`）。
+///
+/// 與 shell 那條路的差別：**沒有本機子行程**（`pid` 是 0），連線與驗證是背景非同步進行的，
+/// 過程中的 `login as:` / 密碼提示都從同一條輸出 channel 出來，所以對 `terminal.js` 來說
+/// 和本機 shell 沒有任何不同。
+#[allow(clippy::too_many_arguments)]
+fn create_ssh(
+    app: AppHandle,
+    args: SshArgs,
+    title: Option<String>,
+    cols: u16,
+    rows: u16,
+    on_event: Channel<InvokeResponseBody>,
+    manager: &SessionManager,
+    tabs_state: &Arc<TabManager>,
+    settings: &Arc<SettingsStore>,
+) -> Result<SessionInfo, String> {
+    let host = args.host.trim().to_string();
+    if host.is_empty() {
+        return Err("請輸入主機".to_string());
+    }
+    let port = args.port.unwrap_or(22);
+    let id = manager.next_id();
+    // 舊版：分頁標題先是 host，輸入帳號之後才變成 user@host（見 on_user）
+    let tab_title = title
+        .map(|t| t.trim().to_string())
+        .filter(|t| !t.is_empty())
+        .unwrap_or_else(|| host.clone());
+
+    emit_host(&app, format!("n{id}\x1f{tab_title}"));
+    emit_host(&app, format!("s{id}"));
+
+    let pump = Arc::new(OutputPump::start(on_event));
+    let last_output = Arc::new(std::sync::atomic::AtomicU64::new(tabs::now_ms()));
+    let logger: Arc<std::sync::Mutex<Option<Arc<crate::logging::Logger>>>> =
+        Arc::new(std::sync::Mutex::new(None));
+
+    let on_output = {
+        let pump = pump.clone();
+        let last_output = last_output.clone();
+        let logger = logger.clone();
+        Arc::new(move |bytes: &[u8]| {
+            last_output.store(tabs::now_ms(), Ordering::Relaxed);
+            if let Ok(g) = logger.lock() {
+                if let Some(l) = g.as_ref() {
+                    l.write(bytes);
+                }
+            }
+            pump.push(bytes);
+        }) as crate::session::OnOutput
+    };
+    let on_exit = {
+        let pump = pump.clone();
+        Arc::new(move |_info: ExitInfo| {
+            pump.flush_and_stop();
+            // 遠端連線結束時舊版會在畫面上留一行灰字提示（`term.exited`），
+            // 這裡由 ssh 模組自己印（它知道是「連不上」還是「登出」），這邊不重複。
+        }) as crate::session::OnExit
+    };
+    let on_user: crate::ssh::OnUser = {
+        let app = app.clone();
+        let tabs_state = tabs_state.clone();
+        let host = host.clone();
+        Arc::new(move |user: &str| {
+            let target = format!("{user}@{host}");
+            if tabs_state.set_title(id, &target, false) {
+                emit_host(&app, format!("t{id}\x1f{target}"));
+                tabs::emit_state(&app, &tabs_state);
+            }
+        })
+    };
+
+    let store = Arc::new(crate::ssh::hostkey::HostKeyStore::new(
+        settings.dir().join("known_hosts"),
+    ));
+    println!("[AwayTerminal] known_hosts: {}", store.path().display());
+    let decider = Arc::new(crate::ssh::prompt::AppDecider::new(
+        app.clone(),
+        id,
+        store.path().to_string_lossy().to_string(),
+    ));
+
+    let session = crate::ssh::spawn(
+        crate::ssh::SshOptions {
+            host: host.clone(),
+            port,
+            user: args.user.clone(),
+            cols,
+            rows,
+            auth: crate::ssh::SshAuth {
+                key_path: args.key_path.clone(),
+                key_passphrase: None, // 有密碼的金鑰在終端機裡問（同 PuTTY）
+                use_agent: args.use_agent.unwrap_or(true),
+            },
+        },
+        store,
+        decider,
+        on_output,
+        on_exit,
+        Some(on_user),
+    );
+
+    let info = SessionInfo {
+        id,
+        pid: 0,
+        command_line: format!("ssh://{host}:{port}"),
+        shell: "ssh".to_string(),
+        backend: session.backend_name().to_string(),
+        flags: String::new(),
+        title: tab_title.clone(),
+    };
+    println!("[AwayTerminal] session {id} started: ssh {host}:{port} backend=russh");
+
+    tabs_state.insert(Tab {
+        id,
+        kind: TabKind::Ssh,
+        title: tab_title,
+        title_locked: false,
+        cwd_path: String::new(),
+        flags: String::new(),
+        pid: 0,
+        started_at: tabs::now_ms(),
+        last_output,
+        busy: false,
+        logger,
+        fg: None,
+        bg: None,
+        command_line: info.command_line.clone(),
+        backend: info.backend.clone(),
+    });
+    tabs_state.set_active(id);
+    manager.insert(id, session);
+    tabs::emit_state(&app, tabs_state);
     Ok(info)
 }
 

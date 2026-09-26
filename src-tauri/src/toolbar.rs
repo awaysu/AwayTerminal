@@ -110,6 +110,16 @@ pub fn toolbar_scroll(app: AppHandle, id: u32, action: String) {
     emit_host(&app, format!("S{id}\x1f{action}"));
 }
 
+/// 全選（`A{id}`）。
+///
+/// ⚠️ **舊版 1.2.x 沒有這個功能**：`Localization/Loc.cs` 留著 `ctx.selectAll` 字串，
+/// 但整份 `MainWindow.xaml.cs` 沒有任何 `PostToWeb("A…")`，`A` 是死協定。
+/// TASK-006 由 PM 決定當作**新功能**補上（`terminal.js` 的 `A` 分支本來就能用）。
+#[tauri::command]
+pub fn toolbar_select_all(app: AppHandle, id: u32) {
+    emit_host(&app, format!("A{id}"));
+}
+
 /// 開搜尋列（舊版右鍵 `ctx.search`）。`F` 沒有 id 欄位，`terminal.js` 對作用中那個 pane 開。
 #[tauri::command]
 pub fn toolbar_search(app: AppHandle) {
@@ -254,12 +264,16 @@ pub fn log_pick_path(app: AppHandle, current: String) -> Option<String> {
 
 /// 開始記錄（舊版 `LogAction` 的成功分支）。也把路徑／選項存回設定，同舊版 `LogDialog.Ok_Click`。
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub fn log_start(
     app: AppHandle,
     id: u32,
     path: String,
     timestamp: bool,
     append: bool,
+    // `remember = false` ＝不要把這次的位置／選項寫回設定（`--verify` 用，
+    // 免得驗證改掉使用者的 log 資料夾）。省略＝寫回（正常按「開始記錄」的行為）。
+    remember: Option<bool>,
     tabs_state: State<'_, Arc<TabManager>>,
     settings: State<'_, Arc<SettingsStore>>,
 ) -> Result<String, String> {
@@ -280,15 +294,17 @@ pub fn log_start(
     )
     .map_err(|e| format!("無法開始記錄：{e}"))?;
 
-    settings.update(|s| {
-        if let Some(dir) = std::path::Path::new(path).parent() {
-            if !dir.as_os_str().is_empty() {
-                s.log_dir = dir.to_string_lossy().to_string();
+    if remember.unwrap_or(true) {
+        settings.update(|s| {
+            if let Some(dir) = std::path::Path::new(path).parent() {
+                if !dir.as_os_str().is_empty() {
+                    s.log_dir = dir.to_string_lossy().to_string();
+                }
             }
-        }
-        s.log_timestamp = timestamp;
-        s.log_append = append;
-    });
+            s.log_timestamp = timestamp;
+            s.log_append = append;
+        });
+    }
 
     let real = logger.path().to_string_lossy().to_string();
     {

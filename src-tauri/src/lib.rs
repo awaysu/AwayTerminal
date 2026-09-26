@@ -10,6 +10,7 @@ pub mod output;
 pub mod pty;
 pub mod session;
 pub mod settings;
+pub mod ssh;
 pub mod startup;
 pub mod status;
 pub mod tabs;
@@ -70,6 +71,7 @@ pub fn run() {
             toolbar::toolbar_clear,
             toolbar::toolbar_scroll,
             toolbar::toolbar_search,
+            toolbar::toolbar_select_all,
             toolbar::tab_colors,
             toolbar::save_text_to_file,
             toolbar::pick_work_dir,
@@ -80,6 +82,7 @@ pub fn run() {
             toolbar::log_stop,
             toolbar::reveal_path,
             toolbar::temp_dir,
+            ssh::prompt::ssh_hostkey_answer,
             host::host_ready,
             host::host_message,
             bench::bench_raw,

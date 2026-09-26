@@ -108,7 +108,13 @@ async function verifyToolbar(id) {
   const tmp = await invoke('temp_dir');
   const logPath = `${tmp}\awayterm-verify.log`;
   try {
-    const real = await invoke('log_start', { id, path: logPath, timestamp: true, append: false });
+    const real = await invoke('log_start', {
+      id,
+      path: logPath,
+      timestamp: true,
+      append: false,
+      remember: false, // 驗證不要改掉使用者的 log 資料夾設定
+    });
     lines.push(`[verify] log 開始 → ${real}`);
     // 會產生 ANSI（顏色）＋中文＋OSC（視窗標題）的輸出
     await invoke('session_write_text', {
@@ -218,8 +224,39 @@ async function awayVerify() {
   // 工具列那批（log／複製全部／貼上／配色／翻頁）拿第一個分頁驗
   const first = st.tabs[0];
   if (first) await verifyToolbar(first.id);
+
+  await verifySshPath();
 }
 window.awayVerify = awayVerify;
+
+/**
+ * SSH 的 **app 端路徑**驗證（連線引擎本身由 `cargo run --example ssh_probe` 驗）。
+ *
+ * 這裡只連 `127.0.0.1` 的一個**沒人在聽**的埠：不碰任何外部主機，但足以證明
+ * `session_create(kind:"ssh")` → 建分頁 → ssh 模組跑起來 → 連不上的原因有印在終端機裡
+ * → session 正常結束（不會留一個打字全被吞的死分頁）。
+ */
+async function verifySshPath() {
+  const lines = ['[verify] SSH（app 端路徑）'];
+  try {
+    const info = await createSession({ kind: 'ssh', ssh: { host: '127.0.0.1', port: 1 } });
+    lines.push(`[verify] 分頁 ${info.id} 建立：backend=${info.backend} title=${info.title}`);
+    const term = window.AwayTerm;
+    let text = '';
+    for (let i = 0; i < 20; i++) {
+      await wait(300);
+      text = term.tail(info.id, 8).join(' ');
+      if (text.includes('連線失敗')) break;
+    }
+    lines.push(`[verify] 連不上時有把原因印在終端機：${text.includes('連線失敗')}`);
+    const st = currentTabState().tabs.find((t) => t.id === info.id);
+    lines.push(`[verify] 分頁 kind=${st ? st.kind : '?'}（應為 ssh）`);
+    await invoke('tab_close', { id: info.id });
+  } catch (e) {
+    lines.push(`[verify] 失敗：${e}`);
+  }
+  log(lines.join('\n'));
+}
 
 // ------------------------------------------------------------- IPC bench
 //

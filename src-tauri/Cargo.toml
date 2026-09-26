@@ -4,7 +4,7 @@ version = "2.0.0"
 description = "AwayTerminal 2 — cross-platform terminal"
 authors = ["awaysu"]
 edition = "2021"
-rust-version = "1.77.2"
+rust-version = "1.89"
 
 [lib]
 name = "awayterminal_lib"
@@ -21,6 +21,12 @@ tokio = { version = "1", features = ["full"] }
 tauri-plugin-dialog = "2.7.3"
 tauri-plugin-opener = "2.5.5"
 chrono = { version = "0.4.45", features = ["clock"] }
+# 用 `ring` 而不是 russh 預設的 `aws-lc-rs`：後者在 Windows 上要裝 NASM 才編得過
+#（`NASM command not found! Build cannot continue.`），對「clone 下來就能建置」是一個硬門檻。
+# `des` 是舊設備要的 3des-cbc（CLAUDE.md 風險 3）；`rsa` 要留給 ssh-rsa 的舊主機。
+russh = { version = "0.63.3", default-features = false, features = ["ring", "des", "rsa", "flate2"] }
+# MD5 指紋（PuTTY 舊版格式）。russh 已經把這個版本拉進依賴樹，所以不會多編一份。
+md5 = "0.8"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = [
@@ -40,3 +46,7 @@ lto = true
 opt-level = "s"
 panic = "abort"
 strip = true
+
+[dev-dependencies]
+# ssh_probe 的測試伺服器與 hostkey 的單元測試要產生金鑰
+rand = "0.10"

@@ -23,7 +23,8 @@
 | H. 輸入 / IME | 待填（TASK-003 已有素材：`docs/TERMINAL-JS-DIFF.md` 第二節、`docs/IME-LAB.md`） |
 | I. 貼上 | 待填 |
 | J. 輸出 / 渲染 | 待填 |
-| K. 連線後端（SSH / Telnet / COM / WSL / ADB） | 待填（階段 2） |
+| K. SSH | 本次（TASK-006）填好第一階段 |
+| K2. 其餘連線後端（Telnet / COM / WSL / ADB） | 待填（階段 2） |
 | L. 巨集 / 我的最愛 / 輸入文字視窗 | 待填（階段 3） |
 | M. 恢復分頁 / 重連 / 保持連線 | 待填（階段 3） |
 | N. 代理團隊 / AI 聊天室 / Telegram | 待填（階段 4） |
@@ -210,7 +211,38 @@ TEMP 路徑印出完整結果，Documents 路徑印完 `path = …` 就停住。
 
 ## J. 輸出 / 渲染（待填）
 
-## K. 連線後端：SSH / Telnet / COM / WSL / ADB（待填，階段 2）
+## K. SSH
+
+完整的行為對照、演算法現況與「待真機驗證」清單在 `docs/SSH.md`。這裡只列勾選項。
+自動驗證：`cd src-tauri && cargo run --example ssh_probe`（**不連任何外部主機**，
+用同一支程式裡起的測試 sshd），以及 `--verify` 的 app 端路徑那一步。
+
+| # | 怎麼測 | 預期結果 | 基準 | Win | mac | Linux |
+|---|---|---|---|---|---|---|
+| K1 | `cargo run --example ssh_probe` | **11 PASS / 0 FAIL** | — | PASS | | |
+| K2 | `--verify` 的 SSH 那一步 | 分頁 `kind=ssh`、`backend=russh`；連不上時原因印在終端機；session 正常結束 | 舊版：連不上不可留死分頁 | PASS | | |
+| K3 | 👤「新分頁 ▾」→「SSH…」 | 問「主機（可加 :埠，預設 22）」 | ⬜ 完整對話框是 TASK-007 | | | |
+| K4 | 👤 連一台真設備 | 先出現灰字「連線到 host:port …」，再出現 `login as: ` | PuTTY（**與舊版不同**：舊版連線前就問，見 docs/SSH.md） | | | |
+| K5 | 👤 在 `login as:` 打字 | 有回顯；Backspace 退得掉；Enter 送出後分頁標題變 `user@host` | 舊版 `HandleLoginInput` | | | |
+| K6 | 👤 密碼提示 | `user@host's password: `，打字**完全不回顯** | PuTTY | | | |
+| K7 | 👤 密碼打錯 | 顯示 `Access denied` 並可再試，三次後結束連線 | PuTTY | | | |
+| K8 | 👤 **第一次**連某台主機 | 跳「主機金鑰尚未記錄」，顯示演算法／位元數／**SHA256 與 MD5 兩種指紋**，三個選項：接受並儲存／只這次／取消 | PuTTY | | | |
+| K9 | 👤 按「取消」 | 連線中止，不進 shell，`known_hosts` 沒有變動 | PuTTY | | | |
+| K10 | 👤 按「只這次」 | 連得上，但 `known_hosts` **沒有**新增那一行（下次再問） | PuTTY Connect Once | PASS（probe） | | |
+| K11 | 👤 按「接受並儲存」後再連同一台 | **不再詢問**，直接連 | PuTTY | PASS（probe） | | |
+| K12 | 手動把 `known_hosts` 那一行的金鑰改掉再連 | 跳**紅框**「⚠ 警告：主機金鑰不符！」，措辭更嚴重，預設焦點在「取消」，並告訴你舊記錄在哪個檔第幾行 | PuTTY 的 POSSIBLE SECURITY BREACH | PASS（probe） | | |
+| K13 | 把 `known_hosts` 改成壞掉的內容再連 | 當成「金鑰不符」跳最嚴重的對話框，**不可以**當成「沒記錄」然後覆寫 | 安全預設 | PASS（單元測試） | | |
+| K14 | 看 `known_hosts` 檔案 | OpenSSH 格式、一行一台、非預設埠是 `[host]:port`；路徑印在後端 log | — | PASS | | |
+| K15 | 確認**沒有**動到 `~/.ssh/known_hosts` | 那是 OpenSSH 的檔，程式不該偷偷寫 | — | PASS（程式沒有這條路） | | |
+| K16 | 👤 用 `.ppk` 金鑰連線 | 連得上；金鑰有密碼時在終端機裡問 passphrase（不回顯） | PuTTY | PASS（probe） | | |
+| K17 | 👤 Pageant 裡載入金鑰後連線 | 不必打密碼就連上；**沒有** Pageant 時完全不打擾使用者（只記 log） | PuTTY | ⬜ 未實機驗證 | - | - |
+| K18 | 👤 改視窗大小 | 遠端跟著換行（window-change） | — | PASS（probe） | | |
+| K19 | 👤 關閉 SSH 分頁 | 送 **Ctrl+D ×3**，遠端 session 真的登出 | 舊版 `GracefulExitBytes` | PASS（probe：收到 3 個 `0x04`） | | |
+| K20 | 👤 SSH 分頁的狀態燈 | 遠端規則：近 0.5 秒有輸出＝紅，否則綠（**不看**子行程） | 舊版 `UpdateStatuses` 的 else 分支 | | | |
+| K21 | 👤 SSH 分頁名稱跟著遠端目錄 | 提示行解析得到就改名（同 shell 分頁） | 舊版 `TracksCwdTitle` 含 `Ssh` | | | |
+| K22 | 👤 舊設備（風險 3） | 見 `docs/SSH.md` 第 6 節 S1～S16 | — | ⬜ 等設備清單 | - | - |
+
+## K2. 其餘連線後端：Telnet / COM / WSL / ADB（待填，階段 2）
 
 ## L. 巨集 / 我的最愛 / 輸入文字視窗（待填，階段 3）
 
@@ -236,8 +268,11 @@ TEMP 路徑印出完整結果，Documents 路徑印完 `path = …` 就停住。
 | 逐分頁配色的色票 | 寫死在 `MainWindow.xaml` | `settings.json` 的 `palette` | 讓使用者能改；「哪個分頁選哪一組」兩邊都不持久化 |
 | 「記錄 log 中」提示 | 只在 tooltip（1.1.2 起分頁列不放 log 圖示） | tooltip **＋** 分頁列一個小紅點 | 一個點不占空間又看得出來 |
 | 工具列按鈕 | 12 個 | 目前 7 個 | 我的最愛／輸入文字／遠端／其他設定／關於的功能還沒搬，**刻意不放佔位按鈕** |
-| 全選（`A` 協定） | 有 `ctx.selectAll` 字串但**沒有呼叫端** | 一樣沒有 | 「與舊版一致」包含「一樣沒有」。要加請當成新功能決定 |
+| 全選（`A` 協定） | 有 `ctx.selectAll` 字串但**沒有呼叫端**（死協定） | 終端機右鍵有「全選」 | **新增、舊版字串存在但沒有呼叫端**。TASK-006 由 PM 決定補上；`terminal.js` 的 `A` 分支本來就能用 |
 | log 開檔 | 直接開 | 丟背景執行緒、最多等 3 秒 | 見上面的環境雷 |
+| SSH 後端 | 呼叫系統 `ssh.exe` | **內建 `russh`** | `CLAUDE.md` 定案：SSH 內建、行為照 PuTTY。使用流程照舊版，協定層照 PuTTY（`docs/SSH.md`） |
+| SSH 的 `login as:` 時機 | **連線前**就問（帳號要放進 `ssh.exe` 命令列） | **連上交握後**才問 | PuTTY 的順序，也是內建 SSH 的自然順序。使用者看到的差別：前面多一行灰字「連線到 host:port …」，主機金鑰對話框會在 `login as:` 之前 |
+| SSH 主機金鑰存放 | （舊版沒有，`ssh.exe` 用 `~/.ssh/known_hosts`） | `{app config dir}/known_hosts`，**不碰** `~/.ssh/known_hosts` | 程式不該偷偷寫 OpenSSH 的檔。代價：用 `ssh` 連過的主機這裡仍會問一次 |
 
 ## 隱含契約（最容易回歸的一類）
 
@@ -250,3 +285,5 @@ TEMP 路徑印出完整結果，Documents 路徑印完 `path = …` 就停住。
 | 多行貼上一定走 `v` 協定／`xterm.paste()`，不可以直接寫 session | 每個換行被當 Enter 送出，只剩最後一行留在輸入框 | E8、E9 |
 | 清畫面的 Esc 與 Ctrl+L 不可以黏著送 | PSReadLine 當成 escape 序列，兩者都失效 | D13 |
 | 會阻塞的檔案操作不可以在 IPC 執行緒上直接做 | 防毒擋住寫入時整個程式的 IPC 全停（本次實測） | G 的環境雷 |
+| **介面文字要照執行時的字，不是照 XAML** | 舊版 `MainWindow.xaml` 的按鈕內容只是設計時的預設值，`ApplyTexts()` 會用 `Loc.T` 全部換掉（例：XAML 寫「貼上」「清畫面」，執行時是「**純文字貼上**」「**清除畫面**」）。照 XAML 抄就會做出使用者沒見過的文字 | D1 |
+| `ssh-hostkey` event 一定要回 `ssh_hostkey_answer` | Rust 的 SSH 任務停在交握中間等答案，前端不回就卡到逾時（180 秒）才當成取消——使用者看到的是「連線很久沒反應」 | K8～K12 |

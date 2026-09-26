@@ -91,6 +91,7 @@
   <!-- 新分頁下拉（舊版 New 下拉；SSH / 連接埠 / WSL / ADB 之後補在這裡） -->
   <div id="new-menu" class="popup-menu" hidden>
     <div class="menu-item" data-kind="shell">PowerShell</div>
+    <div class="menu-item" data-kind="ssh">SSH…</div>
     <div class="menu-item" data-kind="custom">自訂指令…</div>
   </div>
 
@@ -111,6 +112,9 @@
     <div class="menu-item" data-term="copyall">複製全部</div>
     <div class="menu-item" data-term="copyAllFile">複製全部存至檔案</div>
     <div class="menu-sep"></div>
+    <!-- 全選：舊版 Loc.cs 有 ctx.selectAll 字串但沒有任何呼叫端（A 協定是死的）。
+         Agent-11 決定當作新功能補上，見 docs/REGRESSION-CHECKLIST.md 的「刻意不同」表。 -->
+    <div class="menu-item" data-term="selectAll">全選</div>
     <div class="menu-item" data-term="search">搜尋</div>
   </div>
 
@@ -122,6 +126,29 @@
 
   <!-- 複製提示（舊版 CopyPopup + ShowCopyFeedback） -->
   <div id="toast" hidden></div>
+
+  <!-- 主機金鑰確認（語意照 PuTTY：第一次連線／金鑰變更兩種文案，三個選項）。
+       獨立於一般對話框，因為它有三個按鈕而且「金鑰變更」要更嚴重的樣式。 -->
+  <div id="hostkey" hidden>
+    <div id="hostkey-box">
+      <div id="hostkey-title"></div>
+      <div id="hostkey-body"></div>
+      <table id="hostkey-fp">
+        <tbody>
+          <tr><th>主機</th><td id="hk-host"></td></tr>
+          <tr><th>演算法</th><td id="hk-alg"></td></tr>
+          <tr><th>SHA256</th><td id="hk-sha256"></td></tr>
+          <tr><th>MD5</th><td id="hk-md5"></td></tr>
+        </tbody>
+      </table>
+      <div id="hostkey-note"></div>
+      <div class="modal-buttons">
+        <button id="hk-store" type="button">接受並儲存</button>
+        <button id="hk-once" type="button">只這次</button>
+        <button id="hk-cancel" type="button">取消</button>
+      </div>
+    </div>
+  </div>
 
   <!-- 頁內對話框：取代舊版的 WPF InputDialog / MessageBox / LogDialog -->
   <div id="modal" hidden>

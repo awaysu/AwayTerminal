@@ -102,11 +102,54 @@ dual-licensed MIT or Apache-2.0; this project uses it under the MIT option.
 
 ---
 
-## 4. Rust crates
+## 4. russh — Apache-2.0
+
+<https://github.com/Eugeny/russh>
+
+The built-in SSH client (`src-tauri/src/ssh/`). Linked as a dependency, **not** ported.
+
+> ⚠️ **russh is Apache-2.0 only — not MIT.** Apache-2.0 is a permissive licence and is
+> compatible with shipping it inside this MIT-licensed application, but it carries
+> obligations MIT does not: the licence text must accompany the distribution, any
+> `NOTICE` file from the upstream project must be reproduced, and modified files must be
+> marked. We link it unmodified, so the requirement is to ship the licence text with the
+> installers. `CLAUDE.md` lists the licences of the behaviour references (PuTTY, TeraTerm,
+> microsoft/terminal, xterm.js) but did not state russh's — recording it here.
+
+Built with `default-features = false, features = ["ring", "des", "rsa", "flate2"]`:
+
+- `ring` instead of the default `aws-lc-rs`, because `aws-lc-rs` needs NASM installed to
+  build on Windows (`NASM command not found! Build cannot continue.`).
+- `des` for `3des-cbc`, and `rsa` for `ssh-rsa`, both needed by the old network devices
+  listed under risk 3 in `CLAUDE.md`.
+
+Notable crates pulled in by russh and shipped with it:
+
+| Crate | Licence |
+|---|---|
+| `ssh-key`, `ssh-encoding`, `ssh-cipher` | Apache-2.0 OR MIT |
+| `ring` | Apache-2.0 AND ISC (contains BoringSSL-derived code) |
+| `pageant` | Apache-2.0 |
+| `md5` | Apache-2.0 OR MIT |
+
+---
+
+## 5. Rust crates
 
 Linked as dependencies, each under MIT or MIT/Apache-2.0:
-`windows-sys`, `libloading`, `serde`, `serde_json`, `tokio`.
+`windows-sys`, `libloading`, `serde`, `serde_json`, `tokio`, `chrono`,
+`tauri-plugin-dialog`, `tauri-plugin-opener`.
 Full per-crate licence text is reproduced by `cargo about` / `cargo license` output.
+
+---
+
+## Test fixtures
+
+`src-tauri/tests/keys/id_ed25519.ppk` and `id_ed25519_enc.ppk` are copied from the
+**ssh-key** project's test vectors (`tests/examples/`, Apache-2.0 OR MIT). They are
+PuTTY-format private keys used only by `cargo run --example ssh_probe` to prove that
+`.ppk` files load; the encrypted one's passphrase is `123`. They are **not** used by the
+application and must never be treated as real credentials.
 
 ---
 
@@ -115,7 +158,8 @@ Full per-crate licence text is reproduced by `cargo about` / `cargo license` out
 These are planned for later stages and are listed here so the notices file tracks the
 plan in `CLAUDE.md`:
 
-- **PuTTY** (MIT) — SSH behaviour reference.
+- **PuTTY** (MIT) — SSH behaviour reference (dialog wording, host-key cache semantics,
+  algorithm ordering). No PuTTY code has been copied.
 - **TeraTerm** (BSD-3-Clause) — the TTL macro interpreter is to be ported from
   `ttpmacro/`, so the BSD-3 notice and copyright line will be required.
-- **russh**, **serialport-rs** and their dependency trees.
+- **serialport-rs** and its dependency tree.

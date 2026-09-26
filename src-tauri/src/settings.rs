@@ -190,6 +190,14 @@ impl SettingsStore {
         }
     }
 
+    /// 設定檔所在的資料夾（`known_hosts` 之類的東西也放這裡）。
+    pub fn dir(&self) -> PathBuf {
+        self.path
+            .parent()
+            .map(|p| p.to_path_buf())
+            .unwrap_or_else(|| PathBuf::from("."))
+    }
+
     pub fn get(&self) -> AppSettings {
         self.lock().clone()
     }

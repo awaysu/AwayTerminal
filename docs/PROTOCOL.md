@@ -17,23 +17,24 @@
 | 方向 | 訊息總數 | 已接 | 未接 |
 |---|---|---|---|
 | JS → host | 12 | **11** | 1 |
-| host → JS | 19 | **14**（含 `o` 以二進位 channel 取代） | 5 |
-| 合計 | **31** | **25** | **6** |
+| host → JS | 19 | **15**（含 `o` 以二進位 channel 取代） | 4 |
+| 合計 | **31** | **26** | **5** |
 
 - TASK-004 接了 9 條：JS→host 的 `p`、`k`、`z`、`a`；host→JS 的 `t`、`x`、`K`、`L`、`q`。
   （`s` 是 TASK-003 收尾時補的——那時漏掉它導致 pane 永遠不 fit，見
   `docs/REGRESSION-CHECKLIST.md`「分頁」第 1 條。）
 - TASK-005 接了 7 條：JS→host 的 `U`、`m`；host→JS 的 `c`、`v`、`S`、`F`、`P`，
   並把 `a`／`q` 的 `sel`／`selpaste`／`all`／`file` 幾個 kind 補完。
+- TASK-006 接了 `A`（全選）。**舊版 1.2.x 沒有呼叫端**（見下），由 PM 決定當作新功能補進
+  終端機右鍵選單。
 
-剩下的 6 條：
+剩下的 5 條：
 
 | 訊息 | 為什麼還沒接 |
 |---|---|
 | `b` | 恢復分頁／斷線重連（階段 3） |
 | `g`、`u`、`E` | 代理團隊 Multi-Agent（階段 4） |
 | `G` | 同上（JS→host 那一半） |
-| `A` | **舊版 1.2.x 根本沒有呼叫端**——`Localization/Loc.cs` 還留著 `ctx.selectAll`（「全選」）字串，但整個 `MainWindow.xaml.cs` 沒有任何 `PostToWeb("A…")`，應該是某版把選單項移掉後留下的死協定。`terminal.js` 的 `A` 分支還在、隨時能用。照「與舊版一致包含一樣沒有」的原則，新版也不加這個按鈕；要加的話請當成新功能決定，不是搬移。 |
 
 **未接的 JS→host 訊息不會靜靜消失**：`bridge.js` 一律轉給 Rust 的 `host_message`
 指令，後端印 `[AwayTerminal] [host_message 未接] {kind} = {說明}`，
@@ -77,7 +78,7 @@
 | `c{id}` | 清畫面 | `toolbar_clear`：PowerShell／SSH **不送這條**，改對 session 送 Esc → 等 60ms → Ctrl+L（黏著送會被 PSReadLine 當 escape 序列）；Telnet／COM 才送 `c` 清 xterm 緩衝。兩條路都先跳確認 | ✅ 已接 |
 | `S{id}US{up\|down\|top\|bottom}` | 捲動檢視（工具列「翻頁」） | `toolbar_scroll`（翻頁下拉：上一頁／下一頁／最上面／最下面） | ✅ 已接 |
 | `v{id}US{base64}` | 貼上（走 `term.paste()`） | `toolbar_paste`（工具列與右鍵的「純文字貼上」，以及 `selpaste` 的貼回）。**Ctrl+V / Shift+Insert 不經這條**——`terminal.js` 自己攔 `paste` 事件走 `doPaste` | ✅ 已接 |
-| `A{id}` | 全選 | — | ⬜ 未接（**舊版 1.2.x 也沒有呼叫端**，見上面的說明） |
+| `A{id}` | 全選 | `toolbar_select_all`（終端機右鍵「全選」）。⚠️ **舊版 1.2.x 沒有呼叫端**——`Loc.cs` 留著 `ctx.selectAll` 字串，但整個 `MainWindow.xaml.cs` 沒有任何 `PostToWeb("A…")`，是死協定。TASK-006 由 PM 決定當**新功能**補上 | ✅ 已接（新增，非搬移） |
 | `F` | 開搜尋列 | `toolbar_search`（終端機右鍵「搜尋」）。**Ctrl+F 由 `terminal.js` 自己攔，不經這條** | ✅ 已接 |
 | `P{id}US{fg}US{bg}` | 單一分頁配色 | `tab_colors`（分頁右鍵「配色 ▸」，色票來自 `settings.palette`）。`fg`/`bg` 皆空＝回到設定預設 | ✅ 已接 |
 | `g{…}` | Multi-Agent 外框排版（1.2.0） | — | ⬜ 未接（階段 4） |
@@ -132,6 +133,9 @@
 | `pick_work_dir(title)` | 資料夾選擇（新分頁的工作目錄；記住 `lastDir`） |
 | `log_defaults(id)` / `log_pick_path(current)` / `log_start(…)` / `log_stop(id)` | log 記錄（見 `src-tauri/src/logging.rs` 的格式對照表） |
 | `open_url(url)` / `reveal_path(path)` | 用系統瀏覽器開網址（只放行 http/https）／在檔案總管選取檔案 |
+| `toolbar_select_all(id)` | 送 `A…`（新增功能，舊版沒有呼叫端） |
+| `session_create` 的 `kind:"ssh"` + `ssh` 參數 | 內建 SSH（`russh`）。見 `docs/SSH.md` |
+| `ssh_hostkey_answer(id, answer)` | 主機金鑰對話框的回覆（`acceptandstore` / `acceptonce` / `reject`） |
 | `temp_dir()` | 系統暫存資料夾（`--verify` 用，以及寫入被擋時的後備位置建議） |
 | `launch_args()` | CLI 參數（`--cmd` / `--verify` / `--bench`），URL 參數優先 |
 | `tab_select(id)` / `tab_rename(id, title)` / `tabs_reorder(ids)` | 分頁列的點選／改名／拖曳排序 |
@@ -152,6 +156,7 @@
 |---|---|
 | `host-msg`（String） | **所有** host→JS 的舊協定字串都走這一條 |
 | `tab-state`（JSON） | 分頁列狀態（見上一節） |
+| `ssh-hostkey`（JSON） | 主機金鑰要使用者確認。**Rust 端會停在交握中間等答案**（最多 180 秒，逾時＝取消），前端一定要回 `ssh_hostkey_answer`。見 `src-tauri/src/ssh/prompt.rs` |
 
 ---
 

@@ -106,6 +106,35 @@ export const T = {
   // 選工作目錄（舊版 dlg.pickDir*）
   'dlg.pickDirPs': '選擇 PowerShell 工作目錄（可在此按「建立新資料夾」）',
   'dlg.pickDirCustom': '選擇工作目錄（可在此按「建立新資料夾」）',
+
+  // 全選（舊版有這個字串但沒有呼叫端，TASK-006 當新功能補上）
+  'ctx.selectAll': '全選',
+
+  // ---- SSH（TASK-006）----
+  'tb.ssh': 'SSH…',
+  'dlg.sshTitle': '開 SSH',
+  // 舊版 ConnectDialog 是「類型／IP 主機／Port／保持連線／斷線自動重連」五個欄位；
+  // 完整對話框是 TASK-007，這裡先用一行 host[:port]
+  'dlg.sshPrompt': '主機（可加 :埠，預設 22）：',
+
+  // 主機金鑰確認。語意照 PuTTY，文字翻成繁中。
+  'hk.titleUnknown': '主機金鑰尚未記錄',
+  'hk.titleChanged': '⚠ 警告：主機金鑰不符！',
+  'hk.bodyUnknown':
+    '這台伺服器的主機金鑰沒有記錄在本程式的快取裡，無法確定它就是你想連的那一台。\n' +
+    '請用其他可信的方式核對下面的指紋。',
+  'hk.bodyChanged':
+    '可能有安全問題！這台伺服器的主機金鑰與本程式記錄的不同。\n' +
+    '這代表：伺服器的管理者換過金鑰，或者這條連線被冒充（中間人攻擊）。\n' +
+    '如果不確定，請按「取消」，並先向伺服器管理者確認新的指紋。',
+  'hk.noteUnknown': '按「接受並儲存」會把這把金鑰記下來，以後連同一台就不再詢問。',
+  // {0} = known_hosts 路徑、{1} = 行號
+  'hk.noteChanged': '舊記錄在 {0} 第 {1} 行。要改用新金鑰請先刪掉那一行，或按「接受並儲存」覆蓋。',
+  'hk.store': '接受並儲存',
+  'hk.once': '只這次',
+  'hk.cancel': '取消',
+  'hk.host': '主機',
+  'hk.alg': '演算法',
 };
 
 /** `msg.closeTabConfirm` 這類帶 {0} 的字串。 */

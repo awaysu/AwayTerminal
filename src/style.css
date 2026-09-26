@@ -225,3 +225,35 @@ body.col-resizing { cursor: col-resize; user-select: none; }
   background: #3a3a3d; color: #e0e0e0; border: 1px solid #555; border-radius: 4px;
 }
 #modal-extra #modal-browse:hover { background: #50505a; }
+
+/* ---------------------------------------------------------------------------
+   TASK-006：主機金鑰確認（語意照 PuTTY，金鑰變更用紅框警告樣式）。
+   --------------------------------------------------------------------------- */
+
+#hostkey {
+  position: fixed; inset: 0; z-index: 350; display: flex; align-items: center; justify-content: center;
+  background: rgba(0,0,0,.55);
+  font: 13px "Microsoft JhengHei", "微軟正黑體", sans-serif;
+}
+#hostkey-box {
+  min-width: 460px; max-width: 78vw; padding: 16px 18px;
+  background: #2d2d30; border: 1px solid #FDFFB0; border-radius: 6px; color: #e0e0e0;
+}
+/* 金鑰變更＝PuTTY 的 POSSIBLE SECURITY BREACH：換成紅框紅字標題 */
+#hostkey-box.danger { border-color: #EF9A9A; }
+#hostkey-title { font-size: 14px; color: #FDFFB0; margin-bottom: 8px; }
+#hostkey-box.danger #hostkey-title { color: #EF9A9A; font-weight: bold; }
+#hostkey-body { white-space: pre-wrap; line-height: 1.6; }
+#hostkey-fp { margin: 12px 0 8px; border-collapse: collapse; font-size: 12px; }
+#hostkey-fp th {
+  text-align: left; color: #999; font-weight: normal; padding: 2px 12px 2px 0; vertical-align: top;
+  white-space: nowrap;
+}
+#hostkey-fp td {
+  padding: 2px 0; font-family: Consolas, monospace; color: #e0e0e0;
+  word-break: break-all;
+}
+#hostkey-note { color: #999; font-size: 12px; line-height: 1.6; word-break: break-all; }
+#hostkey .modal-buttons button { min-width: 92px; }
+#hk-store { border-color: #FDFFB0; }
+#hostkey-box.danger #hk-cancel { border-color: #FDFFB0; }

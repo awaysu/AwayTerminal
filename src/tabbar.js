@@ -535,6 +535,9 @@ function installMenus() {
       case 'copyAllFile':
         invoke('toolbar_copy_all_file', { id });
         break;
+      case 'selectAll':
+        invoke('toolbar_select_all', { id });
+        break;
       case 'search':
         invoke('toolbar_search');
         break;
@@ -577,6 +580,17 @@ function installMenus() {
  */
 async function newSession(kind) {
   try {
+    // SSH 不需要本機工作目錄；帳號在終端機裡問（`login as:`，同 PuTTY／舊版）。
+    // 完整的 SSH 對話框（帳號、金鑰、保持連線、斷線重連）是 TASK-007。
+    if (kind === 'ssh') {
+      const target = await askText(T['dlg.sshTitle'], T['dlg.sshPrompt'], '');
+      if (target === null || !target.trim()) return;
+      const { host, port } = parseHostPort(target.trim());
+      if (!host) return;
+      await createSession({ kind: 'ssh', ssh: { host, port } });
+      return;
+    }
+
     const title = kind === 'shell' ? T['dlg.pickDirPs'] : T['dlg.pickDirCustom'];
     let command = null;
     if (kind === 'custom') {
@@ -591,6 +605,59 @@ async function newSession(kind) {
     log(`[tabbar] ${T['msg.connectFail']}：${err}`);
     await showInfo(T['msg.connectFail'], String(err));
   }
+}
+
+/** `host`、`host:2222`、`[::1]:22` → `{host, port}`（port 省略＝22，同舊版預設）。 */
+function parseHostPort(text) {
+  const m = /^\[([^\]]+)\](?::(\d+))?$/.exec(text);
+  if (m) return { host: m[1], port: m[2] ? Number(m[2]) : 22 };
+  const i = text.lastIndexOf(':');
+  // 只有一個冒號才當成埠；IPv6 位址請用 [..]:port 寫法
+  if (i > 0 && text.indexOf(':') === i) {
+    const port = Number(text.slice(i + 1));
+    if (Number.isInteger(port) && port > 0 && port < 65536) {
+      return { host: text.slice(0, i), port };
+    }
+  }
+  return { host: text, port: 22 };
+}
+
+// ------------------------------------------------- 主機金鑰確認（照 PuTTY）
+
+/**
+ * Rust 的 SSH 任務在交握中間需要答案，所以它會 emit `ssh-hostkey` 並**停在那裡等**。
+ * 我們一定要回一個答案（逾時 180 秒後 Rust 端會自己當成取消）。
+ */
+function installHostKeyDialog() {
+  const answer = (id, value) => {
+    el.hostkey.hidden = true;
+    invoke('ssh_hostkey_answer', { id, answer: value }).catch((e) =>
+      log(`[tabbar] 主機金鑰回覆失敗：${e}`)
+    );
+  };
+
+  listen('ssh-hostkey', (e) => {
+    const r = e.payload;
+    const changed = r.kind === 'changed';
+    el.hostkeyBox.classList.toggle('danger', changed);
+    el.hostkeyTitle.textContent = changed ? T['hk.titleChanged'] : T['hk.titleUnknown'];
+    el.hostkeyBody.textContent = changed ? T['hk.bodyChanged'] : T['hk.bodyUnknown'];
+    el.hkHost.textContent = r.port === 22 ? r.host : `${r.host}:${r.port}`;
+    const f = r.fingerprints;
+    el.hkAlg.textContent = f.bits ? `${f.algorithm} (${f.bits} bits)` : f.algorithm;
+    el.hkSha256.textContent = f.sha256;
+    el.hkMd5.textContent = f.md5;
+    el.hostkeyNote.textContent = changed
+      ? fmt('hk.noteChanged', r.storePath, r.line || '?')
+      : T['hk.noteUnknown'];
+    el.hostkey.hidden = false;
+
+    el.hkStore.onclick = () => answer(r.id, 'acceptandstore');
+    el.hkOnce.onclick = () => answer(r.id, 'acceptonce');
+    el.hkCancel.onclick = () => answer(r.id, 'reject');
+    // 金鑰變更時預設焦點放「取消」（PuTTY 也是把危險選項放在最不順手的位置）
+    (changed ? el.hkCancel : el.hkStore).focus();
+  }).catch((e) => log(`[tabbar] 掛主機金鑰 listener 失敗：${e}`));
 }
 
 /** 純文字貼上（舊版 `Paste_Click`）：讀剪貼簿 → `v` 協定 → `terminal.js` 的 `doPaste`。 */
@@ -705,6 +772,18 @@ export async function initTabBar() {
   el.urlMenu = $('url-menu');
   el.colorItems = $('color-items');
   el.toast = $('toast');
+  el.hostkey = $('hostkey');
+  el.hostkeyBox = $('hostkey-box');
+  el.hostkeyTitle = $('hostkey-title');
+  el.hostkeyBody = $('hostkey-body');
+  el.hostkeyNote = $('hostkey-note');
+  el.hkHost = $('hk-host');
+  el.hkAlg = $('hk-alg');
+  el.hkSha256 = $('hk-sha256');
+  el.hkMd5 = $('hk-md5');
+  el.hkStore = $('hk-store');
+  el.hkOnce = $('hk-once');
+  el.hkCancel = $('hk-cancel');
   el.modal = $('modal');
   el.modalForm = $('modal-form');
   el.modalTitle = $('modal-title');
@@ -734,6 +813,7 @@ export async function initTabBar() {
   el.btnPanel.title = T['tip.tabPanel'];
   el.btnView.title = T['tip.viewCycle'];
   setText(el.newMenu, '[data-kind="shell"]', T['tb.powershell']);
+  setText(el.newMenu, '[data-kind="ssh"]', T['tb.ssh']);
   setText(el.newMenu, '[data-kind="custom"]', T['tb.customCmd']);
   setText(el.tabMenu, '[data-act="rename"]', T['menu.rename']);
   setText(el.tabMenu, '[data-act="log"]', T['menu.log']);
@@ -753,6 +833,7 @@ export async function initTabBar() {
     ['[data-term="paste"]', 'tb.paste'],
     ['[data-term="copyall"]', 'tb.copyall'],
     ['[data-term="copyAllFile"]', 'ctx.copyAllFile'],
+    ['[data-term="selectAll"]', 'ctx.selectAll'],
     ['[data-term="search"]', 'ctx.search'],
   ]) {
     setText(el.termMenu, sel, T[key]);
@@ -762,10 +843,15 @@ export async function initTabBar() {
   // 配色父項的文字要保留子選單的箭頭，所以只改第一個文字節點
   el.tabMenu.querySelector('[data-act="color"]').firstChild.nodeValue = T['menu.color'];
 
+  el.hkStore.textContent = T['hk.store'];
+  el.hkOnce.textContent = T['hk.once'];
+  el.hkCancel.textContent = T['hk.cancel'];
+
   installToolbar();
   installStripEvents();
   installMenus();
   installPanelResize();
+  installHostKeyDialog();
 
   await listen('tab-state', (e) => {
     state = e.payload;
