@@ -89,7 +89,7 @@ AwayTerminal（https://github.com/awaysu/AwayTerminal ，C# WPF + WebView2 + xte
 ## 慣例 / 注意
 - 舊版原始碼與其 CLAUDE.md（185KB，含大量踩雷紀錄）是**行為規格與回歸測試清單**：每搬完一個功能就對照一次。舊版 repo：https://github.com/awaysu/AwayTerminal
 - 舊版的 Win10 conhost / WebView2 特有的雷在 mac/Linux 不會出現，但 Unix PTY 下 Claude Code 的輸入時序、alt-screen 行為要重新驗證。
-- 授權：本專案 MIT；PuTTY（MIT）、TeraTerm（BSD-3）、microsoft/terminal（MIT）、xterm.js（MIT）都相容，引用的部分要寫進 THIRD-PARTY-NOTICES。
+- 授權：本專案 MIT；PuTTY（MIT）、TeraTerm（BSD-3）、microsoft/terminal（MIT）、xterm.js（MIT）都相容，引用的部分要寫進 THIRD-PARTY-NOTICES。**`russh` 是 Apache-2.0（不是 MIT）**，連帶 `ring`（Apache-2.0 AND ISC）、`pageant`：可以進 MIT 專案，但散布時要附授權全文與上游 NOTICE → 階段 5 安裝檔要附 THIRD-PARTY-NOTICES（2026-09-26 TASK-006 查證）。
 - 對使用者一律用繁體中文。
 
 ## 風險 / 待驗證
