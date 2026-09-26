@@ -319,6 +319,61 @@ pub fn log_start(
     Ok(real)
 }
 
+/// 給**巨集**（`logopen`）用的版本：不碰設定、不需要 tauri 的 `State`。
+///
+/// 和 `log_start` 共用 `Logger::open_with_timeout`（開檔有 3 秒逾時保護，見 logging.rs）。
+pub fn log_start_inner(
+    app: &AppHandle,
+    tabs_state: &Arc<TabManager>,
+    id: u32,
+    path: &str,
+    timestamp: bool,
+    append: bool,
+) -> Result<String, String> {
+    let path = path.trim();
+    if path.is_empty() {
+        return Err("巨集的 logopen 沒有給檔名".to_string());
+    }
+    let slot = tabs_state
+        .logger_slot(id)
+        .ok_or_else(|| format!("找不到分頁 {id}"))?;
+    let logger = Logger::open_with_timeout(
+        std::path::Path::new(path),
+        timestamp,
+        append,
+        std::time::Duration::from_secs(3),
+    )
+    .map_err(|e| format!("無法開始記錄：{e}"))?;
+    let real = logger.path().to_string_lossy().to_string();
+    {
+        let mut g = slot.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(old) = g.take() {
+            old.close();
+        }
+        *g = Some(Arc::new(logger));
+    }
+    println!("[AwayTerminal] log 開始（巨集）：分頁 {id} → {real}");
+    tabs::emit_state(app, tabs_state);
+    Ok(real)
+}
+
+/// 給**巨集**（`logclose`）用的版本。
+pub fn log_stop_inner(tabs_state: &Arc<TabManager>, id: u32) {
+    if let Some(slot) = tabs_state.logger_slot(id) {
+        let logger = {
+            let mut g = slot.lock().unwrap_or_else(|e| e.into_inner());
+            g.take()
+        };
+        if let Some(l) = logger {
+            l.close();
+            println!(
+                "[AwayTerminal] log 停止（巨集）：分頁 {id} → {}",
+                l.path().display()
+            );
+        }
+    }
+}
+
 /// 停止記錄（舊版 `StopLogging`）。回傳剛才寫到哪個檔案，前端可以據此開資料夾。
 #[tauri::command]
 pub fn log_stop(
@@ -344,6 +399,46 @@ pub fn reveal_path(app: AppHandle, path: String) -> Result<(), String> {
     tauri_plugin_opener::OpenerExt::opener(&app)
         .reveal_item_in_dir(std::path::PathBuf::from(path))
         .map_err(|e| e.to_string())
+}
+
+/// **只給 `--verify` 用**：把文字寫到指定路徑（驗證要先產一支小巨集）。
+///
+/// 和 `save_text_to_file` 的差別：那個會跳存檔對話框（要使用者選位置），
+/// 這個直接寫——所以**只接受系統暫存資料夾底下的路徑**，免得被當成任意寫檔的後門。
+#[tauri::command]
+pub fn save_text_to_file_at(path: String, text: String) -> Result<String, String> {
+    let p = std::path::PathBuf::from(&path);
+    let temp = std::env::temp_dir();
+    if !p.starts_with(&temp) {
+        return Err(format!(
+            "只接受暫存資料夾底下的路徑（{}）",
+            temp.display()
+        ));
+    }
+    std::fs::write(&p, text.as_bytes()).map_err(|e| format!("寫入失敗：{e}"))?;
+    Ok(p.to_string_lossy().to_string())
+}
+
+/// 選一支 `.ttl` 巨集（分頁右鍵「執行巨集…」）。
+///
+/// 篩選器照舊版 `MacroAction`：「TeraTerm 巨集 (*.ttl)」＋「所有檔案」。
+#[tauri::command]
+pub async fn macro_pick_file(app: AppHandle, title: Option<String>) -> Option<String> {
+    use tauri_plugin_dialog::DialogExt;
+    let (tx, rx) = std::sync::mpsc::channel();
+    app.dialog()
+        .file()
+        .set_title(title.as_deref().unwrap_or("選擇 TTL 巨集"))
+        .add_filter("TeraTerm 巨集", &["ttl"])
+        .add_filter("所有檔案", &["*"])
+        .pick_file(move |f| {
+            let _ = tx.send(f);
+        });
+    let picked = tokio::task::spawn_blocking(move || rx.recv().ok().flatten())
+        .await
+        .ok()
+        .flatten()?;
+    Some(picked.to_string())
 }
 
 /// 系統暫存資料夾。

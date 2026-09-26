@@ -229,6 +229,7 @@ async function awayVerify() {
   await verifySshPath();
   await verifyTelnetPath();
   await verifyComPath();
+  await verifyMacro();
   await verifyRestore();
   await verifySandbox();
 }
@@ -453,6 +454,65 @@ async function verifyComPath() {
     const after = currentTabState().tabs.length;
     lines.push(`[verify] 開不存在的埠有回錯誤：${failed !== ''}（${failed}）`);
     lines.push(`[verify] 沒有留下死分頁：${after === before}（分頁數 ${before} → ${after}）`);
+  } catch (e) {
+    lines.push(`[verify] 失敗：${e}`);
+  }
+  log(lines.join('\n'));
+}
+
+/**
+ * TTL 巨集的 **app 端路徑**驗證（直譯器本身由 `cargo run --example ttl_probe` 驗，27 項）。
+ *
+ * 寫一支小巨集到 `%TEMP%`，在**真的 PowerShell 分頁**上跑：
+ * `sendln 'echo AWAY_TTL_OK'` → `wait 'AWAY_TTL_OK'` → `end`。
+ * 驗的是「巨集看得到連線的輸出、也送得出東西」這條完整的路（IoTap + SessionManager）。
+ */
+async function verifyMacro() {
+  const lines = ['[verify] TTL 巨集（app 端路徑）'];
+  try {
+    const tmp = await invoke('temp_dir');
+    const path = `${tmp}\awayterm-verify.ttl`;
+    // 巨集內容：送一行、等它回來、再設一個旗標檔用的變數
+    const src = [
+      "timeout = 10",
+      "sendln 'echo AWAY_TTL_OK'",
+      "wait 'AWAY_TTL_OK'",
+      "hit = result",
+      "if hit = 1 then",
+      "  dispstr '[macro] AWAY_TTL_WAIT_HIT'",
+      "endif",
+      "end",
+      "",
+    ].join(String.fromCharCode(13, 10));
+    await invoke('save_text_to_file_at', { path, text: src });
+
+    const term = window.AwayTerm;
+    const id = currentTabState().tabs.find((t) => t.kind === 'powershell').id;
+    const before = (currentTabState().tabs.find((t) => t.id === id) || {}).macroState;
+    lines.push(`[verify] 開始前沒有巨集狀態：${!before}`);
+
+    const r = await invoke('macro_verify', { id, path, timeoutMs: 20000 });
+    lines.push(`[verify] 巨集執行結果：${r}`);
+
+    // 畫面上要看得到 dispstr 印的字，代表 wait 真的命中了
+    let tail = '';
+    for (let i = 0; i < 20; i++) {
+      await wait(300);
+      tail = term.tail(id, 30).join(' ');
+      if (tail.includes('AWAY_TTL_WAIT_HIT')) break;
+    }
+    lines.push(`[verify] wait 命中（畫面上有 dispstr 的字）：${tail.includes('AWAY_TTL_WAIT_HIT')}`);
+    // 結束提示是 `finish()` 在清掉分頁狀態之後才推進畫面的，所以要自己再等一下
+    // （第一版和上面共用同一份 tail，量到的是還沒印出來的那一刻）
+    let done = '';
+    for (let i = 0; i < 20; i++) {
+      await wait(200);
+      done = term.tail(id, 30).join(' ');
+      if (done.includes('巨集執行完畢')) break;
+    }
+    lines.push(`[verify] 巨集結束的提示有印出來：${done.includes('巨集執行完畢')}`);
+    const after = (currentTabState().tabs.find((t) => t.id === id) || {}).macroState;
+    lines.push(`[verify] 結束後巨集狀態已清掉：${!after}`);
   } catch (e) {
     lines.push(`[verify] 失敗：${e}`);
   }

@@ -12,7 +12,7 @@ use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 use tauri::ipc::{Channel, InvokeResponseBody};
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Manager, State};
 
 use crate::host::emit_host;
 use crate::output::OutputPump;
@@ -495,6 +495,7 @@ pub fn session_create(
         bg: None,
         out: Some(pump.clone()),
         tap: tap.clone(),
+        macro_handle: None,
         cols,
         rows,
         conn: None,
@@ -512,6 +513,78 @@ pub fn session_create(
     manager.insert(id, session);
     tabs::emit_state(&app, &tabs_state);
     Ok(info)
+}
+
+/// 給**巨集的 `connect`** 用：在**既有的分頁**上開一條新連線。
+///
+/// 和 `create_remote` 的差別：分頁與輸出管線都已經存在（巨集正在那個分頁裡跑），
+/// 所以這裡只換連線參數再叫 `reconnect::start`——那條路本來就是「沿用分頁的管線重連」。
+/// 呼叫端（`ttl::runner::connect_from_macro`）已經確認分頁目前**沒有**連線。
+pub fn macro_connect(
+    app: &AppHandle,
+    id: u32,
+    kind: &str,
+    host: &str,
+    port: Option<u16>,
+    user: &str,
+    com: Option<u32>,
+) -> bool {
+    let Some(tabs) = app.try_state::<Arc<TabManager>>() else {
+        return false;
+    };
+    let Some(settings) = app.try_state::<Arc<SettingsStore>>() else {
+        return false;
+    };
+    let s = settings.get();
+    let params = match kind {
+        "telnet" => crate::reconnect::ConnParams::Telnet(crate::telnet::TelnetParams {
+            host: host.to_string(),
+            port: port.unwrap_or(23),
+            keepalive_mins: s.keep_alive_mins,
+            auto_reconnect: false, // 巨集自己決定要不要重連
+        }),
+        "com" => crate::reconnect::ConnParams::Com(crate::com::ComParams {
+            port: match com {
+                Some(n) => format!("COM{n}"),
+                None => s.com_port.clone(),
+            },
+            baud: s.com_baud,
+            data_bits: s.com_data_bits,
+            parity: s.com_parity.clone(),
+            stop_bits: s.com_stop_bits.clone(),
+            flow: s.com_flow.clone(),
+            auto_reconnect: false,
+        }),
+        _ => crate::reconnect::ConnParams::Ssh(crate::ssh::conn::SshConnParams {
+            host: host.to_string(),
+            port: port.unwrap_or(22),
+            user: user.to_string(),
+            key_path: String::new(),
+            use_agent: true,
+            keepalive_mins: s.keep_alive_mins,
+            auto_reconnect: false,
+            algos: Default::default(),
+            env: Vec::new(),
+        }),
+    };
+    if host.is_empty() && !matches!(params, crate::reconnect::ConnParams::Com(_)) {
+        return false;
+    }
+    tabs.set_conn(id, params.clone());
+    let Some(parts) = tabs.session_parts_of(id) else {
+        return false;
+    };
+    match crate::reconnect::start(app, id, &params, parts) {
+        Ok(()) => {
+            println!("[AwayTerminal] 巨集 connect：分頁 {id} → {}", params.target());
+            tabs::emit_state(app, &tabs);
+            true
+        }
+        Err(e) => {
+            println!("[AwayTerminal] 巨集 connect 失敗：分頁 {id} → {e}");
+            false
+        }
+    }
 }
 
 /// 開一條遠端連線（內建 SSH／Telnet）。
@@ -578,6 +651,7 @@ fn create_remote(
         bg: None,
         out: Some(pump),
         tap: Default::default(),
+        macro_handle: None,
         cols,
         rows,
         conn: Some(params.clone()),
@@ -700,6 +774,8 @@ pub fn tab_close(
     tabs_state: State<'_, Arc<TabManager>>,
 ) {
     emit_host(&app, format!("x{id}"));
+    // 巨集要先叫停（舊版 `CloseTab` 也是先 `(tab.Macro as MacroRunner)?.Stop()`）
+    crate::ttl::runner::stop_for_tab(&app, id);
     // 關分頁要先收掉 log（舊版 RemoveTabSilently 的 `(tab.Logger as SessionLogger)?.Dispose()`）
     if let Some(slot) = tabs_state.logger_slot(id) {
         if let Ok(mut g) = slot.lock() {

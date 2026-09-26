@@ -50,6 +50,12 @@ pub enum Err {
     NotSupported = 20,
     /// `Can't execute command.`
     CantExec = 21,
+    /// **新增（原碼沒有）**：使用者中斷、分頁關閉或連線斷掉。
+    ///
+    /// 原碼的中斷是把 `TTLStatus` 直接設成結束、不算錯誤；我們需要一個碼讓
+    /// 正在等的指令（`wait`／`pause`）把控制權交回去，執行器再把它當「正常中斷」處理
+    /// （不跳錯誤對話框）。編號從 100 起跳，不會和原碼的 1～21 撞。
+    Interrupted = 100,
 }
 
 impl Err {
@@ -78,6 +84,7 @@ impl Err {
             Err::FewMemory => "Can't allocate memory.",
             Err::NotSupported => "Unknown command.",
             Err::CantExec => "Can't execute command.",
+            Err::Interrupted => "Macro interrupted.",
         }
     }
 
@@ -105,6 +112,7 @@ impl Err {
             Err::FewMemory => "記憶體不足。",
             Err::NotSupported => "不認識的指令（或這個版本還沒實作）。",
             Err::CantExec => "無法執行指令。",
+            Err::Interrupted => "巨集已中斷。",
         }
     }
 

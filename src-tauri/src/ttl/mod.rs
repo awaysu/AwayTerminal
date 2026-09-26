@@ -26,13 +26,18 @@
 
 pub mod cmds;
 pub mod error;
+pub mod host;
 pub mod exec;
 pub mod expr;
+pub mod files;
+pub mod io;
 pub mod lex;
+pub mod runner;
 pub mod vars;
 pub mod words;
 
 pub use error::{Err, TtlError};
+pub use host::{DialogAnswer, DialogRequest, MacroHost, RecvBuffer, WaitMatcher};
 pub use exec::{Interp, Source, Step};
 pub use vars::{VarType, Vars};
 

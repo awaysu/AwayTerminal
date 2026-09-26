@@ -134,6 +134,18 @@ pub struct Interp {
     loader: Loader,
     /// 執行過幾行（防呆：`ttl_probe` 用來擋住寫壞的無窮迴圈）。
     pub steps: u64,
+    /// 會碰外界的指令（`send`／`wait`／對話框…）要用的介面。
+    /// `None` ＝只能跑不碰 I/O 的指令（單元測試預設就是這樣）。
+    host: Option<std::sync::Arc<dyn super::host::MacroHost>>,
+    /// 巨集的「目前目錄」（原碼的 `CurrentDir`）：相對路徑相對於它。
+    /// **不是行程的工作目錄**——`setdir`／`changedir` 只改這個。
+    current_dir: std::path::PathBuf,
+    /// 開著的檔案（`fileopen` 給的整數就是這裡的索引，同原碼的 handle 表）。
+    files: std::collections::HashMap<i32, super::files::OpenFile>,
+    /// `findfirst` 還沒吐完的檔名。
+    finds: std::collections::HashMap<i32, Vec<String>>,
+    /// 下一個控制代碼。
+    next_handle: i32,
 }
 
 impl Interp {
@@ -160,6 +172,11 @@ impl Interp {
             line_no: 0,
             loader,
             steps: 0,
+            host: None,
+            current_dir: std::env::current_dir().unwrap_or_default(),
+            files: std::collections::HashMap::new(),
+            finds: std::collections::HashMap::new(),
+            next_handle: 0,
         };
         it.push_buffer(src)?;
         Ok(it)
@@ -188,7 +205,8 @@ impl Interp {
             .map(|s| s.to_string_lossy().into_owned())
             .unwrap_or_default();
         let dir = path.parent().map(|p| p.to_path_buf()).unwrap_or_default();
-        Self::new(
+        let base = dir.clone();
+        let mut it = Self::new(
             Source::new(name, &text),
             Box::new(move |f| {
                 let p = dir.join(f);
@@ -200,7 +218,12 @@ impl Interp {
                     &text,
                 ))
             }),
-        )
+        )?;
+        // 巨集的「目前目錄」預設是巨集檔所在的資料夾（同原碼啟動時的 CurrentDir）
+        if !base.as_os_str().is_empty() {
+            it.set_current_dir(base);
+        }
+        Ok(it)
     }
 
     /// 跑到結束（或超過 `max_steps` 行——防呆用）。
@@ -504,6 +527,78 @@ impl Interp {
         } else {
             Ok(())
         }
+    }
+
+    /// 巨集的目前目錄（相對路徑的基準）。
+    pub fn current_dir(&self) -> &std::path::Path {
+        &self.current_dir
+    }
+
+    pub fn set_current_dir(&mut self, dir: std::path::PathBuf) {
+        self.current_dir = dir;
+    }
+
+    /// 放一個開著的檔案進表裡，回傳控制代碼。
+    pub(super) fn files_put(&mut self, f: super::files::OpenFile) -> i32 {
+        let h = self.next_handle;
+        self.next_handle += 1;
+        self.files.insert(h, f);
+        h
+    }
+
+    /// 拿走（關閉）一個檔案。
+    pub(super) fn files_take(&mut self, h: i32) -> Option<super::files::OpenFile> {
+        self.files.remove(&h)
+    }
+
+    /// 對某個開著的檔案做一件事。控制代碼不對就回 `None`（同原碼：無效的 handle 不是錯誤）。
+    pub(super) fn files_with<T>(
+        &mut self,
+        h: i32,
+        f: impl FnOnce(&mut super::files::OpenFile) -> T,
+    ) -> Option<T> {
+        self.files.get_mut(&h).map(f)
+    }
+
+    pub(super) fn finds_put(&mut self, names: Vec<String>) -> i32 {
+        let h = self.next_handle;
+        self.next_handle += 1;
+        self.finds.insert(h, names);
+        h
+    }
+
+    pub(super) fn finds_next(&mut self, h: i32) -> Option<String> {
+        let list = self.finds.get_mut(&h)?;
+        if list.is_empty() {
+            None
+        } else {
+            Some(list.remove(0))
+        }
+    }
+
+    pub(super) fn finds_take(&mut self, h: i32) {
+        self.finds.remove(&h);
+    }
+
+    /// 掛上（或卸下）外界介面。執行器在開始跑之前呼叫一次。
+    pub fn set_host(&mut self, host: Option<std::sync::Arc<dyn super::host::MacroHost>>) {
+        self.host = host;
+    }
+
+    pub(super) fn host(&self) -> Option<std::sync::Arc<dyn super::host::MacroHost>> {
+        self.host.clone()
+    }
+
+    /// 讀一個字串常值（`send` 的參數列要「字串或運算式」輪流試）。
+    pub(super) fn lex_string(&mut self) -> Result<Option<Vec<u8>>> {
+        self.lex.mark_token_start();
+        self.lex.string()
+    }
+
+    /// 讀一個運算式；這裡沒有東西就回 `None`（不是錯誤）。
+    pub(super) fn try_expression(&mut self) -> Result<Option<super::expr::Val>> {
+        self.lex.mark_token_start();
+        super::expr::Eval::new(&mut self.lex, &self.vars).expression()
     }
 
     /// 直接讀一個識別字（`intdim` 這種「名稱不是變數參照」的指令用）。
@@ -1270,8 +1365,9 @@ mod tests {
     fn unknown_and_unimplemented() {
         // 沒有 `=` 的識別字＝語法錯誤（原碼的 assignment 路徑）
         assert_eq!(err_of("foobar 1"), Err::Syntax);
-        // 保留字但這一批沒實作
-        assert_eq!(err_of("sendln 'x'"), Err::NotSupported);
+        // 保留字但還沒實作（正規表示式是 TASK-014、xmodem 那組不做）
+        assert_eq!(err_of("waitregex 'x'"), Err::NotSupported);
+        assert_eq!(err_of("xmodemrecv 'f' 1 0"), Err::NotSupported);
     }
 
     /// `ifdefined` 回報型別（0／1／3／5／6）。

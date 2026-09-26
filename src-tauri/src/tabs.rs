@@ -103,8 +103,11 @@ pub struct Tab {
     pub bg: Option<String>,
     /// 這個分頁的輸出管線與 log 槽。斷線重連要沿用它們（同一條 channel）。
     pub out: Option<Arc<crate::output::OutputPump>>,
-    /// TTL 巨集的輸入／輸出攔截槽（TASK-011 只留介面，見 `src/tap.rs`）。
+    /// TTL 巨集的輸入／輸出攔截槽（見 `src/tap.rs`）。
     pub tap: crate::tap::TapSlot,
+    /// 正在跑的巨集（`None`＝沒有）。舊版是 `TerminalTab.IsMacroRunning`（只影響 tooltip），
+    /// 我們多了檔名與目前行號，分頁列也看得見。
+    pub macro_handle: Option<Arc<crate::ttl::runner::MacroHandle>>,
     /// 最後一次由前端回報的尺寸（重連時用，同舊版 `tab.Cols/Rows`）。
     pub cols: u16,
     pub rows: u16,
@@ -163,6 +166,9 @@ pub struct TabView {
     pub reconnectable: bool,
     /// 正在等自動重連（退避倒數中）。
     pub reconnect_attempt: u32,
+    /// 正在跑的 TTL 巨集（`None`＝沒有）。**新增**：舊版只在 tooltip 提一句，
+    /// 我們讓分頁列也看得到（檔名 + 目前行號）。
+    pub macro_state: Option<crate::ttl::runner::MacroState>,
 }
 
 #[derive(Clone, serde::Serialize)]
@@ -423,6 +429,25 @@ impl TabManager {
         })
     }
 
+    /// 正在跑的巨集（`None`＝沒有）。
+    pub fn macro_of(&self, id: u32) -> Option<Arc<crate::ttl::runner::MacroHandle>> {
+        self.lock().tabs.get(&id).and_then(|t| t.macro_handle.clone())
+    }
+
+    /// 掛上／拿掉巨集。
+    pub fn set_macro(&self, id: u32, h: Option<Arc<crate::ttl::runner::MacroHandle>>) {
+        if let Some(t) = self.lock().tabs.get_mut(&id) {
+            t.macro_handle = h;
+        }
+    }
+
+    /// 巨集的 `connect` 用：把這個分頁的連線參數換掉（原本沒有連線參數的分頁也可以）。
+    pub fn set_conn(&self, id: u32, params: crate::reconnect::ConnParams) {
+        if let Some(t) = self.lock().tabs.get_mut(&id) {
+            t.conn = Some(params);
+        }
+    }
+
     /// 這個分頁的攔截槽（TTL 巨集用；分頁不存在時回 `None`）。
     pub fn tap_of(&self, id: u32) -> Option<crate::tap::TapSlot> {
         self.lock().tabs.get(&id).map(|t| t.tap.clone())
@@ -613,6 +638,12 @@ impl TabManager {
                     conn_name: t.conn_name.clone(),
                     reconnectable: t.conn.is_some(),
                     reconnect_attempt: t.reconnect_attempt,
+                    macro_state: t.macro_handle.as_ref().map(|h| {
+                        crate::ttl::runner::MacroState {
+                            file: h.file.clone(),
+                            line: h.line.load(std::sync::atomic::Ordering::Relaxed),
+                        }
+                    }),
                 })
                 .collect(),
             active_id: inner.active,
@@ -779,6 +810,7 @@ mod tests {
             bg: None,
             out: None,
             tap: Default::default(),
+            macro_handle: None,
             cols: 80,
             rows: 24,
             conn: Some(crate::reconnect::ConnParams::Ssh(Default::default())),

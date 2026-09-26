@@ -412,3 +412,61 @@ body.col-resizing { cursor: col-resize; user-select: none; }
   background: #3a3a3d; color: #e0e0e0; border: 1px solid #555; border-radius: 4px;
 }
 #favs .modal-buttons button:hover { background: #50505a; }
+
+/* 巨集執行中的小標記（分頁列）與 statusbox（右下角常駐提示） */
+.tab-macro {
+  color: #FFD54F;
+  font-size: 11px;
+  font-weight: bold;
+  margin-right: 4px;
+  flex: none;
+}
+#macrostatus {
+  position: fixed;
+  right: 12px;
+  bottom: 12px;
+  max-width: 420px;
+  padding: 8px 12px;
+  background: #2D2D30;
+  border: 1px solid #3F3F46;
+  border-radius: 4px;
+  color: #E0E0E0;
+  font-size: 12px;
+  white-space: pre-wrap;
+  z-index: 50;
+}
+#macrodlg {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 60;
+}
+#macrodlg[hidden] {
+  display: none;
+}
+#macrodlg-box {
+  min-width: 320px;
+  max-width: 560px;
+  background: #2D2D30;
+  border: 1px solid #3F3F46;
+  border-radius: 4px;
+  padding: 16px;
+  color: #E0E0E0;
+}
+#macrodlg-title {
+  font-weight: bold;
+  margin-bottom: 8px;
+}
+#macrodlg-body {
+  white-space: pre-wrap;
+  margin-bottom: 12px;
+}
+#md-input,
+#md-list {
+  width: 100%;
+  box-sizing: border-box;
+  margin-bottom: 12px;
+}

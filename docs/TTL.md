@@ -6,8 +6,9 @@
 
 - 藍本：`reference/teraterm/teraterm/ttpmacro/`（`git clone --depth 1`，**不進 commit**；`reference/` 已在 `.gitignore`）
 - 授權：BSD-3（見 `THIRD-PARTY-NOTICES.md`）
-- 這一批（TASK-012）＝**解析／運算式／變數／流程控制／不碰 I/O 的指令**。
-  連線、對話框、檔案、正規表示式是第二批（TASK-013）。
+- 第一批（TASK-012）＝解析／運算式／變數／流程控制／不碰 I/O 的指令。
+- 第二批（TASK-013）＝**執行入口、連線輸出入（`send`／`wait`）、對話框、檔案**。
+- 正規表示式（`strmatch`／`strreplace`／`waitregex`／`regexoption`）是 **TASK-014**。
 
 ---
 
@@ -25,7 +26,12 @@
 | `ttl.cpp` | 6583 | `Exec`／`ExecCmnd` 的跳過旗標階梯與指令分派 | `src/ttl/exec.rs` |
 | 同上 | | `TTLIf`／`TTLFor`／`TTLWhile`／`TTLDo`／`TTLLoop`／`TTLBreak`／`TTLGoto`／`TTLCall`／`TTLReturn`／`TTLInclude`… | `src/ttl/exec.rs` |
 | 同上 | | `TTLStrLen`／`TTLStrCompare`／…／`TTLSprintf`／`TTLGetTime`／`BitRotate`… | `src/ttl/cmds.rs` |
-| `ttmdlg.cpp`／`msgdlg.cpp`／`inpdlg.cpp`／`ListDlg.cpp`／`statdlg.cpp` | — | 對話框 | **第二批** |
+| `ttmdlg.cpp`／`msgdlg.cpp`／`inpdlg.cpp`／`ListDlg.cpp`／`statdlg.cpp` | — | 對話框 | `src/ttl/io.rs`（Rust 端）＋`src/macro.js`（前端；**一個元件應付五種**） |
+| `ttmdde.c`：`DDEOut`／`DDESend`／`Read1Byte`／`Wait`／`SetWait` | 1093 | 和 `ttermpro` 的 DDE 通訊與 `wait` 的比對 | `src/ttl/host.rs`（`MacroHost`／`RecvBuffer`／`WaitMatcher`）——`CLAUDE.md` 定的「DDE 改成程式內直接呼叫後端」 |
+| `ttl.cpp`：`TTLSend`／`TTLWait`／`TTLPause`／`TTLConnect`… | | 會碰外界的指令 | `src/ttl/io.rs` |
+| `ttl.cpp`：`TTLFile*`／`TTLFind*`／`TTLFolder*` | | 檔案指令 | `src/ttl/files.rs` |
+| `ttmmain.cpp`：`IdTTLWait*` 的狀態機 | 735 | 「等」的驅動 | `src/ttl/io.rs` 的 `pump_until`（每 10ms 檢查中斷與逾時） |
+| `MainWindow.MacroAction`（**舊版 AwayTerminal**） | | 執行入口 | `src/ttl/runner.rs`＋`src/macro.js` |
 | `ttmdde.c`／`wait4all.c`／`ttmenc2.c` | — | 和 `ttermpro` 的 DDE 通訊、多視窗等待、密碼加密 | **不做**（DDE 改成程式內直接呼叫連線後端，見 `CLAUDE.md`） |
 | `ttmlib.c`／`ttmmain.cpp`／`ttmacro.cpp`／`ttl_gui.cpp` | — | Win32 的進入點與輔助 | 不需要（Tauri 這邊自己的入口，第二批做） |
 
@@ -128,9 +134,57 @@
   `matchstr`、`groupmatchstr1`～`groupmatchstr9`。
   `param1..N`／`paramcnt` 要等第二批的執行入口（要有命令列參數才有意義）。
 
+## 3.6 執行入口（TASK-013）
+
+| 舊版行為 | 出處 | 新版 | 一樣嗎 |
+|---|---|---|---|
+| 分頁右鍵「執行巨集…」 | `MainWindow.xaml` 的 `MenuMacro_Click` | 同（分頁右鍵選單） | ✅ |
+| 檔案選擇：`TeraTerm 巨集 (*.ttl)`／`所有檔案` | `MacroAction` 的 `OpenFileDialog` | 同（`macro_pick_file`） | ✅ |
+| 已經在跑 → 問「要停止巨集嗎？」，是 → 停 | 同上 | 同 | ✅ |
+| 讀檔失敗 → 跳「無法讀取巨集：」 | 同上 | 同（`macro_run` 回 Err → 前端對話框） | ✅ |
+| 巨集在背景執行緒跑 | `Task.Run(RunAsync)` | 每個分頁一條專用執行緒 | ✅ |
+| `messagebox`／`yesnobox`／`inputbox` 交給 UI | 三個事件 | `macro-dialog` event → 前端 → `macro_answer` | ✅ |
+| 分頁關閉／程式結束 → 停巨集 | `CloseTab`／`OnClosed` | `tab_close` 呼叫 `stop_for_tab` | ✅ |
+| 執行中的狀態 | `IsMacroRunning`（只影響 tooltip） | tooltip **＋分頁列一個黃色 `M`**（檔名與目前行號在 tooltip） | ⬜ **新增** |
+| 巨集結束 | 靜靜結束 | 畫面上一行灰字「[巨集執行完畢：檔名]」；中斷是「[巨集已中斷：…]」；錯誤是紅字＋對話框 | ⬜ **新增**（舊版只有錯誤對話框） |
+| 執行中使用者打字 | **照樣送給連線**（`MacroRunner` 沒有攔鍵盤） | 同（`IoTap::on_input` 一律放行） | ✅ |
+
+中斷：右鍵選單再點一次「執行巨集…」→ 問「要停止巨集嗎？」。正在 `wait`／`pause`
+的巨集會在 10ms 內停下來（`ttl_probe` 實測 150ms 內結束，逾時設 30 秒也一樣）。
+
+## 3.7 「等」與接收緩衝
+
+| 項目 | 原碼 | 我們 |
+|---|---|---|
+| 資料來源 | `ttermpro` 透過 DDE 送過來 | `IoTap::on_output`（TASK-011 留的接縫）→ `RecvBuffer` |
+| `wait` 的比對 | 原始位元組，**含 ANSI escape** | **先去掉 ANSI** 再比對 |
+| 緩衝上限 | 環形緩衝 | 400KB，滿了砍成 200KB |
+| 逾時 | `timeout`×1000 + `mtimeout` 毫秒，0＝永遠等 | 同 |
+| 候選數 | 最多 10 個，**同時命中時索引小的贏** | 同（`WaitMatcher`，有測試） |
+| `waitln`／`recvln` 的 `inputstr` | `RecvLnBuff`（下一行的第一個位元組才清前一行） | 同 |
+
+⚠️ **「去掉 ANSI」是刻意和原碼不同、照舊版 AwayTerminal**：原碼比對原始位元組，
+所以遇到有顏色的提示字元（`[32m$[0m`）會比不到；舊版 C# 版先去 ANSI，
+使用者的巨集是照那個行為寫的。`ttl_probe` 有一條就是在驗「有顏色的 `login:` 也比對得到」。
+
 ## 4. 指令清單（對照原碼的 211 個保留字）
 
-### 4.1 這一批做了（60 個）
+### 4.1 已實作（121 個）
+
+第二批（TASK-013）新增的：
+
+| 類別 | 指令 |
+|---|---|
+| 連線輸出入 | `send` `sendln` `dispstr`、`wait` `waitln` `waitn` `recvln` `flushrecv` |
+| 暫停 | `pause` `mpause` |
+| 終端機 | `beep` `clearscreen` `settitle` `gettitle` |
+| log | `logopen` `logwrite` `logclose` |
+| 連線控制 | `connect` `disconnect` `testlink` |
+| 對話框 | `messagebox` `yesnobox` `inputbox` `passwordbox` `statusbox` `closesbox` `listbox` `filenamebox` `dirnamebox` `setdlgpos` |
+| 檔案 | `fileopen` `fileclose` `fileread` `filereadln` `filewrite` `filewriteln` `fileseek` `fileseekback` `filemarkptr` `filestrseek` `filestrseek2` `filetruncate` `filesearch` `filecreate` `filedelete` `filerename` `filecopy` `filestat` |
+| 資料夾與搜尋 | `foldercreate` `folderdelete` `foldersearch` `findfirst` `findnext` `findclose` `getdir` `setdir` `changedir` |
+
+第一批（TASK-012）的 60 個：
 
 | 類別 | 指令 |
 |---|---|
@@ -144,23 +198,25 @@
 | 其他 | `setexitcode` `getver` |
 | 運算子（字詞） | `and` `or` `xor` `not` |
 
-### 4.2 第二批（TASK-013）
+### 4.2 還沒做的
 
-| 類別 | 指令 | 為什麼留到第二批 |
+完整清單（每一條都有原因）在 **`docs/TTL-TODO.md`**。摘要：
+
+| 分類 | 代表指令 | 狀態 |
 |---|---|---|
-| 連線 | `send` `sendln` `sendbreak` `sendfile` `sendtext` `sendbinary` `sendkcode`、`wait` `waitln` `waitn` `wait4all` `waitevent` `waitrecv` `waitregex`、`recvln` `recvfile`、`flushrecv`、`connect` `disconnect` `cygconnect` `testlink` `unlink`、`pause` `mpause`、`setsync` `setecho` `enablekeyb` | 要接 `IoTap`（介面已經在 `src/ttl`／`src/tap.rs` 備好） |
-| 對話框 | `messagebox` `inputbox` `passwordbox` `yesnobox` `statusbox` `closesbox` `listbox` `filenamebox` `dirnamebox` `bringupbox` `setdlgpos` | 要前端的對話框 |
-| 檔案 | `fileopen` `fileclose` `fileread` `filereadln` `filewrite` `filewriteln` `fileseek` `filesearch` `filestat` `filetruncate` `filelock` `fileunlock` `filecopy` `filerename` `filedelete` `filecreate` `fileconcat` `filemarkptr` `fileseekback` `filestrseek` `filestrseek2` `findfirst` `findnext` `findclose` `foldercreate` `folderdelete` `foldersearch` `getdir` `setdir` `changedir` `getfileattr` `setfileattr` `getspecialfolder` | 是純 std 檔案 API，本來可以做；**時間分配上先讓路給核心語法**，而且 `filereadln` 之類要和「可暫停」的模型對齊，和第二批一起做比較省事 |
-| 正規表示式 | `strmatch` `strreplace` `waitregex` `regexoption` | 原碼用 **Oniguruma**；換成 Rust 的 `regex` crate 會有語法差異（後向參照、`\G`、POSIX 類別、貪婪度預設…），要單獨查證與列差異表，硬塞進這一批只會做出「看起來會動」的東西 |
-| 記錄／終端機 | `logopen` `logclose` `logwrite` `logstart` `logpause` `loginfo` `logrotate` `logautoclosemode`、`clearscreen` `dispstr` `settitle` `gettitle` `setdate` `settime` `beep` `show` `showtt` `closett` `getttdir` `getttpos` `setspeed` `setbaud` `setrts` `setdtr` `setflowctrl` `setserialdelaychar` `setserialdelayline` | 要接分頁／連線後端 |
-| 其他 | `exec` `execcmnd` `callmenu` `clipb2var` `var2clipb`、`crc16`／`crc32`／`checksum*`（含 `*file`）、`gethostname` `getipv4addr` `getipv6addr` `uptime` `getmodemstatus`、`setpassword*`／`getpassword*`／`ispassword*`／`delpassword*`、`loadkeymap` `restoresetup` `setdebug` `setenv`(已做) | 各自要對應的後端 |
-| 檔案傳輸 | `xmodemrecv/send` `ymodemrecv/send` `zmodemrecv/send` `kmtget/recv/send/finish` `bplusrecv/send` `quickvanrecv/send` `scprecv/scpsend` | **可能不做**（舊版也沒有）；等使用者說要不要 |
-| 多視窗 | `sendbroadcast` `sendlnbroadcast` `sendmulticast` `sendlnmulticast` `setmulticastname` | TeraTerm 是多行程架構才需要；我們是單一程式多分頁，語意要重新定義 → 等 PM 決定 |
+| 正規表示式 | `strmatch` `strreplace` `waitregex` `regexoption` | **TASK-014**：原碼用 Oniguruma，換 Rust 的 `regex` 有語法差異（無後向參照），要先出差異表再選引擎 |
+| 多視窗廣播 | `sendbroadcast` `sendmulticast` `wait4all`… | 等 PM 定語意（TeraTerm 是多行程，我們是單程式多分頁） |
+| 密碼存放 | `setpassword` `getpassword`… | **不做原碼的格式**（`ttmenc2.c` 是弱加密，會給錯誤的安全感）；要做應接 OS 憑證存放區 |
+| 檔案傳輸 | `xmodem*` `zmodem*` `kmt*` `scp*` | 舊版也沒有，各自是完整協定 → 等需求 |
+| 外部程式 | `exec` `execcmnd` | 等 PM 決定沙盒模式下的規則（能 `exec` 就繞過沙盒了） |
+| 終端機／設定 | `setecho` `enablekeyb` `setbaud` `loadkeymap`… | 要對應的後端開關 |
+| Windows 專屬細節 | `getspecialfolder` `get/setfileattr` `filelock` | 可以做，等有人要用 |
+| 雜項計算 | `crc32` `checksum*` `gethostname`… | 純計算，沒有使用案例先不加 |
 
 **沒實作的指令仍然是保留字**：執行到會回 `Unknown command.`（`ErrNotSupported`），
 不會被誤認成變數名，也不會安靜跳過。
 
-### 4.3 這一批的已知偏差（都刻意，都有測試釘住）
+### 4.3 已知偏差（都刻意，都有測試釘住）
 
 | 項目 | 原碼 | 我們 | 為什麼 |
 |---|---|---|---|
@@ -169,7 +225,12 @@
 | `%Z`（時區名稱） | C 的時區縮寫 | 用 `+0800` 這種偏移 | 跨平台拿不到一致的縮寫 |
 | `strftime` 的 `#` 修飾詞 | MSVC 的「去前導零／長格式」 | 接受但**忽略** | 只有 MSVC 有；影響很小 |
 | `random` 的亂數源 | SFMT（Mersenne Twister 族） | xorshift64*（種子取自系統時間） | 巨集不需要密碼學等級的亂數；範圍與含端點的行為一樣 |
-| `setenv` | `_putenv_s`（只影響自己的行程） | 同 | ⚠️ 我們是多分頁的 app → 會影響**之後開的分頁**。文件與第二批的 UI 要提醒 |
+| `setenv` | `_putenv_s`（只影響自己的行程） | 同 | ⚠️ 我們是多分頁的 app → 會影響**之後開的分頁** |
+| `wait` 的比對對象 | 原始位元組（含 ANSI） | **先去掉 ANSI**（照舊版 AwayTerminal） | 有顏色的提示字元原碼比不到；使用者的巨集是照舊版的行為寫的。見 3.7 |
+| `filestat` | 大小／時間／屬性，時間格式可選 | 只給**大小**與 `yyyy-mm-dd hh:mm:ss` 的修改時間 | 其餘欄位沒有使用案例 |
+| `testlink` | 2／1／0 三種狀態 | 只有 2（連著）與 0 | 我們沒有「有連線層但沒連上」那個中間狀態 |
+| `setdir`／`changedir` | `SetCurrentDirectory`（影響整個行程） | **只改巨集自己的目前目錄** | 多分頁的 app 不能讓一支巨集改掉別人的工作目錄 |
+| `logopen` 的 binary／plainText／timestamp 參數 | 各自有效 | 讀掉但**不用** | 我們的 log 一律是「去 ANSI 的文字」，時間戳照設定（見 `logging.rs`） |
 
 ## 5. 錯誤
 
@@ -211,7 +272,7 @@ TeraTerm 做完整的 `waitregex`／`strmatch`。
 
 ### 單元測試
 
-`cargo test`：**162 個**（TASK-011 是 76），其中 TTL 相關 86 個。
+`cargo test`：**201 個**（TASK-012 是 162），其中 TTL 相關 125 個。
 每個指令至少一例，期望值取自原碼（有些直接引用原碼的條件式寫在註解裡）。
 
 ### `ttl_probe`
@@ -221,7 +282,7 @@ cd src-tauri && cargo run --example ttl_probe
 ```
 
 跑 `src-tauri/tests/ttl/` 底下的 `.ttl` 檔，逐個變數比對。2026-09-27 的結果：
-**21 PASS / 0 FAIL**（共 124 個變數檢查 + 13 個錯誤案例）。
+**27 PASS / 0 FAIL**（124 個變數檢查 + 15 個錯誤案例 + I/O 那幾段）。
 
 | 檔案 | 驗什麼 |
 |---|---|
@@ -231,9 +292,11 @@ cd src-tauri && cargo run --example ttl_probe
 | `inc_main.ttl` + `inc_lib.ttl` | `include`：變數看得到、被 include 的檔跑完會回來、它的標籤只在它自己那一層 |
 | `oldversion.ttl` | 舊版 `samples/sample.ttl` 不碰連線的部分**原樣**跑一次 |
 | `errors.ttl` | 錯誤的**行號**與檔名 |
-| （inline） | 13 個錯誤案例：`")" expected.`／`Divide by zero.`／`Variable not initialized.`／`Type mismatch.`／`Invalid control.`（endif／break／return）／`Label requiered.`／`Label already defined.`／`Syntax error.`／`Index out of range.`／`Unknown command.` |
+| `sample_full.ttl` | 舊版 `samples/sample.ttl` **整檔**（含 `sendln`／`wait`／`messagebox`），對程式內的 TCP echo server 跑 |
+| （I/O 段） | `wait`（含 ANSI 顏色的提示字元）／多候選誰先命中／逾時 `result=0`／`sendln` 真的送出去／`yesnobox`／`inputbox` 的回傳值／**中斷正在 wait 的巨集**（150ms 內停）／沒有連線時回 `Link macro first.` |
+| （inline） | 15 個錯誤案例：`")" expected.`／`Divide by zero.`／`Variable not initialized.`／`Type mismatch.`／`Invalid control.`（endif／break／return）／`Label requiered.`／`Label already defined.`／`Syntax error.`／`Index out of range.`／`Unknown command.` |
 
-## 8. 第二批（TASK-013）的接法
+## 8. 下一批（TASK-014）的接法
 
 1. `wait`／`pause` 這類要等的指令：讓 `Interp::step()` 回「還在等」，
    呼叫端（分頁的巨集執行器）隔一段時間再 `step()`。**直譯器不需要改結構**。

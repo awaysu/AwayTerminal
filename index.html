@@ -77,6 +77,7 @@
   <div id="tab-menu" class="popup-menu" hidden>
     <div class="menu-item" data-act="rename">更改名稱</div>
     <div class="menu-item" data-act="log">記錄 log…</div>
+    <div class="menu-item" data-act="macro">執行巨集…</div>
     <div class="menu-item has-sub" data-act="color">配色
       <span class="menu-arrow">▸</span>
       <div class="popup-menu submenu" id="color-menu">
@@ -288,6 +289,26 @@
       </div>
     </form>
   </div>
+
+  <!-- 巨集的對話框（`messagebox`／`yesnobox`／`inputbox`／`passwordbox`／`listbox`）。
+       一個元件應付所有種類：Rust 端 emit `macro-dialog`，前端問完呼叫 `macro_answer`。
+       `statusbox` 是不等回覆的常駐提示（顯示在右下角）。 -->
+  <div id="macrodlg" hidden>
+    <form id="macrodlg-box">
+      <div id="macrodlg-title"></div>
+      <div id="macrodlg-body"></div>
+      <input id="md-input" type="text" autocomplete="off" spellcheck="false" hidden />
+      <select id="md-list" size="6" hidden></select>
+      <div class="modal-buttons">
+        <button id="md-ok" type="submit">確定</button>
+        <button id="md-no" type="button" hidden>否</button>
+        <button id="md-cancel" type="button" hidden>取消</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- `statusbox`：不等回覆，顯示在右下角直到 `closesbox` -->
+  <div id="macrostatus" hidden></div>
 
   <!-- 連接埠（舊版 Dialogs/ComDialog）：Port / Baud rate / Data bits / Parity / Stop bits /
        Flow control / 斷線自動重連 + 「回到預設」。欄位、順序、預設值都照舊版。

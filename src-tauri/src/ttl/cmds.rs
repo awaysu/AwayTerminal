@@ -64,10 +64,10 @@ impl Interp {
             Word::SetExitCode => self.cmd_set_exit_code(),
             Word::GetVer => self.cmd_get_ver(),
 
-            // 認得是保留字但這一批沒實作（第二批要做的那些）
+            // 認得是保留字但還沒實作
             Word::Unsupported(_) => Err(Err::NotSupported),
-            // 流程控制已經在 exec.rs 處理掉了；字詞運算子不能當指令用
-            _ => Err(Err::Syntax),
+            // 流程控制在 exec.rs、字詞運算子不能當指令用；其餘（會碰外界的）在 io.rs
+            other => self.dispatch_io(other),
         }
     }
 

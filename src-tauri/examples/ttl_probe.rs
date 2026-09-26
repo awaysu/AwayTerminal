@@ -6,6 +6,7 @@
 
 use std::path::{Path, PathBuf};
 
+use awayterminal_lib::ttl::host::{DialogAnswer, MacroHost, NullHost};
 use awayterminal_lib::ttl::{self, Err, Vars};
 
 fn dir() -> PathBuf {
@@ -277,7 +278,11 @@ fn main() {
         (":dup\n:dup", Err::LabelAlreadyDef),
         ("intdim a 0", Err::Syntax),
         ("intdim a 2\nx = a[9]", Err::OutOfRange),
-        ("sendln 'x'", Err::NotSupported),
+        // `sendln` 這一批實作了 → 沒有連線時是 `Link macro first.`
+        ("sendln 'x'", Err::LinkFirst),
+        // 還沒實作的：正規表示式（TASK-014）與檔案傳輸（不做）
+        ("waitregex 'x'", Err::NotSupported),
+        ("xmodemrecv 'f' 1 0", Err::NotSupported),
         ("a = 'unterminated", Err::Syntax),
     ];
     for (src, want) in bad {
@@ -290,6 +295,9 @@ fn main() {
             format!("得到 {got:?}，要 {want:?}"),
         );
     }
+
+    // ---------------------------------------------------------------- I/O（TASK-013）
+    io_section(&mut pass, &mut fail);
 
     println!();
     println!("RESULT: {pass} PASS / {fail} FAIL");
@@ -353,4 +361,288 @@ fn check(v: &Vars, file: &str, ints: &[(&str, i32)], strs: &[(&str, &str)]) -> (
         }
     }
     (pass, fail)
+}
+
+// ==================================================================== I/O 段
+
+/// 用**程式內的 TCP echo server** 當對端，跑一支完整的巨集：
+/// `wait` 提示 → `sendln` → `recvln` 拿回應 → 逾時 → 對話框。
+///
+/// 不用真的連線：`MacroHost` 就是那個接縫（見 `src/ttl/host.rs`）。
+fn io_section(pass: &mut usize, fail: &mut usize) {
+    use std::io::{Read, Write};
+    use std::sync::{Arc, Mutex};
+
+    // --- 一台會回話的測試 server（127.0.0.1，臨時埠）---
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
+    let port = listener.local_addr().unwrap().port();
+    let got: Arc<Mutex<Vec<u8>>> = Arc::new(Mutex::new(Vec::new()));
+    {
+        let got = got.clone();
+        std::thread::spawn(move || {
+            let Ok((mut sock, _)) = listener.accept() else {
+                return;
+            };
+            // 先送提示字元（含 ANSI 顏色：要能被 wait 比對到）
+            let _ = sock.write_all(b"[32mlogin:[0m ");
+            let mut buf = [0u8; 1024];
+            loop {
+                match sock.read(&mut buf) {
+                    Ok(0) | Err(_) => break,
+                    Ok(n) => {
+                        got.lock().unwrap().extend_from_slice(&buf[..n]);
+                        // 收到一行就回一行（把收到的字回給對方 + OK）
+                        if buf[..n].contains(&b'\r') {
+                            let _ = sock.write_all(b"\r\nOK-DONE\r\n");
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    // --- 把 socket 接成一個 MacroHost（讀取執行緒把資料丟進 RecvBuffer）---
+    struct SockHost {
+        inner: NullHost,
+        sock: Mutex<std::net::TcpStream>,
+    }
+    impl MacroHost for SockHost {
+        fn send(&self, data: &[u8]) {
+            let mut g = self.sock.lock().unwrap();
+            let _ = g.write_all(data);
+            let _ = g.flush();
+        }
+        fn read_byte(&self) -> Option<u8> {
+            self.inner.recv.read_byte()
+        }
+        fn flush_recv(&self) {
+            self.inner.recv.clear();
+        }
+        fn stopped(&self) -> bool {
+            self.inner.stopped()
+        }
+        fn connected(&self) -> bool {
+            true
+        }
+        fn echo(&self, text: &str) {
+            self.inner.echo(text);
+        }
+        fn dialog(&self, req: ttl::DialogRequest) -> DialogAnswer {
+            self.inner.dialog(req)
+        }
+        fn sleep(&self, ms: u64) {
+            std::thread::sleep(std::time::Duration::from_millis(ms.min(50)));
+        }
+    }
+
+    let sock = std::net::TcpStream::connect(("127.0.0.1", port)).expect("connect");
+    let reader = sock.try_clone().unwrap();
+    let host = Arc::new(SockHost {
+        inner: NullHost::default(),
+        sock: Mutex::new(sock),
+    });
+    {
+        let host2 = host.clone();
+        let mut reader = reader;
+        std::thread::spawn(move || {
+            let mut buf = [0u8; 1024];
+            loop {
+                match reader.read(&mut buf) {
+                    Ok(0) | Err(_) => break,
+                    Ok(n) => host2.inner.recv.push(&buf[..n]),
+                }
+            }
+        });
+    }
+    *host.inner.answer.lock().unwrap() = DialogAnswer {
+        number: 1,
+        text: "從對話框來的".into(),
+        cancelled: false,
+    };
+
+    let src = "timeout = 3
+wait 'login:'
+w1 = result
+sendln 'hello'
+wait 'OK-DONE' 'never'
+w2 = result
+mtimeout = 100
+timeout = 0
+wait 'this will never come'
+w3 = result
+yesnobox '要繼續嗎' '巨集'
+y = result
+inputbox '輸入' '巨集' '預設'
+s = inputstr
+end
+";
+    let mut it = ttl::Interp::from_text("io.ttl", src).unwrap();
+    it.set_host(Some(host.clone()));
+    match it.run(100_000) {
+        Err(e) => {
+            *fail += 1;
+            println!("FAIL  I/O 巨集跑不完：{e}");
+        }
+        Ok(()) => {
+            let v = std::mem::take(&mut it.vars);
+            let checks: &[(&str, i32)] = &[
+                ("w1", 1),  // 有顏色的提示字元也比對得到（去 ANSI）
+                ("w2", 1),  // 多候選：第一個命中
+                ("w3", 0),  // 逾時
+                ("y", 1),   // yesnobox
+            ];
+            let mut bad = Vec::new();
+            for (k, want) in checks {
+                if v.int_of(k) != Some(*want) {
+                    bad.push(format!("{k}: 得到 {:?}，要 {want}", v.int_of(k)));
+                }
+            }
+            if v.str_of("s").map(|b| b.to_vec()) != Some("從對話框來的".as_bytes().to_vec()) {
+                bad.push("inputbox 的 inputstr 不對".to_string());
+            }
+            let sent = String::from_utf8_lossy(&got.lock().unwrap()).into_owned();
+            if !sent.contains("hello\r") {
+                bad.push(format!("server 沒收到 sendln 的內容（收到 {sent:?}）"));
+            }
+            if bad.is_empty() {
+                *pass += 1;
+                println!(
+                    "PASS  I/O 巨集：wait（含 ANSI 提示字元）／多候選／逾時／sendln／對話框 6 項全對"
+                );
+                println!("      | server 收到：{sent:?}");
+            } else {
+                *fail += 1;
+                println!("FAIL  I/O 巨集：{} 項不對", bad.len());
+                for b in bad {
+                    println!("      | {b}");
+                }
+            }
+        }
+    }
+
+    // --- 舊版 samples/sample.ttl 整檔（含連線部分）---
+    {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
+        let port = listener.local_addr().unwrap().port();
+        let got: Arc<Mutex<Vec<u8>>> = Arc::new(Mutex::new(Vec::new()));
+        {
+            let got = got.clone();
+            std::thread::spawn(move || {
+                let Ok((mut sock, _)) = listener.accept() else {
+                    return;
+                };
+                let mut buf = [0u8; 1024];
+                loop {
+                    match sock.read(&mut buf) {
+                        Ok(0) | Err(_) => break,
+                        Ok(n) => {
+                            got.lock().unwrap().extend_from_slice(&buf[..n]);
+                            // 每收到一行就回一行（讓 `wait 'OK-DONE'` 能命中）
+                            if buf[..n].contains(&b'\r') {
+                                let _ = sock.write_all(b"OK-DONE\r\n");
+                            }
+                        }
+                    }
+                }
+            });
+        }
+        let sock = std::net::TcpStream::connect(("127.0.0.1", port)).expect("connect");
+        let reader = sock.try_clone().unwrap();
+        let host = Arc::new(SockHost {
+            inner: NullHost::default(),
+            sock: Mutex::new(sock),
+        });
+        {
+            let host2 = host.clone();
+            let mut reader = reader;
+            std::thread::spawn(move || {
+                let mut buf = [0u8; 1024];
+                loop {
+                    match reader.read(&mut buf) {
+                        Ok(0) | Err(_) => break,
+                        Ok(n) => host2.inner.recv.push(&buf[..n]),
+                    }
+                }
+            });
+        }
+        let path = dir().join("sample_full.ttl");
+        let mut it = ttl::Interp::from_file(&path).expect("讀得到 sample_full.ttl");
+        it.set_host(Some(host.clone()));
+        it.vars.set_int("timeout", 3);
+        match it.run(100_000) {
+            Err(e) => {
+                *fail += 1;
+                println!("FAIL  舊版 sample.ttl 整檔：{e}");
+            }
+            Ok(()) => {
+                let sent = String::from_utf8_lossy(&got.lock().unwrap()).into_owned();
+                let want = [
+                    "echo === macro start ===",
+                    "echo loop 1",
+                    "echo loop 2",
+                    "echo loop 3",
+                    "echo a+b = 5",
+                    "echo c equals 5 (correct)",
+                    "echo === macro done ===",
+                ];
+                let missing: Vec<&str> = want.iter().copied().filter(|w| !sent.contains(w)).collect();
+                let asked = host.inner.asked.lock().unwrap().len();
+                if missing.is_empty() && asked == 1 {
+                    *pass += 1;
+                    println!(
+                        "PASS  舊版 sample.ttl 整檔：7 行輸出都送出去了、messagebox 跳了 1 次"
+                    );
+                } else {
+                    *fail += 1;
+                    println!(
+                        "FAIL  舊版 sample.ttl 整檔：少了 {missing:?}、對話框 {asked} 次（要 1）"
+                    );
+                }
+            }
+        }
+    }
+
+    // --- 中斷：正在 wait 的巨集要能被叫停 ---
+    let host2 = NullHost::shared();
+    let mut it = ttl::Interp::from_text("stop.ttl", "timeout = 30
+wait 'never'
+a = 1").unwrap();
+    it.set_host(Some(host2.clone()));
+    let stop_flag = host2.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(150));
+        stop_flag
+            .stop
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+    });
+    let t0 = std::time::Instant::now();
+    let r = it.run(1_000_000);
+    let interrupted = matches!(&r, Err(e) if e.err == Err::Interrupted);
+    let quick = t0.elapsed().as_secs() < 5;
+    if interrupted && quick {
+        *pass += 1;
+        println!(
+            "PASS  中斷正在 wait 的巨集：{}ms 就停了（逾時設 30 秒）",
+            t0.elapsed().as_millis()
+        );
+    } else {
+        *fail += 1;
+        println!("FAIL  中斷正在 wait 的巨集：interrupted={interrupted} 花了 {:?}", t0.elapsed());
+    }
+
+    // --- 連線斷掉時 wait 不可以一直等 ---
+    let host3 = Arc::new(NullHost {
+        link: false,
+        ..Default::default()
+    });
+    let mut it = ttl::Interp::from_text("dead.ttl", "sendln 'x'").unwrap();
+    it.set_host(Some(host3));
+    let got_link_err = matches!(it.run(1000), Err(e) if e.err == Err::LinkFirst);
+    if got_link_err {
+        *pass += 1;
+        println!("PASS  沒有連線時 send 回 `Link macro first.`");
+    } else {
+        *fail += 1;
+        println!("FAIL  沒有連線時 send 應該回 Link macro first.");
+    }
 }

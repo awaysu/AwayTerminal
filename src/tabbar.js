@@ -19,6 +19,7 @@ import { createSession, log } from './bridge.js';
 import { initConns, openManager, currentConns, reload as reloadConns } from './conns.js';
 import { initConnDialog, openConnDialog, parseHostPort } from './sshdlg.js';
 import { initComDialog, openComDialog } from './comdlg.js';
+import { initMacro, runMacroForTab } from './macro.js';
 import { initFavs, addConnFavorite } from './favs.js';
 
 const MIN_PANEL_WIDTH = 120; // 舊版 TabPanelMinWidth
@@ -313,6 +314,14 @@ function render() {
       dot.textContent = '●';
       dot.title = T['tip.tabLogging'];
       row.insertBefore(dot, close);
+    }
+    // 巨集執行中的小標記（新增）：M + 目前行號，tooltip 有檔名
+    if (tab.macroState) {
+      const m = document.createElement('span');
+      m.className = 'tab-macro';
+      m.textContent = 'M';
+      m.title = fmt('tip.tabMacro', tab.macroState.file, tab.macroState.line);
+      row.insertBefore(m, close);
     }
     // 沙盒模式的小標記（新功能，舊版沒有——已寫進 checklist 的「刻意不同」表）
     if (tab.sandbox) {
@@ -626,6 +635,7 @@ function installMenus() {
     hideMenus();
     if (item.dataset.act === 'rename') renameTab(id);
     else if (item.dataset.act === 'log') logAction(id);
+    else if (item.dataset.act === 'macro') runMacroForTab(id, state);
     else if (item.dataset.act === 'sandbox') toggleSandbox(id);
     else if (item.dataset.act === 'sandbox-clear') clearSandbox(id);
     else if (item.dataset.act === 'close') closeTab(id);
@@ -1067,6 +1077,7 @@ export async function initTabBar() {
   setText(el.newMenu, '[data-kind="custom"]', T['tb.customCmd']);
   setText(el.tabMenu, '[data-act="rename"]', T['menu.rename']);
   setText(el.tabMenu, '[data-act="log"]', T['menu.log']);
+  setText(el.tabMenu, '[data-act="macro"]', T['menu.macro']);
   setText(el.tabMenu, '[data-act="close"]', T['menu.close']);
   setText(el.tabMenu, '[data-act="sandbox-clear"]', T['sb.clear']);
   setText(el.newMenu, '[data-kind="manage"]', T['tb.manageConns']);
@@ -1109,6 +1120,7 @@ export async function initTabBar() {
   installWeakAlgoDialog();
   await initConnDialog();
   initComDialog();
+  await initMacro({ askYesNo, showInfo });
   await initFavs({
     createSession,
     askText,

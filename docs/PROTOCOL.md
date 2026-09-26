@@ -146,6 +146,10 @@
 | `algo_catalog()` | 四組演算法的可選名稱與「在警告線下」的標記（連線對話框的「進階」區用） |
 | `session_create` 的 `kind:"telnet"` + `telnet` 參數 | 內建 Telnet。見 `docs/TELNET.md` |
 | `session_create` 的 `kind:"com"` + `com` 參數 | 連接埠（`serialport`）。見 `docs/COM.md` |
+| `macro_run(id, path)` / `macro_stop(id)` / `macro_answer(id, number, text, cancelled)` | TTL 巨集：開始跑／叫停／回覆對話框。`macro_run` 是 **async**（要讀檔與註冊標籤） |
+| `macro_verify(id, path, timeoutMs)` | **只給 `--verify` 用**：跑一支巨集並等它結束 |
+| `macro_pick_file(title?)` | 選 `.ttl`（篩選器照舊版：TeraTerm 巨集／所有檔案） |
+| `save_text_to_file_at(path, text)` | **只給 `--verify` 用**：直接寫檔，而且**只接受系統暫存資料夾底下的路徑**（不是任意寫檔的後門） |
 | `com_ports()` | 目前看得到的埠（名稱＋USB 描述）與四組選項清單（鮑率／資料位元／同位／停止位元／流量控制）。**清單只含函式庫真的支援的值** |
 | `restore_list()` | 這次啟動要恢復哪些分頁（空＝開一個預設分頁）。前端照順序呼叫 `session_create(…, restore: i)` |
 | `exit_confirm(restore)` / `exit_cancel()` | 離開對話框的回覆。`exit_confirm` **必須是 async**——它要等前端把 `a…save` 送回來，同步 command 會擋住主執行緒讓 IPC 進不來（實際踩過） |
@@ -177,6 +181,8 @@
 | `host-msg`（String） | **所有** host→JS 的舊協定字串都走這一條 |
 | `tab-state`（JSON） | 分頁列狀態（見上一節） |
 | `ssh-hostkey`（JSON） | 主機金鑰要使用者確認。**Rust 端會停在交握中間等答案**（最多 180 秒，逾時＝取消），前端一定要回 `ssh_hostkey_answer`。見 `src-tauri/src/ssh/prompt.rs` |
+| `macro-dialog`（JSON） | 巨集要問使用者（`messagebox`／`yesnobox`／`inputbox`／`passwordbox`／`listbox`／`statusbox`／`filenamebox`／`dirnamebox`）。**巨集的執行緒會停在那裡等**，前端一定要回 `macro_answer`（`statusbox`／`closesbox` 例外，那兩個不等） |
+| `macro-error`（JSON） | 巨集出錯（訊息、檔名、行號、那一行的內容）。畫面上也會有一行紅字 |
 | `exit-request`（bool） | 使用者按了視窗的 ✕。Rust 先 `prevent_close()`，payload ＝上次的勾選狀態；前端問完呼叫 `exit_confirm`／`exit_cancel`。**再按一次 ✕ 就不擋了**（前端壞掉時的逃生門） |
 | `ssh-weak-algo`（JSON） | 協商到警告線以下的演算法（PuTTY 的 warn-below-this-line）。同樣停在交握中間等答案，回 `ssh_hostkey_answer` |
 

@@ -192,6 +192,18 @@ export const T = {
   'cd.needPort': '請選擇或輸入連接埠。',
   'cd.noPorts': '目前偵測不到任何連接埠（USB 轉序列線插上後按「重新掃描」）。',
 
+  // ---- TTL 巨集（TASK-013；舊版 Loc 的 menu.macro／msg.stopMacroAsk／dlg.macroTitle）----
+  'menu.macro': '執行巨集…',
+  'macro.title': '執行巨集',
+  'macro.stopAsk': '要停止巨集嗎？',
+  'macro.readFail': '無法讀取巨集：',
+  'macro.pick': '選擇 TTL 巨集',
+  'macro.errorTitle': '巨集錯誤',
+  // {0}=訊息 {1}=檔名 {2}=行號 {3}=那一行的內容
+  'macro.errorBody': '{0}\n\n{1} 第 {2} 行：\n{3}',
+  // 分頁 tooltip 多一行（新增；舊版只有「巨集執行中」）
+  'tip.tabMacro': '● 巨集執行中：{0}（第 {1} 行）',
+
   // ---- 離開程式與恢復分頁（TASK-010；舊版 Dialogs/ExitDialog + 1.0.45）----
   'exit.title': '離開 AwayTerminal',
   'exit.body': '要關閉程式嗎？',

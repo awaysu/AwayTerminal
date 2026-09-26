@@ -390,7 +390,7 @@ TEMP 路徑印出完整結果，Documents 路徑印完 `path = …` 就停住。
 | Q19 | 👤 WSL／ADB 的自動偵測連線 | 沙盒**預設是關的**（它們是拿來操作機器的工具） | 判斷寫在 `custom.rs` 的 `default_sandbox` | PASS（單元測試） | | |
 | Q20 | 👤 沙盒 worktree 是從哪個狀態開的 | **目前 HEAD**——agent 看不到你還沒 commit 的修改。成果要用 `git merge sandbox/…` 拿回來 | `docs/AGENT-SANDBOX.md`「工作流程」 | | | |
 
-## T. TTL 巨集（第一批：語法／運算式／流程控制）
+## T. TTL 巨集
 
 行為基準、`ttpmacro/` 檔案對照、指令清單、與舊版 C# 版的差異都在 `docs/TTL.md`。
 自動驗證：`cd src-tauri && cargo run --example ttl_probe`（跑 `tests/ttl/*.ttl`，比對每個變數）。
@@ -429,6 +429,34 @@ TEMP 路徑印出完整結果，Documents 路徑印完 `path = …` 就停住。
 | T30 | 👤 `sprintf` 的浮點（`%f`） | 這一批**不支援**，回 `result=2` ＋語法錯誤（見 `docs/TTL.md` 4.3） | — | PASS（單元測試） | | |
 | T31 | 👤 `gettime` 的時區參數 | **不支援**（會改整個行程的 `TZ`），回 `result=2` | 見 `docs/TTL.md` 4.3 | PASS | | |
 | T32 | 👤 `setenv` | 只影響本行程，**會影響之後開的分頁**（第二批的 UI 要提醒） | `_putenv_s` | ⬜ 需目視 | | |
+
+### T33～T52：執行入口與 I/O（TASK-013）
+
+| # | 怎麼測 | 預期結果 | 基準 | Win | mac | Linux |
+|---|---|---|---|---|---|---|
+| T33 | `cargo run --example ttl_probe` | **27 PASS / 0 FAIL**（含 I/O 段與舊版 sample.ttl 整檔） | — | PASS | | |
+| T34 | `--verify` 的 TTL 那一步 | 在真的 PowerShell 分頁上 `sendln` → `wait` 命中 → 結束提示；分頁狀態有上有下 | — | PASS | | |
+| T35 | 👤 分頁右鍵「執行巨集…」 | 跳檔案選擇，篩選器是「TeraTerm 巨集 (*.ttl)」＋「所有檔案」 | 舊版 `MacroAction` | | | |
+| T36 | 👤 選一支正常的巨集 | 開始跑；分頁列出現黃色 `M`，tooltip 有檔名與**目前行號** | ⬜ 新增（舊版只有 tooltip 一句） | | | |
+| T37 | 👤 執行中再點「執行巨集…」 | 問「要停止巨集嗎？」→ 是 → 停，畫面上一行「[巨集已中斷：檔名]」 | 舊版 `msg.stopMacroAsk` | | | |
+| T38 | 👤 巨集正常結束 | 畫面上一行灰字「[巨集執行完畢：檔名]」，`M` 消失 | ⬜ 新增 | | | |
+| T39 | 👤 巨集有語法錯誤 | 紅字「[巨集錯誤] … 檔名:行號」＋對話框（訊息／檔名／行號／那一行） | 舊版跳對話框 | | | |
+| T40 | 👤 選一個不存在／讀不到的檔 | 「無法讀取巨集：」 | 舊版 `msg.macroReadFail` | | | |
+| T41 | 👤 執行中關閉分頁 | 巨集乾淨結束，不留執行緒（後端 log 有「巨集結束」） | 舊版 `CloseTab` 先 `Stop()` | PASS（`tab_close` 呼叫 `stop_for_tab`） | | |
+| T42 | 👤 執行中連線斷掉 | `wait` 不會一直等（`connected()` 變 false 就當逾時） | 原碼 `Linked` | PASS（probe） | | |
+| T43 | 👤 執行中打字 | 照樣送給連線（**不攔鍵盤**，同舊版） | 舊版 `MacroRunner` 沒攔 | | | |
+| T44 | `wait` 比對有顏色的提示字元 | 比對得到（先去 ANSI；**刻意和原碼不同、照舊版**） | 舊版 C# 版 | PASS（probe） | | |
+| T45 | `wait` 多個候選 | `result` ＝第幾個（1 起算）；**同時命中時索引小的贏** | `ttmdde.c` 的 `Wait()` | PASS（單元測試＋probe） | | |
+| T46 | `wait` 逾時 | `result=0`；逾時＝`timeout`×1000＋`mtimeout` 毫秒，0＝永遠等 | `TTLWait` | PASS | | |
+| T47 | `waitln`／`recvln` | `inputstr` ＝那一行（去掉尾端 CR LF） | `GetRecvLnBuff` | PASS | | |
+| T48 | `sendln` | 送出的是內容＋**單一 CR**（不是 CR LF） | `TTLSendLn` → `DDEOut1Byte(0x0d)` | PASS（probe 看到 `"hello
+"`） | | |
+| T49 | `send` 的整數參數 | 送一個位元組（`send 65` ＝ `A`） | `GetParamStrings` 的 `LOBYTE` | PASS（單元測試） | | |
+| T50 | 👤 `messagebox`／`yesnobox`／`inputbox`／`passwordbox`／`listbox` | 五種都跳得出來；`yesnobox` 的 `result` 是 1／0、`inputbox` 取消時 `result=0` 且 `inputstr` 空 | `ttmdlg.cpp` 那幾個 | PASS（probe 的假 host）＋👤 目視 | | |
+| T51 | 👤 `statusbox`／`closesbox` | 右下角常駐提示，`closesbox` 收掉；**不會擋住巨集** | 原碼是常駐小視窗 | | | |
+| T52 | 檔案指令 | `fileopen`／`filereadln`／`filewrite`… 的 `result` 語意照原碼（**1＝碰到檔尾**） | `TTLFileReadln` | PASS（單元測試 11 條） | | |
+| T53 | 👤 `connect '<host>:<port> /telnet'` | 在**斷線的**分頁上連得起來；已經連著時 `result=2` | `TTLConnect` | | | |
+| T54 | 相對路徑 | 相對於**巨集檔所在的資料夾**（`getdir` 看得到），`setdir` 只改巨集自己的 | `GetAbsPath`／`CurrentDir` | PASS（單元測試） | | |
 
 ## L. 我的最愛（輸入文字視窗待填，階段 3）
 
@@ -544,6 +572,11 @@ TEMP 路徑印出完整結果，Documents 路徑印完 `path = …` 就停住。
 | TTL 的運算子優先權 | 舊版照 C 的排法（比較比位元緊） | **位元比比較緊**（原碼的 11 層） | 同上。`a = 1 and b = 1` 兩版讀法不同 |
 | TTL 的整數寬度 | 舊版是 64-bit（C# `long`） | **32-bit 有號、溢位環繞** | 同原碼的 `int`；`$FFFFFFFF` ＝ -1 |
 | TTL 的 `break`／`continue` 在單行式 `if` 裡 | 舊版 README 說不支援 | 支援 | 照原碼，新版比較寬 |
+| TTL 的 `wait` 比對對象 | 原碼比**原始位元組**（含 ANSI）；舊版 C# 先去 ANSI | **先去 ANSI**（照舊版） | 有顏色的提示字元（`[32m$[0m`）原碼比不到；使用者的巨集是照舊版行為寫的 |
+| 巨集執行中的顯示 | 舊版只有 `IsMacroRunning` 影響 tooltip | tooltip **＋分頁列黃色 `M`**（含目前行號） | 一個字不占空間又看得出來（同 log 紅點、沙盒 ⬚ 的做法） |
+| 巨集結束／中斷的提示 | 舊版靜靜結束（只有錯誤跳視窗） | 畫面上一行灰字（完畢／已中斷），錯誤是紅字＋對話框 | 使用者要知道巨集什麼時候跑完；這也是 `--verify` 能自動驗的依據 |
+| TTL 的 `setdir`／`changedir` | `SetCurrentDirectory`（整個行程） | 只改**巨集自己的**目前目錄 | 多分頁的 app 不能讓一支巨集改掉別人的工作目錄 |
+| TTL 的密碼指令（`setpassword`…） | 原碼用自己的弱加密存進 `.INI` | **不做那個格式** | 弱加密會給使用者錯誤的安全感；要做應接 OS 憑證存放區 |
 | Telnet 的視窗大小 | `Resize` 是空的（`// NAWS 可選，暫略`），遠端永遠以為 80×24 | **送 NAWS**（RFC 1073） | `CLAUDE.md` 定案「Telnet 自己實作（加 NAWS）」。`vi`／`top` 才不會畫錯 |
 | 恢復 SSH 分頁 | 只印 `login as: ` 等使用者打帳號（帳號要塞進 `ssh.exe` 命令列） | **直接連**（帳號已經記在 `SshConnParams` 裡），沒有帳號才問 | 和第一次連線的行為一致。密碼兩邊都是重問 |
 | 離開對話框 | WPF `ExitDialog`，含「恢復分頁」與「更新 CLAUDE.md」兩個勾選 | 頁內對話框，只有「恢復分頁」 | 「更新 CLAUDE.md」是代理團隊的功能（階段 4），那時再補 |
@@ -565,3 +598,4 @@ TEMP 路徑印出完整結果，Documents 路徑印完 `path = …` 就停住。
 | **舊版靠外部程式（`ssh.exe`、`telnet.exe` 之類）副作用成立的規則，內建實作要重新檢查觸發點** | 照抄會得到「看起來對、其實永遠不成立／永遠成立」的條件。實際案例：舊版「**一收到輸出**就把重連退避歸零」——它的輸出全部來自 `ssh.exe`，所以等於「連上了」；內建 SSH 之後我們自己的狀態訊息（「連線到 …」、`login as:`、錯誤訊息）走同一條輸出 callback，退避永遠停在第一次的 3 秒（`--verify` 抓到）。搬 Telnet／COM／ADB 時每一條「有輸出」「行程結束」類的規則都要重新問一次「這個訊號現在還是原來的意思嗎」 | M8、M9、TN12、CM16 |
 | 會等前端回覆的 tauri command **一定要是 `async`** | tauri 2 的同步 command 跑在**主執行緒**上；擋住主執行緒 webview 的 IPC 就進不來，前端永遠沒機會回答 → 一定逾時。實際案例：`exit_confirm` 要等 `a…save`，第一版寫成同步 → 「存下 2 個分頁」卻一個畫面都沒存到 | R1～R4 |
 | 恢復畫面的 `b{id}` 一定要在 `n{id}` 之後、`s{id}` 與啟動連線之前 | 順序錯了就不是「舊訊息在上、新連線在下」：`b` 比 `n` 早＝前端還沒有那個 pane，訊息直接丟掉；比連線晚＝新輸出被舊畫面蓋掉 | R5～R7 |
+| `macro-dialog` event 一定要回 `macro_answer` | 巨集的執行緒停在那裡等（每 100ms 檢查中斷）。不回就會一直卡著，使用者看到「巨集不動了」。`statusbox`／`closesbox` 是例外（不等回覆） | T50、T51 |
