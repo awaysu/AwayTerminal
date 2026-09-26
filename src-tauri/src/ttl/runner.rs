@@ -46,6 +46,12 @@ pub struct MacroHandle {
     pub file: String,
     /// 等對話框回覆的通道（一次只會有一個對話框）。
     answer: Mutex<Option<mpsc::Sender<DialogAnswer>>>,
+    /// `exec` 開出來的子行程都放進這個 Job Object（kill-on-close）。
+    ///
+    /// **巨集結束或分頁關閉時這個 handle 會被 drop → 子行程一起收掉**。
+    /// PM 在 TASK-014 定的規則：巨集不套 agent 的 hook 護欄，但不能變成沙盒的後門。
+    #[cfg(windows)]
+    job: Mutex<Option<crate::pty::job::JobObject>>,
 }
 
 impl MacroHandle {
@@ -56,6 +62,8 @@ impl MacroHandle {
             line: AtomicUsize::new(0),
             file,
             answer: Mutex::new(None),
+            #[cfg(windows)]
+            job: Mutex::new(None),
         }
     }
 
@@ -251,6 +259,10 @@ impl MacroHost for TabMacroHost {
         if let Some(tabs) = self.app.try_state::<Arc<TabManager>>() {
             crate::toolbar::log_stop_inner(&tabs, self.tab);
         }
+    }
+
+    fn spawn_process(&self, cmdline: &str, cwd: Option<&str>, hide: bool, wait: bool) -> i32 {
+        spawn_for_tab(&self.app, self.tab, &self.handle, cmdline, cwd, hide, wait)
     }
 
     fn connect(&self, params: &str) -> bool {
@@ -506,4 +518,158 @@ pub async fn macro_verify(
     }
     stop_for_tab(&app, id);
     Err(format!("{file} 超過 {timeout_ms}ms 還沒結束（已中斷）"))
+}
+
+/// `exec` 的實作：開子行程，放進巨集的 Job Object，帶上沙盒的環境變數。
+///
+/// 回傳值照原碼：-1 開不起來、0 開起來了（沒等）、有等的話是 exit code。
+fn spawn_for_tab(
+    app: &AppHandle,
+    tab: u32,
+    handle: &Arc<MacroHandle>,
+    cmdline: &str,
+    cwd: Option<&str>,
+    hide: bool,
+    wait: bool,
+) -> i32 {
+    use std::process::{Command, Stdio};
+
+    // 沙盒分頁：帶上沙盒的環境變數（TEMP／CARGO_TARGET_DIR…），工作目錄預設用沙盒的
+    let sandbox = app
+        .try_state::<Arc<TabManager>>()
+        .and_then(|tabs| tabs.sandbox_of(tab));
+
+    // 命令列照原碼交給系統解析（`CreateProcess(NULL, cmdline, …)`）。
+    // Rust 沒有「整條命令列」的 API，所以走 shell（Windows 是 `cmd /C`）——
+    // 這也讓 `exec 'dir | sort'` 這種寫法和原碼一樣能用。
+    #[cfg(windows)]
+    let mut cmd = {
+        use std::os::windows::process::CommandExt;
+        let mut c = Command::new("cmd");
+        // `raw_arg`：整條命令列原樣交給 cmd，不要再幫我們加引號
+        // （原碼是 `CreateProcess(NULL, cmdline, …)`，由系統解析）
+        c.arg("/C").raw_arg(cmdline);
+        c
+    };
+    #[cfg(not(windows))]
+    let mut cmd = {
+        let mut c = Command::new("sh");
+        c.arg("-c").arg(cmdline);
+        c
+    };
+
+    if let Some(dir) = cwd.filter(|d| !d.is_empty()) {
+        cmd.current_dir(dir);
+    } else if let Some(sb) = &sandbox {
+        cmd.current_dir(&sb.work_dir);
+    }
+    if let Some(sb) = &sandbox {
+        for (k, v) in &sb.env {
+            cmd.env(k, v);
+        }
+    }
+    // 巨集開的東西不該把輸出灌進終端機（原碼也是另一個視窗）
+    cmd.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
+
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        // CREATE_SUSPENDED：先停住 → 放進 job → 再放行（同 pty/conpty.rs 的做法，
+        // 不然子行程可能在我們 assign 之前就開完孫行程跑掉了）
+        const CREATE_SUSPENDED: u32 = 0x0000_0004;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        const CREATE_NEW_CONSOLE: u32 = 0x0000_0010;
+        let mut flags = CREATE_SUSPENDED;
+        flags |= if hide { CREATE_NO_WINDOW } else { CREATE_NEW_CONSOLE };
+        cmd.creation_flags(flags);
+    }
+
+    let mut child = match cmd.spawn() {
+        Ok(c) => c,
+        Err(e) => {
+            println!("[AwayTerminal] 巨集 exec 失敗：{cmdline}（{e}）");
+            return -1;
+        }
+    };
+
+    #[cfg(windows)]
+    {
+        use std::os::windows::io::AsRawHandle;
+        // 需要 job 的時候才建（非沙盒分頁也建：巨集結束就把自己開的東西收掉）
+        let mut g = handle.job.lock().unwrap_or_else(|e| e.into_inner());
+        if g.is_none() {
+            match crate::pty::job::JobObject::create() {
+                Ok(j) => *g = Some(j),
+                Err(e) => println!("[AwayTerminal] 巨集 exec：建 Job Object 失敗（{e}）"),
+            }
+        }
+        if let Some(job) = g.as_ref() {
+            // SAFETY: handle 來自剛剛 spawn 出來的子行程
+            if let Err(e) = unsafe { job.assign(child.as_raw_handle() as _) } {
+                println!("[AwayTerminal] 巨集 exec：放進 Job Object 失敗（{e}）");
+            }
+        }
+        drop(g);
+        // 放行（CREATE_SUSPENDED 的主執行緒）
+        resume_child(&child);
+    }
+
+    let pid = child.id();
+    println!(
+        "[AwayTerminal] 巨集 exec：分頁 {tab} pid={pid} 沙盒={} wait={wait} → {cmdline}",
+        sandbox.is_some()
+    );
+
+    if !wait {
+        // 不等：原碼 CloseHandle 之後就不管了（我們也不 reap，Job Object 會收）
+        std::mem::forget(child);
+        return 0;
+    }
+    // 等它結束（中斷時不強制砍：Job Object 在巨集結束時會收）
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => return status.code().unwrap_or(0),
+            Ok(None) => {
+                if handle.stop.load(Ordering::Relaxed) {
+                    return 0;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+            Err(_) => return -1,
+        }
+    }
+}
+
+/// 放行 `CREATE_SUSPENDED` 開出來的子行程（同 `pty/conpty.rs` 的做法）。
+#[cfg(windows)]
+fn resume_child(child: &std::process::Child) {
+    use windows_sys::Win32::System::Diagnostics::ToolHelp::{
+        CreateToolhelp32Snapshot, Thread32First, Thread32Next, TH32CS_SNAPTHREAD, THREADENTRY32,
+    };
+    use windows_sys::Win32::System::Threading::{OpenThread, ResumeThread, THREAD_SUSPEND_RESUME};
+    let pid = child.id();
+    unsafe {
+        let snap = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
+        if snap.is_null() {
+            return;
+        }
+        let mut te: THREADENTRY32 = std::mem::zeroed();
+        te.dwSize = std::mem::size_of::<THREADENTRY32>() as u32;
+        if Thread32First(snap, &mut te) != 0 {
+            loop {
+                if te.th32OwnerProcessID == pid {
+                    let th = OpenThread(THREAD_SUSPEND_RESUME, 0, te.th32ThreadID);
+                    if !th.is_null() {
+                        ResumeThread(th);
+                        windows_sys::Win32::Foundation::CloseHandle(th);
+                    }
+                }
+                te.dwSize = std::mem::size_of::<THREADENTRY32>() as u32;
+                if Thread32Next(snap, &mut te) == 0 {
+                    break;
+                }
+            }
+        }
+        windows_sys::Win32::Foundation::CloseHandle(snap);
+    }
 }

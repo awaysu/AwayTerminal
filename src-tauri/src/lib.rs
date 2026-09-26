@@ -4,6 +4,7 @@ pub mod b64;
 pub mod bench;
 pub mod cli;
 pub mod com;
+pub mod compose;
 pub mod commands;
 pub mod custom;
 pub mod favorites;
@@ -93,6 +94,10 @@ pub fn run() {
             toolbar::temp_dir,
             toolbar::macro_pick_file,
             toolbar::save_text_to_file_at,
+            compose::compose_load_file,
+            compose::compose_save_file,
+            compose::compose_send,
+            compose::compose_verify_roundtrip,
             ssh::prompt::ssh_hostkey_answer,
             ssh::algos::algo_catalog,
             custom::custom_list,
@@ -112,6 +117,7 @@ pub fn run() {
             ttl::runner::macro_stop,
             ttl::runner::macro_answer,
             ttl::runner::macro_verify,
+            ttl::execverify::exec_verify,
             restore::restore_list,
             restore::exit_confirm,
             restore::exit_cancel,

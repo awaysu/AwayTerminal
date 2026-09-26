@@ -434,7 +434,7 @@ TEMP 路徑印出完整結果，Documents 路徑印完 `path = …` 就停住。
 
 | # | 怎麼測 | 預期結果 | 基準 | Win | mac | Linux |
 |---|---|---|---|---|---|---|
-| T33 | `cargo run --example ttl_probe` | **27 PASS / 0 FAIL**（含 I/O 段與舊版 sample.ttl 整檔） | — | PASS | | |
+| T33 | `cargo run --example ttl_probe` | **29 PASS / 0 FAIL**（含 I/O、正規表示式、`exec` 段與舊版 sample.ttl 整檔） | — | PASS | | |
 | T34 | `--verify` 的 TTL 那一步 | 在真的 PowerShell 分頁上 `sendln` → `wait` 命中 → 結束提示；分頁狀態有上有下 | — | PASS | | |
 | T35 | 👤 分頁右鍵「執行巨集…」 | 跳檔案選擇，篩選器是「TeraTerm 巨集 (*.ttl)」＋「所有檔案」 | 舊版 `MacroAction` | | | |
 | T36 | 👤 選一支正常的巨集 | 開始跑；分頁列出現黃色 `M`，tooltip 有檔名與**目前行號** | ⬜ 新增（舊版只有 tooltip 一句） | | | |
@@ -458,7 +458,62 @@ TEMP 路徑印出完整結果，Documents 路徑印完 `path = …` 就停住。
 | T53 | 👤 `connect '<host>:<port> /telnet'` | 在**斷線的**分頁上連得起來；已經連著時 `result=2` | `TTLConnect` | | | |
 | T54 | 相對路徑 | 相對於**巨集檔所在的資料夾**（`getdir` 看得到），`setdir` 只改巨集自己的 | `GetAbsPath`／`CurrentDir` | PASS（單元測試） | | |
 
-## L. 我的最愛（輸入文字視窗待填，階段 3）
+### T55～T65：正規表示式（TASK-014 A）
+
+引擎決定與**實測**差異表在 `docs/TTL-REGEX.md`。
+
+| # | 怎麼測 | 預期結果 | 基準 | Win | mac | Linux |
+|---|---|---|---|---|---|---|
+| T55 | `cargo test regex` | 語法矩陣、選項對映、四個指令的行為全過 | `docs/TTL-REGEX.md` 第 2 節（**實測**，不是照記憶） | PASS | | |
+| T56 | `strmatch 'abc123' '([a-z]+)([0-9]+)'` | `result`＝**1 起算的位元組位移**、`matchstr`＝整段、`groupmatchstr1/2`＝群組 | `TTLMatchStr` | PASS（單元測試） | | |
+| T57 | 沒命中的 `strmatch` | `result=0`，而且 `matchstr`／`groupmatchstr*` **先被清空** | 原碼比對前就清 | PASS | | |
+| T58 | 壞掉的 pattern | `strmatch` → `result=0`；`strreplace` → **`result=-1`**（不是錯誤、不中斷巨集） | `onig_new` 失敗那條 | PASS | | |
+| T59 | `strreplace` 的取代字串 | **原樣插入**，`\1`／`$1` **不會展開**（要用群組得自己讀 `groupmatchstr*`） | 原碼沒有展開 | PASS | | |
+| T60 | `^`／`$` | 是**行**錨點（`^b` 在 `"a\nb"` 命中）——Rust 預設不是，我們**預設開 `m` 旗標**補回來 | Ruby 語法 | PASS | | |
+| T61 | `regexoption 'SINGLELINE'` | 關掉行錨點（`^`→`\A`、`$`→`\Z`）；`NEGATE_SINGLELINE` 開回來 | Oniguruma | PASS | | |
+| T62 | `regexoption 'MULTILINE'` | 是「**`.` 也吃換行**」（等於 Rust 的 `s`），**不是** Perl 的 `/m` | Oniguruma 的命名陷阱 | PASS | | |
+| T63 | `regexoption 'FIND_LONGEST'`／`SYNTAX_*`／`ENCODING_*` | **接受但不生效**，終端機上一行黃字說明；巨集**繼續跑**。認不出來的關鍵字才回語法錯誤 | 刻意（見下方偏差表） | PASS（單元測試） | | |
+| T64 | `waitregex` | 逐行比對（收到 LF 才比，資料燒完再補一次）；命中時 `result`＝第幾個、`inputstr`＝**去 ANSI 後的那一行**、`matchstr`／`groupmatchstr*` 也設好；逾時 `result=0` | `ttmdde.c` 的 `FindRegexString` | PASS（probe 7 項） | | |
+| T65 | 👤 設備吐 Big5 中文時 `waitregex` | **可能比對不到**（要先解成 UTF-8，無效位元組變 `U+FFFD`）。`wait` 那條路不受影響 | 舊版也是解成字串才比對 → 不是退步 | ⬜ 需真設備 | | |
+
+### T66～T73：`exec` / `execcmnd`（TASK-014 B）
+
+| # | 怎麼測 | 預期結果 | 基準 | Win | mac | Linux |
+|---|---|---|---|---|---|---|
+| T66 | `exec 'cmd /c exit 7' 'hide' 1` | `result`＝**7**（子行程的 exit code） | `TTLExec` 的 wait 版 | PASS（`--verify`：`exitCode=7`） | | |
+| T67 | `exec … 0`（不等） | 馬上回 `result=0`，巨集繼續跑 | 原碼 `CloseHandle` 就不管 | PASS（probe） | | |
+| T68 | `execcmnd '<一行 TTL>'` | 那一行**當 TTL 指令執行**（不是開行程） | `TTLExecCmnd` | PASS（probe：`a=42`） | | |
+| T69 | 沙盒分頁裡 `exec` | 子行程的 `TEMP`／`TMP`（Rust 專案還有 `CARGO_TARGET_DIR`）**導到沙盒**，工作目錄用沙盒的 | PM 在 TASK-014 定的規則 | PASS（`--verify`：`tempInSandbox=true`） | | |
+| T70 | 巨集結束後 | `exec` 開出來的行程（含**孫行程**）被 Job Object 收掉——只按 handle 收，**絕不按名稱砍** | `docs/AGENT-SANDBOX.md` 第 2 層 | PASS（`--verify` 記下 PID，結束後 `aliveAfterMacro=false`） | | |
+| T71 | `cargo run --example job_probe` | `PROBE PASS`：`TEMP` 有導過去、關 job 之後 `cmd` 與**孫行程**都不在了 | — | PASS | | |
+| T72 | ⚠️ 用 **Store 的 app execution alias** 開的行程（很多機器的 `pwsh` 就是） | **收不到**：真正的行程由 AppX 服務建立，不在我們的 job 裡。`cargo run --example job_probe -- --pwsh` 會印 `PROBE NOTE` | 2026-09-27 實測 | 已知限制 | | |
+| T73 | 巨集的 `exec` 有沒有套 agent 的 hook 護欄 | **沒有**（巨集是使用者自己寫的）。沙盒的工作區隔離與 Job Object 照套 | PM 在 TASK-014 定的規則 | — | | |
+
+## CP. 輸入文字視窗（TASK-014 C）
+
+舊版對應 `Dialogs/ComposeDialog` + `MainWindow.SendSnippet`。行為對照表與
+「為什麼做成頁內對話框」在 **`docs/COMPOSE.md`**。
+
+| # | 怎麼測 | 預期結果 | 舊版出處 | Win | mac | Linux |
+|---|---|---|---|---|---|---|
+| CP1 | `cargo test compose` | 解碼（BOM／UTF-8／Big5）與換行統一 5 條全過 | `LoadFile` | PASS | | |
+| CP2 | `--verify` 的輸入文字那一步 | Big5 檔讀回來**內容正確**、換行是 CRLF、送進真的 PowerShell 分頁後**畫面上抓得到那段中文** | — | PASS | | |
+| CP3 | 👤 工具列「輸入文字」 | 開頁內對話框，焦點在文字框，游標在最後 | `Compose_Click` | | | |
+| CP4 | 👤 沒有分頁時 | 提示「沒有分頁可送」，**不是無聲返回** | `ShowCopyFeedback` | | | |
+| CP5 | 👤 用注音打一段中文再按送出 | 組字完全在文字框裡發生（**不經 xterm／ConPTY**），整段一次貼進分頁 | 這個功能的**存在理由** | | | |
+| CP6 | 👤 勾「送出後送 Enter」 | 貼上後**等 200ms** 才送 `\r`；勾選狀態記進 `settings.json` | `SendSnippet` 的 `Delay(200)` | | | |
+| CP7 | 👤 在 claude 分頁送多行 | 換行變成**軟換行**（ESC+CR）——那是 `terminal.js` 原本就有的邏輯，我們走同一條貼上路徑 | `doPaste` | | | |
+| CP8 | 👤 開視窗後切到別的分頁再按送出 | 送到**開視窗那一刻**的分頁 | `_targetTab` | | | |
+| CP9 | 👤 打字後按 X／「返回」 | 文字**留著**，下次開還在（送出之後才清空） | `_draft`（static） | | | |
+| CP10 | 👤 按「清除」再按「復原」 | 救得回來；**關掉重開也救得回來** | `_lastCleared`（static） | | | |
+| CP11 | 👤 Ctrl+Z | 走自己維護的堆疊（程式改過 `value` 之後原生 undo 不可靠） | WPF 原生 undo | | | |
+| CP12 | 👤 載入一個 Big5 的 `.txt` | 中文正確；下面提示用哪種編碼解出來的（**新增**：舊版沒說） | BOM → UTF-8 → ANSI(cp950) | PASS（`--verify`） | | |
+| CP13 | 👤 載入超過 2MB 的檔 | 「檔案太大（上限 2 MB），未載入。」**現有內容不動** | `LoadMaxMB = 2` | | | |
+| CP14 | 👤 按「儲存」 | 存成 **UTF-8 無 BOM** | `SaveFile` | | | |
+| CP15 | 👤 Ctrl+Enter／Esc | 送出／關閉 | `PreviewKeyDown` | | | |
+| CP16 | 文字框空的時候 | 「送出」是灰的（空白不送；只想送 Enter 請直接在終端機按） | `Send_Click` 的第一行 | PASS（前端邏輯） | | |
+
+## L. 我的最愛
 
 舊版對應 `MainWindow.Favorites.cs` + `Dialogs/FavoritesDialog`。程式在
 `src-tauri/src/favorites.rs` + `src/favs.js`。
@@ -580,6 +635,12 @@ TEMP 路徑印出完整結果，Documents 路徑印完 `path = …` 就停住。
 | Telnet 的視窗大小 | `Resize` 是空的（`// NAWS 可選，暫略`），遠端永遠以為 80×24 | **送 NAWS**（RFC 1073） | `CLAUDE.md` 定案「Telnet 自己實作（加 NAWS）」。`vi`／`top` 才不會畫錯 |
 | 恢復 SSH 分頁 | 只印 `login as: ` 等使用者打帳號（帳號要塞進 `ssh.exe` 命令列） | **直接連**（帳號已經記在 `SshConnParams` 裡），沒有帳號才問 | 和第一次連線的行為一致。密碼兩邊都是重問 |
 | 離開對話框 | WPF `ExitDialog`，含「恢復分頁」與「更新 CLAUDE.md」兩個勾選 | 頁內對話框，只有「恢復分頁」 | 「更新 CLAUDE.md」是代理團隊的功能（階段 4），那時再補 |
+| TTL 的正規表示式引擎 | 舊版**沒有** `strmatch`／`waitregex`；原碼用 Oniguruma | **`fancy-regex`**（差異表：`docs/TTL-REGEX.md`） | 選它是因為後顧與後向參照都要有（`regex` 刻意不支援）。`^`／`$` 用「預設開 `m`」補成原碼的行錨點語意；`\101`／`\cA` 沒有（改寫成 `\x41`／`\x01`） |
+| `regexoption` 不支援的關鍵字 | — | **接受、印一行黃字、繼續跑** | 「舊巨集裡的一行 `regexoption` 不該讓整支巨集停掉」，但安靜忽略會讓使用者以為生效了。認不出來的關鍵字才回語法錯誤 |
+| TTL 的 `exec` | 原碼 `CreateProcess(NULL, cmdline, …)`，開完不管 | 走 `cmd /C`（其他平台 `sh -c`），並**放進巨集自己的 Job Object**；沙盒分頁還帶沙盒的 `TEMP`／工作目錄 | Rust 沒有「整條命令列」的 API；Job Object 是「只收自己開的那一棵」的正確做法（絕不按名稱砍）。**不套 agent 的 hook 護欄**——巨集是使用者自己寫的（PM 在 TASK-014 定） |
+| 輸入文字視窗 | WPF **模態視窗** | 頁內對話框 | 理由與可回退的做法見 `docs/COMPOSE.md` 第 2 節（組字都在 `<textarea>`／WPF `TextBox` 裡，對這個功能沒有差別） |
+| 輸入文字送出的換行 | 原樣送（WPF 多行文字本來就是 CRLF） | **明確**轉成 CRLF | `<textarea>` 給的是 `\n`；不轉的話同一份文字新舊版送出的位元組不一樣 |
+| 載入文字檔的「系統 ANSI」 | `Encoding.Default`（這台是 cp950） | **固定 Big5** | 跨平台沒有「系統 ANSI」這回事；使用者的舊檔就是 Big5 |
 
 ## 隱含契約（最容易回歸的一類）
 
@@ -596,6 +657,8 @@ TEMP 路徑印出完整結果，Documents 路徑印完 `path = …` 就停住。
 | `ssh-hostkey` event 一定要回 `ssh_hostkey_answer` | Rust 的 SSH 任務停在交握中間等答案，前端不回就卡到逾時（180 秒）才當成取消——使用者看到的是「連線很久沒反應」 | K8～K12 |
 | `ssh-weak-algo` event 也一定要回 `ssh_hostkey_answer`（兩者共用同一個回覆通道） | 同上：不回就卡 180 秒。加新的「交握中間問使用者」的事件時都要記得配一個前端 listener | K24～K26 |
 | **舊版靠外部程式（`ssh.exe`、`telnet.exe` 之類）副作用成立的規則，內建實作要重新檢查觸發點** | 照抄會得到「看起來對、其實永遠不成立／永遠成立」的條件。實際案例：舊版「**一收到輸出**就把重連退避歸零」——它的輸出全部來自 `ssh.exe`，所以等於「連上了」；內建 SSH 之後我們自己的狀態訊息（「連線到 …」、`login as:`、錯誤訊息）走同一條輸出 callback，退避永遠停在第一次的 3 秒（`--verify` 抓到）。搬 Telnet／COM／ADB 時每一條「有輸出」「行程結束」類的規則都要重新問一次「這個訊號現在還是原來的意思嗎」 | M8、M9、TN12、CM16 |
+| **要收掉自己開的行程，只能用 handle（Job Object／PID），而且那個 PID 必須是自己這次開的** | 按名稱砍（`taskkill /IM`、`Stop-Process -Name`）會把整個團隊連自己一起砍掉——這台機器的團隊就跑在舊版 AwayTerminal 底下，而新版 exe 的名稱和舊版一樣。**已知漏洞**：用 **Store 的 app execution alias** 開的行程（很多機器上的 `pwsh`）由 AppX 服務建立，不在我們的 job 裡 → 收不到（`examples/job_probe.rs` 兩種都實測過） | T70～T73、Q7 |
+| **`--verify` 的步驟之間，前一步在畫面上留下的重畫要等它畫完** | 上一步的 Ctrl+C 讓 PSReadLine 重畫（印中斷的那一行＋新的提示字元），**蓋掉**下一步剛用 `writeOutput` 寫進畫面的記號 → 恢復分頁那兩條變成假失敗（TASK-014 實際踩到：`verifyCompose` 送完 Ctrl+C 沒等就跑 `verifyRestore`） | R2、R4、CP2 |
 | 會等前端回覆的 tauri command **一定要是 `async`** | tauri 2 的同步 command 跑在**主執行緒**上；擋住主執行緒 webview 的 IPC 就進不來，前端永遠沒機會回答 → 一定逾時。實際案例：`exit_confirm` 要等 `a…save`，第一版寫成同步 → 「存下 2 個分頁」卻一個畫面都沒存到 | R1～R4 |
 | 恢復畫面的 `b{id}` 一定要在 `n{id}` 之後、`s{id}` 與啟動連線之前 | 順序錯了就不是「舊訊息在上、新連線在下」：`b` 比 `n` 早＝前端還沒有那個 pane，訊息直接丟掉；比連線晚＝新輸出被舊畫面蓋掉 | R5～R7 |
 | `macro-dialog` event 一定要回 `macro_answer` | 巨集的執行緒停在那裡等（每 100ms 檢查中斷）。不回就會一直卡著，使用者看到「巨集不動了」。`statusbox`／`closesbox` 是例外（不等回覆） | T50、T51 |

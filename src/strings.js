@@ -204,6 +204,24 @@ export const T = {
   // 分頁 tooltip 多一行（新增；舊版只有「巨集執行中」）
   'tip.tabMacro': '● 巨集執行中：{0}（第 {1} 行）',
 
+  // ---- 輸入文字（TASK-014；舊版 Loc 的 compose.*，文字逐字照抄）----
+  'tb.compose': '輸入文字',
+  'tip.compose': '先打好文字再送到目前分頁（中文用輸入法打在這裡，不會被逐鍵送出）',
+  'compose.title': '輸入文字',
+  'compose.placeholder': '在此輸入要送出的文字（可多行，Ctrl+Enter 送出）',
+  'compose.send': '送出',
+  'compose.back': '返回',
+  'compose.clear': '清除',
+  'compose.save': '儲存',
+  'compose.undo': '復原',
+  'compose.sendEnter': '送出後送 Enter',
+  'compose.noTab': '沒有分頁可送',
+  'compose.loadFile': '載入文字檔',
+  // {0} = 用哪種編碼解出來的（新增：舊版沒有告訴使用者）
+  'compose.loaded': '已載入（{0}）',
+  // {0} = 存到哪裡
+  'compose.saved': '已儲存：{0}',
+
   // ---- 離開程式與恢復分頁（TASK-010；舊版 Dialogs/ExitDialog + 1.0.45）----
   'exit.title': '離開 AwayTerminal',
   'exit.body': '要關閉程式嗎？',

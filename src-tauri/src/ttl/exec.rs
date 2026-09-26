@@ -146,6 +146,8 @@ pub struct Interp {
     finds: std::collections::HashMap<i32, Vec<String>>,
     /// 下一個控制代碼。
     next_handle: i32,
+    /// `regexoption` 的目前設定（原碼的 `RegexOpt`／`RegexEnc`／`RegexSyntax`）。
+    regex_opts: super::regex::RegexOptions,
 }
 
 impl Interp {
@@ -177,6 +179,7 @@ impl Interp {
             files: std::collections::HashMap::new(),
             finds: std::collections::HashMap::new(),
             next_handle: 0,
+            regex_opts: Default::default(),
         };
         it.push_buffer(src)?;
         Ok(it)
@@ -529,6 +532,15 @@ impl Interp {
         }
     }
 
+    /// `regexoption` 的目前設定。
+    pub(super) fn regex_options(&self) -> &super::regex::RegexOptions {
+        &self.regex_opts
+    }
+
+    pub(super) fn set_regex_options(&mut self, o: super::regex::RegexOptions) {
+        self.regex_opts = o;
+    }
+
     /// 巨集的目前目錄（相對路徑的基準）。
     pub fn current_dir(&self) -> &std::path::Path {
         &self.current_dir
@@ -578,6 +590,28 @@ impl Interp {
 
     pub(super) fn finds_take(&mut self, h: i32) {
         self.finds.remove(&h);
+    }
+
+    /// `execcmnd`：把一段字串當成**這一行**重新解析並執行。
+    ///
+    /// 原碼是改 `LineBuff`＋設 `ParseAgain` 讓主迴圈再解析一次；我們直接在這裡跑，
+    /// 效果一樣（那一行的 `;` 註解、`:` 標籤都照原碼略過）。
+    pub(super) fn exec_line_now(&mut self, line: &[u8]) -> Result<()> {
+        let saved_line = self.lex.line().to_vec();
+        let saved_ptr = self.lex.ptr();
+        self.lex.reset(line);
+        let first = self.lex.first_char();
+        let run = first != 0 && first != b':' && first != b';';
+        let r = if run {
+            self.lex.set_ptr(self.lex.ptr() - 1);
+            self.exec_cmnd()
+        } else {
+            Ok(())
+        };
+        // 還原原本那一行（錯誤訊息要指對地方）
+        self.lex.reset(&saved_line);
+        self.lex.set_ptr(saved_ptr);
+        r
     }
 
     /// 掛上（或卸下）外界介面。執行器在開始跑之前呼叫一次。
@@ -1365,9 +1399,9 @@ mod tests {
     fn unknown_and_unimplemented() {
         // 沒有 `=` 的識別字＝語法錯誤（原碼的 assignment 路徑）
         assert_eq!(err_of("foobar 1"), Err::Syntax);
-        // 保留字但還沒實作（正規表示式是 TASK-014、xmodem 那組不做）
-        assert_eq!(err_of("waitregex 'x'"), Err::NotSupported);
+        // 保留字但還沒實作（檔案傳輸那組不做、廣播那組等語意，見 docs/TTL-TODO.md）
         assert_eq!(err_of("xmodemrecv 'f' 1 0"), Err::NotSupported);
+        assert_eq!(err_of("sendbroadcast 'x'"), Err::NotSupported);
     }
 
     /// `ifdefined` 回報型別（0／1／3／5／6）。

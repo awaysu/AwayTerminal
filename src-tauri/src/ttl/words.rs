@@ -1,6 +1,6 @@
 //! TTL 的保留字表。
 //!
-//! **整張表逐字照 `ttpmacro/ttmparse.cpp` 的 `CheckReservedWord`**（211 個名稱，
+//! **整張表逐字照 `ttpmacro/ttmparse.cpp` 的 `CheckReservedWord`**（214 個名稱，
 //! 由原碼直接抽出來生成，避免手抄錯字）。比對是**大小寫不敏感**的（原碼用 `_stricmp`）。
 //!
 //! 「認得但這一批還沒實作」的指令對映到 [`Word::Unsupported`]：這樣它們仍然是保留字
@@ -37,6 +37,8 @@ pub enum Word {
     EndIf,
     EndUntil,
     EndWhile,
+    Exec,
+    ExecCmnd,
     Exit,
     ExpandEnv,
     FileClose,
@@ -95,6 +97,7 @@ pub enum Word {
     Pause,
     Random,
     RecvLn,
+    RegexOption,
     Return,
     RotateL,
     RotateR,
@@ -118,7 +121,9 @@ pub enum Word {
     StrInsert,
     StrJoin,
     StrLen,
+    StrMatch,
     StrRemove,
+    StrReplace,
     StrScan,
     StrSpecial,
     StrSplit,
@@ -131,6 +136,7 @@ pub enum Word {
     Wait,
     WaitLn,
     WaitN,
+    WaitRegex,
     While,
     YesNoBox,
     /// 認得是保留字，但這個版本還沒實作（`ErrNotSupported`）。名稱留著給錯誤訊息用。
@@ -193,6 +199,7 @@ pub static LOOKUP: &[(&str, Word)] = &[
     ("dispstr", Word::DispStr),
     ("do", Word::Do),
     ("dirname", Word::Dirname),
+    ("dirnamebox", Word::DirnameBox),
     ("else", Word::Else),
     ("elseif", Word::ElseIf),
     ("enablekeyb", Word::Unsupported("enablekeyb")),
@@ -200,8 +207,8 @@ pub static LOOKUP: &[(&str, Word)] = &[
     ("endif", Word::EndIf),
     ("enduntil", Word::EndUntil),
     ("endwhile", Word::EndWhile),
-    ("exec", Word::Unsupported("exec")),
-    ("execcmnd", Word::Unsupported("execcmnd")),
+    ("exec", Word::Exec),
+    ("execcmnd", Word::ExecCmnd),
     ("exit", Word::Exit),
     ("expandenv", Word::ExpandEnv),
     ("fileclose", Word::FileClose),
@@ -211,6 +218,7 @@ pub static LOOKUP: &[(&str, Word)] = &[
     ("filedelete", Word::FileDelete),
     ("filelock", Word::FileLock),
     ("filemarkptr", Word::FileMarkPtr),
+    ("filenamebox", Word::FilenameBox),
     ("fileopen", Word::FileOpen),
     ("filereadln", Word::FileReadln),
     ("fileread", Word::FileRead),
@@ -240,6 +248,7 @@ pub static LOOKUP: &[(&str, Word)] = &[
     ("gethostname", Word::Unsupported("gethostname")),
     ("getipv4addr", Word::Unsupported("getipv4addr")),
     ("getipv6addr", Word::Unsupported("getipv6addr")),
+    ("getmodemstatus", Word::Unsupported("getmodemstatus")),
     ("getpassword", Word::Unsupported("getpassword")),
     ("getpassword2", Word::Unsupported("getpassword2")),
     ("getspecialfolder", Word::Unsupported("getspecialfolder")),
@@ -286,7 +295,7 @@ pub static LOOKUP: &[(&str, Word)] = &[
     ("random", Word::Random),
     ("recvln", Word::RecvLn),
     ("recvfile", Word::Unsupported("recvfile")),
-    ("regexoption", Word::Unsupported("regexoption")),
+    ("regexoption", Word::RegexOption),
     ("restoresetup", Word::Unsupported("restoresetup")),
     ("return", Word::Return),
     ("rotateleft", Word::RotateL),
@@ -339,9 +348,9 @@ pub static LOOKUP: &[(&str, Word)] = &[
     ("strinsert", Word::StrInsert),
     ("strjoin", Word::StrJoin),
     ("strlen", Word::StrLen),
-    ("strmatch", Word::Unsupported("strmatch")),
+    ("strmatch", Word::StrMatch),
     ("strremove", Word::StrRemove),
-    ("strreplace", Word::Unsupported("strreplace")),
+    ("strreplace", Word::StrReplace),
     ("strscan", Word::StrScan),
     ("strspecial", Word::StrSpecial),
     ("strsplit", Word::StrSplit),
@@ -354,7 +363,7 @@ pub static LOOKUP: &[(&str, Word)] = &[
     ("until", Word::Until),
     ("uptime", Word::Unsupported("uptime")),
     ("var2clipb", Word::Unsupported("var2clipb")),
-    ("waitregex", Word::Unsupported("waitregex")),
+    ("waitregex", Word::WaitRegex),
     ("wait", Word::Wait),
     ("wait4all", Word::Unsupported("wait4all")),
     ("waitevent", Word::Unsupported("waitevent")),
@@ -384,10 +393,14 @@ pub fn check_reserved_word(name: &str) -> Option<Word> {
 mod tests {
     use super::*;
 
-    /// 表的大小＝原碼的 211 筆（含 `setspeed` 這個 `setbaud` 的別名）。
+    /// 表的大小＝原碼的 214 筆（含 `setspeed` 這個 `setbaud` 的別名）。
     #[test]
     fn table_size_matches_source() {
-        assert_eq!(LOOKUP.len(), 211, "CheckReservedWord 有 211 個名稱");
+        assert_eq!(
+            LOOKUP.len(),
+            214,
+            "CheckReservedWord 的名稱數。⚠️ 第一次抽的時候用了太嚴的 regex，漏掉 `dirnamebox` 與 \n             `filenamebox`（原碼那兩行的空白排法不一樣）——所以這個數字是 214 不是 211"
+        );
     }
 
     /// 大小寫不敏感（原碼用 `_stricmp`）。
@@ -416,13 +429,14 @@ mod tests {
     #[test]
     fn unimplemented_commands_are_still_reserved() {
         assert_eq!(
-            check_reserved_word("waitregex"),
-            Some(Word::Unsupported("waitregex")),
-            "正規表示式是 TASK-014"
+            check_reserved_word("xmodemrecv"),
+            Some(Word::Unsupported("xmodemrecv")),
+            "檔案傳輸協定：不做（見 docs/TTL-TODO.md）"
         );
         assert_eq!(
-            check_reserved_word("xmodemrecv"),
-            Some(Word::Unsupported("xmodemrecv"))
+            check_reserved_word("sendbroadcast"),
+            Some(Word::Unsupported("sendbroadcast")),
+            "多視窗廣播：語意要重新定義"
         );
         assert_eq!(
             check_reserved_word("clipb2var"),

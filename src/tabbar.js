@@ -20,6 +20,7 @@ import { initConns, openManager, currentConns, reload as reloadConns } from './c
 import { initConnDialog, openConnDialog, parseHostPort } from './sshdlg.js';
 import { initComDialog, openComDialog } from './comdlg.js';
 import { initMacro, runMacroForTab } from './macro.js';
+import { initCompose, openCompose } from './compose.js';
 import { initFavs, addConnFavorite } from './favs.js';
 
 const MIN_PANEL_WIDTH = 120; // 舊版 TabPanelMinWidth
@@ -641,6 +642,13 @@ function installMenus() {
     else if (item.dataset.act === 'close') closeTab(id);
   });
 
+  el.btnCompose.textContent = T['tb.compose'];
+  el.btnCompose.title = T['tip.compose'];
+  el.btnCompose.addEventListener('click', () => {
+    hideMenus();
+    openCompose(state);
+  });
+
   el.btnNew.addEventListener('click', (e) => {
     e.stopPropagation();
     const show = el.newMenu.hidden;
@@ -1001,6 +1009,7 @@ function installPanelResize() {
 
 export async function initTabBar() {
   el.btnNew = $('btn-new');
+  el.btnCompose = $('btn-compose');
   el.btnCopy = $('btn-copy');
   el.btnPaste = $('btn-paste');
   el.btnCopyAll = $('btn-copyall');
@@ -1121,6 +1130,7 @@ export async function initTabBar() {
   await initConnDialog();
   initComDialog();
   await initMacro({ askYesNo, showInfo });
+  await initCompose({ toast });
   await initFavs({
     createSession,
     askText,

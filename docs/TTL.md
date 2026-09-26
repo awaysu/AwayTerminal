@@ -167,9 +167,20 @@
 所以遇到有顏色的提示字元（`[32m$[0m`）會比不到；舊版 C# 版先去 ANSI，
 使用者的巨集是照那個行為寫的。`ttl_probe` 有一條就是在驗「有顏色的 `login:` 也比對得到」。
 
-## 4. 指令清單（對照原碼的 211 個保留字）
+## 4. 指令清單（對照原碼的 214 個保留字）
 
-### 4.1 已實作（121 個）
+> 保留字的數量從 211 改成 **214**：第一次抽 `ttmparse.cpp` 的表用的正規表示式漏掉
+> 空白排法不一樣的三條（其中 `filenamebox`／`dirnamebox` 因此變成打不到的指令）。
+> 現在的表由容錯的抽法重新產生，`words.rs` 的測試會盯著這個數字。
+
+### 4.1 已實作（127 個）
+
+第三批（TASK-014）新增的：
+
+| 類別 | 指令 |
+|---|---|
+| 正規表示式 | `strmatch` `strreplace` `waitregex` `regexoption`（引擎與差異表：**`docs/TTL-REGEX.md`**） |
+| 外部程式 | `exec` `execcmnd` |
 
 第二批（TASK-013）新增的：
 
@@ -204,11 +215,9 @@
 
 | 分類 | 代表指令 | 狀態 |
 |---|---|---|
-| 正規表示式 | `strmatch` `strreplace` `waitregex` `regexoption` | **TASK-014**：原碼用 Oniguruma，換 Rust 的 `regex` 有語法差異（無後向參照），要先出差異表再選引擎 |
 | 多視窗廣播 | `sendbroadcast` `sendmulticast` `wait4all`… | 等 PM 定語意（TeraTerm 是多行程，我們是單程式多分頁） |
 | 密碼存放 | `setpassword` `getpassword`… | **不做原碼的格式**（`ttmenc2.c` 是弱加密，會給錯誤的安全感）；要做應接 OS 憑證存放區 |
 | 檔案傳輸 | `xmodem*` `zmodem*` `kmt*` `scp*` | 舊版也沒有，各自是完整協定 → 等需求 |
-| 外部程式 | `exec` `execcmnd` | 等 PM 決定沙盒模式下的規則（能 `exec` 就繞過沙盒了） |
 | 終端機／設定 | `setecho` `enablekeyb` `setbaud` `loadkeymap`… | 要對應的後端開關 |
 | Windows 專屬細節 | `getspecialfolder` `get/setfileattr` `filelock` | 可以做，等有人要用 |
 | 雜項計算 | `crc32` `checksum*` `gethostname`… | 純計算，沒有使用案例先不加 |
@@ -231,6 +240,12 @@
 | `testlink` | 2／1／0 三種狀態 | 只有 2（連著）與 0 | 我們沒有「有連線層但沒連上」那個中間狀態 |
 | `setdir`／`changedir` | `SetCurrentDirectory`（影響整個行程） | **只改巨集自己的目前目錄** | 多分頁的 app 不能讓一支巨集改掉別人的工作目錄 |
 | `logopen` 的 binary／plainText／timestamp 參數 | 各自有效 | 讀掉但**不用** | 我們的 log 一律是「去 ANSI 的文字」，時間戳照設定（見 `logging.rs`） |
+| 正規表示式引擎 | Oniguruma（`ONIG_SYNTAX_RUBY`） | **`fancy-regex`**（兩個八進位／控制字元轉義不支援，有替代寫法） | 完整差異表＋實測結果在 `docs/TTL-REGEX.md`。`^`／`$` 用「預設開 `m` 旗標」補成原碼的行錨點語意 |
+| `regexoption` 的 `FIND_LONGEST`／`*_CAPTURE_GROUP`／`SYNTAX_*`／`ENCODING_*` | 各自有效 | **接受但不生效**，在畫面上印一行黃字 | 「舊巨集裡的一行 `regexoption` 不該讓整支巨集停掉」，但安靜忽略會讓使用者以為生效了 |
+| 正規表示式的比對單位 | 位元組（可換編碼） | **UTF-8 字元**（無效位元組變 `U+FFFD`） | 舊版 AwayTerminal 的 `wait` 也是解成字串才比對，不是退步；`waitregex` 對非 UTF-8 的中文可能比對不到（`docs/TTL-REGEX.md` 第 4 節） |
+| `exec` 的命令列 | `CreateProcess(NULL, cmdline, …)`（系統解析） | 走 shell：Windows `cmd /C <原字串>`、其他平台 `sh -c` | Rust 沒有「整條命令列」的 API；走 shell 還順便讓 `exec 'dir \| sort'` 這種寫法和原碼一樣能用 |
+| `exec` 開出來的行程 | 開完就不管（`CloseHandle`） | **放進巨集自己的 Job Object（kill-on-close）**；沙盒分頁還會帶沙盒的 `TEMP`／`CARGO_TARGET_DIR`、工作目錄用沙盒的 | PM 在 TASK-014 定的規則：巨集是使用者自己寫的 → **不套 agent 的 hook 護欄**，但不能變成沙盒的後門。⚠️ 用 **Microsoft Store 的 app execution alias**（例如很多機器上的 `pwsh`）開的行程由 AppX 服務建立，**不在 job 裡收不到**，見 `examples/job_probe.rs` |
+| `exec` 的 `wait` 參數 | 等／不等 | 同；**等的時候巨集被中斷不會強制砍子行程**（讓 Job Object 在巨集結束時收） | 只用 handle 收自己開的東西，絕不按名稱砍行程（`docs/AGENT-SANDBOX.md`） |
 
 ## 5. 錯誤
 
@@ -265,14 +280,15 @@
 | 整數寬度 | 64-bit（C# `long`） | **32-bit**（同原碼的 `int`） | 超過 21 億的運算會環繞。舊版巨集若靠 64-bit 會有差 |
 | `break`／`continue` 在單行式 `if` 裡 | 舊版 README 說**不支援** | 支援 | 新版比較寬 |
 
-舊版還有一個**自己的限制**：它的 `wait` 只比對純文字、`strmatch` 沒有；新版第二批會照
-TeraTerm 做完整的 `waitregex`／`strmatch`。
+舊版還有一個**自己的限制**：它的 `wait` 只比對純文字、`strmatch` 沒有。
+新版第三批（TASK-014）照 TeraTerm 做了完整的 `strmatch`／`strreplace`／`waitregex`／
+`regexoption`，所以**這條限制沒有了**（引擎與差異表：`docs/TTL-REGEX.md`）。
 
 ## 7. 驗證
 
 ### 單元測試
 
-`cargo test`：**201 個**（TASK-012 是 162），其中 TTL 相關 125 個。
+`cargo test`：**217 個**（TASK-012 是 162、TASK-013 是 201），其中 TTL 相關 135 個。
 每個指令至少一例，期望值取自原碼（有些直接引用原碼的條件式寫在註解裡）。
 
 ### `ttl_probe`
@@ -282,7 +298,7 @@ cd src-tauri && cargo run --example ttl_probe
 ```
 
 跑 `src-tauri/tests/ttl/` 底下的 `.ttl` 檔，逐個變數比對。2026-09-27 的結果：
-**27 PASS / 0 FAIL**（124 個變數檢查 + 15 個錯誤案例 + I/O 那幾段）。
+**29 PASS / 0 FAIL**（124 個變數檢查 + 15 個錯誤案例 + I/O、正規表示式、`exec` 那幾段）。
 
 | 檔案 | 驗什麼 |
 |---|---|
@@ -294,15 +310,7 @@ cd src-tauri && cargo run --example ttl_probe
 | `errors.ttl` | 錯誤的**行號**與檔名 |
 | `sample_full.ttl` | 舊版 `samples/sample.ttl` **整檔**（含 `sendln`／`wait`／`messagebox`），對程式內的 TCP echo server 跑 |
 | （I/O 段） | `wait`（含 ANSI 顏色的提示字元）／多候選誰先命中／逾時 `result=0`／`sendln` 真的送出去／`yesnobox`／`inputbox` 的回傳值／**中斷正在 wait 的巨集**（150ms 內停）／沒有連線時回 `Link macro first.` |
+| （正規表示式段） | `waitregex`：多 pattern 誰先命中、群組進 `groupmatchstr1..9`、`inputstr` 是**去 ANSI 後的那一行**、同一條連線上的第二次比對、逾時 `result=0`（對程式內的 TCP server 跑） |
+| （`exec` 段） | `exec … 1` 拿得到 exit code（`result=7`）、`hide`／`wait` 參數有傳到 host、`execcmnd` 真的把字串當一行 TTL 執行 |
 | （inline） | 15 個錯誤案例：`")" expected.`／`Divide by zero.`／`Variable not initialized.`／`Type mismatch.`／`Invalid control.`（endif／break／return）／`Label requiered.`／`Label already defined.`／`Syntax error.`／`Index out of range.`／`Unknown command.` |
 
-## 8. 下一批（TASK-014）的接法
-
-1. `wait`／`pause` 這類要等的指令：讓 `Interp::step()` 回「還在等」，
-   呼叫端（分頁的巨集執行器）隔一段時間再 `step()`。**直譯器不需要改結構**。
-2. 輸出流的比對（`wait`／`waitln`／`waitregex`）走 `src/tap.rs` 的 `IoTap::on_output`；
-   `send`／`sendln` 走 `session_write`（`IoTap::on_input` 可以讓巨集執行中吃掉鍵盤）。
-3. 對話框：照第一批的做法在前端做頁內對話框，Rust 端等回覆的 command **一定要 `async`**
-   （見 `docs/REGRESSION-CHECKLIST.md` 的「隱含契約」）。
-4. 正規表示式：先做一張 Oniguruma vs Rust `regex` 的語法差異表再決定用哪個
-   （或包一層讓常見寫法一致）。

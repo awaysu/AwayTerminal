@@ -149,6 +149,11 @@
 | `macro_run(id, path)` / `macro_stop(id)` / `macro_answer(id, number, text, cancelled)` | TTL 巨集：開始跑／叫停／回覆對話框。`macro_run` 是 **async**（要讀檔與註冊標籤） |
 | `macro_verify(id, path, timeoutMs)` | **只給 `--verify` 用**：跑一支巨集並等它結束 |
 | `macro_pick_file(title?)` | 選 `.ttl`（篩選器照舊版：TeraTerm 巨集／所有檔案） |
+| `exec_verify(id)` | **只給 `--verify` 用**：在指定分頁跑一支自動產生的巨集，驗 `exec` 的 exit code、子行程的 `TEMP` 有沒有導到沙盒、以及**自己記下的那個 PID** 在巨集結束後有沒有被 Job Object 收掉 |
+| `compose_load_file()` | 「輸入文字」載入檔案：選檔 → 解碼（BOM → 嚴格 UTF-8 → Big5）→ 回 `{text, encoding}`；**上限 2MB**，超過回 `Err`。取消回 `null` |
+| `compose_save_file(text)` | 把文字框內容存成檔（**UTF-8 無 BOM**）；回存到哪裡，取消回 `null` |
+| `compose_send(id, text, sendEnter, remember?)` | 送出：換行統一成 CRLF → emit `v{id}{US}{base64}`（＝**貼上**那條路），`sendEnter` 時再等 200ms 寫一個 `\r`（同舊版 `SendSnippet`）。`remember` 預設 `true`＝把勾選狀態存進 `settings.json` |
+| `compose_verify_roundtrip(text)` | **只給 `--verify` 用**：寫一個 Big5 檔再讀回來，回 `{encoding, textOk, text, crlfOk, bytes}`（比對在 Rust 端做，JS 的字面容易假失敗） |
 | `save_text_to_file_at(path, text)` | **只給 `--verify` 用**：直接寫檔，而且**只接受系統暫存資料夾底下的路徑**（不是任意寫檔的後門） |
 | `com_ports()` | 目前看得到的埠（名稱＋USB 描述）與四組選項清單（鮑率／資料位元／同位／停止位元／流量控制）。**清單只含函式庫真的支援的值** |
 | `restore_list()` | 這次啟動要恢復哪些分頁（空＝開一個預設分頁）。前端照順序呼叫 `session_create(…, restore: i)` |

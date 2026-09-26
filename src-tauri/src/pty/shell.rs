@@ -166,24 +166,65 @@ fn resolve_program(head: &str) -> Option<PathBuf> {
 }
 
 /// 在 PATH 裡找一個執行檔（不用外部指令）。
+/// 找 PATH 上的某個執行檔。
+///
+/// ⚠️ **`WindowsApps` 底下的 Microsoft Store「app execution alias」排到最後**
+/// （2026-09-27 實測，TASK-014）：用別名啟動的行程真正是由 **AppX 啟動服務**建立的，
+/// **不會進我們的 Job Object**，所以沙盒分頁關掉時收不掉那一棵
+/// （見 `examples/job_probe.rs` 與 `docs/AGENT-SANDBOX.md`）。
+/// 這台機器的 `pwsh` 就是別名，而 `C:\Program Files\PowerShell\7\pwsh.exe` 是真檔案。
+/// 只有「完全找不到真檔案」時才回別名（能跑總比找不到好）。
 pub fn which(name: &str) -> Option<PathBuf> {
     let path = std::env::var_os("PATH")?;
+    let mut alias: Option<PathBuf> = None;
     for dir in std::env::split_paths(&path) {
         if dir.as_os_str().is_empty() {
             continue;
         }
         let candidate = dir.join(name);
-        if candidate.is_file() {
-            return Some(candidate);
+        if !candidate.is_file() {
+            continue;
         }
+        if is_store_alias(&candidate) {
+            if alias.is_none() {
+                alias = Some(candidate);
+            }
+            continue;
+        }
+        return Some(candidate);
     }
-    None
+    alias
+}
+
+/// 這個路徑是 Store 的 app execution alias 嗎（`…\WindowsApps\x.exe`）。
+fn is_store_alias(p: &Path) -> bool {
+    p.components().any(|c| {
+        c.as_os_str()
+            .to_str()
+            .is_some_and(|s| s.eq_ignore_ascii_case("WindowsApps"))
+    })
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{is_claude_exe, split_first_token};
+    use super::{is_claude_exe, is_store_alias, split_first_token};
     use std::path::Path;
+
+    /// Store 的 app execution alias 要認得出來（那種行程進不了 Job Object，
+    /// 見 `which` 的註解與 `examples/job_probe.rs`）。
+    #[test]
+    fn spots_store_aliases() {
+        assert!(is_store_alias(Path::new(
+            "C:\\Users\\x\\AppData\\Local\\Microsoft\\WindowsApps\\pwsh.exe"
+        )));
+        // 大小寫不該有差（Windows 的路徑不分大小寫）
+        assert!(is_store_alias(Path::new("C:\\x\\windowsapps\\python.exe")));
+        assert!(!is_store_alias(Path::new(
+            "C:\\Program Files\\PowerShell\\7\\pwsh.exe"
+        )));
+        // 只是名字裡有 WindowsApps 的一段，不是整段相等 → 不算
+        assert!(!is_store_alias(Path::new("C:\\MyWindowsAppsTools\\a.exe")));
+    }
 
     #[test]
     fn splits_first_token() {

@@ -101,6 +101,9 @@ pub struct AppSettings {
     /// 離開對話框「下次開啟恢復目前分頁」的勾選狀態（舊版 `ExitRestoreTabs`，預設開）。
     pub exit_restore_tabs: bool,
 
+    /// 「輸入文字」視窗的「送出後送 Enter」勾選（舊版 `ComposeSendEnter`，預設開）。
+    pub compose_send_enter: bool,
+
     /// 自訂連線清單（舊版 `AppSettings.CustomConns`）。
     ///
     /// 舊版 v1.0.18 起**不自動建立任何自訂連線**：全新安裝是空的，使用者自己按
@@ -221,6 +224,7 @@ impl Default for AppSettings {
             favorites: Vec::new(),
             saved_tabs: Vec::new(),
             exit_restore_tabs: true,
+            compose_send_enter: true,
             custom_conns: Vec::new(),
             // 舊版 MainWindow.xaml 的「配色」子選單那五組，順序照抄
             palette: vec![

@@ -113,6 +113,23 @@ pub trait MacroHost: Send + Sync {
     }
     fn log_close(&self) {}
 
+    /// `exec`：跑一個外部程式。回傳值照原碼：**-1 開不起來、0 開起來了（沒等）、
+    /// 有等的話是 exit code**。
+    ///
+    /// ⚠️ **沙盒分頁的規則**（PM 在 TASK-014 定的）：巨集是使用者自己寫的、不是 AI agent，
+    /// 所以不套 Claude Code 那種 hook 護欄；但 `exec` 出來的子行程一律
+    /// **進巨集自己的 Job Object（kill-on-close）＋帶沙盒的環境變數**，
+    /// 這樣巨集不會變成沙盒的後門（關分頁或巨集結束就一起收）。
+    fn spawn_process(
+        &self,
+        _cmdline: &str,
+        _cwd: Option<&str>,
+        _hide: bool,
+        _wait: bool,
+    ) -> i32 {
+        -1
+    }
+
     /// 連線（`connect`）／斷線（`disconnect`）。`connect` 回 `false` ＝連不上。
     fn connect(&self, _params: &str) -> bool {
         false
@@ -375,6 +392,9 @@ pub struct NullHost {
     /// 收到的對話框請求（測試用）。
     pub asked: Mutex<Vec<DialogRequest>>,
     pub link: bool,
+    /// 測試用：`exec` 收到的請求，以及要回什麼。
+    pub execs: Mutex<Vec<ExecRequest>>,
+    pub exec_result: i32,
 }
 
 impl Default for NullHost {
@@ -387,6 +407,8 @@ impl Default for NullHost {
             answer: Mutex::new(DialogAnswer::default()),
             asked: Mutex::new(Vec::new()),
             link: true,
+            execs: Mutex::new(Vec::new()),
+            exec_result: 0,
         }
     }
 }
@@ -433,6 +455,24 @@ impl MacroHost for NullHost {
         // 測試裡不要真的睡太久
         std::thread::sleep(std::time::Duration::from_millis(ms.min(5)));
     }
+    fn spawn_process(&self, cmdline: &str, cwd: Option<&str>, hide: bool, wait: bool) -> i32 {
+        self.execs.lock().unwrap().push(ExecRequest {
+            cmdline: cmdline.to_string(),
+            cwd: cwd.map(|s| s.to_string()),
+            hide,
+            wait,
+        });
+        self.exec_result
+    }
+}
+
+/// 測試用：`exec` 收到的請求。
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ExecRequest {
+    pub cmdline: String,
+    pub cwd: Option<String>,
+    pub hide: bool,
+    pub wait: bool,
 }
 
 #[cfg(test)]

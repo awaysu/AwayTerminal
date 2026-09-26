@@ -193,7 +193,37 @@ THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ---
 
-## 7. Rust crates
+## 7. fancy-regex — MIT
+
+- Used for: the regular-expression engine behind the TTL commands `strmatch`,
+  `strreplace`, `waitregex` and `regexoption` (`src-tauri/src/ttl/regex.rs`).
+- Upstream: <https://github.com/fancy-regex/fancy-regex>
+- Licence: MIT (same as this project, so only attribution is required).
+
+Chosen over the `regex` crate because TeraTerm's Oniguruma engine supports look-behind and
+back-references, which `regex` deliberately does not. The measured feature-by-feature
+comparison is in `docs/TTL-REGEX.md`; no Oniguruma code is used (it is a C library and was
+not vendored).
+
+---
+
+## 8. encoding_rs — (Apache-2.0 OR MIT) AND BSD-3-Clause
+
+- Used for: decoding **Big5** (and UTF-16) text files in the 輸入文字 / compose window
+  (`src-tauri/src/compose.rs`), replacing .NET's `Encoding.Default` (cp950) from v1.
+- Upstream: <https://github.com/hsivonen/encoding_rs>
+- Copyright: Mozilla Foundation.
+
+> ⚠️ The licence is a **conjunction**: the code is Apache-2.0 OR MIT (our choice: MIT),
+> **and** the encoding tables derived from the WHATWG Encoding Standard are BSD-3-Clause
+> (© WHATWG — Apple, Google, Mozilla, Microsoft). The BSD-3 notice, conditions and
+> disclaimer must therefore accompany the installers (stage 5) — the same requirement the
+> TeraTerm section above already creates, so one BSD-3 text with both copyright lines is
+> enough.
+
+---
+
+## 9. Rust crates
 
 Linked as dependencies, each under MIT or MIT/Apache-2.0:
 `windows-sys`, `libloading`, `serde`, `serde_json`, `tokio`, `chrono`,
@@ -219,6 +249,10 @@ plan in `CLAUDE.md`:
 
 - **PuTTY** (MIT) — SSH behaviour reference (dialog wording, host-key cache semantics,
   algorithm ordering). No PuTTY code has been copied.
-- **TeraTerm** (BSD-3-Clause) — the TTL macro interpreter is to be ported from
-  `ttpmacro/`, so the BSD-3 notice and copyright line will be required.
-- **serialport-rs** and its dependency tree.
+- The **full licence texts** of every crate in the dependency tree, generated with
+  `cargo about`, bundled into the installers (stage 5). Sections 4–8 above are the ones
+  that need more than a name in a list: russh (Apache-2.0), serialport-rs (MPL-2.0),
+  TeraTerm (BSD-3), encoding_rs (BSD-3 tables).
+
+（TeraTerm and serialport-rs used to be listed here; they now have their own sections
+above — 6 and 5 — because the code that uses them has landed.）

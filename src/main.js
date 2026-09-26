@@ -230,6 +230,7 @@ async function awayVerify() {
   await verifyTelnetPath();
   await verifyComPath();
   await verifyMacro();
+  await verifyCompose();
   await verifyRestore();
   await verifySandbox();
 }
@@ -298,6 +299,25 @@ async function verifySandbox() {
       lines.push(`[verify] .ai/sandbox 被 git 忽略（git status 乾淨）=${checks.ignored}`);
       lines.push(`[verify] worktree 目錄存在=${checks.worktreeExists}`);
       lines.push(`[verify] 分支存在=${checks.branchExists}`);
+    }
+
+    // 巨集的 `exec`（TASK-014 B）：在**沙盒分頁**裡用巨集開子行程。
+    // 整段由 Rust 端做（巨集檔的引號很難在 JS 裡拼對），回傳三個檢查結果。
+    try {
+      const ex = await invoke('exec_verify', { id: tabId });
+      lines.push(`[verify] 巨集 exec：${ex.note}`);
+      lines.push(
+        `[verify] exec 的 exit code 有回來（要 7）：${ex.exitCode}、` +
+          `子行程的 TEMP 導到沙盒：${ex.tempInSandbox}`,
+      );
+      if (!ex.tempInSandbox) {
+        lines.push(`[verify]   子行程的 TEMP=${ex.childTemp}、沙盒 root=${ex.sandboxRoot}`);
+      }
+      lines.push(
+        `[verify] exec 開的子行程 PID ${ex.pid}：巨集結束後存活=${ex.aliveAfterMacro}（要 false）`,
+      );
+    } catch (e) {
+      lines.push(`[verify] 巨集 exec 驗證失敗：${e}`);
     }
 
     // Job Object：在分頁裡開一個子行程，記下它的 PID
@@ -513,6 +533,48 @@ async function verifyMacro() {
     lines.push(`[verify] 巨集結束的提示有印出來：${done.includes('巨集執行完畢')}`);
     const after = (currentTabState().tabs.find((t) => t.id === id) || {}).macroState;
     lines.push(`[verify] 結束後巨集狀態已清掉：${!after}`);
+  } catch (e) {
+    lines.push(`[verify] 失敗：${e}`);
+  }
+  log(lines.join('\n'));
+}
+
+/**
+ * 「輸入文字」的驗證（TASK-014 C）：**Big5 檔 → 送到 PowerShell 分頁 → 畫面上看到正確中文**。
+ *
+ * 用 `compose_write_big5`（只給 `--verify` 用）在 `%TEMP%` 產一個 Big5 檔，
+ * 走 `compose_load_file` 沒辦法自動點檔案選擇 → 直接呼叫解碼與送出那兩條路。
+ */
+async function verifyCompose() {
+  const lines = ['[verify] 輸入文字（app 端路徑）'];
+  try {
+    const r = await invoke('compose_verify_roundtrip', { text: '測試中文 ABC' });
+    lines.push(`[verify] Big5 檔解碼：編碼=${r.encoding} 內容正確=${r.textOk}（${r.text}）`);
+    lines.push(`[verify] 換行統一成 CRLF：${r.crlfOk}`);
+
+    const term = window.AwayTerm;
+    const id = currentTabState().tabs.find((t) => t.kind === 'powershell').id;
+    // 送出（不送 Enter，免得真的執行）→ 畫面上要看得到中文
+    await invoke('compose_send', {
+      id,
+      text: r.text,
+      sendEnter: false,
+      remember: false,
+    });
+    let seen = false;
+    for (let i = 0; i < 20; i++) {
+      await wait(250);
+      if (term.tail(id, 8).join(' ').includes('測試中文 ABC')) {
+        seen = true;
+        break;
+      }
+    }
+    lines.push(`[verify] 送到分頁後畫面上看得到中文：${seen}`);
+    // 把打字清掉（Ctrl+C），免得留在提示字元上
+    await invoke('session_write_text', { id, text: '' });
+    // ⬇ 這個 wait 不能抽：Ctrl+C 之後 PSReadLine 還要重畫一次（印中斷的那一行＋新的提示字元）。
+    // 不等它畫完就跑 verifyRestore，它寫進畫面的記號會被這次重畫**蓋掉**，兩個恢復分頁的檢查會假失敗。
+    await wait(600);
   } catch (e) {
     lines.push(`[verify] 失敗：${e}`);
   }

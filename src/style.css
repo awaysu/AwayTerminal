@@ -470,3 +470,73 @@ body.col-resizing { cursor: col-resize; user-select: none; }
   box-sizing: border-box;
   margin-bottom: 12px;
 }
+
+/* 輸入文字視窗（舊版 ComposeDialog） */
+#composedlg {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 60;
+}
+#composedlg[hidden] {
+  display: none;
+}
+#composedlg-box {
+  width: 640px;
+  max-width: 90vw;
+  background: #2D2D30;
+  border: 1px solid #3F3F46;
+  border-radius: 4px;
+  padding: 16px;
+  color: #E0E0E0;
+}
+#composedlg-title {
+  font-weight: bold;
+  margin-bottom: 8px;
+}
+#cp-links {
+  display: flex;
+  gap: 14px;
+  margin-bottom: 6px;
+}
+.link-btn {
+  background: none;
+  border: none;
+  color: #6FB3E0;
+  cursor: pointer;
+  padding: 0;
+  font-size: 12px;
+  text-decoration: underline;
+}
+.link-btn:hover {
+  color: #9CD1F5;
+}
+#cp-inputwrap {
+  position: relative;
+}
+#cp-input {
+  width: 100%;
+  box-sizing: border-box;
+  background: #1E1E1E;
+  color: #E0E0E0;
+  border: 1px solid #3F3F46;
+  border-radius: 3px;
+  padding: 8px;
+  font-family: 'Cascadia Mono', Consolas, monospace;
+  font-size: 13px;
+  resize: vertical;
+}
+#cp-placeholder {
+  position: absolute;
+  left: 10px;
+  top: 9px;
+  color: #6E6E6E;
+  font-size: 13px;
+  pointer-events: none;
+}
+#cp-placeholder[hidden] {
+  display: none;
+}

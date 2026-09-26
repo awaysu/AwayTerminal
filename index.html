@@ -35,8 +35,8 @@
        #terminals / #searchbar 的 id 與內部 class 全部照舊版 web/index.html——
        terminal.js 直接 querySelector 這些名字，不可以改。 -->
   <div id="app">
-    <!-- 按鈕順序照舊版 MainWindow.xaml 的工具列。舊版還有「我的最愛」「輸入文字」
-         「遠端」「其他設定」「關於」，那些功能還沒做 → 這次不放佔位按鈕。 -->
+    <!-- 按鈕順序照舊版 MainWindow.xaml 的工具列。舊版還有「遠端」「其他設定」「關於」，
+         那些功能還沒做 → 這次不放佔位按鈕。 -->
     <div id="toolbar">
       <button id="btn-new" type="button" class="tool-btn">新分頁 ▾</button>
       <button id="btn-favs" type="button" class="tool-btn">我的最愛 ▾</button>
@@ -46,6 +46,7 @@
       <button id="btn-copyall" type="button" class="tool-btn">複製全部</button>
       <button id="btn-clear" type="button" class="tool-btn">清除畫面</button>
       <button id="btn-page" type="button" class="tool-btn">翻頁 ▾</button>
+      <button id="btn-compose" type="button" class="tool-btn">輸入文字</button>
       <span class="tool-sep"></span>
       <button id="btn-view" type="button" class="tool-btn">視窗分割</button>
       <span class="tool-spacer"></span>
@@ -288,6 +289,31 @@
         <button id="sd-cancel" type="button">取消</button>
       </div>
     </form>
+  </div>
+
+  <!-- 輸入文字（舊版 Dialogs/ComposeDialog）：上排四個連結（載入文字檔／清除／復原／儲存）、
+       中間多行輸入框（IME 在這裡組字，不經 xterm）、下排「送出後送 Enter」＋返回／送出。
+       Ctrl+Enter ＝送出。草稿在程式存活期間保留（送出才清空）。 -->
+  <div id="composedlg" hidden>
+    <div id="composedlg-box">
+      <div id="composedlg-title"></div>
+      <div id="cp-links">
+        <button id="cp-load" type="button" class="link-btn"></button>
+        <button id="cp-clear" type="button" class="link-btn"></button>
+        <button id="cp-undo" type="button" class="link-btn"></button>
+        <button id="cp-save" type="button" class="link-btn"></button>
+      </div>
+      <div id="cp-inputwrap">
+        <textarea id="cp-input" rows="12" spellcheck="false"></textarea>
+        <div id="cp-placeholder"></div>
+      </div>
+      <label class="sd-check"><input id="cp-sendenter" type="checkbox" /><span id="cp-l-sendenter"></span></label>
+      <div id="cp-note" class="sd-hint"></div>
+      <div class="modal-buttons">
+        <button id="cp-send" type="button">送出</button>
+        <button id="cp-back" type="button">返回</button>
+      </div>
+    </div>
   </div>
 
   <!-- 巨集的對話框（`messagebox`／`yesnobox`／`inputbox`／`passwordbox`／`listbox`）。

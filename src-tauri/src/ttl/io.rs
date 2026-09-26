@@ -29,8 +29,10 @@ impl Interp {
             Word::SendLn => self.cmd_send(true),
             Word::DispStr => self.cmd_dispstr(),
             // ---- 等待 ----
-            Word::Wait => self.cmd_wait(false),
-            Word::WaitLn => self.cmd_wait(true),
+            Word::Wait => self.cmd_wait(false, false),
+            Word::WaitLn => self.cmd_wait(true, false),
+            // `waitregex` 和 `wait` 共用等待的機制，只是比對改成正規表示式（逐行）
+            Word::WaitRegex => self.cmd_wait(false, true),
             Word::WaitN => self.cmd_waitn(),
             Word::RecvLn => self.cmd_recvln(),
             Word::FlushRecv => self.cmd_flushrecv(),
@@ -60,7 +62,11 @@ impl Interp {
             Word::FilenameBox => self.cmd_pathbox(false),
             Word::DirnameBox => self.cmd_pathbox(true),
             Word::SetDlgPos => self.cmd_setdlgpos(),
-            // 檔案類在 files.rs
+            // ---- 外部程式與「執行一行 TTL」----
+            Word::Exec => self.cmd_exec(),
+            Word::ExecCmnd => self.cmd_execcmnd(),
+            // 正規表示式在 regex.rs、檔案類在 files.rs
+            Word::StrMatch | Word::StrReplace | Word::RegexOption => self.dispatch_regex(w),
             other => self.dispatch_files(other),
         }
     }
@@ -131,11 +137,15 @@ impl Interp {
         sec * 1000 + ms
     }
 
-    /// `TTLWait(FALSE)` ＝ `wait`、`TTLWait(TRUE)` ＝ `waitln`。
+    /// `TTLWait(FALSE)` ＝ `wait`、`TTLWait(TRUE)` ＝ `waitln`、`regex=true` ＝ `waitregex`。
     ///
     /// 最多 10 個候選（字串常值或字串變數）。`result` ＝第幾個命中（1 起算），逾時是 0。
     /// `waitln` 命中之後還要等到換行，並把那一行放進 `inputstr`。
-    fn cmd_wait(&mut self, wait_line: bool) -> Result<()> {
+    ///
+    /// `waitregex` 的比對是**逐行**做的（原碼 `Wait()` 只在收到 LF 時呼叫
+    /// `FindRegexString()`，資料燒完之後再試一次），命中時 `inputstr` ＝那一行，
+    /// 並且會設 `matchstr`／`groupmatchstr1..9`。
+    fn cmd_wait(&mut self, wait_line: bool, regex: bool) -> Result<()> {
         let mut pats: Vec<Vec<u8>> = Vec::new();
         while pats.len() < WaitMatcher::MAX_PATTERNS {
             if let Some(s) = self.lex_string()? {
@@ -155,6 +165,10 @@ impl Interp {
         }
 
         let timeout = self.timeout_ms();
+        if regex {
+            return self.wait_regex(pats, timeout);
+        }
+
         let mut m = WaitMatcher::new(pats);
         let hit = self.pump_until(timeout, &mut m)?;
         match hit {
@@ -179,6 +193,59 @@ impl Interp {
                 let line = m.line_before_newline().to_vec();
                 self.vars.set_str("inputstr", &line);
                 Ok(())
+            }
+        }
+    }
+
+    /// `waitregex`：一行一行讀，每收滿一行就用每個 pattern 試一次（同原碼 `FindRegexString`）。
+    fn wait_regex(&mut self, pats: Vec<Vec<u8>>, timeout_ms: u64) -> Result<()> {
+        let deadline = self.deadline(timeout_ms);
+        let opts = self.regex_options().clone();
+        let patterns: Vec<String> = pats
+            .iter()
+            .map(|p| String::from_utf8_lossy(p).into_owned())
+            .collect();
+        let mut line: Vec<u8> = Vec::new();
+        loop {
+            match self.host_read_byte() {
+                Some(b) => {
+                    if b == 0x0a {
+                        // 一整行收滿了 → 試每個 pattern（索引小的先）
+                        let text = String::from_utf8_lossy(&trim_eol(&line)).into_owned();
+                        for (i, pat) in patterns.iter().enumerate() {
+                            // pattern 壞掉時照原碼繼續試下一個（`FindRegexString` 只看 > 0）
+                            if let Ok(Some(m)) = super::regex::find_one(&opts, pat, &text) {
+                                self.clear_groups();
+                                self.apply_match(&m);
+                                self.vars.set_str("inputstr", text.as_bytes());
+                                self.vars.set_result(i as i32 + 1);
+                                return Ok(());
+                            }
+                        }
+                        line.clear();
+                    } else {
+                        line.push(b);
+                    }
+                }
+                None => {
+                    // 沒有更多資料了：原碼在這時也會拿「還沒換行的那一段」試一次
+                    if !line.is_empty() {
+                        let text = String::from_utf8_lossy(&trim_eol(&line)).into_owned();
+                        for (i, pat) in patterns.iter().enumerate() {
+                            if let Ok(Some(m)) = super::regex::find_one(&opts, pat, &text) {
+                                self.clear_groups();
+                                self.apply_match(&m);
+                                self.vars.set_str("inputstr", text.as_bytes());
+                                self.vars.set_result(i as i32 + 1);
+                                return Ok(());
+                            }
+                        }
+                    }
+                    if self.wait_tick(deadline)? {
+                        self.vars.set_result(0);
+                        return Ok(());
+                    }
+                }
             }
         }
     }
@@ -550,6 +617,60 @@ impl Interp {
         }
     }
 
+    // ---------------------------------------------------------------- 外部程式
+
+    /// `TTLExec`：`exec <命令列> [show|hide|minimize|maximize] [wait] [工作目錄]`。
+    ///
+    /// `result`：**-1 開不起來、0 開起來了（沒等）、有等的話是 exit code**（照原碼）。
+    /// 視窗模式：`hide` 真的隱藏；`minimize`／`maximize` **接受但照 show 處理**
+    /// （見 `docs/TTL.md` 的偏差表）。
+    ///
+    /// 沙盒分頁裡開出來的子行程會進巨集自己的 Job Object ＋帶沙盒環境變數，見 `host.rs`。
+    fn cmd_exec(&mut self) -> Result<()> {
+        let cmdline = self.str_val()?;
+        let mut hide = false;
+        let mut wait = 0;
+        let mut cwd: Option<Vec<u8>> = None;
+        if self.parameter_given() {
+            let mode = self.str_val()?;
+            let mode = String::from_utf8_lossy(&mode).to_ascii_lowercase();
+            match mode.as_str() {
+                "hide" => hide = true,
+                // 原碼是 SW_MINIMIZE／SW_MAXIMIZE；我們照 show 處理（文件有寫）
+                "show" | "minimize" | "maximize" => {}
+                _ => return Err(Err::Syntax),
+            }
+            if self.parameter_given() {
+                wait = self.int_val()?;
+                if self.parameter_given() {
+                    cwd = Some(self.str_val()?);
+                }
+            }
+        }
+        self.end_of_args()?;
+        if cmdline.is_empty() {
+            return Err(Err::Syntax);
+        }
+        let cmdline = String::from_utf8_lossy(&cmdline).into_owned();
+        let cwd = cwd.map(|c| String::from_utf8_lossy(&c).into_owned());
+        let r = match self.host() {
+            Some(h) => h.spawn_process(&cmdline, cwd.as_deref(), hide, wait != 0),
+            None => -1,
+        };
+        self.vars.set_result(r);
+        Ok(())
+    }
+
+    /// `TTLExecCmnd`：**執行一行 TTL 指令字串**（不是外部程式）。
+    ///
+    /// 原碼是把 `LineBuff` 換成那個字串、`LinePtr` 歸零、設 `ParseAgain`，
+    /// 讓主迴圈重新解析同一「行」。我們照做（`exec_line_now`）。
+    fn cmd_execcmnd(&mut self) -> Result<()> {
+        let line = self.str_val()?;
+        self.end_of_args()?;
+        self.exec_line_now(&line)
+    }
+
     // ---------------------------------------------------------------- 等待的機制
 
     /// 逾時的截止時間（`None` ＝永遠等）。
@@ -604,6 +725,15 @@ impl Interp {
             }
         }
     }
+}
+
+/// 去掉尾端的 CR（LF 已經在呼叫端處理掉了）。
+fn trim_eol(line: &[u8]) -> Vec<u8> {
+    let mut v = line.to_vec();
+    while v.last() == Some(&0x0d) {
+        v.pop();
+    }
+    v
 }
 
 #[cfg(test)]
@@ -835,3 +965,4 @@ mod tests {
         assert!(h.echoed.lock().unwrap()[0].contains("畫面上"));
     }
 }
+

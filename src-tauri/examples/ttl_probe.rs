@@ -280,8 +280,8 @@ fn main() {
         ("intdim a 2\nx = a[9]", Err::OutOfRange),
         // `sendln` 這一批實作了 → 沒有連線時是 `Link macro first.`
         ("sendln 'x'", Err::LinkFirst),
-        // 還沒實作的：正規表示式（TASK-014）與檔案傳輸（不做）
-        ("waitregex 'x'", Err::NotSupported),
+        // `waitregex` 這一批實作了 → 沒有連線時也是 `Link macro first.`
+        ("waitregex 'x'", Err::LinkFirst),
         ("xmodemrecv 'f' 1 0", Err::NotSupported),
         ("a = 'unterminated", Err::Syntax),
     ];
@@ -575,7 +575,6 @@ end
                 println!("FAIL  舊版 sample.ttl 整檔：{e}");
             }
             Ok(()) => {
-                let sent = String::from_utf8_lossy(&got.lock().unwrap()).into_owned();
                 let want = [
                     "echo === macro start ===",
                     "echo loop 1",
@@ -585,6 +584,16 @@ end
                     "echo c equals 5 (correct)",
                     "echo === macro done ===",
                 ];
+                // ⚠️ 要等 server 的讀取執行緒真的把最後幾行收完（原本讀完就比 → 偶發假失敗）
+                let mut sent;
+                let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+                loop {
+                    sent = String::from_utf8_lossy(&got.lock().unwrap()).into_owned();
+                    if want.iter().all(|w| sent.contains(w)) || std::time::Instant::now() > deadline {
+                        break;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(20));
+                }
                 let missing: Vec<&str> = want.iter().copied().filter(|w| !sent.contains(w)).collect();
                 let asked = host.inner.asked.lock().unwrap().len();
                 if missing.is_empty() && asked == 1 {
@@ -596,6 +605,172 @@ end
                     *fail += 1;
                     println!(
                         "FAIL  舊版 sample.ttl 整檔：少了 {missing:?}、對話框 {asked} 次（要 1）"
+                    );
+                }
+            }
+        }
+    }
+
+    // --- waitregex：對程式內 server 跑一次（含群組與逾時）---
+    {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
+        let port = listener.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            let Ok((mut sock, _)) = listener.accept() else {
+                return;
+            };
+            // 三行：第一行不該命中、第二行才命中（有顏色，驗去 ANSI）
+            let _ = sock.write_all(b"noise line
+");
+            let _ = sock.write_all(b"[32mLogin incorrect[0m
+");
+            let _ = sock.write_all(b"user=bob uid=1001
+");
+            std::thread::sleep(std::time::Duration::from_millis(500));
+        });
+        let sock = std::net::TcpStream::connect(("127.0.0.1", port)).expect("connect");
+        let reader = sock.try_clone().unwrap();
+        let host = Arc::new(SockHost {
+            inner: NullHost::default(),
+            sock: Mutex::new(sock),
+        });
+        {
+            let host2 = host.clone();
+            let mut reader = reader;
+            std::thread::spawn(move || {
+                let mut buf = [0u8; 1024];
+                loop {
+                    match reader.read(&mut buf) {
+                        Ok(0) | Err(_) => break,
+                        Ok(n) => host2.inner.recv.push(&buf[..n]),
+                    }
+                }
+            });
+        }
+        let src = concat!(
+            "timeout = 3", "
+",
+            // 第 2 個 pattern 才命中（第 1 個是雜訊），而且來源有 ANSI 顏色
+            r"waitregex 'zzz' '^Login (\w+)'", "
+",
+            "w1 = result", "
+",
+            "g1 = groupmatchstr1", "
+",
+            "l1 = inputstr", "
+",
+            r"waitregex 'uid=(\d+)'", "
+",
+            "w2 = result", "
+",
+            "g2 = groupmatchstr1", "
+",
+            "m2 = matchstr", "
+",
+            "mtimeout = 200", "
+",
+            "timeout = 0", "
+",
+            "waitregex 'never-ever'", "
+",
+            "w3 = result", "
+",
+            "end", "
+",
+        );
+        let mut it = ttl::Interp::from_text("rx.ttl", src).unwrap();
+        it.set_host(Some(host.clone()));
+        match it.run(100_000) {
+            Err(e) => {
+                *fail += 1;
+                println!("FAIL  waitregex 巨集跑不完：{e}");
+            }
+            Ok(()) => {
+                let v = std::mem::take(&mut it.vars);
+                let mut bad = Vec::new();
+                if v.int_of("w1") != Some(2) {
+                    bad.push(format!("w1（命中的 pattern 編號）={:?}，要 2", v.int_of("w1")));
+                }
+                if v.str_of("g1").map(|b| b.to_vec()) != Some(b"incorrect".to_vec()) {
+                    bad.push(format!(
+                        "g1={:?}，要 incorrect",
+                        v.str_of("g1").map(|b| String::from_utf8_lossy(b).into_owned())
+                    ));
+                }
+                if v.str_of("l1").map(|b| b.to_vec()) != Some(b"Login incorrect".to_vec()) {
+                    bad.push(format!(
+                        "inputstr={:?}，要 `Login incorrect`（去掉 ANSI 與 CR）",
+                        v.str_of("l1").map(|b| String::from_utf8_lossy(b).into_owned())
+                    ));
+                }
+                if v.int_of("w2") != Some(1) {
+                    bad.push(format!("w2={:?}，要 1", v.int_of("w2")));
+                }
+                if v.str_of("g2").map(|b| b.to_vec()) != Some(b"1001".to_vec()) {
+                    bad.push("g2（第二次的群組）不對".to_string());
+                }
+                if v.str_of("m2").map(|b| b.to_vec()) != Some(b"uid=1001".to_vec()) {
+                    bad.push("matchstr 不對".to_string());
+                }
+                if v.int_of("w3") != Some(0) {
+                    bad.push(format!("w3（逾時）={:?}，要 0", v.int_of("w3")));
+                }
+                if bad.is_empty() {
+                    *pass += 1;
+                    println!("PASS  waitregex：多 pattern／群組／inputstr（去 ANSI）／第二次比對／逾時 7 項全對");
+                } else {
+                    *fail += 1;
+                    println!("FAIL  waitregex：{} 項不對", bad.len());
+                    for b in bad {
+                        println!("      | {b}");
+                    }
+                }
+            }
+        }
+    }
+
+    // --- exec：非沙盒分頁拿 exit code（假 host 記下請求，真的執行在 --verify 驗）---
+    {
+        let host = Arc::new(NullHost {
+            exec_result: 7,
+            ..Default::default()
+        });
+        let mut it = ttl::Interp::from_text(
+            "exec.ttl",
+            "exec 'cmd /c exit 7' 'hide' 1
+r = result
+execcmnd 'a = 40 + 2'
+",
+        )
+        .unwrap();
+        it.set_host(Some(host.clone()));
+        match it.run(10_000) {
+            Err(e) => {
+                *fail += 1;
+                println!("FAIL  exec 巨集跑不完：{e}");
+            }
+            Ok(()) => {
+                let v = std::mem::take(&mut it.vars);
+                let reqs = host.execs.lock().unwrap().clone();
+                let ok = v.int_of("r") == Some(7)
+                    && v.int_of("a") == Some(42)
+                    && reqs.len() == 1
+                    && reqs[0].cmdline == "cmd /c exit 7"
+                    && reqs[0].hide
+                    && reqs[0].wait;
+                if ok {
+                    *pass += 1;
+                    println!(
+                        "PASS  exec／execcmnd：result={:?}（exit code）、hide／wait 有傳下去、execcmnd 執行了 TTL 指令（a={:?}）",
+                        v.int_of("r"),
+                        v.int_of("a")
+                    );
+                } else {
+                    *fail += 1;
+                    println!(
+                        "FAIL  exec／execcmnd：result={:?} a={:?} 請求={reqs:?}",
+                        v.int_of("r"),
+                        v.int_of("a")
                     );
                 }
             }

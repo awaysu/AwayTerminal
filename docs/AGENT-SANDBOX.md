@@ -86,6 +86,21 @@ Job 設了 `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`，所以**session 被關掉（�
 mac／Linux：`#[cfg]` 已分開，之後用 process group（`setsid` + 關閉時 `killpg`）。
 目前非 Windows 平台**沒有**這一層。
 
+#### ⚠️ 已知漏洞：Microsoft Store 的 app execution alias（2026-09-27 實測）
+
+用 `%LOCALAPPDATA%\Microsoft\WindowsApps\` 底下那種**別名**啟動的行程
+（很多機器上的 `pwsh` 就是；`winget`、`python` 也常是）**不會進我們的 job**：
+真正的行程是由 **AppX 啟動服務**建立的，不是我們的子行程建立的，所以
+`AssignProcessToJobObject` 的繼承規則管不到它 → 關 job 收不掉。
+
+- 證據：`cargo run --example job_probe`（用 System32 的 `powershell.exe`）→ `PROBE PASS`，
+  孫行程被收掉；`cargo run --example job_probe -- --pwsh`（Store 別名）→ 孫行程活著。
+- 影響：agent 或巨集若是用別名啟動的解譯器跑東西，分頁關掉後那一棵可能留著。
+- 怎麼避開：自訂連線的「路徑」欄**填真實的 exe**（例如
+  `C:\Program Files\PowerShell\7\pwsh.exe`）而不是別名。`sandbox_probe` 找 `pwsh` 時
+  已經優先回真實路徑。
+- 這又是一個「前兩層是防呆不是防壞」的實例——不要把 Job Object 當成保證。
+
 ### 指令護欄（Claude Code hook）
 
 啟動時在沙盒工作區產生兩個檔案（**只寫沙盒目錄，不碰使用者原本的設定**）：
