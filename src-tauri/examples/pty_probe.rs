@@ -116,7 +116,9 @@ fn test_powershell_exit_code() -> Result<String, String> {
             cols: 80,
             rows: 24,
             cwd: None,
-            graceful_exit_bytes: Vec::new(), // 一次性指令不需要送 Ctrl+C
+            graceful_exit_bytes: Vec::new(),
+            env: Vec::new(),
+            kill_on_close: false, // 一次性指令不需要送 Ctrl+C
         },
         on_out,
         on_exit,
@@ -165,6 +167,8 @@ fn test_cmd_exit_detection() -> Result<String, String> {
             rows: 24,
             cwd: None,
             graceful_exit_bytes: Vec::new(),
+            env: Vec::new(),
+            kill_on_close: false,
         },
         on_out,
         on_exit,
@@ -202,6 +206,8 @@ fn test_resize() -> Result<String, String> {
             rows: 24,
             cwd: None,
             graceful_exit_bytes: SpawnOptions::default_graceful_exit_bytes(),
+            env: Vec::new(),
+            kill_on_close: false,
         },
         on_out,
         on_exit,

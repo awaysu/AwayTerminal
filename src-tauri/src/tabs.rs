@@ -101,6 +101,10 @@ pub struct Tab {
     /// 「恢復分頁」（階段 3）。色票清單本身在 `settings.palette`。
     pub fg: Option<String>,
     pub bg: Option<String>,
+    /// 沙盒模式的配置（`None`＝沒開沙盒）。
+    pub sandbox: Option<crate::sandbox::Sandbox>,
+    /// 這個分頁是哪一條自訂連線開的（右鍵切換沙盒、重新啟動分頁要用）。
+    pub conn_name: Option<String>,
     /// 診斷用。
     pub command_line: String,
     pub backend: String,
@@ -122,6 +126,12 @@ pub struct TabView {
     pub pid: u32,
     /// 記錄 log 中（tooltip 會多一行「● 記錄 log 中」，同舊版 `tip.tabLogging`）。
     pub logging: bool,
+    /// 沙盒模式的狀態（給 tooltip 與分頁列小標記）。`None`＝這個分頁沒有沙盒。
+    pub sandbox: Option<crate::sandbox::Sandbox>,
+    /// 這條自訂連線**設定上**有沒有開沙盒（右鍵選單的勾勾要顯示設定值，
+    /// 不是目前分頁的狀態——改設定是下次啟動才生效）。
+    pub conn_sandbox: Option<bool>,
+    pub conn_name: Option<String>,
 }
 
 #[derive(Clone, serde::Serialize)]
@@ -368,6 +378,11 @@ impl TabManager {
         self.lock().tabs.get(&id).map(|t| t.logger.clone())
     }
 
+    /// 這個分頁的沙盒配置。
+    pub fn sandbox_of(&self, id: u32) -> Option<crate::sandbox::Sandbox> {
+        self.lock().tabs.get(&id).and_then(|t| t.sandbox.clone())
+    }
+
     /// 分頁標題（log 預設檔名、存檔預設檔名、關閉確認訊息用）。
     pub fn title_of(&self, id: u32) -> Option<String> {
         self.lock().tabs.get(&id).map(|t| t.title.clone())
@@ -389,7 +404,8 @@ impl TabManager {
         true
     }
 
-    pub fn state(&self) -> TabState {
+    /// `conns`＝目前的自訂連線清單（拿來填 `conn_sandbox`，也就是右鍵選單那個勾勾）。
+    pub fn state_with(&self, conns: &[crate::settings::CustomConn]) -> TabState {
         let inner = self.lock();
         TabState {
             tabs: inner
@@ -411,6 +427,9 @@ impl TabManager {
                         .lock()
                         .map(|g| g.is_some())
                         .unwrap_or(false),
+                    sandbox: t.sandbox.clone(),
+                    conn_sandbox: conn_sandbox_of(t.conn_name.as_deref(), conns),
+                    conn_name: t.conn_name.clone(),
                 })
                 .collect(),
             active_id: inner.active,
@@ -423,9 +442,26 @@ impl TabManager {
     }
 }
 
-/// 把目前的分頁狀態送給前端。**一定要在放掉鎖之後呼叫**（`state()` 自己會鎖）。
+/// 某條自訂連線**設定上**的沙盒開關（找不到連線就回 `None`）。
+fn conn_sandbox_of(name: Option<&str>, conns: &[crate::settings::CustomConn]) -> Option<bool> {
+    let name = name?;
+    conns
+        .iter()
+        .find(|c| c.name.eq_ignore_ascii_case(name))
+        .map(|c| c.sandbox)
+}
+
+/// 把目前的分頁狀態送給前端。**一定要在放掉鎖之後呼叫**（`state_with()` 自己會鎖）。
+///
+/// 需要 app 的 `SettingsStore` 來填每個分頁「設定上」的沙盒開關；拿不到就送空清單
+/// （右鍵選單的勾勾會暫時不顯示，但不會壞）。
 pub fn emit_state(app: &AppHandle, tabs: &TabManager) {
-    if let Err(e) = app.emit("tab-state", tabs.state()) {
+    use tauri::Manager;
+    let conns = app
+        .try_state::<std::sync::Arc<crate::settings::SettingsStore>>()
+        .map(|s| s.get().custom_conns)
+        .unwrap_or_default();
+    if let Err(e) = app.emit("tab-state", tabs.state_with(&conns)) {
         println!("[AwayTerminal] emit tab-state 失敗：{e}");
     }
 }

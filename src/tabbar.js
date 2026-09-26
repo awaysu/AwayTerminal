@@ -16,6 +16,7 @@ import { listen } from '@tauri-apps/api/event';
 
 import { T, fmt, iconSvg, elapsedText } from './strings.js';
 import { createSession, log } from './bridge.js';
+import { initConns, openManager, currentConns, reload as reloadConns } from './conns.js';
 
 const MIN_PANEL_WIDTH = 120; // 舊版 TabPanelMinWidth
 
@@ -53,6 +54,15 @@ function tooltipFor(tab) {
   let s = `${tab.title}  ${T['tip.tabElapsed']} ${elapsedText(tab.startedAt)}`;
   if (tab.cwdPath && tab.cwdPath !== tab.title) s += `\n${tab.cwdPath}`;
   if (tab.logging) s += `\n${T['tip.tabLogging']}`;
+  // 沙盒狀態（新功能）：有 worktree 就顯示路徑與分支，沒有就說明為什麼
+  if (tab.sandbox) {
+    s += `\n${fmt('sb.tipOn', tab.sandbox.workDir)}`;
+    s += tab.sandbox.hasWorktree
+      ? `\n${fmt('sb.tipBranch', tab.sandbox.branch)}`
+      : `\n${T['sb.tipNoWorktree']}`;
+  } else if (tab.connSandbox === false) {
+    s += `\n${T['sb.tipOff']}`;
+  }
   return s;
 }
 
@@ -135,6 +145,28 @@ function askYesNo(title, prompt) {
     el.modalCancel.textContent = T['dlg.no'];
     el.modal.hidden = false;
     el.modalOk.focus();
+    el.modalForm.onsubmit = (e) => {
+      e.preventDefault();
+      closeModal();
+      resolve(true);
+    };
+    el.modalCancel.onclick = () => {
+      closeModal();
+      resolve(false);
+    };
+  });
+}
+
+/** 兩個自訂按鈕的問句（例：「重新啟動分頁 / 稍後」）。回傳 true＝按了第一個。 */
+function askTwo(title, prompt, yes, no) {
+  return new Promise((resolve) => {
+    resetModal();
+    el.modalTitle.textContent = title;
+    el.modalPrompt.textContent = prompt;
+    el.modalOk.textContent = yes;
+    el.modalCancel.textContent = no;
+    el.modal.hidden = false;
+    el.modalCancel.focus(); // 破壞性／會關掉連線的那個不要當預設
     el.modalForm.onsubmit = (e) => {
       e.preventDefault();
       closeModal();
@@ -279,6 +311,16 @@ function render() {
       dot.title = T['tip.tabLogging'];
       row.insertBefore(dot, close);
     }
+    // 沙盒模式的小標記（新功能，舊版沒有——已寫進 checklist 的「刻意不同」表）
+    if (tab.sandbox) {
+      const sb = document.createElement('span');
+      sb.className = 'tab-sandbox' + (tab.sandbox.hasWorktree ? '' : ' partial');
+      sb.textContent = '⬚';
+      sb.title = tab.sandbox.hasWorktree
+        ? fmt('sb.tipBranch', tab.sandbox.branch)
+        : T['sb.tipNoWorktree'];
+      row.insertBefore(sb, close);
+    }
     el.strip.appendChild(row);
   }
 }
@@ -344,6 +386,62 @@ async function logAction(id) {
   }
 }
 
+// ------------------------------------------------------------ 沙盒模式（新功能）
+
+/**
+ * 切換這條自訂連線的沙盒開關。
+ *
+ * `CLAUDE.md` 明寫「改變在**下次啟動**該分頁時生效，需提示」，所以這裡改完設定之後
+ * 一定要問使用者要不要現在重開分頁。重開＝關掉（走既有的優雅結束流程）再用同設定開一個。
+ */
+async function toggleSandbox(id) {
+  const tab = state.tabs.find((t) => t.id === id);
+  if (!tab || !tab.connName) return;
+  const next = tab.connSandbox === false; // 目前關著就要打開
+  try {
+    await invoke('conn_set_sandbox', { name: tab.connName, sandbox: next });
+  } catch (e) {
+    await showInfo(T['sb.changedTitle'], String(e));
+    return;
+  }
+  await reloadConns();
+
+  const restart = await askTwo(
+    T['sb.changedTitle'],
+    fmt('sb.changedBody', tab.connName, next ? T['sb.on'] : T['sb.off']),
+    T['sb.restartNow'],
+    T['sb.later']
+  );
+  if (!restart) return;
+  const conn = tab.connName;
+  await invoke('tab_close', { id });
+  try {
+    await createSession({ kind: 'conn', conn });
+  } catch (e) {
+    await showInfo(T['msg.connectFail'], String(e));
+  }
+}
+
+/** 清除沙盒 worktree（**分支保留**）。 */
+async function clearSandbox(id) {
+  const tab = state.tabs.find((t) => t.id === id);
+  if (!tab || !tab.sandbox) {
+    await showInfo(T['sb.clearTitle'], T['sb.noSandbox']);
+    return;
+  }
+  const ok = await askYesNo(
+    T['sb.clearTitle'],
+    fmt('sb.clearBody', tab.sandbox.workDir, tab.sandbox.branch || '-')
+  );
+  if (!ok) return;
+  try {
+    await invoke('sandbox_clear', { id });
+    toast(T['sb.cleared']);
+  } catch (e) {
+    await showInfo(T['sb.clearTitle'], String(e));
+  }
+}
+
 function idOfRow(target) {
   const row = target.closest ? target.closest('.tab-row') : null;
   return row ? Number(row.dataset.id) : null;
@@ -370,6 +468,16 @@ function installStripEvents() {
     const id = idOfRow(e.target);
     if (id === null) return;
     e.preventDefault();
+    const tab = state.tabs.find((t) => t.id === id);
+    // 沙盒那兩項只對「自訂連線開的分頁」有意義（PowerShell／SSH 分頁沒有連線設定）
+    const hasConn = !!(tab && tab.connName);
+    el.menuSandbox.hidden = !hasConn;
+    el.menuSandboxClear.hidden = !(tab && tab.sandbox && tab.sandbox.hasWorktree);
+    if (hasConn) {
+      // 勾勾顯示的是**連線設定**的值（改了下次啟動才生效），不是目前分頁的狀態
+      const on = tab.connSandbox !== false;
+      el.menuSandbox.textContent = `${on ? '✓ ' : '　'}${T['sb.menu']}`;
+    }
     showMenu(el.tabMenu, e.clientX, e.clientY, { id: String(id) });
   });
 
@@ -473,6 +581,8 @@ function installMenus() {
     hideMenus();
     if (item.dataset.act === 'rename') renameTab(id);
     else if (item.dataset.act === 'log') logAction(id);
+    else if (item.dataset.act === 'sandbox') toggleSandbox(id);
+    else if (item.dataset.act === 'sandbox-clear') clearSandbox(id);
     else if (item.dataset.act === 'close') closeTab(id);
   });
 
@@ -484,9 +594,20 @@ function installMenus() {
   });
 
   el.newMenu.addEventListener('click', async (e) => {
+    // 使用者自己的自訂連線那一區（data-conn），以及預設區（data-kind）
+    const conn = e.target.closest('[data-conn]');
+    if (conn) {
+      hideMenus();
+      await openConn(conn.dataset.conn);
+      return;
+    }
     const item = e.target.closest('[data-kind]');
     if (!item) return;
     hideMenus();
+    if (item.dataset.kind === 'manage') {
+      openManager();
+      return;
+    }
     await newSession(item.dataset.kind);
   });
 
@@ -604,6 +725,46 @@ async function newSession(kind) {
   } catch (err) {
     log(`[tabbar] ${T['msg.connectFail']}：${err}`);
     await showInfo(T['msg.connectFail'], String(err));
+  }
+}
+
+/**
+ * 開一條自訂連線。`pickDir` 的連線會先跳資料夾選擇（同舊版 `OpenCustom`），
+ * 取消就不開分頁。沙盒是後端依連線設定決定的，前端不用管。
+ */
+async function openConn(name) {
+  const c = currentConns().find((x) => x.name === name);
+  if (!c) return;
+  try {
+    let cwd = null;
+    if (c.pickDir) {
+      cwd = await invoke('pick_work_dir', { title: T['dlg.pickDirCustom'] });
+      if (!cwd) return; // 取消（同舊版：PickWorkDir 回 null 就不開）
+    }
+    await createSession({ kind: 'conn', conn: name, cwd });
+  } catch (err) {
+    log(`[tabbar] ${T['msg.connectFail']}：${err}`);
+    await showInfo(T['msg.connectFail'], String(err));
+  }
+}
+
+/** 把自訂連線填進「新分頁 ▾」（隱藏的不列，同舊版）。 */
+function renderConnMenu(list) {
+  el.newConns.textContent = '';
+  for (const c of list) {
+    if (c.hidden) continue;
+    const item = document.createElement('div');
+    item.className = 'menu-item';
+    item.dataset.conn = c.name;
+    item.textContent = c.name;
+    if (!c.sandbox) {
+      // 沒開沙盒的要一眼看得出來——這是使用者最在意的那個開關
+      const tag = document.createElement('span');
+      tag.className = 'menu-tag';
+      tag.textContent = T['conn.sandboxOff'];
+      item.appendChild(tag);
+    }
+    el.newConns.appendChild(item);
   }
 }
 
@@ -771,6 +932,9 @@ export async function initTabBar() {
   el.termMenu = $('term-menu');
   el.urlMenu = $('url-menu');
   el.colorItems = $('color-items');
+  el.newConns = $('new-conns');
+  el.menuSandbox = el.tabMenu.querySelector('[data-act="sandbox"]');
+  el.menuSandboxClear = el.tabMenu.querySelector('[data-act="sandbox-clear"]');
   el.toast = $('toast');
   el.hostkey = $('hostkey');
   el.hostkeyBox = $('hostkey-box');
@@ -818,6 +982,8 @@ export async function initTabBar() {
   setText(el.tabMenu, '[data-act="rename"]', T['menu.rename']);
   setText(el.tabMenu, '[data-act="log"]', T['menu.log']);
   setText(el.tabMenu, '[data-act="close"]', T['menu.close']);
+  setText(el.tabMenu, '[data-act="sandbox-clear"]', T['sb.clear']);
+  setText(el.newMenu, '[data-kind="manage"]', T['tb.manageConns']);
   setText(el.tabMenu, '[data-color=""]', T['menu.colorDefault']);
   for (const [sel, key] of [
     ['[data-scroll="up"]', 'page.up'],
@@ -852,6 +1018,8 @@ export async function initTabBar() {
   installMenus();
   installPanelResize();
   installHostKeyDialog();
+  // 自訂連線：清單一變就重畫「新分頁 ▾」那一區
+  await initConns(renderConnMenu);
 
   await listen('tab-state', (e) => {
     state = e.payload;

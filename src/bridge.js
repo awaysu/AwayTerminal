@@ -270,6 +270,7 @@ export async function createSession(opts = {}) {
     rows: lastSize.rows,
     cwd: opts.cwd || null,
     ssh: opts.ssh || null,
+    conn: opts.conn || null,
     onEvent,
   });
 

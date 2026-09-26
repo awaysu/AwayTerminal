@@ -226,8 +226,103 @@ async function awayVerify() {
   if (first) await verifyToolbar(first.id);
 
   await verifySshPath();
+  await verifySandbox();
 }
 window.awayVerify = awayVerify;
+
+/**
+ * 沙盒模式驗證（TASK-007）。**只碰自己建立的東西、只查自己記下的 PID。**
+ *
+ * 做法：臨時建一條指向 `pwsh` 的自訂連線（沙盒開），用它開一個分頁，然後檢查
+ * worktree／分支／`.gitignore` 乾淨／`TEMP` 有沒有導到沙盒／護欄檔案，
+ * 最後在分頁裡開一個子行程記下 PID，關掉分頁之後確認**那個 PID** 不在了（Job Object 有效）。
+ */
+async function verifySandbox() {
+  const lines = ['[verify] 沙盒模式'];
+  const CONN = '__awayterm_verify_sandbox';
+  let tabId = null;
+  try {
+    const probe = await invoke('sandbox_probe');
+    if (!probe.pwsh) {
+      log('[verify] 沙盒：找不到 pwsh，跳過');
+      return;
+    }
+    if (!probe.repoDir) {
+      log('[verify] 沙盒：程式的工作目錄不在 git repo 裡，驗不到 worktree，跳過');
+      return;
+    }
+    await invoke('custom_save', {
+      conn: {
+        name: CONN,
+        path: probe.pwsh,
+        args: '-NoLogo',
+        icon: 'run',
+        closeKey: 'ctrl-c',
+        closeCount: 3,
+        pickDir: false,
+        hidden: true,
+        viaPowerShell: false,
+        sandbox: true,
+      },
+      originalName: null,
+    });
+
+    // 工作目錄用這個專案的 repo 根（才驗得到 worktree）
+    const info = await createSession({ kind: 'conn', conn: CONN, cwd: probe.repoDir });
+    tabId = info.id;
+    await wait(1500);
+
+    const st = currentTabState().tabs.find((t) => t.id === tabId);
+    const sb = st && st.sandbox;
+    if (!sb) {
+      lines.push('[verify] 沒有建立沙盒（預期要有）');
+    } else {
+      lines.push(`[verify] worktree=${sb.hasWorktree} 分支=${sb.branch || '-'}`);
+      lines.push(`[verify] 工作目錄=${sb.workDir}`);
+      lines.push(`[verify] 護欄檔案=${(sb.guardrails || []).join('、') || '（這個工具沒有 hook，預期如此）'}`);
+      const env = Object.fromEntries(sb.env || []);
+      lines.push(`[verify] TEMP 導到沙盒=${(env.TEMP || '').startsWith(sb.root)}`);
+      const checks = await invoke('sandbox_verify', { id: tabId });
+      lines.push(`[verify] .ai/sandbox 被 git 忽略（git status 乾淨）=${checks.ignored}`);
+      lines.push(`[verify] worktree 目錄存在=${checks.worktreeExists}`);
+      lines.push(`[verify] 分支存在=${checks.branchExists}`);
+    }
+
+    // Job Object：在分頁裡開一個子行程，記下它的 PID
+    await invoke('session_write_text', {
+      id: tabId,
+      text: '$p = Start-Process pwsh -ArgumentList "-NoLogo","-NoExit" -PassThru; "AWAY_CHILD_PID=" + $p.Id\r',
+    });
+    let pid = null;
+    for (let i = 0; i < 20; i++) {
+      await wait(400);
+      const m = /AWAY_CHILD_PID=(\d+)/.exec(window.AwayTerm.tail(tabId, 12).join(' '));
+      if (m) {
+        pid = Number(m[1]);
+        break;
+      }
+    }
+    if (!pid) {
+      lines.push('[verify] Job Object：拿不到子行程 PID，跳過這項');
+    } else {
+      const before = await invoke('pid_alive', { pid });
+      await invoke('tab_close', { id: tabId });
+      tabId = null;
+      await wait(1500);
+      const after = await invoke('pid_alive', { pid });
+      lines.push(
+        `[verify] Job Object：子行程 PID ${pid} 關分頁前存活=${before}、關分頁後存活=${after}` +
+          `（後者要是 false）`
+      );
+    }
+  } catch (e) {
+    lines.push(`[verify] 失敗：${e && e.stack ? e.stack : e}`);
+  } finally {
+    if (tabId !== null) await invoke('tab_close', { id: tabId }).catch(() => {});
+    await invoke('custom_delete', { name: CONN }).catch(() => {});
+  }
+  log(lines.join('\n'));
+}
 
 /**
  * SSH 的 **app 端路徑**驗證（連線引擎本身由 `cargo run --example ssh_probe` 驗）。

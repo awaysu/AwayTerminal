@@ -72,6 +72,13 @@ pub struct AppSettings {
     /// 上次選過的工作目錄（舊版 `LastDir`）：資料夾選擇視窗會預選它。
     pub last_dir: String,
 
+    /// 自訂連線清單（舊版 `AppSettings.CustomConns`）。
+    ///
+    /// 舊版 v1.0.18 起**不自動建立任何自訂連線**：全新安裝是空的，使用者自己按
+    /// 「自動偵測」一鍵加入想要的工具。照抄這個行為——「我明明全部刪掉了」的清單
+    /// 不應該又冒出東西。
+    pub custom_conns: Vec<CustomConn>,
+
     /// 逐分頁配色的候選色票（舊版寫死在 `MainWindow.xaml` 的右鍵選單裡，這次搬進設定讓使用者能改）。
     ///
     /// **「per-tab 存哪一層」的決定**：色票清單存在這裡（全域、可編輯），
@@ -81,6 +88,71 @@ pub struct AppSettings {
 
     /// `zh` | `en`（中英切換是之後的任務，先存著）。
     pub language: String,
+}
+
+/// 一條自訂連線。欄位照舊版 `Services/AppSettings.cs` 的 `CustomConn`，
+/// 外加 TASK-007 的 `sandbox`（舊版沒有這個欄位）。
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct CustomConn {
+    pub name: String,
+    /// 執行檔完整路徑。
+    pub path: String,
+    pub args: String,
+    /// 圖示 key（前端把它對到一個 inline SVG；`run` 是通用的）。
+    pub icon: String,
+    /// 關閉分頁送的鍵：`ctrl-c`(0x03) / `ctrl-d`(0x04) / `none`。
+    pub close_key: String,
+    /// 關閉鍵送幾次（1~5）。
+    pub close_count: u32,
+    /// 啟動前先選工作目錄。
+    pub pick_dir: bool,
+    /// 隱藏（不列在「新分頁」下拉）。
+    pub hidden: bool,
+    /// 透過 PowerShell 執行（`.cmd`／需要 shell 時用）。
+    pub via_powershell: bool,
+    /// **沙盒模式**（TASK-007 新增，`CLAUDE.md`「新增功能」一節）。
+    ///
+    /// **預設 true**——所以這裡不能用 `bool` 的 `Default`（false），要自己給。
+    #[serde(default = "default_true")]
+    pub sandbox: bool,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+impl Default for CustomConn {
+    fn default() -> Self {
+        Self {
+            name: String::new(),
+            path: String::new(),
+            args: String::new(),
+            icon: "run".to_string(),
+            close_key: "ctrl-c".to_string(),
+            close_count: 3,
+            pick_dir: false,
+            hidden: false,
+            via_powershell: false,
+            sandbox: true,
+        }
+    }
+}
+
+impl CustomConn {
+    /// 關閉分頁時送的位元組（舊版 `OpenCustom` 的 `closeBytes`）。
+    pub fn close_bytes(&self) -> Vec<u8> {
+        if self.close_key == "none" {
+            return Vec::new();
+        }
+        let byte = if self.close_key == "ctrl-d" { 0x04 } else { 0x03 };
+        let count = if (1..=5).contains(&self.close_count) {
+            self.close_count
+        } else {
+            3
+        };
+        vec![byte; count as usize]
+    }
 }
 
 /// 一組前景／背景色（逐分頁配色的色票）。
@@ -107,6 +179,7 @@ impl Default for AppSettings {
             log_timestamp: true,
             log_append: true,
             last_dir: String::new(),
+            custom_conns: Vec::new(),
             // 舊版 MainWindow.xaml 的「配色」子選單那五組，順序照抄
             palette: vec![
                 ColorPair { fg: "#FFFF00".into(), bg: "#000000".into() },

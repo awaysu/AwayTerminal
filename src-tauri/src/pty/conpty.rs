@@ -20,8 +20,9 @@ use windows_sys::Win32::System::Pipes::CreatePipe;
 use windows_sys::Win32::System::Threading::{
     CreateProcessW, DeleteProcThreadAttributeList, GetCurrentProcess, GetExitCodeProcess,
     InitializeProcThreadAttributeList, TerminateProcess, UpdateProcThreadAttribute,
-    WaitForSingleObject, EXTENDED_STARTUPINFO_PRESENT, INFINITE, LPPROC_THREAD_ATTRIBUTE_LIST,
-    PROCESS_INFORMATION, STARTUPINFOEXW,
+    ResumeThread, WaitForSingleObject, CREATE_SUSPENDED, CREATE_UNICODE_ENVIRONMENT,
+    EXTENDED_STARTUPINFO_PRESENT, INFINITE, LPPROC_THREAD_ATTRIBUTE_LIST, PROCESS_INFORMATION,
+    STARTUPINFOEXW,
 };
 
 use super::conpty_host;
@@ -73,6 +74,14 @@ pub struct ConPtySession {
     /// 已由我方主動 close()：之後的結束事件不再往前端送。
     closing: Arc<AtomicBool>,
     closed: AtomicBool,
+    /// 沙盒模式的 Job Object。**drop 就終止 job 裡剩下的整棵行程樹**。
+    /// `None`＝沒開沙盒（行為與 TASK-002 起完全一樣）。
+    ///
+    /// 這個欄位刻意沒有讀取者：它的作用**就是被持有**——session 活著 job 就活著，
+    /// session 被 drop（分頁關閉／程式結束）時 `JobObject::drop` 關掉 handle，
+    /// 系統就把 job 裡剩下的行程一起收掉。
+    #[allow(dead_code)]
+    job: Option<super::job::JobObject>,
 }
 
 pub struct ConPtyOptions {
@@ -82,6 +91,10 @@ pub struct ConPtyOptions {
     pub rows: u16,
     pub cwd: Option<String>,
     pub graceful_exit_bytes: Vec<u8>,
+    /// 追加的環境變數（沙盒模式用）。空的＝完全繼承父行程的環境。
+    pub env: Vec<(String, String)>,
+    /// 把子行程放進 kill-on-close 的 Job Object（沙盒模式）。
+    pub kill_on_close: bool,
 }
 
 impl ConPtySession {
@@ -131,7 +144,28 @@ impl ConPtySession {
                 }
             };
 
-            let proc_info = match start_process(&opts.command_line, hpc, opts.cwd.as_deref()) {
+            // 沙盒模式：先把 job 建好，子行程才能在「還沒開始跑」之前就被放進去
+            // （見 job.rs；用 CREATE_SUSPENDED + AssignProcessToJobObject + ResumeThread）。
+            let job = if opts.kill_on_close {
+                match super::job::JobObject::create() {
+                    Ok(j) => Some(j),
+                    Err(e) => {
+                        // 建不起來不該讓連線開不了：退成「沒有 job」並講出來
+                        println!("[AwayTerminal] 沙盒：Job Object 建立失敗，分頁關閉時不會自動收乾淨（{e}）");
+                        None
+                    }
+                }
+            } else {
+                None
+            };
+
+            let proc_info = match start_process(
+                &opts.command_line,
+                hpc,
+                opts.cwd.as_deref(),
+                &opts.env,
+                job.as_ref(),
+            ) {
                 Ok(pi) => pi,
                 Err(e) => {
                     close_pty(hpc, host.is_some());
@@ -166,6 +200,7 @@ impl ConPtySession {
                 graceful_exit_bytes: opts.graceful_exit_bytes,
                 closing: closing.clone(),
                 closed: AtomicBool::new(false),
+                job,
             };
 
             // 讀取執行緒：擁有輸出讀端，自己在結束時關掉它
@@ -417,6 +452,8 @@ unsafe fn start_process(
     command_line: &str,
     hpc: isize,
     cwd: Option<&str>,
+    extra_env: &[(String, String)],
+    job: Option<&super::job::JobObject>,
 ) -> io::Result<PROCESS_INFORMATION> {
     let mut si: STARTUPINFOEXW = std::mem::zeroed();
     si.StartupInfo.cb = std::mem::size_of::<STARTUPINFOEXW>() as u32;
@@ -459,7 +496,19 @@ unsafe fn start_process(
             .filter(|s| !s.trim().is_empty())
             .map(|s| s.encode_utf16().chain(std::iter::once(0)).collect());
 
+        // 沙盒模式的環境變數：**在現有環境之上覆寫**（絕對不是只給這幾個），
+        // 否則子行程會失去 PATH、SystemRoot 等一切東西。
+        // `HOME`／`APPDATA`／`USERPROFILE` 由呼叫端保證不在 extra_env 裡（見 sandbox.rs）。
+        let env_block = build_env_block(extra_env);
         let mut pi: PROCESS_INFORMATION = std::mem::zeroed();
+        // job 要在子行程開始跑之前就掛上，否則它可能先開出孫行程而漏掉
+        let mut flags = EXTENDED_STARTUPINFO_PRESENT;
+        if job.is_some() {
+            flags |= CREATE_SUSPENDED;
+        }
+        if env_block.is_some() {
+            flags |= CREATE_UNICODE_ENVIRONMENT;
+        }
         // std handle 一定要在 CreateProcess 的那一刻是空的，見 with_null_std_handles。
         let ok = with_null_std_handles(|| {
             CreateProcessW(
@@ -468,8 +517,10 @@ unsafe fn start_process(
                 std::ptr::null(),
                 std::ptr::null(),
                 FALSE,
-                EXTENDED_STARTUPINFO_PRESENT,
-                std::ptr::null(),
+                flags,
+                env_block
+                    .as_ref()
+                    .map_or(std::ptr::null(), |v| v.as_ptr() as *const _),
                 cwd_w.as_ref().map_or(std::ptr::null(), |v| v.as_ptr()),
                 &mut si as *mut STARTUPINFOEXW as *mut _,
                 &mut pi,
@@ -478,11 +529,41 @@ unsafe fn start_process(
         if ok == 0 {
             return Err(io::Error::last_os_error());
         }
+        if let Some(job) = job {
+            if let Err(e) = job.assign(pi.hProcess) {
+                println!("[AwayTerminal] 沙盒：行程放不進 Job Object（{e}）");
+            }
+            // 不管有沒有掛成功都一定要放它跑，否則分頁永遠是空的
+            ResumeThread(pi.hThread);
+        }
         Ok(pi)
     })();
 
     DeleteProcThreadAttributeList(attr_list);
     result
+}
+
+/// 組出 `CreateProcessW` 要的 UTF-16 環境區塊：現有環境 + `extra` 覆寫。
+///
+/// `extra` 空的時候回 `None`＝讓子行程直接繼承（和沙盒關閉時完全一樣的行為）。
+unsafe fn build_env_block(extra: &[(String, String)]) -> Option<Vec<u16>> {
+    if extra.is_empty() {
+        return None;
+    }
+    // 環境變數名在 Windows 不分大小寫，所以用大寫當 key 比對才不會出現兩個 TEMP
+    let mut map: std::collections::BTreeMap<String, (String, String)> = std::env::vars()
+        .map(|(k, v)| (k.to_ascii_uppercase(), (k, v)))
+        .collect();
+    for (k, v) in extra {
+        map.insert(k.to_ascii_uppercase(), (k.clone(), v.clone()));
+    }
+    let mut block: Vec<u16> = Vec::new();
+    for (_, (k, v)) in map {
+        block.extend(format!("{k}={v}").encode_utf16());
+        block.push(0);
+    }
+    block.push(0); // 區塊結尾再一個 NUL
+    Some(block)
 }
 
 /// 建立 console 子行程期間把自己的三個 std handle 暫時歸零。

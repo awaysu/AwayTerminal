@@ -3,6 +3,8 @@
 #[cfg(windows)]
 pub mod conpty;
 #[cfg(windows)]
+pub mod job;
+#[cfg(windows)]
 pub mod conpty_host;
 #[cfg(not(windows))]
 pub mod unix;
@@ -22,6 +24,11 @@ pub struct SpawnOptions {
     pub cwd: Option<String>,
     /// 關閉前送出的位元組。PowerShell / Claude Code＝Ctrl+C ×3；SSH 之後用 Ctrl+D ×2。
     pub graceful_exit_bytes: Vec<u8>,
+    /// 追加的環境變數（沙盒模式的 `TEMP`／`CARGO_TARGET_DIR` 等）。
+    pub env: Vec<(String, String)>,
+    /// **沙盒模式**：把子行程樹放進 kill-on-close 的 Job Object，
+    /// 分頁關掉就把整棵收乾淨（`CLAUDE.md` 沙盒第 2 層）。
+    pub kill_on_close: bool,
 }
 
 impl SpawnOptions {
@@ -44,6 +51,8 @@ pub fn spawn(
             rows: opts.rows,
             cwd: opts.cwd,
             graceful_exit_bytes: opts.graceful_exit_bytes,
+            env: opts.env,
+            kill_on_close: opts.kill_on_close,
         },
         on_output,
         on_exit,

@@ -134,6 +134,8 @@ pub fn session_create(
     rows: u16,
     cwd: Option<String>,
     ssh: Option<SshArgs>,
+    // `kind = "conn"`：要開哪一條自訂連線（依名稱）。
+    conn: Option<String>,
     on_event: Channel<InvokeResponseBody>,
     manager: State<'_, SessionManager>,
     tabs_state: State<'_, Arc<TabManager>>,
@@ -154,7 +156,22 @@ pub fn session_create(
         );
     }
 
-    let sh = match kind.as_str() {
+    // `kind = "conn"` ＝自訂連線（有名稱、有設定、可能有沙盒）。
+    let conn_def = if kind == "conn" {
+        let name = conn
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| "kind=conn 需要 conn（連線名稱）".to_string())?;
+        Some(
+            crate::custom::find(&settings, name)
+                .ok_or_else(|| format!("找不到自訂連線：{name}"))?,
+        )
+    } else {
+        None
+    };
+
+    let mut sh = match kind.as_str() {
         // "powershell" 是 TASK-003 的舊名，留著相容 `?cmd=` 之前的呼叫
         "shell" | "powershell" => shell::powershell().ok_or_else(|| {
             "找不到 pwsh.exe 或 powershell.exe（PATH 與 System32 都沒有）".to_string()
@@ -167,8 +184,74 @@ pub fn session_create(
                 .ok_or_else(|| "kind=custom 需要 command".to_string())?;
             shell::custom(cmd).ok_or_else(|| format!("找不到指令：{cmd}"))?
         }
+        "conn" => {
+            let c = conn_def.as_ref().unwrap();
+            let exe = std::path::PathBuf::from(&c.path);
+            if !exe.is_file() {
+                return Err(format!("執行檔不存在：{}", c.path));
+            }
+            shell::Shell {
+                command_line: String::new(), // 下面依沙盒與 via_powershell 組出來
+                name: c.name.clone(),
+                title: c.name.clone(),
+                exe,
+            }
+        }
         other => return Err(format!("尚未支援的連線種類：{other}")),
     };
+
+    // ---- 沙盒（只有自訂連線有這個選項；`CLAUDE.md`「新增功能 → 沙盒模式」）----
+    let mut work_dir = cwd.clone().or_else(default_cwd);
+    let mut sandbox = None;
+    if let Some(c) = &conn_def {
+        if c.sandbox {
+            let base = std::path::PathBuf::from(work_dir.clone().unwrap_or_default());
+            match crate::sandbox::prepare(&base, &c.name, &c.path) {
+                Ok(sb) => {
+                    work_dir = Some(sb.work_dir.clone());
+                    println!(
+                        "[AwayTerminal] 沙盒：{} worktree={} 分支={} 護欄={:?}",
+                        sb.root,
+                        sb.has_worktree,
+                        if sb.branch.is_empty() { "-" } else { &sb.branch },
+                        sb.guardrails
+                    );
+                    sandbox = Some(sb);
+                }
+                Err(e) => {
+                    // 沙盒開不起來不該讓連線開不了：退成沒有沙盒並在 log 講清楚
+                    println!("[AwayTerminal] 沙盒準備失敗，這條連線不進沙盒：{e}");
+                }
+            }
+        }
+    }
+
+    // ---- 自訂連線的命令列（要等沙盒決定完 extra_args 才組得出來）----
+    if let Some(c) = &conn_def {
+        let extra = sandbox.as_ref().map(|s| s.extra_args.as_str()).unwrap_or("");
+        let mut args = String::new();
+        if !c.args.trim().is_empty() {
+            args.push(' ');
+            args.push_str(c.args.trim());
+        }
+        args.push_str(extra);
+        sh.command_line = if c.via_powershell {
+            // 舊版是「先開互動 PowerShell，尺寸就緒後再把指令打進去」（避免以 80 欄啟動）。
+            // 我們的 PTY 一開始就是前端回報的真實尺寸，所以直接用 -NoExit -Command 起——
+            // 結果一樣（工具跑完仍留在 shell 裡），少一套延後打字的機制。
+            let ps = shell::powershell()
+                .ok_or_else(|| "找不到 PowerShell（via_powershell 需要它）".to_string())?;
+            format!(
+                "{} -NoExit -Command \"& '{}'{}\"",
+                ps.command_line,
+                // PowerShell 單引號字串裡的單引號要寫成兩個
+                c.path.replace('\'', "''"),
+                args
+            )
+        } else {
+            format!("\"{}\"{}", c.path, args)
+        };
+    }
 
     let is_claude = shell::is_claude_exe(&sh.exe);
     let tab_kind = match kind.as_str() {
@@ -176,8 +259,6 @@ pub fn session_create(
         _ if is_claude => TabKind::Claude,
         _ => TabKind::Custom,
     };
-    let work_dir = cwd.or_else(default_cwd);
-
     // 分頁名稱（舊版）：PowerShell 走 NextName("PowerShell(1)")；
     // claude 這類「以資料夾命名」的連線走 DirTabName；其餘 NextName(執行檔名)。
     let tab_title = match title.map(|t| t.trim().to_string()).filter(|t| !t.is_empty()) {
@@ -257,7 +338,17 @@ pub fn session_create(
             cols,
             rows,
             cwd: work_dir.clone(),
-            graceful_exit_bytes: SpawnOptions::default_graceful_exit_bytes(),
+            // 自訂連線有自己的關閉鍵設定（ctrl-c / ctrl-d / none × 次數，同舊版）
+            graceful_exit_bytes: match &conn_def {
+                Some(c) => c.close_bytes(),
+                None => SpawnOptions::default_graceful_exit_bytes(),
+            },
+            env: sandbox
+                .as_ref()
+                .map(|s| s.env.clone())
+                .unwrap_or_default(),
+            // 沙盒第 2 層：整棵行程樹進 kill-on-close 的 Job Object
+            kill_on_close: sandbox.is_some(),
         },
         on_output,
         on_exit,
@@ -301,6 +392,8 @@ pub fn session_create(
         logger,
         fg: None,
         bg: None,
+        sandbox: sandbox.clone(),
+        conn_name: conn_def.as_ref().map(|c| c.name.clone()),
         command_line: sh.command_line,
         backend: info.backend.clone(),
     });
@@ -437,6 +530,8 @@ fn create_ssh(
         logger,
         fg: None,
         bg: None,
+        sandbox: None, // SSH 不需要沙盒（沒有本機子行程可以隔離）
+        conn_name: None,
         command_line: info.command_line.clone(),
         backend: info.backend.clone(),
     });

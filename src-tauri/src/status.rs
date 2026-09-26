@@ -68,6 +68,40 @@ fn tick(app: &AppHandle, manager: &TabManager) {
     }
 }
 
+/// 某個 PID 現在還在嗎。**唯讀**（用 Toolhelp 掃一遍，不開 handle、不砍任何東西）。
+///
+/// 只給 `--verify` 驗 Job Object 用（`sandbox::pid_alive`）。
+#[cfg(windows)]
+pub fn pid_exists(pid: u32) -> bool {
+    use windows_sys::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE};
+    use windows_sys::Win32::System::Diagnostics::ToolHelp::{
+        CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W,
+        TH32CS_SNAPPROCESS,
+    };
+    unsafe {
+        let snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+        if snap.is_null() || snap == INVALID_HANDLE_VALUE {
+            return false;
+        }
+        let mut pe: PROCESSENTRY32W = std::mem::zeroed();
+        pe.dwSize = std::mem::size_of::<PROCESSENTRY32W>() as u32;
+        let mut found = false;
+        if Process32FirstW(snap, &mut pe) != 0 {
+            loop {
+                if pe.th32ProcessID == pid {
+                    found = true;
+                    break;
+                }
+                if Process32NextW(snap, &mut pe) == 0 {
+                    break;
+                }
+            }
+        }
+        CloseHandle(snap);
+        found
+    }
+}
+
 /// 回傳「至少有一個子行程」的父 PID 集合。分頁的 PID 在裡面＝正在跑外部程式。
 #[cfg(windows)]
 fn parents_with_children() -> std::collections::HashSet<u32> {

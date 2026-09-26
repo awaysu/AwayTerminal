@@ -257,3 +257,68 @@ body.col-resizing { cursor: col-resize; user-select: none; }
 #hostkey .modal-buttons button { min-width: 92px; }
 #hk-store { border-color: #FDFFB0; }
 #hostkey-box.danger #hk-cancel { border-color: #FDFFB0; }
+
+/* ---------------------------------------------------------------------------
+   TASK-007：自訂連線設定 + 沙盒模式的標記。
+   --------------------------------------------------------------------------- */
+
+/* 分頁列的沙盒標記（新功能，舊版沒有）。有 worktree＝亮、只有環境變數與 Job Object＝淡 */
+.tab-row .tab-sandbox { flex: 0 0 auto; margin-left: 4px; color: #A5D6A7; font-size: 11px; }
+.tab-row .tab-sandbox.partial { color: #888; }
+
+/* 選單裡的小標籤（例：自訂連線沒開沙盒） */
+.popup-menu .menu-tag {
+  margin-left: 8px; padding: 0 4px; border-radius: 6px;
+  background: #4a2e2e; color: #EF9A9A; font-size: 10px;
+}
+
+/* 自訂連線設定對話框 */
+#conns {
+  position: fixed; inset: 0; z-index: 320; display: flex; align-items: center; justify-content: center;
+  background: rgba(0,0,0,.45);
+  font: 13px "Microsoft JhengHei", "微軟正黑體", sans-serif;
+}
+#conns-box {
+  width: 720px; max-width: 92vw; max-height: 88vh; overflow: auto; padding: 16px 18px;
+  background: #2d2d30; border: 1px solid #FDFFB0; border-radius: 6px; color: #e0e0e0;
+}
+#conns-title { font-size: 14px; color: #FDFFB0; margin-bottom: 10px; }
+#conns-main { display: flex; gap: 16px; align-items: flex-start; }
+#conns-list {
+  flex: 0 0 200px; max-height: 340px; overflow-y: auto;
+  background: #252528; border: 1px solid #555; border-radius: 4px; padding: 4px;
+}
+.conns-empty { color: #888; font-size: 12px; padding: 8px 6px; line-height: 1.6; }
+.conns-row {
+  display: flex; align-items: center; gap: 4px; padding: 5px 6px; margin-bottom: 3px;
+  border-radius: 4px; cursor: pointer; background: #333337;
+}
+.conns-row.active { background: #1e1e1e; outline: 1px solid #FDFFB0; outline-offset: -1px; }
+.conns-row-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.conns-row-tag {
+  flex: 0 0 auto; padding: 0 4px; border-radius: 6px; font-size: 10px;
+  background: #4a2e2e; color: #EF9A9A;
+}
+.conns-row-tag.on { background: #2b3d2c; color: #A5D6A7; }
+
+#conns-form { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+#conns-form > label { display: flex; flex-direction: column; gap: 3px; color: #999; font-size: 12px; }
+#conns-form input[type="text"], #conns-form input[type="number"], #conns-form select {
+  background: #1e1e1e; color: #e0e0e0; border: 1px solid #555; outline: none;
+  padding: 4px 6px; font-size: 13px; font-family: inherit;
+}
+#conns-form input[type="text"]:focus, #conns-form select:focus { border-color: #FDFFB0; }
+.cf-path-row { display: flex; gap: 6px; }
+.cf-path-row input { flex: 1 1 auto; min-width: 0; }
+.cf-path-row button, #conns-form .modal-buttons button {
+  padding: 4px 10px; cursor: pointer; font-size: 12px; font-family: inherit;
+  background: #3a3a3d; color: #e0e0e0; border: 1px solid #555; border-radius: 4px;
+}
+.cf-path-row button:hover { background: #50505a; }
+.cf-close-row { display: flex; align-items: center; gap: 6px; }
+.cf-close-row input[type="number"] { width: 56px; }
+.cf-hint { color: #888; font-size: 12px; }
+#conns-form label.cf-check { flex-direction: row; align-items: center; gap: 6px; color: #e0e0e0; font-size: 13px; cursor: pointer; }
+#conns-note { margin-top: 10px; color: #A5D6A7; font-size: 12px; min-height: 18px; word-break: break-all; }
+#conns .modal-buttons button { min-width: 84px; }
+#cf-delete:disabled { color: #666; cursor: default; }

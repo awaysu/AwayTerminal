@@ -136,6 +136,11 @@
 | `toolbar_select_all(id)` | 送 `A…`（新增功能，舊版沒有呼叫端） |
 | `session_create` 的 `kind:"ssh"` + `ssh` 參數 | 內建 SSH（`russh`）。見 `docs/SSH.md` |
 | `ssh_hostkey_answer(id, answer)` | 主機金鑰對話框的回覆（`acceptandstore` / `acceptonce` / `reject`） |
+| `session_create` 的 `kind:"conn"` + `conn` 參數 | 自訂連線（含沙盒模式）。見 `docs/AGENT-SANDBOX.md` |
+| `custom_list` / `custom_detect` / `custom_save` / `custom_delete` | 自訂連線的讀取／自動偵測／存檔／刪除 |
+| `conn_set_sandbox(name, sandbox)` | 切換某條連線的沙盒開關（**下次啟動生效**） |
+| `sandbox_clear(id)` | 移除該分頁的沙盒 worktree（**分支保留**） |
+| `sandbox_probe()` / `pid_alive(pid)` / `sandbox_verify(id)` | **只給 `--verify` 用**的檢查指令。`pid_alive` 是唯讀的（不砍任何行程） |
 | `temp_dir()` | 系統暫存資料夾（`--verify` 用，以及寫入被擋時的後備位置建議） |
 | `launch_args()` | CLI 參數（`--cmd` / `--verify` / `--bench`），URL 參數優先 |
 | `tab_select(id)` / `tab_rename(id, title)` / `tabs_reorder(ids)` | 分頁列的點選／改名／拖曳排序 |

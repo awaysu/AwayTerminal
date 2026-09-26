@@ -84,15 +84,24 @@
         <div id="color-items"></div>
       </div>
     </div>
+    <!-- 沙盒模式（新功能）：勾勾顯示的是**連線設定**的值，改了下次啟動生效 -->
+    <div class="menu-item" data-act="sandbox">沙盒模式</div>
+    <div class="menu-item" data-act="sandbox-clear">清除沙盒…</div>
     <div class="menu-sep"></div>
     <div class="menu-item" data-act="close">關閉</div>
   </div>
 
   <!-- 新分頁下拉（舊版 New 下拉；SSH / 連接埠 / WSL / ADB 之後補在這裡） -->
+  <!-- 新分頁下拉（舊版 New 下拉的結構：預設區 → 分隔線 → 使用者的自訂連線 → 分隔線 → 管理）。
+       #new-conns 由 settings.customConns 填；連線沒開沙盒的會標「無沙盒」。 -->
   <div id="new-menu" class="popup-menu" hidden>
     <div class="menu-item" data-kind="shell">PowerShell</div>
     <div class="menu-item" data-kind="ssh">SSH…</div>
+    <div class="menu-sep"></div>
+    <div id="new-conns"></div>
     <div class="menu-item" data-kind="custom">自訂指令…</div>
+    <div class="menu-sep"></div>
+    <div class="menu-item" data-kind="manage">自訂連線設定…</div>
   </div>
 
   <!-- 翻頁下拉（舊版 Page_Click 的 ContextMenu） -->
@@ -126,6 +135,47 @@
 
   <!-- 複製提示（舊版 CopyPopup + ShowCopyFeedback） -->
   <div id="toast" hidden></div>
+
+  <!-- 自訂連線設定（舊版 CustomConnDialog：左邊清單、右邊編輯區、自動偵測）。
+       沙盒那個核取方塊是新功能，舊版沒有。 -->
+  <div id="conns" hidden>
+    <div id="conns-box">
+      <div id="conns-title">自訂連線</div>
+      <div id="conns-main">
+        <div id="conns-list"></div>
+        <form id="conns-form">
+          <label>名稱<input id="cf-name" type="text" autocomplete="off" spellcheck="false" /></label>
+          <label>執行檔<span class="cf-path-row"><input id="cf-path" type="text" autocomplete="off" spellcheck="false" /><button id="cf-browse" type="button">瀏覽…</button></span></label>
+          <label>參數<input id="cf-args" type="text" autocomplete="off" spellcheck="false" /></label>
+          <label>關閉鍵
+            <span class="cf-close-row">
+              <select id="cf-closekey">
+                <option value="ctrl-c">Ctrl+C</option>
+                <option value="ctrl-d">Ctrl+D</option>
+                <option value="none">不送</option>
+              </select>
+              <input id="cf-closecount" type="number" min="1" max="5" />
+              <span class="cf-hint">次</span>
+            </span>
+          </label>
+          <label class="cf-check"><input id="cf-pickdir" type="checkbox" /><span>啟動前選擇工作目錄</span></label>
+          <label class="cf-check"><input id="cf-viaps" type="checkbox" /><span>透過 PowerShell 執行（.cmd 需要）</span></label>
+          <label class="cf-check"><input id="cf-hidden" type="checkbox" /><span>隱藏（不列在「新分頁」下拉）</span></label>
+          <label class="cf-check"><input id="cf-sandbox" type="checkbox" /><span>沙盒模式（建議開啟）</span></label>
+          <div class="modal-buttons">
+            <button id="cf-save" type="submit">儲存</button>
+            <button id="cf-delete" type="button">刪除</button>
+          </div>
+        </form>
+      </div>
+      <div id="conns-note"></div>
+      <div class="modal-buttons">
+        <button id="conns-detect" type="button">自動偵測</button>
+        <button id="conns-new" type="button">新增</button>
+        <button id="conns-close" type="button">關閉</button>
+      </div>
+    </div>
+  </div>
 
   <!-- 主機金鑰確認（語意照 PuTTY：第一次連線／金鑰變更兩種文案，三個選項）。
        獨立於一般對話框，因為它有三個按鈕而且「金鑰變更」要更嚴重的樣式。 -->

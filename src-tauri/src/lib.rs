@@ -4,10 +4,12 @@ pub mod b64;
 pub mod bench;
 pub mod cli;
 pub mod commands;
+pub mod custom;
 pub mod host;
 pub mod logging;
 pub mod output;
 pub mod pty;
+pub mod sandbox;
 pub mod session;
 pub mod settings;
 pub mod ssh;
@@ -83,6 +85,15 @@ pub fn run() {
             toolbar::reveal_path,
             toolbar::temp_dir,
             ssh::prompt::ssh_hostkey_answer,
+            custom::custom_list,
+            custom::custom_detect,
+            custom::custom_save,
+            custom::custom_delete,
+            custom::conn_set_sandbox,
+            custom::sandbox_clear,
+            sandbox::sandbox_probe,
+            sandbox::pid_alive,
+            sandbox::sandbox_verify,
             host::host_ready,
             host::host_message,
             bench::bench_raw,

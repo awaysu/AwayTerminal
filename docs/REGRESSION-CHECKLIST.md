@@ -25,6 +25,8 @@
 | J. 輸出 / 渲染 | 待填 |
 | K. SSH | 本次（TASK-006）填好第一階段 |
 | K2. 其餘連線後端（Telnet / COM / WSL / ADB） | 待填（階段 2） |
+| P. 自訂連線 | 本次（TASK-007）填好 |
+| Q. 沙盒模式（新功能） | 本次（TASK-007）填好 |
 | L. 巨集 / 我的最愛 / 輸入文字視窗 | 待填（階段 3） |
 | M. 恢復分頁 / 重連 / 保持連線 | 待填（階段 3） |
 | N. 代理團隊 / AI 聊天室 / Telegram | 待填（階段 4） |
@@ -244,6 +246,56 @@ TEMP 路徑印出完整結果，Documents 路徑印完 `path = …` 就停住。
 
 ## K2. 其餘連線後端：Telnet / COM / WSL / ADB（待填，階段 2）
 
+## P. 自訂連線
+
+舊版對應 `Dialogs/CustomConnDialog.xaml(.cs)` 與 `MainWindow.OpenCustom`。
+
+| # | 怎麼測 | 預期結果 | 舊版出處 | Win | mac | Linux |
+|---|---|---|---|---|---|---|
+| P1 | 全新安裝（`settings.json` 沒有 `customConns`） | 清單是**空的**，「新分頁 ▾」只有 PowerShell／SSH／自訂指令…／自訂連線設定… | v1.0.18 起不自動建立任何自訂連線 | PASS | | |
+| P2 | 👤「新分頁 ▾」→「自訂連線設定…」→「自動偵測」 | 把這台機器上有裝的工具加進清單，順序＝ClaudeCode／Codex／OpenCode／GeminiCLI／QwenCode／WSL／Aider／ADB | `KnownTools` 的順序（使用者 2026-09-15 指定） | | | |
+| P3 | 再按一次「自動偵測」 | 顯示「沒有找到新的工具」，**不會重複加入** | 同名或**同路徑**都算已存在 | PASS（單元測試） | | |
+| P4 | 看 ClaudeCode 那一條的參數 | `--dangerously-skip-permissions` | `KnownTools` | PASS | | |
+| P5 | 看 OpenCode 那一條的參數 | `--auto` | 舊版使用者要求 2026-09-15 | PASS | | |
+| P6 | 看 Codex／GeminiCLI／QwenCode 的參數 | **空的**（要跳過核准的人自己加） | `KnownTools` 的註解 | PASS | | |
+| P7 | 自動偵測加入的 `.cmd` 工具 | 「透過 PowerShell 執行」自動打勾（npm 裝的是 `.cmd`） | `AutoDetect_Click` 的 `viaPs` | PASS | | |
+| P8 | 👤 點清單裡一條 → 改參數 → 儲存 → 關掉程式再開 | 改動有留著 | — | | | |
+| P9 | 👤「新增」→ 填名稱與執行檔 → 儲存 | 出現在清單與「新分頁 ▾」；沙盒核取方塊**預設是打勾的** | `CLAUDE.md`：沙盒預設開啟 | | | |
+| P10 | 👤 勾「隱藏」 | 不出現在「新分頁 ▾」，但還在設定清單裡 | `CustomConn.Hidden` | | | |
+| P11 | 👤 勾「啟動前選擇工作目錄」的連線 → 從「新分頁 ▾」開它 | **先跳資料夾選擇**；按取消就不開分頁 | `OpenCustom` 的 `PickDir` | | | |
+| P12 | 👤 關閉鍵設 Ctrl+D ×2 的連線 → 開起來再關分頁 | 送兩個 `0x04` | `OpenCustom` 的 `closeBytes` | PASS（單元測試） | | |
+| P13 | 👤 關閉鍵設「不送」 | 關分頁時不送任何鍵，直接收掉 | 同上（`none`） | | | |
+| P14 | 👤 開一條 claude 的自訂連線 | 分頁 flags 有 `c`（多行貼上走 ESC+CR）；分頁名稱＝工作目錄名 | `IsClaudeExe` / `UsesDirTitle` | | | |
+| P15 | 👤 開一條「透過 PowerShell 執行」的連線 | 工具跑起來；**工具結束後仍留在 PowerShell 裡**（不是分頁直接關掉） | 舊版用 `PendingCommand` 打字；新版用 `-NoExit -Command`（見「刻意不同」表） | | | |
+
+## Q. 沙盒模式（新功能）
+
+規格＝`CLAUDE.md`「新增功能 → 沙盒模式」，完整說明在 `docs/AGENT-SANDBOX.md`。
+**舊版沒有這個功能**，所以「基準」欄寫的是規格出處。
+
+| # | 怎麼測 | 預期結果 | 基準 | Win | mac | Linux |
+|---|---|---|---|---|---|---|
+| Q1 | `node scripts/test-sandbox-guard.mjs` | **37 PASS / 0 FAIL**（deny 清單每條至少一例 + 15 個必須放行） | — | PASS | PASS | PASS |
+| Q2 | `--verify` 的沙盒那一步 | worktree=true、分支 `sandbox/<名>-<時間>`、`git status` 乾淨、`TEMP` 導到沙盒、worktree 與分支都存在 | — | PASS | | |
+| Q3 | `--verify` 的 Job Object 那一步 | 在分頁裡開的子行程 PID，**關分頁前存活=true、關分頁後存活=false** | `CLAUDE.md` 第 2 層 kill-on-close | PASS | - | - |
+| Q4 | 👤 開一條沙盒連線（工作目錄在 git repo 裡） | 分頁的工作目錄是 `<repo>/.ai/sandbox/<連線名>`；分頁列有綠色 ⬚ 標記；tooltip 顯示沙盒路徑與分支 | — | | | |
+| Q5 | 👤 `git status`（在主工作目錄） | **看不到** `.ai/sandbox/`；而且**使用者的 `.gitignore` 沒有被改**（忽略是寫在 `.git/info/exclude`） | — | PASS | | |
+| Q6 | 👤 開一條沙盒連線（工作目錄**不是** git repo） | 沒有 worktree；分頁列的 ⬚ 是**灰色**；tooltip 寫「沙盒（無 worktree，不是 git repo）」；環境變數與 Job Object 照做 | — | | | |
+| Q7 | 👤 在沙盒分頁裡 `echo $env:TEMP` | 指到 `<沙盒>/.tmp`，不是系統的 TEMP | — | | | |
+| Q8 | 👤 在沙盒分頁裡 `echo $env:APPDATA` / `$env:USERPROFILE` | **和平常一樣**（沒有被改）——改了 agent 會掉登入 | `CLAUDE.md` 明寫 | | | |
+| Q9 | 👤 Rust 專案的沙盒分頁 `echo $env:CARGO_TARGET_DIR` | 指到 `<沙盒>/.target`；非 Rust 專案則**沒有**這個變數 | — | | | |
+| Q10 | 👤 開一條 **Claude Code** 的沙盒連線，看沙盒目錄 | 產生 `.claude/awayterm-sandbox-guard.mjs` 與 `.claude/settings.local.json`（`PreToolUse`、matcher `Bash`） | `CLAUDE.md` 第 2 層 | ⬜ 未實機驗證 | | |
+| Q11 | 👤 在那個 Claude Code 分頁裡叫它跑 `taskkill /IM notepad.exe` | **被拒絕**，訊息說明是沙盒擋的、以及怎麼關掉 | — | ⬜ 未實機驗證 | | |
+| Q12 | 👤 叫它跑 `taskkill /PID <某個自己開的 PID>` | **放行** | — | ⬜ 未實機驗證 | | |
+| Q13 | 沙盒目錄裡已經有 `.claude/settings.local.json` | hooks **合併**而不是蓋掉；原本的欄位（`permissions` 等）保留；重開分頁不會重複掛 | — | PASS（單元測試） | | |
+| Q14 | 👤 Codex / Gemini CLI 的沙盒連線 | 啟動參數多了 `--sandbox workspace-write` / `--sandbox` | `CLAUDE.md` 第 2 層 | ⬜ **參數名未實機驗證** | | |
+| Q15 | 👤 分頁右鍵 →「沙盒模式」 | 勾勾反映**連線設定**的值；點了之後提示「下次啟動生效」並提供「重新啟動分頁」 | `CLAUDE.md`：改變在下次啟動生效、需提示 | | | |
+| Q16 | 👤 按「重新啟動分頁」 | 舊分頁關掉（走優雅結束鍵）、用新設定開一個新的 | — | | | |
+| Q17 | 👤 分頁右鍵 →「清除沙盒…」 | 確認對話框說明「分支會保留」；確認後 worktree 消失、**分支還在**（`git branch --list 'sandbox/*'`） | — | | | |
+| Q18 | 👤 沙盒分頁關閉後 | worktree **不會**自動刪（裡面可能有未 commit 的成果） | — | | | |
+| Q19 | 👤 WSL／ADB 的自動偵測連線 | 沙盒**預設是關的**（它們是拿來操作機器的工具） | 判斷寫在 `custom.rs` 的 `default_sandbox` | PASS（單元測試） | | |
+| Q20 | 👤 沙盒 worktree 是從哪個狀態開的 | **目前 HEAD**——agent 看不到你還沒 commit 的修改。成果要用 `git merge sandbox/…` 拿回來 | `docs/AGENT-SANDBOX.md`「工作流程」 | | | |
+
 ## L. 巨集 / 我的最愛 / 輸入文字視窗（待填，階段 3）
 
 ## M. 恢復分頁 / 斷線重連 / 保持連線（待填，階段 3）
@@ -273,6 +325,10 @@ TEMP 路徑印出完整結果，Documents 路徑印完 `path = …` 就停住。
 | SSH 後端 | 呼叫系統 `ssh.exe` | **內建 `russh`** | `CLAUDE.md` 定案：SSH 內建、行為照 PuTTY。使用流程照舊版，協定層照 PuTTY（`docs/SSH.md`） |
 | SSH 的 `login as:` 時機 | **連線前**就問（帳號要放進 `ssh.exe` 命令列） | **連上交握後**才問 | PuTTY 的順序，也是內建 SSH 的自然順序。使用者看到的差別：前面多一行灰字「連線到 host:port …」，主機金鑰對話框會在 `login as:` 之前 |
 | SSH 主機金鑰存放 | （舊版沒有，`ssh.exe` 用 `~/.ssh/known_hosts`） | `{app config dir}/known_hosts`，**不碰** `~/.ssh/known_hosts` | 程式不該偷偷寫 OpenSSH 的檔。代價：用 `ssh` 連過的主機這裡仍會問一次 |
+| **沙盒模式** | 沒有 | 自訂連線多一個選項，**預設開啟** | **新增功能**，規格＝`CLAUDE.md`「新增功能」一節。說明見 `docs/AGENT-SANDBOX.md` |
+| 分頁列的沙盒標記 ⬚ | — | 綠色＝有 worktree、灰色＝只有環境變數與 Job Object | 新增；一個字不占空間又看得出來 |
+| 自訂連線「透過 PowerShell 執行」 | 先開互動 PowerShell，**等尺寸就緒後才把指令打進去**（避免以 80 欄啟動） | `pwsh -NoExit -Command "& 'path' args"` | 我們的 PTY 一開始就是前端回報的真實尺寸，沒有 80 欄問題 → 少一套延後打字的機制。使用者看到的結果一樣（工具跑完仍留在 shell 裡） |
+| 沙盒的 git 忽略 | — | 寫 `.git/info/exclude`，**不動使用者的 `.gitignore`** | `.gitignore` 是會進 commit 的檔，程式不該改它 |
 
 ## 隱含契約（最容易回歸的一類）
 

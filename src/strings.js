@@ -135,6 +135,44 @@ export const T = {
   'hk.cancel': '取消',
   'hk.host': '主機',
   'hk.alg': '演算法',
+
+  // ---- 自訂連線（TASK-007，舊版 custom.*）----
+  'conn.title': '自訂連線',
+  'conn.detect': '自動偵測',
+  'conn.new': '新增',
+  'conn.save': '儲存',
+  'conn.delete': '刪除',
+  'conn.empty': '清單是空的。按「自動偵測」找出這台機器上裝了哪些工具。',
+  'conn.newHint': '新增一條連線：填名稱與執行檔路徑後按「儲存」。',
+  'conn.saved': '已儲存。',
+  'conn.deleted': '已刪除。',
+  'conn.detectNone': '沒有找到新的工具（可能都已經在清單裡，或都沒安裝）。',
+  'conn.detectDone': '已加入：',
+  'conn.sandboxOn': '沙盒',
+  'conn.sandboxOff': '無沙盒',
+  'conn.hiddenTag': '隱藏',
+  'dlg.close': '關閉',
+  'tb.manageConns': '自訂連線設定…',
+
+  // ---- 沙盒模式（新功能）----
+  'sb.menu': '沙盒模式',
+  'sb.clear': '清除沙盒…',
+  'sb.tipOn': '沙盒：{0}',
+  'sb.tipBranch': '沙盒分支：{0}',
+  'sb.tipNoWorktree': '沙盒（無 worktree，不是 git repo）',
+  'sb.tipOff': '沙盒：關閉',
+  'sb.changedTitle': '沙盒模式',
+  // {0} = 連線名稱、{1} = 開啟/關閉
+  'sb.changedBody': '「{0}」的沙盒模式已{1}。\n這個改變要等**下次啟動這個分頁**才生效。\n要現在就重新啟動這個分頁嗎？（會關掉目前的連線）',
+  'sb.on': '開啟',
+  'sb.off': '關閉',
+  'sb.restartNow': '重新啟動分頁',
+  'sb.later': '稍後',
+  'sb.clearTitle': '清除沙盒',
+  // {0} = worktree 路徑、{1} = 分支
+  'sb.clearBody': '要移除這個沙盒的 worktree 嗎？\n\n{0}\n\n分支 {1} 會**保留**——裡面若有還沒合併的成果，之後仍然可以用 git merge 取回（做法見 docs/AGENT-SANDBOX.md）。',
+  'sb.cleared': '沙盒已移除（分支保留）。',
+  'sb.noSandbox': '這個分頁沒有沙盒。',
 };
 
 /** `msg.closeTabConfirm` 這類帶 {0} 的字串。 */
