@@ -232,6 +232,15 @@
     <form id="sshdlg-box">
       <div id="sshdlg-title"></div>
       <div class="sd-grid">
+        <!-- 類型（舊版 ConnectDialog 的 TypeCombo）：切換會把 22 ↔ 23 換掉 -->
+        <label id="sd-l-type">類型</label>
+        <span class="sd-row">
+          <select id="sd-type">
+            <option value="ssh">SSH</option>
+            <option value="telnet">Telnet</option>
+          </select>
+        </span>
+
         <label id="sd-l-host">IP / 主機</label>
         <span class="sd-row">
           <input id="sd-host" type="text" autocomplete="off" spellcheck="false" />
@@ -239,14 +248,14 @@
           <input id="sd-port" type="number" min="1" max="65535" />
         </span>
 
-        <label id="sd-l-user">帳號</label>
-        <span class="sd-row">
+        <label id="sd-l-user" data-ssh-only>帳號</label>
+        <span class="sd-row" data-ssh-only>
           <input id="sd-user" type="text" autocomplete="off" spellcheck="false" />
           <span id="sd-user-hint" class="sd-hint"></span>
         </span>
 
-        <label id="sd-l-key">金鑰檔</label>
-        <span class="sd-row">
+        <label id="sd-l-key" data-ssh-only>金鑰檔</label>
+        <span class="sd-row" data-ssh-only>
           <input id="sd-key" type="text" autocomplete="off" spellcheck="false" />
           <button id="sd-key-browse" type="button">瀏覽…</button>
         </span>
@@ -258,10 +267,10 @@
         </span>
       </div>
 
-      <label class="sd-check"><input id="sd-agent" type="checkbox" /><span id="sd-l-agent"></span></label>
+      <label class="sd-check" data-ssh-only><input id="sd-agent" type="checkbox" /><span id="sd-l-agent"></span></label>
       <label class="sd-check"><input id="sd-reconnect" type="checkbox" /><span id="sd-l-reconnect"></span></label>
 
-      <details id="sd-adv">
+      <details id="sd-adv" data-ssh-only>
         <summary id="sd-l-adv"></summary>
         <div id="sd-adv-note" class="sd-hint"></div>
         <div id="sd-algos"></div>
@@ -277,6 +286,21 @@
         <button id="sd-cancel" type="button">取消</button>
       </div>
     </form>
+  </div>
+
+  <!-- 離開程式（舊版 Dialogs/ExitDialog）：勾「下次開啟恢復目前分頁（含畫面上的舊訊息）」。
+       勾選狀態記在 settings 的 exitRestoreTabs。舊版還有一個「更新 CLAUDE.md」的勾選，
+       那屬於代理團隊（階段 4），這裡先不放。 -->
+  <div id="exitdlg" hidden>
+    <div id="exitdlg-box">
+      <div id="exitdlg-title"></div>
+      <div id="exitdlg-body"></div>
+      <label class="sd-check"><input id="ex-restore" type="checkbox" /><span id="ex-l-restore"></span></label>
+      <div class="modal-buttons">
+        <button id="ex-go" type="button">離開</button>
+        <button id="ex-cancel" type="button">取消</button>
+      </div>
+    </div>
   </div>
 
   <!-- 弱演算法警告（PuTTY 的 warn-below-this-line）：協商到警告線以下的演算法時跳。

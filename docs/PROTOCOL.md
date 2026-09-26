@@ -20,6 +20,9 @@
 | host → JS | 19 | **16**（含 `o` 以二進位 channel 取代） | 3 |
 | 合計 | **31** | **27** | **4** |
 
+（TASK-010 沒有讓數字變大：`b` 與 `a` 兩條**先前就算已接**，這次是把它們的「還沒用到的那半」
+用完——`b` 的兩段 base64、`a` 的 `save` kind。功能上是新的，數字上不是。）
+
 - TASK-004 接了 9 條：JS→host 的 `p`、`k`、`z`、`a`；host→JS 的 `t`、`x`、`K`、`L`、`q`。
   （`s` 是 TASK-003 收尾時補的——那時漏掉它導致 pane 永遠不 fit，見
   `docs/REGRESSION-CHECKLIST.md`「分頁」第 1 條。）
@@ -27,16 +30,18 @@
   並把 `a`／`q` 的 `sel`／`selpaste`／`all`／`file` 幾個 kind 補完。
 - TASK-006 接了 `A`（全選）。**舊版 1.2.x 沒有呼叫端**（見下），由 PM 決定當作新功能補進
   終端機右鍵選單。
-- TASK-009 接了 `b`（重連前推 scrollback）。**只用了前半**：舊版的 `b` 還帶兩段 base64
-  （恢復分頁要塞回畫面的內容），斷線重連只需要「把現有畫面推上去、不要清掉」，
-  所以送的是 `b{id}US US`（兩段都空）。恢復分頁（階段 3）才會用到那兩段。
+- TASK-009 接了 `b`（重連前推 scrollback），但只用了前半：送 `b{id}US US`（兩段 base64 都空）
+  ＝「把現有畫面推上去、不要清掉」。
+- TASK-010 把 `b` **用完整**：恢復分頁時送 `b{id}US{上次的畫面}US{分隔行}`，
+  並把 `a…save`（JS→host 的最後一個 kind）接起來——關閉程式時向每個分頁要 scrollback。
+  這兩條合起來就是舊版 1.0.45 的「恢復分頁（含畫面紀錄倒回）」。
 
-剩下的 4 條：
+剩下的 4 條全部屬於代理團隊（Multi-Agent，階段 4），**都不是恢復分頁的一部分**：
 
-| 訊息 | 為什麼還沒接 |
+| 訊息 | 歸誰 |
 |---|---|
-| `g`、`u`、`E` | 代理團隊 Multi-Agent（階段 4） |
-| `G` | 同上（JS→host 那一半） |
+| `g`（外框排版）、`u`（拆掉外框）、`E`（pane 的代理狀態標籤） | **代理團隊**。舊版恢復「代理團隊分頁」時會用到它們（`RestoreAgentGroup` 重開整組要重建外框），但那是代理團隊的功能，階段 4 一起做 |
+| `G`（JS→host：上下分隔線拖完的比例） | 同上（目前落到 `host_message` 記 log） |
 
 **未接的 JS→host 訊息不會靜靜消失**：`bridge.js` 一律轉給 Rust 的 `host_message`
 指令，後端印 `[AwayTerminal] [host_message 未接] {kind} = {說明}`，
@@ -56,7 +61,7 @@
 | `p{id}` | 使用者在分割模式點了某個 pane | `invoke('pane_selected')`：只改分頁模型、**不回送 `s`**（舊版同樣註明「不回送避免迴圈」） | ✅ 已接 |
 | `k{id1},{id2},…` | pane 拖曳後的新順序 | `invoke('pane_reordered')`：重排分頁清單、**不回送 `K`** | ✅ 已接 |
 | `z{size}` | Ctrl+滾輪縮放後的字級 | `invoke('pane_font_size')` → 存進 `settings.json`（只收 6~40，同舊版；寫檔有防抖） | ✅ 已接 |
-| `a{id}US{kind}US{text}` | `q` 的回覆 | `invoke('pane_answer')`。**目前只處理 `cwd`**（提示字元行 → shell 分頁自動改名成目前目錄名稱，舊版 1.1.2）；其餘 kind 記 log | 🟡 部分（`cwd` 已接；`sel`/`all`/`file`/`save`/`text` 未接） |
+| `a{id}US{kind}US{text}` | `q` 的回覆 | `invoke('pane_answer')`。處理 `cwd`（分頁改名）與 `save`（關閉程式時的 scrollback，交給等在信箱的 `restore::save`）（提示字元行 → shell 分頁自動改名成目前目錄名稱，舊版 1.1.2）；其餘 kind 記 log | 🟡 部分（`cwd` 已接；`sel`/`all`/`file`/`save`/`text` 未接） |
 | `U{url}` | 點了終端機裡的連結 | `host_message` 記 log | ⬜ 未接（需 opener + 選單） |
 | `m{id}` | 下一個空選取回覆是因為程式接管滑鼠（1.1.10） | `host_message` 記 log | ⬜ 未接（複製／選取尚未實作） |
 | `G{下方id}US{上列比例}` | Multi-Agent 上下分隔線拖完的新比例（1.2.0） | `host_message` 記 log | ⬜ 未接（代理團隊是階段 4） |
@@ -76,7 +81,7 @@
 | `L{tab\|split\|columns}` | 切換分頁／分割／分欄三態 | `view_mode_cycle`（工具列按鈕，三態循環順序同舊版 `Split_Click`），並存進 `settings.json` | ✅ 已接 |
 | `T{json}` | 套用字型／顏色／`imeQuietMs`／`restoreLines`／搜尋列文字 | `host::host_ready`，內容來自 `settings.json`（TASK-004 起不再是 Rust 常數） | ✅ 已接 |
 | `q{id}US{…}` | 向前端查詢（回 `a…`） | 狀態輪詢每 600ms 送 `cwd`（同舊版 `UpdateStatuses`）；工具列／右鍵送 `sel`（複製）、`selpaste`（複製且貼上）、`all`（複製全部）、`file`（複製全部存至檔案） | 🟡 部分（`save`＝關閉程式存 scrollback、`text`＝Telegram 遠端查詢，兩個功能都還沒做） |
-| `b{id}US{base64}US{base64}` | 恢復分頁／重連前推進 scrollback（1.0.45） | 斷線重連前送 `b{id}US US`（兩段 base64 留空）把現有畫面推上去，重連的輸出接在後面、不清畫面 | 🟡 部分（恢復分頁要用的那兩段內容還沒用到，階段 3） |
+| `b{id}US{base64}US{base64}` | 恢復分頁／重連前推進 scrollback（1.0.45） | 兩種都用：**重連**前送 `b{id}US US`（兩段留空＝只推畫面）；**恢復分頁**送 `b{id}US{上次畫面}US{分隔行}`，在 `n` 之後、`s` 之前（順序同舊版 `AddTab`，不能換） | ✅ |
 | `c{id}` | 清畫面 | `toolbar_clear`：PowerShell／SSH **不送這條**，改對 session 送 Esc → 等 60ms → Ctrl+L（黏著送會被 PSReadLine 當 escape 序列）；Telnet／COM 才送 `c` 清 xterm 緩衝。兩條路都先跳確認 | ✅ 已接 |
 | `S{id}US{up\|down\|top\|bottom}` | 捲動檢視（工具列「翻頁」） | `toolbar_scroll`（翻頁下拉：上一頁／下一頁／最上面／最下面） | ✅ 已接 |
 | `v{id}US{base64}` | 貼上（走 `term.paste()`） | `toolbar_paste`（工具列與右鍵的「純文字貼上」，以及 `selpaste` 的貼回）。**Ctrl+V / Shift+Insert 不經這條**——`terminal.js` 自己攔 `paste` 事件走 `doPaste` | ✅ 已接 |
@@ -122,7 +127,7 @@
 | `log_line(msg)` | 前端一行字 → 後端 stdout |
 | `report_renderer(renderer)` | 回報實際用的是 WebGL 還是 DOM |
 | `conpty_backend()` | 目前的 ConPTY 主機 |
-| `session_create(kind, command?, title?, cols, rows, cwd?, onEvent)` | 開連線。`kind`＝`shell`｜`custom`。回 `SessionInfo`，並附一條輸出 `Channel` |
+| `session_create(kind, command?, title?, cols, rows, cwd?, ssh?, telnet?, conn?, restore?, onEvent)` | 開連線。`kind`＝`shell`｜`custom`｜`conn`｜`ssh`｜`telnet`。`restore`＝要倒回第幾筆存檔的畫面。回 `SessionInfo`，並附一條輸出 `Channel` |
 | `session_write(id, data)` | 寫入原始位元組（`term.onBinary` 用） |
 | `session_write_text` / `session_resize` / `session_list` | `i` / `r` 協定的實作與診斷 |
 | `tab_close(id)` | 關分頁：`x` → 收掉 log → 背景關 session（優雅結束鍵 Ctrl+C ×3、60ms）→ `s{下一個}` |
@@ -139,6 +144,10 @@
 | `session_create` 的 `kind:"ssh"` + `ssh` 參數 | 內建 SSH（`russh`）。見 `docs/SSH.md` |
 | `ssh_hostkey_answer(id, answer)` | 主機金鑰**與弱演算法**對話框的回覆（`acceptandstore` / `acceptonce` / `reject`）。兩者共用同一個回覆通道 |
 | `algo_catalog()` | 四組演算法的可選名稱與「在警告線下」的標記（連線對話框的「進階」區用） |
+| `session_create` 的 `kind:"telnet"` + `telnet` 參數 | 內建 Telnet。見 `docs/TELNET.md` |
+| `restore_list()` | 這次啟動要恢復哪些分頁（空＝開一個預設分頁）。前端照順序呼叫 `session_create(…, restore: i)` |
+| `exit_confirm(restore)` / `exit_cancel()` | 離開對話框的回覆。`exit_confirm` **必須是 async**——它要等前端把 `a…save` 送回來，同步 command 會擋住主執行緒讓 IPC 進不來（實際踩過） |
+| `restore_verify_save()` / `restore_verify_clear()` | **只給 `--verify` 用**：不關程式就走一次「存」，以及把驗證留下的紀錄清掉 |
 | `fav_list()` / `fav_candidate(id)` / `fav_add(item)` / `fav_delete(name)` / `fav_rename(name,newName)` / `fav_move(name,delta)` | 我的最愛。`fav_candidate` 是「目前分頁能不能存成最愛」（不能就把選單那條灰掉，同舊版）。**存的內容不含密碼** |
 | `session_create` 的 `kind:"conn"` + `conn` 參數 | 自訂連線（含沙盒模式）。見 `docs/AGENT-SANDBOX.md` |
 | `custom_list` / `custom_detect` / `custom_save` / `custom_delete` | 自訂連線的讀取／自動偵測／存檔／刪除 |
@@ -166,6 +175,7 @@
 | `host-msg`（String） | **所有** host→JS 的舊協定字串都走這一條 |
 | `tab-state`（JSON） | 分頁列狀態（見上一節） |
 | `ssh-hostkey`（JSON） | 主機金鑰要使用者確認。**Rust 端會停在交握中間等答案**（最多 180 秒，逾時＝取消），前端一定要回 `ssh_hostkey_answer`。見 `src-tauri/src/ssh/prompt.rs` |
+| `exit-request`（bool） | 使用者按了視窗的 ✕。Rust 先 `prevent_close()`，payload ＝上次的勾選狀態；前端問完呼叫 `exit_confirm`／`exit_cancel`。**再按一次 ✕ 就不擋了**（前端壞掉時的逃生門） |
 | `ssh-weak-algo`（JSON） | 協商到警告線以下的演算法（PuTTY 的 warn-below-this-line）。同樣停在交握中間等答案，回 `ssh_hostkey_answer` |
 
 ---

@@ -1,8 +1,11 @@
-// SSH 連線對話框（B6）。
+// 連線對話框（SSH / Telnet）。
 //
-// 欄位照舊版 `Dialogs/ConnectDialog.xaml` 的 SSH 頁：IP/主機、Port、保持連線（分鐘，0=關）、
-// 斷線自動重連。舊版沒有的：帳號、金鑰檔、Pageant、以及「進階」的演算法與環境變數——
+// 欄位照舊版 `Dialogs/ConnectDialog.xaml`：**類型（SSH／Telnet）**、IP/主機、Port、
+// 保持連線（分鐘，0=關）、斷線自動重連。後面四個欄位舊版兩種類型是共用的，照抄。
+// 切換類型時把 22 ↔ 23 換掉（同舊版 `TypeCombo` 的 SelectionChanged）。
+// 舊版沒有的：帳號、金鑰檔、Pageant、以及「進階」的演算法與環境變數——
 // 那些在舊版是 `ssh.exe` 的命令列參數（`-o SendEnv=…`）或根本沒有（內建 SSH 才有的東西）。
+// Telnet 沒有驗證的概念，所以選 Telnet 時那幾列會收起來。
 //
 // **密碼沒有欄位**：連上之後在終端機裡問（同 PuTTY 與舊版），所以也不會被存起來。
 // 這個對話框產出的物件就是 `SshConnParams`，也是「我的最愛」要存的內容。
@@ -87,8 +90,29 @@ function writeEnv(env) {
   el.env.value = (env || []).map(([k, v]) => `${k}=${v}`).join('\n');
 }
 
-/** 把對話框的欄位讀成 `SshConnParams`。 */
+/** 目前選的類型（`ssh` / `telnet`）。 */
+function kindOf() {
+  return el.type.value === 'telnet' ? 'telnet' : 'ssh';
+}
+
+/** 依類型顯示／收起 SSH 專屬的列（Telnet 沒有帳號、金鑰、Pageant、演算法）。 */
+function applyKind() {
+  const telnet = kindOf() === 'telnet';
+  for (const node of el.root.querySelectorAll('[data-ssh-only]')) {
+    node.hidden = telnet;
+  }
+}
+
+/** 把對話框的欄位讀成連線參數（`SshConnParams` 或 `TelnetParams`）。 */
 function read() {
+  if (kindOf() === 'telnet') {
+    return {
+      host: el.host.value.trim(),
+      port: Math.min(65535, Math.max(1, Number(el.port.value) || 23)),
+      keepaliveMins: Math.max(0, Number(el.keep.value) || 0),
+      autoReconnect: el.reconnect.checked,
+    };
+  }
   return {
     host: el.host.value.trim(),
     port: Math.min(65535, Math.max(1, Number(el.port.value) || 22)),
@@ -102,9 +126,11 @@ function read() {
   };
 }
 
-function write(p) {
+function write(p, kind) {
+  el.type.value = kind === 'telnet' ? 'telnet' : 'ssh';
+  applyKind();
   el.host.value = p.host || '';
-  el.port.value = p.port || 22;
+  el.port.value = p.port || (kind === 'telnet' ? 23 : 22);
   el.user.value = p.user || '';
   el.key.value = p.keyPath || '';
   el.agent.checked = p.useAgent !== false;
@@ -127,14 +153,15 @@ function close(result) {
 }
 
 /**
- * 開對話框。回傳 `{action: 'connect'|'favorite', params}` 或 `null`（取消）。
+ * 開對話框。回傳 `{action: 'connect'|'favorite', kind, params}` 或 `null`（取消）。
  *
  * `defaults` 是設定裡的預設值（保持連線的分鐘數、自動重連），或是編輯既有的一筆最愛。
+ * `kind` ＝一開始要選哪個類型（同舊版記住 `LastConnType`）。
  */
-export function openSshDialog(defaults) {
+export function openConnDialog(defaults, kind) {
   return new Promise((resolve) => {
     resolveOpen = resolve;
-    write(defaults || {});
+    write(defaults || {}, kind);
     el.note.textContent = '';
     el.root.hidden = false;
     el.host.focus();
@@ -142,9 +169,10 @@ export function openSshDialog(defaults) {
   });
 }
 
-export async function initSshDialog() {
+export async function initConnDialog() {
   el.root = $('sshdlg');
   el.form = $('sshdlg-box');
+  el.type = $('sd-type');
   el.host = $('sd-host');
   el.port = $('sd-port');
   el.user = $('sd-user');
@@ -162,6 +190,7 @@ export async function initSshDialog() {
   el.cancel = $('sd-cancel');
 
   $('sshdlg-title').textContent = T['sd.title'];
+  $('sd-l-type').textContent = T['sd.type'];
   $('sd-l-host').textContent = T['sd.host'];
   $('sd-l-port').textContent = T['sd.port'];
   $('sd-l-user').textContent = T['sd.user'];
@@ -187,6 +216,14 @@ export async function initSshDialog() {
   }
   renderAlgos();
 
+  // 切換類型：把另一種的預設埠換掉（只換「還是預設值」的那個，使用者自己填的不動——同舊版）
+  el.type.addEventListener('change', () => {
+    const cur = Number(el.port.value) || 0;
+    if (kindOf() === 'telnet' && cur === 22) el.port.value = 23;
+    else if (kindOf() === 'ssh' && cur === 23) el.port.value = 22;
+    applyKind();
+  });
+
   el.keyBrowse.addEventListener('click', async () => {
     // 金鑰檔用系統的檔案選擇（OpenSSH 與 .ppk 都是純文字，不限副檔名）
     const picked = await invoke('log_pick_path', { current: el.key.value });
@@ -200,7 +237,7 @@ export async function initSshDialog() {
       el.note.textContent = T['sd.needHost'];
       return;
     }
-    close({ action: 'connect', params });
+    close({ action: 'connect', kind: kindOf(), params });
   });
   el.fav.addEventListener('click', () => {
     const params = read();
@@ -208,7 +245,7 @@ export async function initSshDialog() {
       el.note.textContent = T['sd.needHost'];
       return;
     }
-    close({ action: 'favorite', params });
+    close({ action: 'favorite', kind: kindOf(), params });
   });
   el.cancel.addEventListener('click', () => close(null));
   document.addEventListener('keydown', (e) => {
@@ -216,10 +253,10 @@ export async function initSshDialog() {
   });
 }
 
-/** `host` / `host:2222` / `[::1]:22` → `SshConnParams` 的前兩欄（快速連線入口用）。 */
-export function parseHostPort(text) {
+/** `host` / `host:2222` / `[::1]:22` → 主機與埠（快速連線入口用；`fallback` ＝沒寫埠時用哪個）。 */
+export function parseHostPort(text, fallback = 22) {
   const m = /^\[([^\]]+)\](?::(\d+))?$/.exec(text);
-  if (m) return { host: m[1], port: m[2] ? Number(m[2]) : 22 };
+  if (m) return { host: m[1], port: m[2] ? Number(m[2]) : fallback };
   const i = text.lastIndexOf(':');
   if (i > 0 && text.indexOf(':') === i) {
     const port = Number(text.slice(i + 1));
@@ -227,7 +264,7 @@ export function parseHostPort(text) {
       return { host: text.slice(0, i), port };
     }
   }
-  return { host: text, port: 22 };
+  return { host: text, port: fallback };
 }
 
 export { fmt };

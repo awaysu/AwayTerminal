@@ -24,9 +24,9 @@
 //! 那正是 `CLAUDE.md` 風險 3 要用使用者的設備實測的部分，見 `docs/SSH.md`。
 
 pub mod algos;
+pub mod conn;
 pub mod hostkey;
 pub mod prompt;
-pub mod reconnect;
 
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};

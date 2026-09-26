@@ -10,6 +10,8 @@ pub mod host;
 pub mod logging;
 pub mod output;
 pub mod pty;
+pub mod reconnect;
+pub mod restore;
 pub mod sandbox;
 pub mod session;
 pub mod settings;
@@ -17,11 +19,12 @@ pub mod ssh;
 pub mod startup;
 pub mod status;
 pub mod tabs;
+pub mod telnet;
 pub mod toolbar;
 
 use std::sync::Arc;
 
-use tauri::{Manager, WindowEvent};
+use tauri::{Emitter, Manager, WindowEvent};
 
 use cli::LaunchArgs;
 use session::SessionManager;
@@ -99,6 +102,11 @@ pub fn run() {
             favorites::fav_delete,
             favorites::fav_rename,
             favorites::fav_move,
+            restore::restore_list,
+            restore::exit_confirm,
+            restore::exit_cancel,
+            restore::restore_verify_save,
+            restore::restore_verify_clear,
             sandbox::sandbox_probe,
             sandbox::sandbox_verify_cleanup,
             sandbox::pid_alive,
@@ -139,9 +147,24 @@ pub fn run() {
                 WindowEvent::Resized(_) | WindowEvent::Moved(_) => {
                     remember_window_bounds(window, &store);
                 }
-                WindowEvent::CloseRequested { .. } => {
+                WindowEvent::CloseRequested { api, .. } => {
                     remember_window_bounds(window, &store);
                     store.flush();
+                    // 舊版 `OnClosingAsk`：先攔下來，跳自訂的離開對話框
+                    // （勾「下次開啟恢復目前分頁」）。確認後前端呼叫 `exit_confirm`。
+                    use std::sync::atomic::Ordering;
+                    if !restore::asked().swap(true, Ordering::SeqCst) {
+                        api.prevent_close();
+                        let app = window.app_handle().clone();
+                        let restore_default = store.get().exit_restore_tabs;
+                        if let Err(e) = app.emit("exit-request", restore_default) {
+                            // 前端收不到就沒人會回答 → 別把視窗鎖死，直接讓它關
+                            println!("[AwayTerminal] 離開對話框發不出去（{e}），直接關閉");
+                            restore::asked().store(false, Ordering::SeqCst);
+                            app.exit(0);
+                        }
+                    }
+                    // 第二次按 X（前端壞掉、對話框沒出來）→ 不再攔，照關
                 }
                 _ => {}
             }

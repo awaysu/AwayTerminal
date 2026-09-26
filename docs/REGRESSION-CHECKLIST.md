@@ -272,7 +272,39 @@ TEMP 路徑印出完整結果，Documents 路徑印完 `path = …` 就停住。
 | K44 | 👤 環境變數打成沒有 `=` 的一行 | 那行被略過，其餘照送（不要整個連線失敗） | — | | | |
 | K45 | 👤 對話框按「加到我的最愛」 | 問名字後存起來；**存檔內容沒有密碼欄** | 舊版 `SavedTab` 也沒有密碼 | PASS（單元測試 `favorite_has_no_password_field`） | | |
 
-## K2. 其餘連線後端：Telnet / COM / WSL / ADB（待填，階段 2）
+## TN. Telnet
+
+行為對照表、協商清單、「舊版沒有而 PuTTY 有」的待決清單都在 `docs/TELNET.md`。
+自動驗證：`cd src-tauri && cargo run --example telnet_probe`（測試伺服器在同一支程式裡，
+**不連任何外部主機**）。
+
+| # | 怎麼測 | 預期結果 | 舊版出處 | Win | mac | Linux |
+|---|---|---|---|---|---|---|
+| TN1 | `cargo run --example telnet_probe` | **17 PASS / 0 FAIL** | — | PASS | | |
+| TN2 | `--verify` 的 Telnet 那一步 | 分頁 `kind=telnet`、`backend=telnet`、標題 `host:port`；連不上時原因印在終端機 | 舊版 `OpenTelnetDirect` | PASS | | |
+| TN3 | 👤 對話框類型切到 Telnet | 埠自動變 23；帳號／金鑰／Pageant／進階四列收起來 | 舊版 `TypeCombo` 切換換埠 | | | |
+| TN4 | 👤 連一台真設備 | 登入提示是**遠端**送的（不是我們印的），密碼不回顯 | Telnet 沒有自己的驗證層 | ⬜ 需真設備 | | |
+| TN5 | 協商：`WILL ECHO`／`WILL SGA` | 回 `DO`；其餘 `WILL` 回 `DONT` | `RespondOption` | PASS（probe＋單元測試） | | |
+| TN6 | 協商：`DO SGA` | 回 `WILL`；其餘 `DO` 回 `WONT` | 同上 | PASS | | |
+| TN7 | 協商：`WONT`／`DONT` | **不回應**（照舊版；PuTTY 會回，見 `docs/TELNET.md` 第 4 節） | 同上 | PASS（單元測試） | | |
+| TN8 | 協商序列切在封包邊界上 | 後半**不可以**變成畫面上的亂碼（`0xFB` 之類），協商照樣要回 | `TelnetSession.cs` 的 `_iac` 註解（舊版踩過） | PASS（probe＋單元測試） | | |
+| TN9 | 送出含 `0xFF` 的資料 | 轉義成 `FF FF`，而且**一次寫出**（不是逐 byte 一個封包） | `Write` 的註解 | PASS（probe） | | |
+| TN10 | 收到 `IAC IAC` | 畫面上是一個 `0xFF`，不是指令 | `IacState.Iac` | PASS（probe） | | |
+| TN11 | 👤 Enter | 送**單一 CR**（舊版沒有 CR LF／CR NUL 轉換）。**真設備若沒反應，回頭看 `docs/TELNET.md` 第 4 節第二列** | `Write` 原樣送 | PASS（probe） | | |
+| TN12 | 重連退避歸零的時機 | **從 socket 讀到第一批位元組**才歸零（不是「有輸出」——我們自己的訊息也走輸出 callback） | 見「隱含契約」的總則 | PASS（probe：連不上時「連上了」次數＝0） | | |
+| TN13 | 👤 中文輸出 | UTF-8 設備正常；Big5 設備是亂碼（**舊版也一樣**，要不要做編碼轉換由 PM 決定） | 原樣轉給 xterm | ⬜ 需真設備 | | |
+| TN14 | 中文被切在兩個封包之間 | 不裂（我們只拆 IAC、不碰位元組） | — | PASS（probe＋單元測試） | | |
+| TN15 | 👤 改視窗大小 | 遠端跟著換行（NAWS）。**這是新增功能**，舊版的 `Resize` 是空的 | `CLAUDE.md`「Telnet 自己實作（加 NAWS）」 | PASS（probe） | | |
+| TN16 | 尺寸沒變時 | **不重送** NAWS（前端每次 fit 都會呼叫 resize） | — | PASS（probe） | | |
+| TN17 | 👤 不認 NAWS 的老設備 | 只會回 `DONT NAWS`，連線不受影響 | RFC 1073 | ⬜ 需真設備 | | |
+| TN18 | 伺服器斷線 | session 結束事件**正好一次**（多一次就會排兩條重連） | — | PASS（probe） | | |
+| TN19 | 👤 關閉 Telnet 分頁 | **不送**任何優雅結束鍵，直接關 socket | `Dispose`（舊版沒有 GracefulExitBytes） | | | |
+| TN20 | 👤 保持連線（keepalive） | 每 N 分鐘一個 `IAC NOP`，畫面上**看不到東西** | `SendNop` | ⬜ 需真設備（最短 1 分鐘） | | |
+| TN21 | 👤 清畫面 | 走 `term.clear()`（Telnet 沒有 shell 可以下 `cls`），會先問確認 | 舊版 `c` 協定那條路 | | | |
+| TN22 | 👤 Telnet 分頁的狀態燈 | 遠端規則：近 0.5 秒有輸出＝紅，否則綠 | `UpdateStatuses` 的 else | | | |
+| TN23 | 👤 存成我的最愛 → 再從最愛開 | 主機／埠／保持連線／自動重連都照存的；**存檔沒有密碼欄** | 舊版 `SavedTab` | | | |
+
+## K2. 其餘連線後端：COM / WSL / ADB（待填，階段 2）
 
 ## P. 自訂連線
 
@@ -345,7 +377,7 @@ TEMP 路徑印出完整結果，Documents 路徑印完 `path = …` 就停住。
 | L12 | 👤 重開程式 | 最愛清單與順序都還在 | — | | | |
 | L13 | 👤 手改 `settings.json` 把某筆的 `kind` 寫成不認識的字 | 那筆當成 PowerShell（或略過），程式**不可以**開不起來 | — | | | |
 
-## M. 斷線自動重連（恢復分頁待填，階段 3）
+## M. 斷線自動重連（SSH / Telnet 共用）
 
 舊版對應 `ScheduleReconnect` / `ManualReconnect` / `TryReconnect`。程式在
 `src-tauri/src/ssh/reconnect.rs`；行為對照表在 `docs/SSH.md` 第 5 節。
@@ -365,8 +397,37 @@ TEMP 路徑印出完整結果，Documents 路徑印完 `path = …` 就停住。
 | M11 | 👤 重連時的主機金鑰 | **不再問**（已接受過的金鑰沿用） | PuTTY | PASS（probe：伺服器重開後重連，被問 0 次） | | |
 | M12 | 👤 重連用的參數 | 主機／埠／帳號／金鑰／演算法都跟第一次一樣；**密碼要重新問** | 舊版不存密碼 | | | |
 | M13 | 👤 log 記錄開著的分頁斷線重連 | log 繼續寫同一個檔（不會斷檔或重開一個） | 舊版 log 綁分頁不綁 session | | | |
+| M14 | 👤 Telnet 分頁斷線 | 退避、提示、按 Enter 重連的行為與 SSH **完全一樣**（同一套程式） | 舊版兩種共用 `ScheduleReconnect` | PASS（`--verify` 的 Telnet 那步：提示有出來） | | |
 
-## M2. 恢復分頁 / 保持連線（待填，階段 3）
+## R. 恢復分頁（含畫面紀錄倒回）
+
+舊版 1.0.45 的功能。流程對照表在 `src-tauri/src/restore.rs` 的檔頭註解。
+`--verify` 會在**同一次執行裡**走完「存 → 恢復」並檢查順序。
+
+| # | 怎麼測 | 預期結果 | 舊版出處 | Win | mac | Linux |
+|---|---|---|---|---|---|---|
+| R1 | 👤 按視窗的 ✕ | 跳離開對話框，勾選項文字是「下次開啟恢復目前分頁（含畫面上的舊訊息）」 | `Dialogs/ExitDialog` + `Loc` 的 `exit.restore` | | | |
+| R2 | 👤 對話框按「取消」 | 程式**不關**，分頁都還在 | `OnClosingAsk` 的 `return` | | | |
+| R3 | 👤 勾選狀態 | 下次開啟這個對話框時沿用（`settings.json` 的 `exitRestoreTabs`，預設開） | `AppSettings.ExitRestoreTabs` | | | |
+| R4 | `--verify` 的恢復那一步 | 「存下 N 個分頁」、「有畫面內容的分頁：第 1 筆」、「存檔不含密碼欄位：true」 | — | PASS | | |
+| R5 | 同上 | 「舊畫面有倒回來」「分隔行有出現」 | `b` 協定 + `LoadRestoreBuffer` | PASS | | |
+| R6 | 同上（**最重要**） | **`held` 順序正確**：舊畫面 → 分隔行 → 新連線的輸出。這是在驗 `terminal.js` 的 `pendingRestore`／`held`（原檔一字未改的那段） | `applyRestore` | PASS（記號 4 < 分隔行 5 < 提示字元 6） | | |
+| R7 | 👤 恢復後往上捲 | 看得到上次關閉前的內容（含顏色） | xterm 序列化含 SGR | | | |
+| R8 | 👤 恢復 PowerShell 分頁 | 在**上次的工作目錄**開起來；分頁名稱照上次 | `SavedTab.Dir` / `Title` | | | |
+| R9 | 👤 恢復自訂連線分頁（沙盒開著） | worktree 還在就沿用、不在就重開一個；工作目錄是**沙盒之前**的那個（不會在沙盒裡再開一層） | 1.0.30 起也恢復 custom | | | |
+| R10 | 👤 恢復 SSH 分頁 | 直接連（帳號已經記在參數裡）；**密碼重問**。舊版是印 `login as:` 等使用者打帳號——**刻意不同** | `RestoreTabs` 的 `case "ssh"` | | | |
+| R11 | 👤 恢復 Telnet 分頁 | 直接連，標題照上次 | `case "telnet"` | | | |
+| R12 | 👤 某個分頁的工作目錄已經被刪掉 | 那一筆略過或退回桌面，**其餘分頁照開**（不可以整個恢復流程掛掉） | `catch { }` 跳過個別分頁 | | | |
+| R13 | 看 `settings.json` 的 `savedTabs` | **沒有任何密碼欄位** | 舊版 `SavedTab` 也沒有 | PASS（單元測試） | | |
+| R14 | 看 `{app config dir}/restore/` | `tab1.txt`、`tab2.txt`…，UTF-8 **不含 BOM**；每次關閉**全部重寫**（不累積） | `FinishExitAsync`：先清目錄、`new UTF8Encoding(false)` | PASS（`--verify` 的存檔那步） | | |
+| R15 | 👤 沒勾「恢復分頁」就關 | 下次開啟是**一個乾淨的預設分頁**，`savedTabs` 清空 | 同上（`restore=false`） | | | |
+| R16 | 👤 `restoreBufferLines` 改成 0 | 分頁照恢復，但**沒有舊畫面** | `AppSettings.RestoreBufferLines` | | | |
+| R17 | 👤 `--cmd claude` 啟動 | **不恢復**（那是「這次要開這個」的意思） | 新版的判斷（舊版沒有 CLI 參數） | | | |
+| R18 | 👤 關閉程式的速度 | 按了「離開」視窗**馬上消失**，存檔在看不見的狀態下做完（最多 2.5 秒） | 1.2.6 的 `Hide()` + 2500ms 上限 | | | |
+| R19 | 👤 前端壞掉時按 ✕ | 對話框沒出來的話，**再按一次 ✕ 就會關**（不會鎖死視窗） | 舊版有 WPF 對話框保證，我們沒有 → 自己加的逃生門 | | | |
+| R20 | 👤 恢復後的分頁 tooltip | 執行時長從**最初開啟**算起，不是從恢復算起 | `SavedTab.OpenedUtc`（1.1.4） | | | |
+
+## M2. 保持連線（待填，階段 3）
 
 ## N. 代理團隊 / AI 聊天室 / Telegram 遠端（待填，階段 4）
 
@@ -401,6 +462,9 @@ TEMP 路徑印出完整結果，Documents 路徑印完 `path = …` 就停住。
 | 重連退避「歸零」的觸發點 | **一收到輸出**就歸零（`OnSessionOutput` 第一行） | **shell channel 開成功**才歸零（`OnConnected`） | 舊版的輸出全來自 `ssh.exe`＝一定是遠端的。新版內建 SSH，自己的狀態訊息（「連線到 …」、`login as:`、錯誤訊息）走同一條輸出 callback，照舊版寫會被誤判成「連上了」→ 退避永遠停在 3 秒（`--verify` 抓到）。目的一樣，判斷更精確 |
 | SSH 連線對話框的欄位 | 類型／主機／埠／保持連線／自動重連 | 多了帳號、金鑰檔、Pageant、進階（演算法四組 + 環境變數） | 舊版這些只能靠 `ssh.exe` 命令列參數；內建 SSH 之後沒有命令列可下，只能做進對話框。**密碼欄兩邊都沒有**（當場問、不存檔） |
 | 我的最愛的主機歷史 | 主機欄是可編輯下拉，記最近連過的主機 | **沒有**（只有我的最愛） | 我的最愛已經涵蓋「常連的」。若使用者回報想要歷史，再補 |
+| Telnet 的視窗大小 | `Resize` 是空的（`// NAWS 可選，暫略`），遠端永遠以為 80×24 | **送 NAWS**（RFC 1073） | `CLAUDE.md` 定案「Telnet 自己實作（加 NAWS）」。`vi`／`top` 才不會畫錯 |
+| 恢復 SSH 分頁 | 只印 `login as: ` 等使用者打帳號（帳號要塞進 `ssh.exe` 命令列） | **直接連**（帳號已經記在 `SshConnParams` 裡），沒有帳號才問 | 和第一次連線的行為一致。密碼兩邊都是重問 |
+| 離開對話框 | WPF `ExitDialog`，含「恢復分頁」與「更新 CLAUDE.md」兩個勾選 | 頁內對話框，只有「恢復分頁」 | 「更新 CLAUDE.md」是代理團隊的功能（階段 4），那時再補 |
 
 ## 隱含契約（最容易回歸的一類）
 
@@ -416,3 +480,6 @@ TEMP 路徑印出完整結果，Documents 路徑印完 `path = …` 就停住。
 | **介面文字要照執行時的字，不是照 XAML** | 舊版 `MainWindow.xaml` 的按鈕內容只是設計時的預設值，`ApplyTexts()` 會用 `Loc.T` 全部換掉（例：XAML 寫「貼上」「清畫面」，執行時是「**純文字貼上**」「**清除畫面**」）。照 XAML 抄就會做出使用者沒見過的文字 | D1 |
 | `ssh-hostkey` event 一定要回 `ssh_hostkey_answer` | Rust 的 SSH 任務停在交握中間等答案，前端不回就卡到逾時（180 秒）才當成取消——使用者看到的是「連線很久沒反應」 | K8～K12 |
 | `ssh-weak-algo` event 也一定要回 `ssh_hostkey_answer`（兩者共用同一個回覆通道） | 同上：不回就卡 180 秒。加新的「交握中間問使用者」的事件時都要記得配一個前端 listener | K24～K26 |
+| **舊版靠外部程式（`ssh.exe`、`telnet.exe` 之類）副作用成立的規則，內建實作要重新檢查觸發點** | 照抄會得到「看起來對、其實永遠不成立／永遠成立」的條件。實際案例：舊版「**一收到輸出**就把重連退避歸零」——它的輸出全部來自 `ssh.exe`，所以等於「連上了」；內建 SSH 之後我們自己的狀態訊息（「連線到 …」、`login as:`、錯誤訊息）走同一條輸出 callback，退避永遠停在第一次的 3 秒（`--verify` 抓到）。搬 Telnet／COM／ADB 時每一條「有輸出」「行程結束」類的規則都要重新問一次「這個訊號現在還是原來的意思嗎」 | M8、M9、TN12 |
+| 會等前端回覆的 tauri command **一定要是 `async`** | tauri 2 的同步 command 跑在**主執行緒**上；擋住主執行緒 webview 的 IPC 就進不來，前端永遠沒機會回答 → 一定逾時。實際案例：`exit_confirm` 要等 `a…save`，第一版寫成同步 → 「存下 2 個分頁」卻一個畫面都沒存到 | R1～R4 |
+| 恢復畫面的 `b{id}` 一定要在 `n{id}` 之後、`s{id}` 與啟動連線之前 | 順序錯了就不是「舊訊息在上、新連線在下」：`b` 比 `n` 早＝前端還沒有那個 pane，訊息直接丟掉；比連線晚＝新輸出被舊畫面蓋掉 | R5～R7 |

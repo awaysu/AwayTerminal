@@ -7,6 +7,7 @@
 //   3. 等 bridge 掛好 host→JS listener 之後才載入 terminal.js（它一載完就送 `ready`）。
 import '@xterm/xterm/css/xterm.css';
 import './style.css';
+import { initExitDialog } from './restoretabs.js';
 
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
@@ -226,6 +227,8 @@ async function awayVerify() {
   if (first) await verifyToolbar(first.id);
 
   await verifySshPath();
+  await verifyTelnetPath();
+  await verifyRestore();
   await verifySandbox();
 }
 window.awayVerify = awayVerify;
@@ -386,6 +389,105 @@ async function verifySshPath() {
   log(lines.join('\n'));
 }
 
+/**
+ * Telnet 的 **app 端路徑**驗證（協定本身由 `cargo run --example telnet_probe` 驗，17 項）。
+ *
+ * 同 SSH 那條：只連 `127.0.0.1` 一個**沒人在聽**的埠，證明
+ * `session_create(kind:"telnet")` → 建分頁（kind=telnet、backend=telnet）→
+ * 連不上的原因印在終端機 → 提示按 Enter 重連。
+ */
+async function verifyTelnetPath() {
+  const lines = ['[verify] Telnet（app 端路徑）'];
+  try {
+    const info = await createSession({ kind: 'telnet', telnet: { host: '127.0.0.1', port: 1 } });
+    lines.push(`[verify] 分頁 ${info.id} 建立：backend=${info.backend} title=${info.title}`);
+    const term = window.AwayTerm;
+    let text = '';
+    for (let i = 0; i < 20; i++) {
+      await wait(300);
+      text = term.tail(info.id, 8).join(' ');
+      if (text.includes('失敗')) break;
+    }
+    lines.push(`[verify] 連不上時有把原因印在終端機：${text.includes('失敗')}`);
+    const st = currentTabState().tabs.find((t) => t.id === info.id);
+    lines.push(`[verify] 分頁 kind=${st ? st.kind : '?'}（應為 telnet）`);
+    lines.push(`[verify] 提示按 Enter 重連：${text.includes('按 Enter')}`);
+    lines.push(`[verify] 標題是 host:port：${info.title === '127.0.0.1:1'}（同舊版 OpenTelnetDirect）`);
+    await invoke('tab_close', { id: info.id });
+  } catch (e) {
+    lines.push(`[verify] 失敗：${e}`);
+  }
+  log(lines.join('\n'));
+}
+
+/**
+ * 恢復分頁驗證（TASK-010 B）。**在同一次執行裡走完「存 → 恢復」**：
+ *
+ *   1. 在目前分頁印一個記號 → `restore_verify_save`（＝勾了恢復分頁關程式的那一步）
+ *   2. `restore_list` → `createSession({restore: 0})`：Rust 會在 `n` 之後、`s` 之前送 `b`
+ *   3. 檢查新分頁的畫面：記號 → 分隔行 → 新 shell 的提示字元，**順序**要對
+ *
+ * 第 3 點就是在驗 `terminal.js` 的 `pendingRestore` / `held`（那段是舊版原檔一字未改的）：
+ * `b` 到的時候 pane 還沒 fit，新 session 的輸出會被扣在 `held` 裡，
+ * 等舊畫面寫完才依序補上。順序錯了代表那段邏輯在這個環境下不成立。
+ */
+async function verifyRestore() {
+  const lines = ['[verify] 恢復分頁'];
+  const MARK = 'AWAY_RESTORE_MARK_42';
+  let restoredId = null;
+  try {
+    const term = window.AwayTerm;
+    // 記號直接寫進畫面（不靠 shell 執行，才不受提示字元時序影響）。
+    // **每個分頁都寫**：`restore_list` 回來的第一筆不一定是目前作用中的那個分頁
+    // （第一版只寫 active，結果恢復的是另一個分頁的畫面，記號自然找不到）。
+    for (const id of term.ids()) {
+      term.writeOutput(id, new TextEncoder().encode(`\r\n${MARK}\r\n`));
+    }
+    await wait(400);
+
+    const n = await invoke('restore_verify_save');
+    lines.push(`[verify] 存下 ${n} 個分頁`);
+    const list = await invoke('restore_list');
+    const idx = list.findIndex((e) => e.bufferFile);
+    lines.push(`[verify] 有畫面內容的分頁：${idx >= 0 ? `第 ${idx + 1} 筆` : '沒有'}`);
+    if (idx < 0) throw new Error('沒有存到任何畫面內容（q…save 沒回來？）');
+    lines.push(`[verify] 存檔不含密碼欄位：${!JSON.stringify(list).toLowerCase().includes('password')}`);
+
+    const info = await createSession({ kind: 'shell', restore: idx, title: '__verify_restore' });
+    restoredId = info.id;
+    // 等舊畫面倒回來 + 新 shell 的提示字元出現
+    let tail = [];
+    for (let i = 0; i < 30; i++) {
+      await wait(400);
+      tail = term.tail(info.id, 40);
+      if (tail.some((l) => l.includes(MARK)) && tail.some((l) => l.includes('PS '))) break;
+    }
+    const iMark = tail.findIndex((l) => l.includes(MARK));
+    const iSep = tail.findIndex((l) => l.includes('以上為上次關閉前的紀錄'));
+    const iPrompt = tail.findIndex((l, k) => k > iSep && l.includes('PS '));
+    lines.push(`[verify] 舊畫面有倒回來（記號在第 ${iMark} 行）：${iMark >= 0}`);
+    lines.push(`[verify] 分隔行有出現（第 ${iSep} 行）：${iSep >= 0}`);
+    lines.push(
+      `[verify] held 順序正確（記號 ${iMark} < 分隔行 ${iSep} < 新提示字元 ${iPrompt}）：` +
+        `${iMark >= 0 && iSep > iMark && iPrompt > iSep}`,
+    );
+    const st = currentTabState().tabs.find((t) => t.id === info.id);
+    lines.push(`[verify] 分頁數 ${currentTabState().tabs.length}、恢復的分頁 kind=${st ? st.kind : '?'}`);
+  } catch (e) {
+    lines.push(`[verify] 失敗：${e}`);
+  } finally {
+    // 不要把驗證用的紀錄留下來（否則下次真的啟動會莫名恢復一堆分頁）
+    try {
+      if (restoredId !== null) await invoke('tab_close', { id: restoredId });
+      const left = await invoke('restore_verify_clear');
+      lines.push(`[verify] 已清掉存檔（剩 ${left} 筆）`);
+    } catch (e) {
+      lines.push(`[verify] 清除存檔失敗：${e}`);
+    }
+  }
+  log(lines.join('\n'));
+}
+
 // ------------------------------------------------------------- IPC bench
 //
 // CLAUDE.md 風險 5 的量測。**只在 `?bench=1` 時自動跑**（TASK-003 調整），
@@ -505,6 +607,8 @@ window.awayBenchSmall = awayBenchSmall;
   // 分頁列也要先掛好 `tab-state` 的 listener：第一條 session 是 terminal.js 送出
   // `ready` 之後才建的，那一刻就會 emit 第一筆狀態，晚掛就漏掉第一列。
   await initTabBar();
+  // 離開程式的對話框（Rust 擋下 CloseRequested 後會 emit exit-request）
+  await initExitDialog();
 
   // 啟動選項：URL 參數優先（方便在 devtools 直接換），其次是 CLI 參數
   // （`AwayTerminal.exe --cmd claude` / `--verify 2` / `--bench`，見 src-tauri/src/cli.rs）。

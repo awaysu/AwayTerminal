@@ -106,8 +106,8 @@ pub struct Tab {
     /// 最後一次由前端回報的尺寸（重連時用，同舊版 `tab.Cols/Rows`）。
     pub cols: u16,
     pub rows: u16,
-    /// SSH 連線參數（`None`＝不是 SSH 分頁）。重連、我的最愛、對話框都用這個結構。
-    pub ssh: Option<crate::ssh::reconnect::SshConnParams>,
+    /// 遠端連線參數（`None`＝本機分頁）。重連、我的最愛、恢復分頁都用這個結構。
+    pub conn: Option<crate::reconnect::ConnParams>,
     /// 連續重連次數（退避用；一收到輸出就歸零，同舊版 `ReconnectAttempt`）。
     pub reconnect_attempt: u32,
     /// 目前這條重連鏈的世代。排程時記下，醒來對不上就放棄（同舊版「一個分頁一條鏈」）。
@@ -116,6 +116,9 @@ pub struct Tab {
     pub sandbox: Option<crate::sandbox::Sandbox>,
     /// 這個分頁是哪一條自訂連線開的（右鍵切換沙盒、重新啟動分頁要用）。
     pub conn_name: Option<String>,
+    /// 啟動時的工作目錄，**沙盒改寫之前**的那一個（恢復分頁要存這個，
+    /// 不能存 worktree 路徑——否則下次會在沙盒裡再開一層沙盒）。
+    pub work_dir: String,
     /// 診斷用。
     pub command_line: String,
     pub backend: String,
@@ -430,15 +433,82 @@ impl TabManager {
         }
     }
 
-    pub fn ssh_params_of(&self, id: u32) -> Option<crate::ssh::reconnect::SshConnParams> {
-        self.lock().tabs.get(&id).and_then(|t| t.ssh.clone())
+    /// 可以恢復的分頁（照分頁列的順序），回 (分頁 id, 存檔內容)。
+    ///
+    /// 舊版的判斷是「`tab.Restore != null`」——也就是「知道怎麼重開它」。我們照同一個語意：
+    /// PowerShell（記工作目錄）、自訂連線（記連線名稱＋目錄）、SSH／Telnet（記連線參數）。
+    /// 自訂指令（`--cmd`、`?cmd=` 開的）不在其中——舊版也沒有那條路的重開資訊。
+    pub fn restorable(&self) -> Vec<(u32, crate::restore::SavedTab)> {
+        let inner = self.lock();
+        let mut out = Vec::new();
+        for id in &inner.order {
+            let Some(t) = inner.tabs.get(id) else { continue };
+            let base = crate::restore::SavedTab {
+                title: t.title.clone(),
+                opened_ms: t.started_at,
+                ..Default::default()
+            };
+            let entry = match (&t.conn, t.kind) {
+                // 遠端連線：參數就是重開所需的一切（不含密碼）
+                (Some(conn), _) => crate::restore::SavedTab {
+                    kind: match conn {
+                        crate::reconnect::ConnParams::Ssh(_) => "ssh".to_string(),
+                        crate::reconnect::ConnParams::Telnet(_) => "telnet".to_string(),
+                    },
+                    conn: Some(conn.clone()),
+                    ..base
+                },
+                // 自訂連線：名稱＋工作目錄（沙盒下次啟動時自己重新準備）
+                (None, TabKind::Claude | TabKind::Custom) => match &t.conn_name {
+                    Some(name) => crate::restore::SavedTab {
+                        kind: "conn".to_string(),
+                        conn_name: name.clone(),
+                        dir: t.work_dir.clone(),
+                        ..base
+                    },
+                    None => continue, // 自訂指令：舊版也沒有重開資訊
+                },
+                (None, TabKind::PowerShell) => crate::restore::SavedTab {
+                    kind: "shell".to_string(),
+                    dir: t.work_dir.clone(),
+                    ..base
+                },
+                _ => continue,
+            };
+            out.push((*id, entry));
+        }
+        out
+    }
+
+    /// 恢復分頁時把最初的開啟時間填回去（tooltip 的執行時長不歸零，舊版 1.1.4）。
+    pub fn set_started_at(&self, id: u32, ms: u64) {
+        if ms > 0 {
+            if let Some(t) = self.lock().tabs.get_mut(&id) {
+                t.started_at = ms;
+            }
+        }
+    }
+
+    /// 這個分頁的遠端連線參數（`None`＝本機分頁，不能重連）。
+    pub fn conn_params_of(&self, id: u32) -> Option<crate::reconnect::ConnParams> {
+        self.lock().tabs.get(&id).and_then(|t| t.conn.clone())
+    }
+
+    /// 只要 SSH 那一種（我的最愛／對話框用）。
+    pub fn ssh_params_of(&self, id: u32) -> Option<crate::ssh::conn::SshConnParams> {
+        self.conn_params_of(id).and_then(|c| c.as_ssh().cloned())
+    }
+
+    /// 只要 Telnet 那一種。
+    pub fn telnet_params_of(&self, id: u32) -> Option<crate::telnet::TelnetParams> {
+        self.conn_params_of(id).and_then(|c| c.as_telnet().cloned())
     }
 
     /// 登入之後把帳號記進參數：重連就不必再問 `login as:`
     /// （同舊版把 `Restore.Host` 改成 `user@host`）。
     pub fn set_ssh_user(&self, id: u32, user: &str) {
         if let Some(t) = self.lock().tabs.get_mut(&id) {
-            if let Some(p) = t.ssh.as_mut() {
+            if let Some(crate::reconnect::ConnParams::Ssh(p)) = t.conn.as_mut() {
                 p.user = user.to_string();
             }
         }
@@ -525,7 +595,7 @@ impl TabManager {
                     sandbox: t.sandbox.clone(),
                     conn_sandbox: conn_sandbox_of(t.conn_name.as_deref(), conns),
                     conn_name: t.conn_name.clone(),
-                    reconnectable: t.ssh.is_some(),
+                    reconnectable: t.conn.is_some(),
                     reconnect_attempt: t.reconnect_attempt,
                 })
                 .collect(),
@@ -694,11 +764,12 @@ mod tests {
             out: None,
             cols: 80,
             rows: 24,
-            ssh: Some(Default::default()),
+            conn: Some(crate::reconnect::ConnParams::Ssh(Default::default())),
             reconnect_attempt: 0,
             reconnect_gen: 0,
             sandbox: None,
             conn_name: None,
+            work_dir: String::new(),
             command_line: String::new(),
             backend: String::new(),
         }

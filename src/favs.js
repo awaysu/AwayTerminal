@@ -33,6 +33,13 @@ export async function reloadFavs() {
 
 /** 一筆最愛的說明文字（下拉的 tooltip，同舊版 `FavoriteDetail`）。 */
 function detailOf(f) {
+  if (f.kind === 'telnet' && f.telnet) {
+    const t = f.telnet;
+    const parts = [`Telnet  ${t.host}${t.port === 23 ? '' : `:${t.port}`}`];
+    if (t.autoReconnect) parts.push('斷線自動重連');
+    if (t.keepaliveMins > 0) parts.push(`保持連線 ${t.keepaliveMins} 分鐘`);
+    return parts.join('\n');
+  }
   if (f.kind === 'ssh' && f.ssh) {
     const s = f.ssh;
     const who = s.user ? `${s.user}@${s.host}` : s.host;
@@ -48,7 +55,8 @@ function detailOf(f) {
 
 /** 種類 → 圖示 key（沿用分頁列那組 SVG）。 */
 function iconOf(f) {
-  if (f.kind === 'ssh') return 'ssh';
+  // Telnet 沿用 SSH 的圖示（舊版的分頁圖示也是同一個「遠端連線」概念）
+  if (f.kind === 'ssh' || f.kind === 'telnet') return 'ssh';
   if (f.kind === 'conn') return 'custom';
   return 'powershell';
 }
@@ -105,7 +113,14 @@ function renderList() {
     name.textContent = f.name;
     const tag = document.createElement('span');
     tag.className = 'conns-row-tag on';
-    tag.textContent = f.kind === 'ssh' ? 'SSH' : f.kind === 'conn' ? f.connName : 'PowerShell';
+    tag.textContent =
+      f.kind === 'ssh'
+        ? 'SSH'
+        : f.kind === 'telnet'
+          ? 'Telnet'
+          : f.kind === 'conn'
+            ? f.connName
+            : 'PowerShell';
     row.append(icon, name, tag);
     row.title = detailOf(f);
     el.list.appendChild(row);
@@ -135,6 +150,10 @@ export async function openFavorite(name) {
       await hooks.createSession({ kind: 'ssh', ssh: f.ssh });
       return;
     }
+    if (f.kind === 'telnet' && f.telnet) {
+      await hooks.createSession({ kind: 'telnet', telnet: f.telnet });
+      return;
+    }
     if (f.kind === 'conn') {
       // 有記下實際工作目錄就直接用，不再跳資料夾選擇（同舊版）
       await hooks.createSession({ kind: 'conn', conn: f.connName, cwd: f.dir || null });
@@ -147,12 +166,20 @@ export async function openFavorite(name) {
   }
 }
 
-/** 把一組 SSH 參數存成最愛（SSH 對話框的「加到我的最愛」按鈕）。 */
-export async function addSshFavorite(params) {
-  const who = params.user ? `${params.user}@${params.host}` : params.host;
+/** 把一組連線參數存成最愛（連線對話框的「加到我的最愛」按鈕）。 */
+export async function addConnFavorite(kind, params) {
+  const who =
+    kind === 'ssh' && params.user ? `${params.user}@${params.host}` : params.host;
   const name = await hooks.askText(T['fav.nameTitle'], T['fav.namePrompt'], who);
   if (name === null) return;
-  await addItem({ name: name.trim() || who, kind: 'ssh', dir: '', connName: '', ssh: params });
+  await addItem({
+    name: name.trim() || who,
+    kind,
+    dir: '',
+    connName: '',
+    ssh: kind === 'ssh' ? params : null,
+    telnet: kind === 'telnet' ? params : null,
+  });
 }
 
 async function addItem(item) {

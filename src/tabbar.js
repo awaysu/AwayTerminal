@@ -17,8 +17,8 @@ import { listen } from '@tauri-apps/api/event';
 import { T, fmt, iconSvg, elapsedText } from './strings.js';
 import { createSession, log } from './bridge.js';
 import { initConns, openManager, currentConns, reload as reloadConns } from './conns.js';
-import { initSshDialog, openSshDialog, parseHostPort } from './sshdlg.js';
-import { initFavs, addSshFavorite } from './favs.js';
+import { initConnDialog, openConnDialog, parseHostPort } from './sshdlg.js';
+import { initFavs, addConnFavorite } from './favs.js';
 
 const MIN_PANEL_WIDTH = 120; // 舊版 TabPanelMinWidth
 
@@ -757,20 +757,27 @@ async function newSession(kind) {
         await createSession({ kind: 'ssh', ssh: { host, port } });
         return;
       }
-      // 完整對話框（B6）
+      // 完整對話框（B6；TASK-010 起同一個對話框也能選 Telnet，同舊版的一個入口）
       const s = await invoke('settings_get');
-      const r = await openSshDialog({
-        port: 22,
-        useAgent: true,
-        keepaliveMins: s.keepAliveMins,
-        autoReconnect: s.autoReconnect,
-      });
+      const r = await openConnDialog(
+        {
+          port: 22,
+          useAgent: true,
+          keepaliveMins: s.keepAliveMins,
+          autoReconnect: s.autoReconnect,
+        },
+        'ssh',
+      );
       if (!r) return;
       if (r.action === 'favorite') {
-        await addSshFavorite(r.params);
+        await addConnFavorite(r.kind, r.params);
         return;
       }
-      await createSession({ kind: 'ssh', ssh: r.params });
+      await createSession(
+        r.kind === 'telnet'
+          ? { kind: 'telnet', telnet: r.params }
+          : { kind: 'ssh', ssh: r.params },
+      );
       return;
     }
 
@@ -1077,7 +1084,7 @@ export async function initTabBar() {
   installPanelResize();
   installHostKeyDialog();
   installWeakAlgoDialog();
-  await initSshDialog();
+  await initConnDialog();
   await initFavs({
     createSession,
     askText,

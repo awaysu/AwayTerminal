@@ -11,6 +11,7 @@
 
 import { invoke, Channel } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import { restoreSavedTabs } from './restoretabs.js';
 
 import { T } from './strings.js';
 import { showUrlMenu, noteMouseHint, noSelectionToast, toast, writeClipboard } from './tabbar.js';
@@ -270,7 +271,10 @@ export async function createSession(opts = {}) {
     rows: lastSize.rows,
     cwd: opts.cwd || null,
     ssh: opts.ssh || null,
+    telnet: opts.telnet || null,
     conn: opts.conn || null,
+    // 恢復分頁：要倒回第幾筆的畫面（`restore_list` 的索引）
+    restore: opts.restore === undefined ? null : opts.restore,
     onEvent,
   });
 
@@ -290,16 +294,28 @@ export async function createSession(opts = {}) {
 /**
  * terminal.js 載完會送 `ready`（檔案最後一行）。之後：
  *   1. `host_ready` → Rust 依 settings.json emit `T{json}`
- *   2. 依 URL 參數決定第一條 session（`?cmd=<指令>`，預設 PowerShell）
+ *   2. 上次關閉時存了分頁就先恢復它們（含畫面），否則依 URL 參數決定第一條 session
+ *      （`?cmd=<指令>`，預設 PowerShell）
  *   3. `session_create` 建好後 Rust emit `n{id}…` 與 `s{id}` → terminal.js makeTerm + 選取
  *   4. 之後 terminal.js 自己 fit 並送 `r{id}US{cols},{rows}` 回來
  */
 async function onReady() {
   await invoke('host_ready');
 
+  // 恢復分頁（1.0.45）：上次關閉時勾了「下次開啟恢復目前分頁」就照那份清單重開，
+  // **不問使用者**（同舊版 OnLoaded）。`--cmd` 指定了指令時不恢復——那是「這次要開這個」的意思。
+  const cmd = (window.AwayLaunch && window.AwayLaunch.cmd) || null;
+  if (!cmd) {
+    try {
+      const n = await restoreSavedTabs(createSession);
+      if (n > 0) return;
+    } catch (e) {
+      log(`[bridge] 恢復分頁失敗，改開預設分頁：${e}`);
+    }
+  }
+
   // 第一條 session：`--cmd` / `?cmd=` 指定的指令，否則預設 shell。
   // main.js 已經把兩個來源合好放在 window.AwayLaunch（URL 優先）。
-  const cmd = (window.AwayLaunch && window.AwayLaunch.cmd) || null;
   await createSession(cmd ? { kind: 'custom', command: cmd } : { kind: 'shell' });
 }
 

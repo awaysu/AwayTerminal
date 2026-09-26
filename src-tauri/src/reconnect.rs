@@ -1,21 +1,31 @@
-//! SSH 分頁層：連線參數、建立 session、斷線自動重連（B5）。
+//! 分頁層的「遠端連線」：連線參數、建立 session、斷線自動重連。
 //!
-//! 行為**逐項照舊版** `MainWindow.xaml.cs` 的 `OnSessionExited` / `ScheduleReconnect`
-//! / `ManualReconnect` / `TryReconnect`（對照表在 `docs/SSH.md` 第 5 節）：
+//! TASK-009 只有 SSH，TASK-010 把它**泛化**成 [`ConnParams`]（SSH／Telnet 共用一套退避與提示），
+//! 因為舊版的連線視窗本來就是兩種共用同一組欄位（保持連線、斷線自動重連），
+//! `OnSessionExited` / `ScheduleReconnect` / `ManualReconnect` 也沒有分連線種類。
+//!
+//! 行為**逐項照舊版** `MainWindow.xaml.cs`（對照表在 `docs/SSH.md` 第 5 節）：
 //!
 //! | 舊版 | 這裡 |
 //! |---|---|
 //! | 退避 `min(30, 3 × 次數)` 秒：3,6,9…30 | [`schedule`] |
-//! | 一收到輸出就把次數歸零 | [`note_output`]（由輸出 callback 呼叫） |
 //! | 畫面上印「[連線中斷，N 秒後自動重連…（關閉分頁可停止）]」 | [`schedule`] |
 //! | 沒勾自動重連 → 印「[連線已結束]」＋「[按 Enter 在此分頁重新連線]」 | [`on_exit`] |
 //! | 等待中按 Enter ＝不等退避、立刻連 | [`manual`] |
-//! | 重連前先用 `b` 協定把舊畫面推進 scrollback（ConPTY 的 `ESC[2J` 會吃掉最後一頁） | [`reconnect_now`] |
+//! | 重連前先用 `b` 協定把舊畫面推進 scrollback | [`reconnect_now`] |
 //! | 一個分頁同時只有一條重連鏈 | `reconnect_gen`（排程時記下世代，醒來發現變了就放棄） |
 //! | 分頁已關閉／已經重連好了 → 放棄 | 同上 |
 //!
-//! **重連沿用已接受的主機金鑰與弱演算法決定**（兩者都記在檔案／設定裡，不是記在 session 上），
-//! 但金鑰真的變了照樣會擋——因為每次重連都會重跑 `check_server_key`。
+//! ## ⚠️「連上了」怎麼判斷（各後端不同）
+//!
+//! 舊版是「一收到輸出就把退避次數歸零」。那條規則建立在「輸出全部來自 `ssh.exe`」這個副作用上，
+//! 內建實作**不成立**：我們自己的狀態訊息也走同一條輸出 callback。所以每個後端各自給一個
+//! 明確的里程碑（`OnConnected`）：
+//!
+//! | 後端 | 「連上了」＝ |
+//! |---|---|
+//! | SSH | `request_shell` 成功（shell channel 開起來） |
+//! | Telnet | **從 socket 讀到第一批位元組**（沒有 shell channel 可用；我們自己的訊息不經過 socket） |
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -25,33 +35,50 @@ use tauri::{AppHandle, Manager};
 
 use crate::host::emit_host;
 use crate::output::OutputPump;
-use crate::session::{ExitInfo, SessionManager};
-use crate::settings::SettingsStore;
+use crate::session::{ExitInfo, OnExit, OnOutput, SessionManager};
+use crate::ssh::conn::SshConnParams;
 use crate::tabs::{self, TabManager};
+use crate::telnet::TelnetParams;
 
-/// 一條 SSH 連線的完整參數。
+/// 一條遠端連線的完整參數（分頁層記住它，用來重連、存我的最愛、恢復分頁）。
 ///
-/// 這個結構同時是：分頁層重連要記住的東西、B6 對話框的欄位、以及**我的最愛**存的內容。
-/// **刻意沒有密碼欄位**——舊版的 `SavedTab` 也沒有（我的最愛不存密碼），密碼一律當場問。
-#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
-#[serde(default, rename_all = "camelCase")]
-pub struct SshConnParams {
-    pub host: String,
-    pub port: u16,
-    /// 空＝連上後在終端機問 `login as:`（PuTTY 式）。
-    pub user: String,
-    /// 私鑰檔（OpenSSH 或 `.ppk`）。
-    pub key_path: String,
-    /// 要不要試 Pageant／ssh-agent。
-    pub use_agent: bool,
-    /// 保持連線的間隔（分鐘），0＝關。
-    pub keepalive_mins: u32,
-    /// 斷線自動重連（舊版連線視窗的勾選）。
-    pub auto_reconnect: bool,
-    pub algos: super::algos::AlgoOverride,
-    /// 要送給遠端的環境變數（SSH `env` request）。
-    /// 舊版是 `ssh.exe` 的 `-o SendEnv=…`；伺服器拒絕時只印一行灰字，不擋連線。
-    pub env: Vec<(String, String)>,
+/// **沒有任何密碼欄位**——舊版的 `SavedTab` 也沒有，密碼一律當場問。
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "kind", rename_all = "lowercase")]
+pub enum ConnParams {
+    Ssh(SshConnParams),
+    Telnet(TelnetParams),
+}
+
+impl ConnParams {
+    pub fn auto_reconnect(&self) -> bool {
+        match self {
+            Self::Ssh(p) => p.auto_reconnect,
+            Self::Telnet(p) => p.auto_reconnect,
+        }
+    }
+
+    /// 診斷用（後端 log）。
+    pub fn target(&self) -> String {
+        match self {
+            Self::Ssh(p) => format!("ssh://{}:{}", p.host, p.port),
+            Self::Telnet(p) => format!("telnet://{}:{}", p.host, p.port),
+        }
+    }
+
+    pub fn as_ssh(&self) -> Option<&SshConnParams> {
+        match self {
+            Self::Ssh(p) => Some(p),
+            _ => None,
+        }
+    }
+
+    pub fn as_telnet(&self) -> Option<&TelnetParams> {
+        match self {
+            Self::Telnet(p) => Some(p),
+            _ => None,
+        }
+    }
 }
 
 /// 退避上限與係數（舊版 `Math.Min(30, 3 * attempt)`）。
@@ -70,12 +97,7 @@ fn next_gen() -> u64 {
     GEN.fetch_add(1, Ordering::Relaxed) + 1
 }
 
-/// shell 真的開起來了 → 退避次數歸零。
-///
-/// ⚠️ 舊版是「一收到輸出就歸零」。**我們不能照那樣做**：自己的狀態訊息
-/// （「連線到 host:port …」、`login as:`、錯誤訊息）也走同一條輸出 callback，
-/// 會被誤認成「連上了」→ 退避永遠停在第 1 次的 3 秒（實測踩到，`--verify` 抓出來的）。
-/// 改成由 `OnConnected` 呼叫，語意是「shell channel 開成功」。
+/// 後端回報「真的連上了」→ 退避次數歸零。各後端的判斷見本檔開頭的表。
 pub fn note_connected(app: &AppHandle, id: u32) {
     if let Some(tabs) = app.try_state::<Arc<TabManager>>() {
         tabs.reset_reconnect_attempt(id);
@@ -88,21 +110,21 @@ pub fn on_exit(app: &AppHandle, id: u32, info: ExitInfo) {
         return;
     };
     // 分頁已經被關掉（使用者按 ✕ / 程式結束）→ 什麼都不做
-    let Some(params) = tabs.ssh_params_of(id) else {
+    let Some(params) = tabs.conn_params_of(id) else {
         return;
     };
     let _ = info;
 
     // 這條已經死掉的 session 還掛在 SessionManager 上（是 `start` 放進去的），
     // **一定要先取下來**：否則下面的「已經連上了嗎」永遠成立，重連根本不會排。
-    // 取下來之後在背景 drop（`SshSession::drop` 會送優雅結束鍵並小睡，別卡住這條 task）。
+    // 取下來之後在背景 drop（drop 會關 socket／送優雅結束鍵，別卡住這條 task）。
     if let Some(manager) = app.try_state::<SessionManager>() {
         if let Some(dead) = manager.remove(id) {
             std::thread::spawn(move || drop(dead));
         }
     }
 
-    if params.auto_reconnect {
+    if params.auto_reconnect() {
         schedule(app, id);
     } else {
         // 舊版：灰字「[連線已結束]」＋黃字「[按 Enter 在此分頁重新連線]」
@@ -170,7 +192,7 @@ fn reconnect_now(app: &AppHandle, id: u32) {
     let Some(tabs) = app.try_state::<Arc<TabManager>>() else {
         return;
     };
-    let Some(params) = tabs.ssh_params_of(id) else {
+    let Some(params) = tabs.conn_params_of(id) else {
         return;
     };
     let Some(parts) = tabs.session_parts_of(id) else {
@@ -187,7 +209,7 @@ fn reconnect_now(app: &AppHandle, id: u32) {
         }
         Err(e) => {
             echo(app, id, &format!("\r\n\x1b[31m{e}\x1b[0m\r\n"));
-            if params.auto_reconnect {
+            if params.auto_reconnect() {
                 schedule(app, id);
             } else {
                 echo(app, id, "\x1b[33m[按 Enter 在此分頁重新連線]\x1b[0m\r\n");
@@ -196,120 +218,78 @@ fn reconnect_now(app: &AppHandle, id: u32) {
     }
 }
 
-/// 建立（或重建）一條 SSH session 並掛進 `SessionManager`。
+/// 這個分頁的輸出／結束管線（兩種後端共用）。
 ///
-/// `parts` 是這個分頁**既有**的輸出管線與 log 槽——重連要沿用它們，
+/// `parts` 是分頁**既有**的輸出管線與 log 槽——重連要沿用它們，
 /// 否則輸出會流不到原本那條 channel（畫面就死了）。
-pub fn start(
-    app: &AppHandle,
-    id: u32,
-    params: &SshConnParams,
-    parts: tabs::SessionParts,
-) -> Result<(), String> {
-    let settings = app
-        .try_state::<Arc<SettingsStore>>()
-        .ok_or_else(|| "設定還沒準備好".to_string())?;
-    let tabs = app
-        .try_state::<Arc<TabManager>>()
-        .ok_or_else(|| "分頁清單還沒準備好".to_string())?;
-    let manager = app
-        .try_state::<SessionManager>()
-        .ok_or_else(|| "連線清單還沒準備好".to_string())?;
-
-    let tabs::SessionParts {
-        pump,
-        logger,
-        last_output,
-        cols,
-        rows,
-    } = parts;
-
+fn pipeline(app: &AppHandle, id: u32, parts: &tabs::SessionParts) -> (OnOutput, OnExit) {
     let on_output = {
-        let pump = pump.clone();
-        let last_output = last_output.clone();
-        let logger = logger.clone();
+        let pump = parts.pump.clone();
+        let last_output = parts.last_output.clone();
+        let logger = parts.logger.clone();
         Arc::new(move |bytes: &[u8]| {
             last_output.store(tabs::now_ms(), Ordering::Relaxed);
+            // log 先寫再餵畫面：舊版 OnSessionOutput 也是這個順序
             if let Ok(g) = logger.lock() {
                 if let Some(l) = g.as_ref() {
                     l.write(bytes);
                 }
             }
             pump.push(bytes);
-        }) as crate::session::OnOutput
+        }) as OnOutput
     };
 
     let on_exit = {
         let app = app.clone();
-        let pump: Arc<OutputPump> = pump.clone();
+        let pump: Arc<OutputPump> = parts.pump.clone();
         Arc::new(move |info: ExitInfo| {
             // 排空還沒送出的輸出，但**不要** stop——重連要繼續用同一條 pump
             pump.flush();
-            on_exit_inner(&app, id, info);
-        }) as crate::session::OnExit
+            on_exit(&app, id, info);
+        }) as OnExit
     };
 
-    let on_user: super::OnUser = {
+    (on_output, on_exit)
+}
+
+/// 建立（或重建）一條遠端 session 並掛進 `SessionManager`。
+pub fn start(
+    app: &AppHandle,
+    id: u32,
+    params: &ConnParams,
+    parts: tabs::SessionParts,
+) -> Result<(), String> {
+    let manager = app
+        .try_state::<SessionManager>()
+        .ok_or_else(|| "連線清單還沒準備好".to_string())?;
+    let (on_output, on_exit) = pipeline(app, id, &parts);
+    let on_connected = {
         let app = app.clone();
-        let tabs = tabs.inner().clone();
-        let host = params.host.clone();
-        Arc::new(move |user: &str| {
-            let target = format!("{user}@{host}");
-            if tabs.set_title(id, &target, false) {
-                emit_host(&app, format!("t{id}\x1f{target}"));
-                tabs::emit_state(&app, &tabs);
-            }
-            // 記住帳號：重連就不必再問 login as:（同舊版把 Restore.Host 改成 user@host）
-            tabs.set_ssh_user(id, user);
-        })
+        Arc::new(move || note_connected(&app, id))
     };
 
-    let store = Arc::new(super::hostkey::HostKeyStore::new(
-        settings.dir().join("known_hosts"),
-    ));
-    let decider = Arc::new(super::prompt::AppDecider::new(
-        app.clone(),
-        id,
-        store.path().to_string_lossy().to_string(),
-        (*settings).clone(),
-    ));
-
-    let session = super::spawn(
-        super::SshOptions {
-            host: params.host.clone(),
-            port: params.port,
-            user: (!params.user.trim().is_empty()).then(|| params.user.clone()),
-            cols,
-            rows,
-            auth: super::SshAuth {
-                key_path: (!params.key_path.trim().is_empty()).then(|| params.key_path.clone()),
-                key_passphrase: None, // 有密碼的金鑰當場問（同 PuTTY）
-                use_agent: params.use_agent,
+    let session: Arc<dyn crate::session::TerminalSession> = match params {
+        ConnParams::Ssh(p) => {
+            crate::ssh::conn::start(app, id, p, &parts, on_output, on_exit, on_connected)?
+        }
+        ConnParams::Telnet(p) => crate::telnet::spawn(
+            crate::telnet::TelnetOptions {
+                host: p.host.clone(),
+                port: p.port,
+                cols: parts.cols,
+                rows: parts.rows,
+                keepalive_mins: p.keepalive_mins,
             },
-            algos: params.algos.clone(),
-            keepalive_mins: params.keepalive_mins,
-            env: params.env.clone(),
-        },
-        store,
-        decider,
-        on_output,
-        on_exit,
-        Some(on_user),
-        Some({
-            let app = app.clone();
-            Arc::new(move || note_connected(&app, id)) as super::OnConnected
-        }),
-    );
+            on_output,
+            on_exit,
+            Some(on_connected),
+        ),
+    };
     manager.insert(id, session);
     Ok(())
 }
 
-/// `on_exit` 的內部版本（`start` 的 callback 用；分出來避免遞迴型別問題）。
-fn on_exit_inner(app: &AppHandle, id: u32, info: ExitInfo) {
-    on_exit(app, id, info);
-}
-
-fn echo(app: &AppHandle, id: u32, text: &str) {
+pub(crate) fn echo(app: &AppHandle, id: u32, text: &str) {
     if let Some(tabs) = app.try_state::<Arc<TabManager>>() {
         if let Some(parts) = tabs.session_parts_of(id) {
             parts.pump.push(text.as_bytes());
@@ -334,12 +314,48 @@ mod tests {
         assert_eq!(backoff_secs(1000), 30);
     }
 
-    /// 連線參數**不含密碼**——我的最愛也是存這個結構，舊版的 `SavedTab` 同樣沒有密碼欄位。
+    /// 兩種後端共用同一條退避規則（舊版的 `ScheduleReconnect` 也不分種類）。
+    #[test]
+    fn both_kinds_share_the_same_switches() {
+        let ssh = ConnParams::Ssh(SshConnParams {
+            auto_reconnect: true,
+            ..Default::default()
+        });
+        let telnet = ConnParams::Telnet(TelnetParams {
+            auto_reconnect: true,
+            ..Default::default()
+        });
+        assert!(ssh.auto_reconnect() && telnet.auto_reconnect());
+        assert!(ssh.as_ssh().is_some() && ssh.as_telnet().is_none());
+        assert!(telnet.as_telnet().is_some() && telnet.as_ssh().is_none());
+    }
+
+    /// 連線參數**不含密碼**——我的最愛與恢復分頁也是存這個結構。
     #[test]
     fn conn_params_have_no_password_field() {
-        let json = serde_json::to_string(&SshConnParams::default()).unwrap();
-        for bad in ["password", "passwd", "passphrase", "secret"] {
-            assert!(!json.contains(bad), "連線參數不可以有 {bad} 欄位：{json}");
+        for p in [
+            ConnParams::Ssh(SshConnParams::default()),
+            ConnParams::Telnet(TelnetParams::default()),
+        ] {
+            let json = serde_json::to_string(&p).unwrap();
+            for bad in ["password", "passwd", "passphrase", "secret"] {
+                assert!(!json.contains(bad), "連線參數不可以有 {bad} 欄位：{json}");
+            }
         }
+    }
+
+    /// enum 的 JSON 形狀（設定檔與我的最愛存的就是這個，改了會讓舊設定讀不回來）。
+    #[test]
+    fn json_shape_is_tagged_by_kind() {
+        let json = serde_json::to_string(&ConnParams::Telnet(TelnetParams {
+            host: "10.0.0.5".into(),
+            port: 2323,
+            keepalive_mins: 10,
+            auto_reconnect: true,
+        }))
+        .unwrap();
+        assert!(json.contains("\"kind\":\"telnet\""), "{json}");
+        let back: ConnParams = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.as_telnet().unwrap().port, 2323);
     }
 }

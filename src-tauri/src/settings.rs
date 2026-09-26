@@ -83,6 +83,13 @@ pub struct AppSettings {
     /// 我的最愛（舊版 `AppSettings.Favorites`）。**不存密碼**。
     pub favorites: Vec<crate::favorites::FavoriteItem>,
 
+    // ---- 恢復分頁（舊版 SavedTabs / ExitRestoreTabs）----
+    /// 上次關閉時存下來的分頁（下次啟動照這個恢復）。畫面內容另外存在
+    /// `{app config dir}/restore/tab{n}.txt`——同舊版的檔案分法。**不含密碼**。
+    pub saved_tabs: Vec<crate::restore::SavedTab>,
+    /// 離開對話框「下次開啟恢復目前分頁」的勾選狀態（舊版 `ExitRestoreTabs`，預設開）。
+    pub exit_restore_tabs: bool,
+
     /// 自訂連線清單（舊版 `AppSettings.CustomConns`）。
     ///
     /// 舊版 v1.0.18 起**不自動建立任何自訂連線**：全新安裝是空的，使用者自己按
@@ -194,6 +201,8 @@ impl Default for AppSettings {
             auto_reconnect: false,
             ssh_weak_accepted: Vec::new(),
             favorites: Vec::new(),
+            saved_tabs: Vec::new(),
+            exit_restore_tabs: true,
             custom_conns: Vec::new(),
             // 舊版 MainWindow.xaml 的「配色」子選單那五組，順序照抄
             palette: vec![

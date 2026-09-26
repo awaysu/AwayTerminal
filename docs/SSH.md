@@ -27,7 +27,7 @@
 | 分頁名稱之後跟著遠端目前目錄（提示行解析） | `TracksCwdTitle` 含 `Ssh` | 同（`q…cwd` 對 SSH 分頁也送） | ✅ |
 | 連線對話框：類型／IP 主機（可編輯下拉＋歷史）／Port（ssh 22）／保持連線（分鐘，0=關）／斷線自動重連 | `ConnectDialog.xaml` | 同（`src/sshdlg.js`，欄位表在第 7 節）＋多了帳號／金鑰／進階演算法／環境變數 | ✅ B6 |
 | 保持連線 → `ServerAliveInterval = 分鐘×60`、`ServerAliveCountMax=3`，預設 10 分鐘 | `SshCommand` / `AppSettings.KeepAliveMins` | `keepalive_interval` + `keepalive_max = 3`，間隔取自 `keepAliveMins`（預設 10） | ✅ |
-| 斷線自動重連：退避 3,6,9…最多 30 秒；有輸出就歸零；等待中按 Enter 立刻重連 | `ScheduleReconnect` / `ManualReconnect` | 同（`ssh/reconnect.rs`，對照表在第 5 節）；「歸零」的觸發點刻意不同，見下 | ✅ B5 |
+| 斷線自動重連：退避 3,6,9…最多 30 秒；有輸出就歸零；等待中按 Enter 立刻重連 | `ScheduleReconnect` / `ManualReconnect` | 同（`reconnect.rs`，SSH／Telnet 共用；對照表在第 5 節）；「歸零」的觸發點刻意不同，見下 | ✅ B5 |
 | `-o SendEnv=CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN` | `SshCommand` | 同（對話框「進階」的環境變數清單 → `channel.set_env`，`request_shell` 之前逐條送） | ✅ B6 |
 
 ### 與舊版**刻意不同**的一點
@@ -178,7 +178,10 @@ global request（PuTTY 預設也是這條）。間隔取自 `settings.json` 的 
 
 ### 斷線自動重連
 
-程式在 `src-tauri/src/ssh/reconnect.rs`。分頁層記住 `SshConnParams`（**不含密碼**，見第 7 節），session 結束時排下一次重連。
+程式在 `src-tauri/src/reconnect.rs`（TASK-010 起 **SSH／Telnet 共用**：舊版的連線視窗
+本來就是兩種共用「保持連線」與「斷線自動重連」，`OnSessionExited` / `ScheduleReconnect`
+也沒有分連線種類。連線參數是 `ConnParams` enum，退避與提示訊息完全共用；
+差別只有下表最後一列「連上了」的判斷）。分頁層記住 `ConnParams`（**不含密碼**，見第 7 節），session 結束時排下一次重連。
 
 | 舊版行為 | 出處（`MainWindow.xaml.cs`） | 新版 | 一樣嗎 |
 |---|---|---|---|
@@ -186,7 +189,7 @@ global request（PuTTY 預設也是這條）。間隔取自 `settings.json` 的 
 | 沒勾「斷線自動重連」時只在畫面上提示，**按 Enter 才重連** | `OnSessionExit` 的 else 分支 | 同（灰字「連線已中斷。按 Enter 重新連線。」；`session_write_text` 收到含換行的輸入就觸發） | ✅ 一樣 |
 | 等待重連時按 Enter **立刻**重連（不等退避跑完） | `ManualReconnect` | 同（`manual()` 會把排程的 generation 作廢再馬上連） | ✅ 一樣 |
 | 重連前把舊畫面留著，接在同一個 buffer 後面 | 不清畫面 | 同（重連前先送 `b{id}` 把 scrollback 推上去，畫面不會被清） | ✅ 一樣 |
-| 重連成功後退避次數歸零 | `OnSessionOutput` 第一行：**一收到輸出**就歸零 | **改成「shell channel 開成功」才歸零**（`OnConnected`） | ⚠️ 刻意不同 |
+| 重連成功後退避次數歸零 | `OnSessionOutput` 第一行：**一收到輸出**就歸零 | **各後端給明確的里程碑**（`OnConnected`）：SSH＝`request_shell` 成功、Telnet＝從 socket 讀到第一批位元組 | ⚠️ 刻意不同 |
 | 使用者自己關分頁 → 不重連 | `_closing` 旗標 | 同（分頁移除後 `on_exit` 找不到分頁就不排程） | ✅ 一樣 |
 | 重連中又斷 → 次數繼續往上加 | 同上 | 同（實測退避次數 1 → 2） | ✅ 一樣 |
 
@@ -195,6 +198,11 @@ global request（PuTTY 預設也是這條）。間隔取自 `settings.json` 的 
 錯誤訊息）走的是同一條輸出 callback ——照舊版寫會被誤判成「連上了」，退避永遠停在
 第一次的 3 秒。這個是 `--verify` 實際抓出來的（`退避次數` 一直是 1），改成
 「`request_shell` 成功」之後才變成 1 → 2。語意更精確，目的（連成功過就不要繼續拉長退避）一樣。
+
+這條教訓已經寫成通則（`docs/REGRESSION-CHECKLIST.md`「隱含契約」）：
+**舊版靠外部程式（`ssh.exe`）副作用成立的規則，內建實作要重新檢查觸發點。**
+Telnet 是這條通則的第一個應用——它沒有 shell channel，所以用「從 socket 讀到第一批位元組」
+（我們自己的訊息不經過 socket），見 `docs/TELNET.md` 第 3 節。
 
 ## 6. 自動驗證：`ssh_probe`
 
@@ -271,6 +279,7 @@ sshd（綁 `127.0.0.1` 的臨時埠），再用我們的 client 連上去。2026
 
 | 欄位 | 預設 | 對應 | 舊版有嗎 |
 |---|---|---|---|
+| 類型（SSH／Telnet，切換時 22 ↔ 23） | SSH | `session_create` 的 `kind` | ✅ 有（`TypeCombo`） |
 | 主機（可輸入 `host` 或 `host:port`，自動拆開） | 空 | `host` / `port` | ✅ 有（可編輯下拉＋歷史） |
 | 埠 | 22 | `port` | ✅ 有 |
 | 帳號（留白＝連上後在終端機問 `login as:`） | 空 | `user` | ⬜ 舊版沒有（帳號一律在終端機問） |
@@ -292,7 +301,10 @@ sshd（綁 `127.0.0.1` 的臨時埠），再用我們的 client 連上去。2026
 | 項 | 內容 | 為什麼 |
 |---|---|---|
 | 主機歷史下拉 | 舊版主機欄是可編輯下拉，記最近連過的主機 | 我的最愛已經涵蓋「常連的」；歷史清單等使用者說要不要 |
-| Telnet | 對話框的「類型」目前只有 SSH | Telnet 後端還沒做（階段 2 的後半） |
+| TTYPE | Telnet 的終端機類型回報（PuTTY 回 `xterm`） | 舊版沒有，等 PM 決定：`docs/TELNET.md` 第 4 節 |
+
+Telnet 本身已在 TASK-010 做完：對話框的「類型」可切 SSH／Telnet（切換時 22 ↔ 23 自動換），
+Telnet 只顯示主機／埠／保持連線／自動重連四個欄位。見 `docs/TELNET.md`。
 
 ## 8. ⚠️ 待真機驗證（要使用者的設備清單）
 

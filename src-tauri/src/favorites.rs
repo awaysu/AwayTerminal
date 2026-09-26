@@ -17,15 +17,16 @@
 //!
 //! ## 密碼
 //! **不存。** 舊版的 `SavedTab` 也沒有密碼欄位（我去逐欄看過），SSH 密碼一律在終端機當場問。
-//! 這一點連 `SshConnParams` 都有單元測試釘住（`ssh/reconnect.rs` 的
-//! `conn_params_have_no_password_field`）。
+//! 這一點連 `SshConnParams`／`TelnetParams` 都有單元測試釘住
+//! （`reconnect.rs` 的 `conn_params_have_no_password_field`）。
 
 use std::sync::Arc;
 
 use tauri::State;
 
 use crate::settings::SettingsStore;
-use crate::ssh::reconnect::SshConnParams;
+use crate::ssh::conn::SshConnParams;
+use crate::telnet::TelnetParams;
 
 /// 一筆最愛。
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
@@ -33,7 +34,7 @@ use crate::ssh::reconnect::SshConnParams;
 pub struct FavoriteItem {
     /// 下拉裡顯示的名稱（可改）。
     pub name: String,
-    /// `shell`｜`ssh`｜`conn`（自訂連線）。`telnet`／`com` 先留著，UI 不顯示。
+    /// `shell`｜`ssh`｜`telnet`｜`conn`（自訂連線）。`com` 先留著，UI 不顯示。
     pub kind: String,
     /// `shell`：工作目錄。`conn`：實際工作目錄（有值就不再跳資料夾選擇）。
     pub dir: String,
@@ -41,6 +42,8 @@ pub struct FavoriteItem {
     pub conn_name: String,
     /// `ssh`：完整連線參數（**不含密碼**）。
     pub ssh: Option<SshConnParams>,
+    /// `telnet`：完整連線參數（Telnet 本來就沒有帳號密碼欄）。
+    pub telnet: Option<TelnetParams>,
 }
 
 impl Default for FavoriteItem {
@@ -51,6 +54,7 @@ impl Default for FavoriteItem {
             dir: String::new(),
             conn_name: String::new(),
             ssh: None,
+            telnet: None,
         }
     }
 }
@@ -61,6 +65,10 @@ pub fn key_of(f: &FavoriteItem) -> String {
         "ssh" => {
             let s = f.ssh.clone().unwrap_or_default();
             format!("ssh|{}|{}|{}", s.host.to_lowercase(), s.port, s.user)
+        }
+        "telnet" => {
+            let t = f.telnet.clone().unwrap_or_default();
+            format!("telnet|{}|{}", t.host.to_lowercase(), t.port)
         }
         "conn" => format!("conn|{}|{}", f.conn_name.to_lowercase(), f.dir.to_lowercase()),
         _ => format!("{}|{}", f.kind, f.dir.to_lowercase()),
@@ -77,6 +85,15 @@ pub fn from_tab(tabs: &crate::tabs::TabManager, id: u32) -> Option<FavoriteItem>
                 name: view.title.clone(),
                 kind: "ssh".to_string(),
                 ssh: Some(ssh),
+                ..FavoriteItem::default()
+            })
+        }
+        crate::tabs::TabKind::Telnet => {
+            let telnet = tabs.telnet_params_of(id)?;
+            Some(FavoriteItem {
+                name: view.title.clone(),
+                kind: "telnet".to_string(),
+                telnet: Some(telnet),
                 ..FavoriteItem::default()
             })
         }

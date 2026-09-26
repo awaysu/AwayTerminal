@@ -111,8 +111,11 @@ export const T = {
   'ctx.selectAll': '全選',
 
   // ---- SSH（TASK-006）----
-  'tb.ssh': 'SSH…',
+  // 舊版的字面：`tb.ssh` = SSH/Telnet、`tip.ssh` = 開 SSH / Telnet（一個入口、對話框裡選類型）
+  'tb.ssh': 'SSH/Telnet',
   'dlg.sshTitle': '開 SSH',
+  'dlg.telnetTitle': '開 Telnet',
+  'dlg.telnetPrompt': '主機（可加 :埠，預設 23）：',
   // 舊版 ConnectDialog 是「類型／IP 主機／Port／保持連線／斷線自動重連」五個欄位；
   // 完整對話框是 TASK-007，這裡先用一行 host[:port]
   'dlg.sshPrompt': '主機（可加 :埠，預設 22）：',
@@ -146,8 +149,10 @@ export const T = {
   'wa.go': '繼續連線',
   'wa.cancel': '取消',
 
-  // ---- SSH 連線對話框（TASK-009 B6）----
-  'sd.title': '開 SSH',
+  // ---- 連線對話框（TASK-009 B6；TASK-010 加 Telnet 類型）----
+  // 對話框標題逐字照舊版 `conn.title`
+  'sd.title': '開 SSH / Telnet',
+  'sd.type': '類型',
   'sd.host': 'IP / 主機',
   'sd.port': 'Port',
   'sd.user': '帳號',
@@ -168,6 +173,16 @@ export const T = {
   'sd.connect': '連線',
   'sd.addFav': '加到我的最愛',
   'sd.needHost': '請輸入主機。',
+
+  // ---- 離開程式與恢復分頁（TASK-010；舊版 Dialogs/ExitDialog + 1.0.45）----
+  'exit.title': '離開 AwayTerminal',
+  'exit.body': '要關閉程式嗎？',
+  // 文字逐字照舊版 Loc 的 exit.restore
+  'exit.restore': '下次開啟恢復目前分頁（含畫面上的舊訊息）',
+  'exit.go': '離開',
+  // {0} = 分頁數
+  'restore.done': '已恢復 {0} 個分頁',
+  'restore.failed': '有 {0} 個分頁恢復失敗（詳情見後端 log）',
   'sd.quick': '快速連線（host[:port]）…',
 
   // ---- 我的最愛（TASK-009 C；舊版 fav.* / tb.favorites / tip.favorites）----

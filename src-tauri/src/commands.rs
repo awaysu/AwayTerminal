@@ -120,11 +120,31 @@ pub struct SshArgs {
     pub env: Option<Vec<(String, String)>>,
 }
 
+/// Telnet 連線的額外參數（`kind = "telnet"` 時才看）。
+///
+/// 舊版的連線視窗 SSH／Telnet 共用「保持連線」與「斷線自動重連」兩個欄位，這裡照同樣的做法。
+#[derive(Default, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TelnetArgs {
+    pub host: String,
+    /// 省略＝23（舊版切到 Telnet 就把 22 換成 23）。
+    pub port: Option<u16>,
+    /// 保持連線的間隔（分鐘）。省略＝用設定裡的值。Telnet 送的是 `IAC NOP`。
+    pub keepalive_mins: Option<u32>,
+    /// 斷線自動重連。省略＝用設定裡的值。
+    pub auto_reconnect: Option<bool>,
+}
+
 /// 開一條連線。
 ///
 /// - `kind = "shell"`（舊稱 `powershell`）：pwsh 優先、否則 powershell。
 /// - `kind = "custom"`：用 `command` 給的指令（分頁列「自訂指令…」與 `?cmd=` 這類 dev 入口）。
 /// - `kind = "ssh"`：內建 SSH（`russh`），參數走 `ssh`（見 [`SshArgs`]）。
+/// - `kind = "telnet"`：內建 Telnet，參數走 `telnet`（見 [`TelnetArgs`]）。
+///
+/// `restore` 是恢復分頁用的索引（[`crate::restore::restore_list`] 回傳的第幾筆）：
+/// 給了就在 `n` 之後、`s` 之前插一條 `b{id}US…`，把上次關閉前的畫面倒回去
+/// （舊版 `AddTab` 的 `_restoreBufferForNextTab`；順序不能換，見 `docs/PROTOCOL.md`）。
 ///
 /// 建好之後依序 emit 舊協定的 `n{id}US{title}[US{flags}]` 與 `s{id}`——
 /// **`s` 不能漏**：少了它 `terminal.js` 的 `active` 會留在 null、`refit()` 直接 return，
@@ -142,25 +162,53 @@ pub fn session_create(
     rows: u16,
     cwd: Option<String>,
     ssh: Option<SshArgs>,
+    telnet: Option<TelnetArgs>,
     // `kind = "conn"`：要開哪一條自訂連線（依名稱）。
     conn: Option<String>,
+    // 恢復分頁：要倒回哪一筆的畫面（`restore_list` 的索引）。
+    restore: Option<usize>,
     on_event: Channel<InvokeResponseBody>,
     manager: State<'_, SessionManager>,
     tabs_state: State<'_, Arc<TabManager>>,
     settings: State<'_, Arc<SettingsStore>>,
 ) -> Result<SessionInfo, String> {
-    if kind == "ssh" {
-        let args = ssh.ok_or_else(|| "kind=ssh 需要 ssh 參數".to_string())?;
-        return create_ssh(
-            app,
-            args,
-            title,
-            cols,
-            rows,
-            on_event,
-            &manager,
-            &tabs_state,
-            &settings,
+    if kind == "ssh" || kind == "telnet" {
+        let params = if kind == "ssh" {
+            let args = ssh.ok_or_else(|| "kind=ssh 需要 ssh 參數".to_string())?;
+            let host = args.host.trim().to_string();
+            if host.is_empty() {
+                return Err("請輸入主機".to_string());
+            }
+            crate::reconnect::ConnParams::Ssh(crate::ssh::conn::SshConnParams {
+                host,
+                port: args.port.unwrap_or(22),
+                user: args.user.clone().unwrap_or_default(),
+                key_path: args.key_path.clone().unwrap_or_default(),
+                use_agent: args.use_agent.unwrap_or(true),
+                keepalive_mins: args
+                    .keepalive_mins
+                    .unwrap_or(settings.get().keep_alive_mins),
+                auto_reconnect: args.auto_reconnect.unwrap_or(settings.get().auto_reconnect),
+                algos: args.algos.clone().unwrap_or_default(),
+                env: args.env.clone().unwrap_or_default(),
+            })
+        } else {
+            let args = telnet.ok_or_else(|| "kind=telnet 需要 telnet 參數".to_string())?;
+            let host = args.host.trim().to_string();
+            if host.is_empty() {
+                return Err("請輸入主機".to_string());
+            }
+            crate::reconnect::ConnParams::Telnet(crate::telnet::TelnetParams {
+                host,
+                port: args.port.unwrap_or(23),
+                keepalive_mins: args
+                    .keepalive_mins
+                    .unwrap_or(settings.get().keep_alive_mins),
+                auto_reconnect: args.auto_reconnect.unwrap_or(settings.get().auto_reconnect),
+            })
+        };
+        return create_remote(
+            app, params, title, cols, rows, restore, on_event, &manager, &tabs_state,
         );
     }
 
@@ -210,6 +258,8 @@ pub fn session_create(
 
     // ---- 沙盒（只有自訂連線有這個選項；`CLAUDE.md`「新增功能 → 沙盒模式」）----
     let mut work_dir = cwd.clone().or_else(default_cwd);
+    // 恢復分頁要存「沙盒之前」的工作目錄，否則下次會在 worktree 裡再開一層沙盒
+    let base_dir = work_dir.clone().unwrap_or_default();
     let mut sandbox = None;
     if let Some(c) = &conn_def {
         if c.sandbox {
@@ -291,6 +341,8 @@ pub fn session_create(
         format!("n{id}\x1f{tab_title}\x1f{flags}")
     };
     emit_host(&app, n_msg);
+    // 恢復分頁（1.0.45）：上次存的畫面要在 `n` 之後、`s` 之前倒回去（舊版 AddTab 的順序）
+    crate::restore::emit_buffer(&app, id, restore);
     // 建完一定要再送 `s{id}`（舊版 MainWindow.xaml.cs 的 AddTab → SelectTab）。
     emit_host(&app, format!("s{id}"));
 
@@ -403,50 +455,63 @@ pub fn session_create(
         out: Some(pump.clone()),
         cols,
         rows,
-        ssh: None,
+        conn: None,
         reconnect_attempt: 0,
         reconnect_gen: 0,
         sandbox: sandbox.clone(),
         conn_name: conn_def.as_ref().map(|c| c.name.clone()),
+        work_dir: base_dir,
         command_line: sh.command_line,
         backend: info.backend.clone(),
     });
     tabs_state.set_active(id);
+    // 恢復分頁：把最初的開啟時間填回去（tooltip 的執行時長接著算）
+    crate::restore::apply_opened(&app, id, restore);
     manager.insert(id, session);
     tabs::emit_state(&app, &tabs_state);
     Ok(info)
 }
 
-/// 開一條內建 SSH 連線（`russh`）。
+/// 開一條遠端連線（內建 SSH／Telnet）。
 ///
-/// 與 shell 那條路的差別：**沒有本機子行程**（`pid` 是 0），連線與驗證是背景非同步進行的，
-/// 過程中的 `login as:` / 密碼提示都從同一條輸出 channel 出來，所以對 `terminal.js` 來說
-/// 和本機 shell 沒有任何不同。
+/// 與 shell 那條路的差別：**沒有本機子行程**（`pid` 是 0），連線是背景非同步進行的，
+/// 過程中的 `login as:`／密碼提示／錯誤訊息都從同一條輸出 channel 出來，
+/// 所以對 `terminal.js` 來說和本機 shell 沒有任何不同。
+///
+/// 兩種後端共用這條路（退避重連、提示訊息、我的最愛、恢復分頁都在
+/// [`crate::reconnect`]），差別只有 `ConnParams` 裡面是哪一個變體。
 #[allow(clippy::too_many_arguments)]
-fn create_ssh(
+fn create_remote(
     app: AppHandle,
-    args: SshArgs,
+    params: crate::reconnect::ConnParams,
     title: Option<String>,
     cols: u16,
     rows: u16,
+    restore: Option<usize>,
     on_event: Channel<InvokeResponseBody>,
     manager: &SessionManager,
     tabs_state: &Arc<TabManager>,
-    settings: &Arc<SettingsStore>,
 ) -> Result<SessionInfo, String> {
-    let host = args.host.trim().to_string();
-    if host.is_empty() {
-        return Err("請輸入主機".to_string());
-    }
-    let port = args.port.unwrap_or(22);
+    let (tab_kind, host, port, backend) = match &params {
+        crate::reconnect::ConnParams::Ssh(p) => (TabKind::Ssh, p.host.clone(), p.port, "russh"),
+        crate::reconnect::ConnParams::Telnet(p) => {
+            (TabKind::Telnet, p.host.clone(), p.port, "telnet")
+        }
+    };
     let id = manager.next_id();
-    // 舊版：分頁標題先是 host，輸入帳號之後才變成 user@host（見 on_user）
+    // 分頁標題：SSH 先是 host（輸入帳號之後才變 user@host，見 on_user）；
+    // Telnet 照舊版是 `host:port`（`OpenTelnetDirect`）。
     let tab_title = title
         .map(|t| t.trim().to_string())
         .filter(|t| !t.is_empty())
-        .unwrap_or_else(|| host.clone());
+        .unwrap_or_else(|| match tab_kind {
+            TabKind::Telnet => format!("{host}:{port}"),
+            _ => host.clone(),
+        });
 
-    emit_host(&app, format!("n{id}\x1f{tab_title}"));
+    emit_host(&app, format!("n{id}{tab_title}"));
+    // 恢復分頁：畫面要在 `n` 之後、`s`／連線之前倒回去（舊版 AddTab 的順序）
+    crate::restore::emit_buffer(&app, id, restore);
     emit_host(&app, format!("s{id}"));
 
     let pump = OutputPump::start(on_event);
@@ -454,25 +519,10 @@ fn create_ssh(
     let logger: Arc<std::sync::Mutex<Option<Arc<crate::logging::Logger>>>> =
         Arc::new(std::sync::Mutex::new(None));
 
-    // 連線參數：分頁層要記住它（重連、我的最愛、對話框都用同一個結構）
-    let params = crate::ssh::reconnect::SshConnParams {
-        host: host.clone(),
-        port,
-        user: args.user.clone().unwrap_or_default(),
-        key_path: args.key_path.clone().unwrap_or_default(),
-        use_agent: args.use_agent.unwrap_or(true),
-        keepalive_mins: args
-            .keepalive_mins
-            .unwrap_or(settings.get().keep_alive_mins),
-        auto_reconnect: args.auto_reconnect.unwrap_or(settings.get().auto_reconnect),
-        algos: args.algos.clone().unwrap_or_default(),
-        env: args.env.clone().unwrap_or_default(),
-    };
-
     // 分頁先建好（`reconnect::start` 要從分頁拿輸出管線），再建 session
     tabs_state.insert(Tab {
         id,
-        kind: TabKind::Ssh,
+        kind: tab_kind,
         title: tab_title.clone(),
         title_locked: false,
         cwd_path: String::new(),
@@ -487,33 +537,41 @@ fn create_ssh(
         out: Some(pump),
         cols,
         rows,
-        ssh: Some(params.clone()),
+        conn: Some(params.clone()),
         reconnect_attempt: 0,
         reconnect_gen: 0,
-        sandbox: None, // SSH 不需要沙盒（沒有本機子行程可以隔離）
+        sandbox: None, // 遠端連線沒有本機子行程可以隔離，不需要沙盒
         conn_name: None,
-        command_line: format!("ssh://{host}:{port}"),
-        backend: "russh".to_string(),
+        work_dir: String::new(),
+        command_line: params.target(),
+        backend: backend.to_string(),
     });
     tabs_state.set_active(id);
+    crate::restore::apply_opened(&app, id, restore);
 
     let parts = tabs_state
         .session_parts_of(id)
         .ok_or_else(|| "分頁建立失敗".to_string())?;
-    if let Err(e) = crate::ssh::reconnect::start(&app, id, &params, parts) {
+    if let Err(e) = crate::reconnect::start(&app, id, &params, parts) {
         emit_host(&app, format!("x{id}"));
         tabs_state.remove(id);
         return Err(e);
     }
-    println!("[AwayTerminal] session {id} started: ssh {host}:{port} backend=russh");
+    println!(
+        "[AwayTerminal] session {id} started: {} backend={backend}",
+        params.target()
+    );
     tabs::emit_state(&app, tabs_state);
 
     Ok(SessionInfo {
         id,
         pid: 0,
-        command_line: format!("ssh://{host}:{port}"),
-        shell: "ssh".to_string(),
-        backend: "russh".to_string(),
+        command_line: params.target(),
+        shell: match tab_kind {
+            TabKind::Telnet => "telnet".to_string(),
+            _ => "ssh".to_string(),
+        },
+        backend: backend.to_string(),
         flags: String::new(),
         title: tab_title,
     })
@@ -540,11 +598,11 @@ pub fn session_write_text(
         s.write(text.as_bytes());
         return;
     }
-    // 沒有連線的分頁：SSH 斷線後按 Enter ＝在同一個分頁重連（舊版 `ManualReconnect`）。
+    // 沒有連線的分頁：SSH／Telnet 斷線後按 Enter ＝在同一個分頁重連（舊版 `ManualReconnect`）。
     // 其餘的打字就安靜丟掉——舊版踩雷是「session 開失敗卻留在分頁上」會讓打字全被吞，
     // 我們這裡分頁根本沒有 session，所以不會有那種假活著的狀態。
-    if tabs_state.ssh_params_of(id).is_some() && text.contains(['\r', '\n']) {
-        crate::ssh::reconnect::manual(&app, id);
+    if tabs_state.conn_params_of(id).is_some() && text.contains(['\r', '\n']) {
+        crate::reconnect::manual(&app, id);
     }
 }
 
@@ -718,6 +776,11 @@ pub fn pane_answer(
     text: String,
     tabs_state: State<'_, Arc<TabManager>>,
 ) {
+    // 關閉程式時存畫面（恢復分頁）：交給等在信箱那邊的 `restore::save`
+    if kind == "save" {
+        crate::restore::deliver(id, text);
+        return;
+    }
     if kind != "cwd" {
         println!("[AwayTerminal] [a 未接] kind={kind} id={id} len={}", text.len());
         return;
