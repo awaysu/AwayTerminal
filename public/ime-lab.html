@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>AwayTerminal2 IME 事件錄影頁</title>
+<style>
+  :root {
+    --bg: #1e1e1e; --fg: #dddddd; --dim: #999999; --line: #3a3a3a;
+    --accent: #FDFFB0; --hot: #ffb86c; --ok: #4CAF50;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--fg);
+    font: 13px/1.5 "Microsoft JhengHei", "微軟正黑體", system-ui, sans-serif; }
+  body { padding: 12px 16px 40px; }
+  h1 { font-size: 16px; margin: 0 0 4px; color: var(--accent); }
+  h2 { font-size: 13px; margin: 16px 0 6px; color: var(--hot); }
+  p, li { margin: 2px 0; }
+  code { background: #2d2d30; padding: 0 3px; border-radius: 3px; font-family: Consolas, monospace; }
+  .hint { color: var(--dim); }
+
+  .inputs { display: flex; gap: 12px; flex-wrap: wrap; margin: 8px 0; }
+  .inputs > div { flex: 1 1 320px; min-width: 260px; }
+  label { display: block; color: var(--dim); margin-bottom: 2px; }
+  textarea, .ce {
+    width: 100%; min-height: 62px; background: #111; color: var(--fg);
+    border: 1px solid var(--line); border-radius: 4px; padding: 6px;
+    font: 14px/1.4 Consolas, "Microsoft JhengHei", monospace; resize: vertical;
+  }
+  textarea:focus, .ce:focus { outline: 1px solid var(--accent); }
+
+  .bar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 10px 0 6px; }
+  button {
+    background: #2d2d30; color: var(--fg); border: 1px solid var(--line);
+    border-radius: 4px; padding: 5px 10px; cursor: pointer; font-size: 12px;
+  }
+  button:hover { border-color: var(--accent); }
+  .count { color: var(--dim); }
+  #status { color: var(--ok); }
+
+  table { border-collapse: collapse; width: 100%; font: 11px/1.4 Consolas, monospace; }
+  th, td { border-bottom: 1px solid #2a2a2a; padding: 2px 5px; text-align: left;
+    white-space: nowrap; vertical-align: top; }
+  th { position: sticky; top: 0; background: #262626; color: var(--dim); z-index: 1; }
+  td.val { white-space: pre; max-width: 320px; overflow: hidden; text-overflow: ellipsis; }
+  tr.boundary td { border-top: 2px solid var(--hot); }
+  tr.boundary td:first-child::before { content: "▲ "; color: var(--hot); }
+  .ev-composition { color: #8be9fd; }
+  .ev-input { color: #bd93f9; }
+  .ev-key { color: var(--fg); }
+  .ev-paste { color: var(--hot); }
+  .yes { color: var(--ok); font-weight: bold; }
+  #wrap { max-height: 46vh; overflow: auto; border: 1px solid var(--line); border-radius: 4px; }
+</style>
+</head>
+<body>
+
+<h1>AwayTerminal2 IME 事件錄影頁</h1>
+<p class="hint">
+  這頁**不含 xterm.js**，只是一個裸 textarea，用來記錄瀏覽器引擎自己送出的事件順序。
+  目的是比較 WebView2（Windows）／WKWebView（macOS）／WebKitGTK（Linux）在中文輸入法下的差異，
+  找出 <code>terminal.js</code> 需要隔離的引擎行為。結果請存到
+  <code>docs/ime-baseline/</code>。
+</p>
+<p class="hint" id="ua"></p>
+
+<h2>固定劇本（請照順序做一次，每做完一項按「分段標記」）</h2>
+<ol id="script">
+  <li>注音打「測試」，按 <code>Enter</code> 確認組字</li>
+  <li>組字中按 <code>Backspace</code>（打一半就退格）</li>
+  <li>組字中按 <code>Esc</code></li>
+  <li>候選字視窗出來後用<strong>數字鍵</strong>選字</li>
+  <li><code>Shift</code> 切成英文後打 <code>abc</code></li>
+  <li>貼上多行文字（<code>Ctrl+V</code>，請先複製 3 行以上）</li>
+  <li>直接打英文 <code>abc</code> 再按 <code>Enter</code>（對照組，沒有組字）</li>
+  <li>打全形標點（例如 <code>，</code><code>。</code><code>？</code>）</li>
+  <li>快速連打「ㄘㄜˋ ㄕˋ」<strong>不等候選視窗</strong></li>
+</ol>
+
+<div class="inputs">
+  <div>
+    <label for="ta">① textarea（模擬 xterm 的 <code>.xterm-helper-textarea</code>）</label>
+    <textarea id="ta" autocorrect="off" autocapitalize="off" spellcheck="false" autocomplete="off"></textarea>
+  </div>
+  <div>
+    <label for="ce">② contenteditable（對照用，有些輸入法行為不同）</label>
+    <div id="ce" class="ce" contenteditable="true" autocorrect="off" autocapitalize="off" spellcheck="false"></div>
+  </div>
+</div>
+
+<div class="bar">
+  <button id="clear">清除</button>
+  <button id="mark">分段標記</button>
+  <button id="copy">複製為 Markdown</button>
+  <button id="download">下載 .md</button>
+  <button id="tolog">送到後端 log</button>
+  <span class="count" id="count">0 筆</span>
+  <span id="status"></span>
+</div>
+<p class="hint">
+  <span style="color:var(--hot)">▲ 橘色分隔線</span>＝<strong>macrotask 邊界</strong>：線以下是新的事件迴圈。
+  同一格（沒有線隔開）的事件是在<strong>同一個事件迴圈</strong>裡送出的——
+  這正是「Enter 確認組字時 <code>keydown</code> 和 <code>compositionend</code> 誰先」的關鍵。
+</p>
+
+<div id="wrap">
+<table>
+  <thead><tr>
+    <th>#</th><th>t(ms)</th><th>target</th><th>event</th><th>key</th><th>code</th><th>keyCode</th>
+    <th>isComposing</th><th>inputType</th><th>data</th><th>value 尾端</th>
+  </tr></thead>
+  <tbody id="rows"></tbody>
+</table>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  var EVENTS = [
+    'keydown', 'keypress', 'keyup',
+    'beforeinput', 'input',
+    'compositionstart', 'compositionupdate', 'compositionend',
+    'paste'
+  ];
+
+  var rows = [];             // 記錄的事件
+  var t0 = performance.now();
+  var seq = 0;
+  var tick = 0;              // macrotask 序號
+  var tickScheduled = false;
+  var lastTickRendered = -1;
+
+  var tbody = document.getElementById('rows');
+  var countEl = document.getElementById('count');
+  var statusEl = document.getElementById('status');
+
+  document.getElementById('ua').textContent = 'UA: ' + navigator.userAgent;
+
+  /** 每個 macrotask 只排一次；同一個事件迴圈裡的事件會共用同一個 tick。 */
+  function bumpTickSoon() {
+    if (tickScheduled) return;
+    tickScheduled = true;
+    setTimeout(function () { tick++; tickScheduled = false; }, 0);
+  }
+
+  function tailOf(s, n) {
+    s = String(s == null ? '' : s);
+    if (s.length <= n) return s;
+    return '…' + s.slice(-n);
+  }
+
+  function show(v) {
+    if (v === undefined) return '';
+    if (v === null) return 'null';
+    if (v === '') return '""';
+    return String(v).replace(/\n/g, '\\n').replace(/\r/g, '\\r').replace(/\t/g, '\\t');
+  }
+
+  function classOf(name) {
+    if (name.indexOf('composition') === 0) return 'ev-composition';
+    if (name === 'input' || name === 'beforeinput') return 'ev-input';
+    if (name === 'paste') return 'ev-paste';
+    return 'ev-key';
+  }
+
+  function record(targetName, e) {
+    var ta = document.getElementById('ta');
+    var ce = document.getElementById('ce');
+    var val = targetName === 'textarea' ? ta.value : ce.textContent;
+
+    var row = {
+      seq: ++seq,
+      t: performance.now() - t0,
+      tick: tick,
+      target: targetName,
+      event: e.type,
+      key: e.key,
+      code: e.code,
+      keyCode: e.keyCode,
+      isComposing: e.isComposing,
+      inputType: e.inputType,
+      data: e.type === 'paste'
+        ? (e.clipboardData ? e.clipboardData.getData('text') : '')
+        : e.data,
+      value: tailOf(val, 24)
+    };
+    rows.push(row);
+    renderRow(row);
+    bumpTickSoon();
+  }
+
+  function renderRow(row) {
+    var tr = document.createElement('tr');
+    if (lastTickRendered !== -1 && row.tick !== lastTickRendered) tr.className = 'boundary';
+    lastTickRendered = row.tick;
+
+    var cells = [
+      row.seq,
+      row.t.toFixed(2),
+      row.target === 'textarea' ? '①ta' : '②ce',
+      row.event,
+      show(row.key),
+      show(row.code),
+      row.keyCode === undefined ? '' : row.keyCode,
+      row.isComposing === undefined ? '' : (row.isComposing ? 'true' : 'false'),
+      show(row.inputType),
+      show(row.data),
+      show(row.value)
+    ];
+    for (var i = 0; i < cells.length; i++) {
+      var td = document.createElement('td');
+      if (i === 3) td.className = classOf(row.event);
+      else if (i === 7 && row.isComposing === true) td.className = 'yes';
+      else if (i === 9 || i === 10) td.className = 'val';
+      td.textContent = cells[i];
+      tr.appendChild(td);
+    }
+    tbody.appendChild(tr);
+    tr.scrollIntoView({ block: 'nearest' });
+    countEl.textContent = rows.length + ' 筆';
+  }
+
+  function attach(el, name) {
+    EVENTS.forEach(function (ev) {
+      el.addEventListener(ev, function (e) { record(name, e); }, true);
+    });
+  }
+  attach(document.getElementById('ta'), 'textarea');
+  attach(document.getElementById('ce'), 'contenteditable');
+
+  // ------------------------------------------------------------ 匯出
+
+  function toMarkdown() {
+    var out = [];
+    out.push('# IME 事件錄影：' + new Date().toISOString());
+    out.push('');
+    out.push('- UA: `' + navigator.userAgent + '`');
+    out.push('- 平台: `' + navigator.platform + '`');
+    out.push('- 筆數: ' + rows.length);
+    out.push('');
+    out.push('`▲` 那一列之前是 macrotask 邊界（新的事件迴圈）。');
+    out.push('');
+    out.push('| ▲ | # | t(ms) | target | event | key | code | keyCode | isComposing | inputType | data | value 尾端 |');
+    out.push('|---|---|---|---|---|---|---|---|---|---|---|---|');
+    var prevTick = rows.length ? rows[0].tick : 0;
+    rows.forEach(function (r) {
+      var boundary = r.tick !== prevTick ? '▲' : '';
+      prevTick = r.tick;
+      out.push('| ' + [
+        boundary,
+        r.seq,
+        r.t.toFixed(2),
+        r.target === 'textarea' ? 'ta' : 'ce',
+        r.event,
+        md(show(r.key)),
+        md(show(r.code)),
+        r.keyCode === undefined ? '' : r.keyCode,
+        r.isComposing === undefined ? '' : r.isComposing,
+        md(show(r.inputType)),
+        md(show(r.data)),
+        md(show(r.value))
+      ].join(' | ') + ' |');
+    });
+    return out.join('\n');
+  }
+
+  function md(s) {
+    return String(s).replace(/\|/g, '\\|').replace(/`/g, '\\`');
+  }
+
+  document.getElementById('clear').onclick = function () {
+    rows = []; seq = 0; lastTickRendered = -1;
+    tbody.textContent = '';
+    countEl.textContent = '0 筆';
+    statusEl.textContent = '';
+    document.getElementById('ta').value = '';
+    document.getElementById('ce').textContent = '';
+    t0 = performance.now();
+    document.getElementById('ta').focus();
+  };
+
+  document.getElementById('mark').onclick = function () {
+    // 插一列純標記，方便把劇本九項切開
+    var tr = document.createElement('tr');
+    tr.className = 'boundary';
+    var td = document.createElement('td');
+    td.colSpan = 11;
+    td.style.color = 'var(--hot)';
+    td.textContent = '— 分段 —';
+    tr.appendChild(td);
+    tbody.appendChild(tr);
+    rows.push({ seq: ++seq, t: performance.now() - t0, tick: ++tick,
+      target: '-', event: '--- 分段 ---', key: '', code: '', keyCode: undefined,
+      isComposing: undefined, inputType: '', data: '', value: '' });
+    lastTickRendered = tick;
+    document.getElementById('ta').focus();
+  };
+
+  document.getElementById('copy').onclick = async function () {
+    var text = toMarkdown();
+    try {
+      await navigator.clipboard.writeText(text);
+      statusEl.textContent = '已複製 ' + text.length + ' 字';
+    } catch (e) {
+      // 有些 webview 不給 clipboard API；退回選取 textarea 的老方法
+      var tmp = document.createElement('textarea');
+      tmp.value = text;
+      document.body.appendChild(tmp);
+      tmp.select();
+      var ok = document.execCommand && document.execCommand('copy');
+      document.body.removeChild(tmp);
+      statusEl.textContent = ok ? '已複製（execCommand）' : '複製失敗：' + e;
+    }
+  };
+
+  document.getElementById('download').onclick = function () {
+    var blob = new Blob([toMarkdown()], { type: 'text/markdown;charset=utf-8' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'ime-' + new Date().toISOString().replace(/[:.]/g, '-') + '.md';
+    a.click();
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+    statusEl.textContent = '已下載';
+  };
+
+  document.getElementById('tolog').onclick = async function () {
+    var internals = window.__TAURI_INTERNALS__;
+    if (!internals || typeof internals.invoke !== 'function') {
+      statusEl.textContent = '不在 Tauri 視窗裡（瀏覽器開的），無法送後端 log';
+      return;
+    }
+    try {
+      // 一次送一整包：每行各一次 invoke 的到達順序不保證
+      await internals.invoke('log_line', { msg: '[ime-lab]\n' + toMarkdown() });
+      statusEl.textContent = '已送到後端 log（' + rows.length + ' 筆）';
+    } catch (e) {
+      statusEl.textContent = '送出失敗：' + e;
+    }
+  };
+
+  document.getElementById('ta').focus();
+})();
+</script>
+</body>
+</html>

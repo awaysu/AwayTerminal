@@ -20,10 +20,14 @@ pub struct SessionInfo {
     pub pid: u32,
     /// 實際啟動的命令列（診斷用）。
     pub command_line: String,
-    /// `pwsh` / `powershell`。
+    /// `pwsh` / `powershell`，自訂指令則是執行檔名。
     pub shell: String,
     /// `conpty.dll (OpenConsole)` 或 `inbox conhost`。
     pub backend: String,
+    /// 舊版 `n` 協定第三欄的 flags。目前只有 `c`＝claude 分頁（貼上走 ESC+CR）。
+    pub flags: String,
+    /// 分頁標題（`n` 協定第二欄）。
+    pub title: String,
 }
 
 /// 連線結束通知。走同一條 channel，但以 JSON 送出——前端看
@@ -67,25 +71,59 @@ pub fn conpty_backend() -> String {
     pty::backend_name()
 }
 
-/// 開一條連線。本階段只支援 `"powershell"`。
+/// 開一條連線。
+///
+/// - `kind = "powershell"`：pwsh 優先、否則 powershell。
+/// - `kind = "custom"`：用 `command` 給的指令（`?cmd=claude` 這類 dev 測試入口）。
+///
+/// 建好之後會 emit 舊協定的 `n{id}US{title}[US{flags}]`，由 `terminal.js` 的
+/// `makeTerm` 建立 pane。**先 emit `n` 再 spawn PTY**，讓 pane 盡量先存在；
+/// 即使 event 慢到後面，`bridge.js` 也會把先到的輸出扣住不丟（見那邊的 pendingOut）。
+// tauri command 的參數是前端傳來的具名欄位，攤平是這個框架的慣例；
+// 包成 struct 會讓 JS 那邊變成 `{ args: {...} }`，反而難讀。
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub fn session_create(
+    app: tauri::AppHandle,
     kind: String,
+    command: Option<String>,
     cols: u16,
     rows: u16,
     cwd: Option<String>,
     on_event: Channel<InvokeResponseBody>,
     manager: State<'_, SessionManager>,
 ) -> Result<SessionInfo, String> {
-    if kind != "powershell" {
-        return Err(format!("尚未支援的連線種類：{kind}"));
-    }
-
-    let sh = shell::powershell().ok_or_else(|| {
-        "找不到 pwsh.exe 或 powershell.exe（PATH 與 System32 都沒有）".to_string()
-    })?;
+    let sh = match kind.as_str() {
+        "powershell" => shell::powershell().ok_or_else(|| {
+            "找不到 pwsh.exe 或 powershell.exe（PATH 與 System32 都沒有）".to_string()
+        })?,
+        "custom" => {
+            let cmd = command
+                .as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .ok_or_else(|| "kind=custom 需要 command".to_string())?;
+            shell::custom(cmd).ok_or_else(|| format!("找不到指令：{cmd}"))?
+        }
+        other => return Err(format!("尚未支援的連線種類：{other}")),
+    };
 
     let id = manager.next_id();
+
+    // 舊版 n 協定第三欄 flags：`c`＝claude 分頁（貼上走 ESC+CR，見 terminal.js doPaste）。
+    // 舊版是 C# 的 IsClaudeExe（檔名含 claude）判斷，這裡照同一個規則。
+    let flags = if shell::is_claude_exe(&sh.exe) { "c" } else { "" };
+    let title = sh.title.clone();
+    let n_msg = if flags.is_empty() {
+        format!("n{id}\x1f{title}")
+    } else {
+        format!("n{id}\x1f{title}\x1f{flags}")
+    };
+    crate::host::emit_host(&app, n_msg);
+    // 建完一定要再送 `s{id}`（舊版 MainWindow.xaml.cs 的 AddTab → SelectTab）。
+    // 少了它 `terminal.js` 的 `active` 會留在 null → `refit()` 直接 return → pane 永遠不 fit、
+    // 不送 `r` 校正尺寸，`awayDump()` 也讀不到 buffer（實測就是這個症狀）。
+    crate::host::emit_host(&app, format!("s{id}"));
 
     // 輸出批次合併：讀取執行緒只把 bytes 丟進 pump，由 pump 執行緒合併後送一包。
     // 這同時避開 tauri 的門檻——`InvokeResponseBody::Raw` 小於 1024 bytes 會被序列化成
@@ -130,12 +168,18 @@ pub fn session_create(
         id,
         pid: session.pid(),
         command_line: sh.command_line,
-        shell: sh.name.to_string(),
+        shell: sh.name.clone(),
         backend: session.backend_name().to_string(),
+        flags: flags.to_string(),
+        title,
     };
     println!(
-        "[AwayTerminal] session {} started: pid={} shell={} backend={}",
-        info.id, info.pid, info.shell, info.backend
+        "[AwayTerminal] session {} started: pid={} shell={} flags={} backend={}",
+        info.id,
+        info.pid,
+        info.shell,
+        if info.flags.is_empty() { "-" } else { &info.flags },
+        info.backend
     );
     manager.insert(id, session);
     Ok(info)

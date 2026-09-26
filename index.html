@@ -4,21 +4,41 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>AwayTerminal</title>
-  <style>
-    html, body { height: 100%; margin: 0; background: #1e1e1e; overflow: hidden; }
-    #terminals { position: absolute; inset: 0; }
-    .term { position: absolute; inset: 0; display: flex; flex-direction: column; }
-    /* padding 放在 xterm 元素本身（fit addon 會扣除），放在父層會使最後一行被截掉 */
-    .term-body { flex: 1 1 auto; min-height: 0; position: relative; }
-    .term-body > .terminal, .term-body > .xterm { padding: 4px 4px 0 4px; }
-    .xterm .xterm-viewport { background-color: transparent !important; }
-  </style>
+  <script>
+    // 前端例外回報：這個專案的驗證不能靠開 devtools（共用桌面、不搶焦點），
+    // 所以把 window.onerror / unhandledrejection 直接送到後端 stdout。
+    // 用 inline script 而不是放在 module 裡：module script 是 defer 的，
+    // 模組載入期間就炸掉的錯誤會來不及被攔到。
+    (function () {
+      var pending = [];
+      function send(line) {
+        var inv = window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke;
+        if (!inv) { pending.push(line); return; }
+        while (pending.length) inv('log_line', { msg: pending.shift() });
+        inv('log_line', { msg: line });
+      }
+      window.addEventListener('error', function (e) {
+        var where = e.filename ? ' @ ' + e.filename + ':' + e.lineno + ':' + e.colno : '';
+        var stack = e.error && e.error.stack ? '\n' + e.error.stack : '';
+        send('[js-error] ' + (e.message || e.error) + where + stack);
+      });
+      window.addEventListener('unhandledrejection', function (e) {
+        var r = e.reason;
+        send('[js-reject] ' + (r && r.stack ? r.stack : r));
+      });
+      window.AwayReportError = send;
+    })();
+  </script>
 </head>
 <body>
-  <div id="terminals">
-    <div class="term">
-      <div class="term-body" id="term-body"></div>
-    </div>
+  <!-- DOM 結構與 id/class 全部照舊版 web/index.html——terminal.js 直接 querySelector 這些名字 -->
+  <div id="terminals"></div>
+  <div id="searchbar">
+    <input id="search-input" type="text" placeholder="搜尋" />
+    <span id="search-count"></span>
+    <button id="search-prev" title="上一個 (Shift+Enter)">▲</button>
+    <button id="search-next" title="下一個 (Enter)">▼</button>
+    <button id="search-close" title="關閉 (Esc)">✕</button>
   </div>
   <script type="module" src="/src/main.js"></script>
 </body>

@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "主視窗的權限。`core:default` 已包含 event listen/emit——host→JS 的舊協定字串走 tauri event `host-msg`，沒有這個權限 `listen('host-msg')` 會被拒（錯誤訊息：event.listen not allowed）。",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

@@ -2,6 +2,7 @@
 
 pub mod bench;
 pub mod commands;
+pub mod host;
 pub mod output;
 pub mod pty;
 pub mod session;
@@ -28,6 +29,8 @@ pub fn run() {
             commands::session_resize,
             commands::session_close,
             commands::session_list,
+            host::host_ready,
+            host::host_message,
             bench::bench_raw,
             bench::bench_vec,
             bench::bench_base64,

@@ -1,0 +1,72 @@
+/* 從舊版 web/index.html 的 <style> 區塊原樣搬過來（class 名稱不可改——terminal.js 靠它們 querySelector）。
+   唯一的 AT2 調整：xterm.css 由 main.js 用 ESM import 載入，不再是 <link>。 */
+
+html, body { height: 100%; margin: 0; background: #1e1e1e; overflow: hidden; }
+#terminals { position: absolute; inset: 0; }
+
+.term { position: absolute; inset: 0; display: flex; flex-direction: column; }
+.pane-header {
+  display: none; flex: 0 0 14px; height: 14px; align-items: center; padding: 0 8px;
+  background: #2d2d30; color: #dddddd; cursor: move; user-select: none;
+  font: 10px "Microsoft JhengHei", "微軟正黑體", sans-serif;
+  white-space: nowrap; overflow: hidden; /* 與頁面接觸處不畫線，融為一體 */
+}
+/* padding 放在 xterm 元素本身（fit addon 會扣除），放在父層會使最後一行被截掉；底部不留距 */
+.term-body { flex: 1 1 auto; min-height: 0; position: relative; }
+.term-body > .terminal, .term-body > .xterm { padding: 4px 4px 0 4px; }
+/* 蓋掉 xterm.css 內建的 .xterm-viewport 純黑底（會在最後一行下方露出一條黑帶）*/
+.xterm .xterm-viewport { background-color: transparent !important; }
+
+/* 分割模式：grid 排列，全部顯示 */
+#terminals.split { display: grid; gap: 3px; grid-auto-rows: 1fr; padding: 3px; box-sizing: border-box; }
+#terminals.split .term { position: relative; inset: auto; border: 1px solid #333; border-radius: 4px; overflow: hidden; }
+#terminals.split .pane-header { display: flex; }
+#terminals.split .term.active-pane { border-color: #FDFFB0; }
+#terminals.split .term.active-pane .pane-header { background: #45472e; color: #ffffff; }
+.term.drag-over { outline: 1px dashed #FDFFB0; outline-offset: -1px; }
+
+.pane-header .ph-title { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; }
+
+/* Multi-Agent 分頁（1.2.0）：一個外框放 2～4 個 pane——上列（格 2～4 由左到右平分）＋可上下拖的分隔線＋下方全寬（格 1）。
+   外框顏色由 C# 依格號給（inline style，蓋過一般的灰框／作用中黃框）；作用中那格用 header 亮色標示。
+   規則放在分割模式規則之後、選擇器同權重（#terminals …），分割／分頁兩種模式都由這裡決定 agent pane 的框。 */
+#terminals .agents { position: absolute; inset: 0; display: flex; flex-direction: column; }
+#terminals.split .agents { position: relative; inset: auto; min-width: 0; min-height: 0; }
+#terminals .agents-top { display: flex; flex-direction: row; gap: 2px; min-height: 0; }
+#terminals .agents .term { position: relative; inset: auto; min-width: 0; min-height: 0; box-sizing: border-box;
+                           border: 2px solid #333; border-radius: 3px; overflow: hidden; }
+#terminals .agents-top > .term { flex: 1 1 0px; }
+#terminals .agents .pane-header { display: flex; }
+#terminals .agents .term.active-pane .pane-header { background: #45472e; color: #ffffff; }
+.ag-divider { flex: 0 0 5px; background: #2d2d30; cursor: row-resize; }
+.ag-divider:hover, .agents.dragging > .ag-divider { background: #5a5a40; }
+.agents.dragging { cursor: row-resize; user-select: none; }
+.ph-pill { flex: 0 0 auto; margin-left: 6px; padding: 0 5px; border-radius: 6px; font-size: 9px; line-height: 12px; }
+.ph-pill.st-idle { background: #2b3d2c; color: #A5D6A7; }
+.ph-pill.st-busy { background: #4a2e2e; color: #EF9A9A; }
+.ph-pill.st-queued { background: #45472e; color: #FDFFB0; }
+.ph-pill.st-exited { background: #333; color: #999; }
+
+.xterm-viewport::-webkit-scrollbar { width: 10px; }
+.xterm-viewport::-webkit-scrollbar-thumb { background: #4a4a4a; border-radius: 5px; }
+.xterm-viewport::-webkit-scrollbar-track { background: transparent; }
+
+/* Ctrl+F 搜尋列（浮在終端機右上角；純 HTML，避開 WPF/WebView2 airspace 問題） */
+#searchbar {
+  display: none; position: absolute; top: 6px; right: 16px; z-index: 50;
+  align-items: center; gap: 4px; padding: 4px 6px;
+  background: #2d2d30; border: 1px solid #FDFFB0; border-radius: 4px;
+  font: 12px "Microsoft JhengHei", "微軟正黑體", sans-serif;
+  box-shadow: 0 2px 8px rgba(0,0,0,.5);
+}
+#searchbar input {
+  width: 160px; background: #1e1e1e; color: #e0e0e0;
+  border: 1px solid #555; outline: none; padding: 2px 4px; font-size: 12px;
+}
+#searchbar input:focus { border-color: #FDFFB0; }
+#searchbar button {
+  background: #3a3a3e; color: #ddd; border: 1px solid #555; border-radius: 3px;
+  width: 22px; height: 20px; padding: 0; cursor: pointer; font-size: 11px; line-height: 1;
+}
+#searchbar button:hover { background: #4a4a50; }
+#search-count { color: #aaa; min-width: 34px; text-align: center; }

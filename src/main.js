@@ -1,9 +1,12 @@
-// AwayTerminal2 — 階段 1 技術驗證
+// AwayTerminal2 前端進入點。
 //
-// 目前：單一 xterm.js 終端 + ConPTY 後端跑 PowerShell。
-// 輸入處理刻意保持最簡單（直接 onData → session_write_text）；
-// 舊版 web/terminal.js 的輸入佇列 / IME / 貼上調校在後續任務才搬進來。
+// 這個檔案本身**不管終端機邏輯**——那是搬過來的 `terminal.js` 的工作（輸入佇列、IME 守衛、
+// 靜止閘門、去重、貼上路徑、分割/分欄 layout、Ctrl+F…）。main.js 只做三件事：
+//   1. 把 `terminal.js` 期待的全域（Terminal / FitAddon / …）準備好——它原本靠 <script> 載入 UMD；
+//   2. 提供 `window.AwayWebgl`（WebGL addon + DOM 退回），這是 terminal.js 的 AT2-2 修改要呼叫的；
+//   3. 等 bridge 掛好 host→JS listener 之後才載入 terminal.js（它一載完就送 `ready`）。
 import '@xterm/xterm/css/xterm.css';
+import './style.css';
 
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
@@ -11,142 +14,63 @@ import { WebglAddon } from '@xterm/addon-webgl';
 import { Unicode11Addon } from '@xterm/addon-unicode11';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import { SerializeAddon } from '@xterm/addon-serialize';
-import { SearchAddon } from '@xterm/addon-search';
 import { invoke, Channel } from '@tauri-apps/api/core';
 
-const term = new Terminal({
-  fontFamily: '"Cascadia Mono", "Consolas", "Microsoft JhengHei", "微軟正黑體", monospace',
-  fontSize: 14,
-  cursorBlink: true,
-  allowProposedApi: true, // unicode11 addon 需要
-  scrollback: 10000,
-  theme: {
-    background: '#1e1e1e',
-    foreground: '#cccccc',
-    cursor: '#ffffff',
-  },
-});
+import { bridgeReady, log } from './bridge.js';
 
-const fitAddon = new FitAddon();
-term.loadAddon(fitAddon);
-term.loadAddon(new WebLinksAddon());
-term.loadAddon(new SerializeAddon());
-term.loadAddon(new SearchAddon());
+// --- terminal.js 期待的全域（沿用 UMD 的命名空間形狀，這樣 terminal.js 一個字都不用改）---
+window.Terminal = Terminal;
+window.FitAddon = { FitAddon };
+window.Unicode11Addon = { Unicode11Addon };
+window.WebLinksAddon = { WebLinksAddon };
+window.SerializeAddon = { SerializeAddon };
 
-// 全形字寬度：unicode 11 版本比內建 v6 準
-const unicode11 = new Unicode11Addon();
-term.loadAddon(unicode11);
-term.unicode.activeVersion = '11';
-
-term.open(document.getElementById('term-body'));
-
-// --- 渲染器：WebGL → DOM 退回 ---
-let renderer = 'DOM';
-try {
-  const webgl = new WebglAddon();
-  // context lost（休眠喚醒 / 驅動重置）時卸載 addon，xterm 自動退回 DOM 渲染
-  webgl.onContextLoss(() => {
-    console.warn('[AwayTerminal] WebGL context lost, falling back to DOM renderer');
-    webgl.dispose();
-    term.writeln('\r\n\x1b[33m[AwayTerminal] WebGL context lost → 已退回 DOM 渲染\x1b[0m');
-  });
-  term.loadAddon(webgl);
-  renderer = 'WebGL';
-} catch (e) {
-  console.warn('[AwayTerminal] WebGL addon 載入失敗，退回 DOM 渲染:', e);
-  renderer = 'DOM (WebGL 載入失敗)';
-}
-console.log('[AwayTerminal] renderer =', renderer);
-// 也回報到後端 stdout，方便從啟動 log 確認 WebGL 有沒有啟用（不必開 devtools）
-invoke('report_renderer', { renderer }).catch(() => {});
-
-fitAddon.fit();
-
-const log = (msg) => invoke('log_line', { msg }).catch(() => {});
-
-// ------------------------------------------------------------------ session
-
-/** 目前這個終端對應的 session id（本階段只有一條）。 */
-let sessionId = null;
-/** 已收到結束事件，不再送輸入。 */
-let sessionEnded = false;
-
-async function startSession() {
-  const onEvent = new Channel();
-  onEvent.onmessage = (msg) => {
-    if (msg instanceof ArrayBuffer) {
-      // PTY 原始輸出：直接餵 bytes，不要先 decode 成字串
-      term.write(new Uint8Array(msg));
-      return;
-    }
-    if (msg && msg.kind === 'exit') {
-      sessionEnded = true;
-      const code = msg.exitCode === null || msg.exitCode === undefined ? '?' : msg.exitCode;
-      term.writeln(`\r\n\x1b[33m[行程已結束，exit code ${code}]\x1b[0m`);
-    }
-  };
-
-  const info = await invoke('session_create', {
-    kind: 'powershell',
-    cols: term.cols,
-    rows: term.rows,
-    cwd: null,
-    onEvent,
-  });
-  sessionId = info.id;
-  console.log('[AwayTerminal] session', info);
-  return info;
-}
-
-// 頁面卸載（dev 的 Vite 重載、或之後的視窗重整）時把 session 收掉，
-// 否則舊的 pwsh + OpenConsole 會留到整個程式結束才被清（dev log 曾出現 session 1／2 並存）。
-window.addEventListener('beforeunload', () => {
-  if (sessionId === null) return;
-  const id = sessionId;
-  sessionId = null;
-  invoke('session_close', { id }).catch(() => {});
-});
-
-term.onData((data) => {
-  if (sessionId === null || sessionEnded) return;
-  invoke('session_write_text', { id: sessionId, text: data }).catch(() => {});
-});
-
-term.onBinary((data) => {
-  if (sessionId === null || sessionEnded) return;
-  const bytes = new Uint8Array(data.length);
-  for (let i = 0; i < data.length; i++) bytes[i] = data.charCodeAt(i) & 0xff;
-  invoke('session_write', { id: sessionId, data: Array.from(bytes) }).catch(() => {});
-});
-
-// --- 隨視窗縮放 ---
-let resizeTimer = null;
-let lastCols = 0;
-let lastRows = 0;
-const doFit = () => {
+// --- WebGL 渲染器（terminal.js AT2-2 會呼叫）---
+let rendererReported = false;
+window.AwayWebgl = function (term, id) {
+  let renderer = 'DOM';
   try {
-    fitAddon.fit();
-  } catch {
-    return; // 視窗最小化時 fit 會失敗
+    const webgl = new WebglAddon();
+    webgl.onContextLoss(() => {
+      // 休眠喚醒 / 驅動重置：卸載 addon，xterm 自動退回 DOM 渲染
+      console.warn('[AwayTerminal] WebGL context lost, falling back to DOM renderer');
+      log(`[AwayTerminal] pane ${id} WebGL context lost → 退回 DOM 渲染`);
+      webgl.dispose();
+    });
+    term.loadAddon(webgl);
+    renderer = 'WebGL';
+  } catch (e) {
+    console.warn('[AwayTerminal] WebGL addon 載入失敗，退回 DOM 渲染:', e);
+    renderer = 'DOM (WebGL 載入失敗)';
   }
-  if (sessionId === null || sessionEnded) return;
-  if (term.cols === lastCols && term.rows === lastRows) return;
-  lastCols = term.cols;
-  lastRows = term.rows;
-  invoke('session_resize', { id: sessionId, cols: term.cols, rows: term.rows }).catch(() => {});
+  console.log('[AwayTerminal] renderer =', renderer);
+  if (!rendererReported) {
+    rendererReported = true;
+    invoke('report_renderer', { renderer }).catch(() => {});
+  }
+  return renderer;
 };
-const scheduleFit = () => {
-  clearTimeout(resizeTimer);
-  resizeTimer = setTimeout(doFit, 30);
-};
-window.addEventListener('resize', scheduleFit);
-new ResizeObserver(scheduleFit).observe(document.getElementById('term-body'));
+
+// ------------------------------------------------- 端到端驗證（不需視窗焦點）
+//
+// 把 xterm buffer 的純文字尾端回報到後端 log，證明
+// 「PTY 輸出 → channel → term.write」整條路通，不必看視窗、也不必自動化 GUI。
+
+function awayDump(lines = 6, id = null) {
+  const term = window.AwayTerm;
+  if (!term) return [];
+  const tail = term.tail(id, lines);
+  // 一定要組成一包再送：每行各一次 invoke 是各自獨立的非同步呼叫，到達順序不保證
+  log(`[dump] xterm buffer 尾端 ${tail.length} 行：\n${tail.map((t) => `[dump] | ${t}`).join('\n')}`);
+  return tail;
+}
+window.awayDump = awayDump;
 
 // ------------------------------------------------------------- IPC bench
 //
-// CLAUDE.md 風險 5：「Tauri 二進位 channel 可能被序列化成 JSON 數字陣列（比 base64 更慢）」。
-// 這裡實測四條路，結果同時印在終端與後端 log（後端 log 方便寫進 docs/IPC-BENCH.md）。
-// dev 模式自動跑一次；任何時候都可以在 devtools 打 `awayBench()` 重跑。
+// CLAUDE.md 風險 5 的量測。**只在 `?bench=1` 時自動跑**（TASK-003 調整），
+// 其他時候可在 devtools 手動叫 `awayBench()` / `awayBenchSmall()`。
+// 結果與結論寫在 docs/IPC-BENCH.md。
 
 const MB = 1024 * 1024;
 
@@ -168,9 +92,9 @@ function byteLenOf(v) {
 const BENCH_MODES = {
   // Response::new(Vec<u8>) → 自訂協定回應，真二進位
   raw: (size) => invoke('bench_raw', { size }),
-  // command 直接回 Vec<u8> → serde 序列化成 JSON 數字陣列
+  // command 直接回 Vec<u8> → serde 序列化成 JSON 數字陣列（反例，保留供對照）
   vec: (size) => invoke('bench_vec', { size }),
-  // base64 字串 + atob（舊版 o{id}{US}{base64} 的做法）
+  // base64 字串 + atob（舊版 o{id}US{base64} 的做法）
   base64: async (size) => {
     const s = await invoke('bench_base64', { size });
     const bin = atob(s);
@@ -217,116 +141,77 @@ async function benchMode(name, size, iterations) {
 }
 
 async function awayBench(sizeMb = 1, iterations = 10) {
+  const lines = [`[IPC bench] ${iterations} × ${sizeMb}MB`];
   const size = Math.round(sizeMb * MB);
-  const header = `[IPC bench] ${iterations} × ${sizeMb}MB`;
-  term.writeln(`\r\n\x1b[36m${header}\x1b[0m`);
-  log(header);
   const rows = [];
   for (const name of ['raw', 'vec', 'base64', 'channel']) {
     const r = await benchMode(name, size, iterations);
     rows.push(r);
-    const line =
+    lines.push(
       `  ${name.padEnd(8)} median ${r.median.toFixed(1).padStart(8)} ms` +
-      `  mean ${r.mean.toFixed(1).padStart(8)} ms` +
-      `  min ${r.min.toFixed(1).padStart(8)} ms` +
-      `  max ${r.max.toFixed(1).padStart(8)} ms` +
-      `  ${r.mbPerSec.toFixed(1).padStart(6)} MB/s` +
-      `  ${r.bytes} bytes via ${r.transport}`;
-    term.writeln(line);
-    log(line);
+        `  mean ${r.mean.toFixed(1).padStart(8)} ms` +
+        `  min ${r.min.toFixed(1).padStart(8)} ms` +
+        `  max ${r.max.toFixed(1).padStart(8)} ms` +
+        `  ${r.mbPerSec.toFixed(1).padStart(6)} MB/s` +
+        `  ${r.bytes} bytes via ${r.transport}`
+    );
   }
+  log(lines.join('\n'));
+  console.log(lines.join('\n'));
   return rows;
 }
 window.awayBench = awayBench;
 
-// --- 小 payload 也量一次：channel 的 1024 bytes 門檻兩邊各一次 ---
+/** channel 的 1024 bytes 門檻兩邊各量一次（見 docs/IPC-BENCH.md）。 */
 async function awayBenchSmall(iterations = 200) {
-  const header = `[IPC bench small] ${iterations} × (512 / 2048 bytes) via channel`;
-  term.writeln(`\r\n\x1b[36m${header}\x1b[0m`);
-  log(header);
+  const lines = [`[IPC bench small] ${iterations} × (512 / 2048 bytes) via channel`];
   for (const size of [512, 2048]) {
     const r = await benchMode('channel', size, iterations);
-    const line =
+    lines.push(
       `  channel ${String(size).padStart(5)}B  median ${r.median.toFixed(3)} ms` +
-      `  mean ${r.mean.toFixed(3)} ms  ${r.bytes} bytes via ${r.transport}`;
-    term.writeln(line);
-    log(line);
+        `  mean ${r.mean.toFixed(3)} ms  ${r.bytes} bytes via ${r.transport}`
+    );
   }
+  log(lines.join('\n'));
+  console.log(lines.join('\n'));
 }
 window.awayBenchSmall = awayBenchSmall;
-
-// ------------------------------------------------- 端到端驗證（不需視窗焦點）
-//
-// 把 xterm buffer 的純文字尾端回報到後端 log，用來證明
-// 「PTY 輸出 → channel → term.write」整條路真的通，不必看視窗、也不必自動化 GUI。
-// dev 模式在 session 起來後自動跑一次；任何時候可在 devtools 打 `awayDump()`。
-
-function bufferTail(lines = 6) {
-  const buf = term.buffer.active;
-  const out = [];
-  for (let y = 0; y < buf.length; y++) {
-    const line = buf.getLine(y);
-    if (!line) continue;
-    const text = line.translateToString(true);
-    if (text.trim() !== '') out.push(text);
-  }
-  return out.slice(-lines);
-}
-
-function awayDump(lines = 6) {
-  const tail = bufferTail(lines);
-  // 一定要組成一包再送：每行各一次 invoke 是各自獨立的非同步呼叫，
-  // 到後端的順序不保證（第一版就這樣印出亂序的行）。
-  const body = tail.map((t) => `[dump] | ${t}`).join('\n');
-  log(
-    `[dump] xterm buffer 尾端 ${tail.length} 行（共 ${term.buffer.active.length} 行）：\n${body}`
-  );
-  return tail;
-}
-window.awayDump = awayDump;
 
 // ------------------------------------------------------------------ 啟動
 
 (async () => {
-  term.writeln(`\x1b[1;36m[AwayTerminal2] renderer = ${renderer}\x1b[0m`);
+  // host→JS 的 listener 要在 terminal.js 送 `ready` 之前掛好
+  await bridgeReady;
+
+  const params = new URLSearchParams(location.search);
+
+  // terminal.js 是舊版原檔（IIFE），載入即執行並在最後送 `ready`
   try {
-    const backend = await invoke('conpty_backend');
-    term.writeln(`\x1b[1;36m[AwayTerminal2] ConPTY backend = ${backend}\x1b[0m`);
+    await import('./terminal.js');
   } catch (e) {
-    term.writeln(`\x1b[31m[AwayTerminal2] conpty_backend 失敗：${e}\x1b[0m`);
-  }
-  try {
-    const pong = await invoke('ping');
-    term.writeln(`\x1b[90m[IPC] ${pong}\x1b[0m`);
-  } catch (e) {
-    term.writeln(`\x1b[31m[IPC] ping 失敗：${e}\x1b[0m`);
+    log(`[main] 載入 terminal.js 失敗：${e && e.stack ? e.stack : e}`);
+    throw e;
   }
 
-  // dev 模式自動跑一次 IPC bench（release 不跑；用 awayBench() 手動觸發）
-  if (import.meta.env.DEV) {
+  if (params.get('bench') === '1') {
     try {
       await awayBench(1, 10);
       await awayBenchSmall(200);
     } catch (e) {
-      term.writeln(`\x1b[31m[IPC bench] 失敗：${e}\x1b[0m`);
+      log(`[IPC bench] 失敗：${e}`);
     }
   }
 
-  term.writeln('');
-  try {
-    const info = await startSession();
-    lastCols = term.cols;
-    lastRows = term.rows;
-    term.writeln(
-      `\x1b[90m[session ${info.id}] pid=${info.pid} shell=${info.shell} backend=${info.backend}\x1b[0m`
-    );
-  } catch (e) {
-    term.writeln(`\x1b[31m[session] 啟動失敗：${e}\x1b[0m`);
-  }
-  term.focus();
-
-  // dev：等 shell 印完提示字元後傾印一次，證明輸出真的進到 xterm
-  if (import.meta.env.DEV && sessionId !== null) {
-    setTimeout(() => awayDump(6), 2500);
+  if (params.get('dump') === '1' || import.meta.env.DEV) {
+    // 提示字元要等 shell 啟動＋pane fit 完才會有，單次固定延遲不可靠（實測 3s 時 buffer 還是空的）。
+    // 最多試 10 次、每 1s 一次，讀到東西就停；10 次都空才報空，這樣「真的沒輸出」與「還沒到」分得出來。
+    (async () => {
+      for (let i = 1; i <= 10; i++) {
+        await new Promise((r) => setTimeout(r, 1000));
+        const tail = window.AwayTerm ? window.AwayTerm.tail(null, 6) : [];
+        if (tail.length) return awayDump(6);
+        if (i === 10) log('[dump] 試了 10 秒，xterm buffer 仍是空的');
+      }
+    })();
   }
 })();
