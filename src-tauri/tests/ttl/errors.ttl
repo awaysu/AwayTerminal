@@ -1,0 +1,8 @@
+; TTL 巨集測試：錯誤的行號要對
+; 這個檔**故意**在第 7 行除以零（`d = c / 0`），ttl_probe 會檢查
+; 錯誤訊息是 `Divide by zero.`、行號是 7、檔名是 errors.ttl。
+a = 1
+b = 2
+c = a + b
+d = c / 0
+e = 99

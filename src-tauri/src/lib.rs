@@ -23,6 +23,7 @@ pub mod tabs;
 pub mod tap;
 pub mod telnet;
 pub mod toolbar;
+pub mod ttl;
 
 use std::sync::Arc;
 

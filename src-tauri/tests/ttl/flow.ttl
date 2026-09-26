@@ -1,0 +1,167 @@
+; TTL 巨集測試：流程控制（if / for / while / do / until / break / continue / goto / call）
+; 行為照 TeraTerm 的 ttl.cpp 與 ttmbuff.c。
+
+; --- if / else / elseif / endif ---
+f_if = 0
+if 1 then
+  f_if = 1
+else
+  f_if = 2
+endif
+
+f_else = 0
+if 0 then
+  f_else = 1
+else
+  f_else = 2
+endif
+
+f_elseif = 0
+if 0 then
+  f_elseif = 1
+elseif 1 then
+  f_elseif = 2
+else
+  f_elseif = 3
+endif
+
+; 巢狀 if：被跳過的區塊裡面的 if/endif 也要正確配對
+f_nest = 0
+if 0 then
+  if 1 then
+    f_nest = 1
+  endif
+  f_nest = 2
+else
+  f_nest = 3
+endif
+
+; 單行式 if
+f_single = 0
+if 1 f_single = 5
+f_single0 = 0
+if 0 f_single0 = 5
+
+; --- for / next ---
+f_forsum = 0
+for i 1 5
+  f_forsum = f_forsum + i
+next
+f_fori = i                       ; 5（迴圈變數留在最後的值）
+
+; 起＝迄只跑一圈
+f_once = 0
+for j 3 3
+  f_once = f_once + 1
+next
+
+; 起 > 迄＝遞減
+f_down = 0
+for k 3 1
+  f_down = f_down * 10 + k
+next                             ; 321
+
+; 巢狀 for
+f_nestfor = 0
+for a 1 3
+  for b 1 2
+    f_nestfor = f_nestfor + 1
+  next
+next                             ; 6
+
+; --- while / endwhile ---
+f_while = 0
+while f_while < 3
+  f_while = f_while + 1
+endwhile
+
+; 條件一開始就不成立
+f_while0 = 9
+while 0
+  f_while0 = 1
+endwhile
+
+; --- until / enduntil（條件成立就結束）---
+f_until = 0
+until f_until >= 3
+  f_until = f_until + 1
+enduntil
+
+; --- do / loop ---
+f_do = 0
+do
+  f_do = f_do + 1
+loop while f_do < 3
+
+f_dowhile = 0
+do while f_dowhile < 2
+  f_dowhile = f_dowhile + 1
+loop
+
+f_loopuntil = 0
+do
+  f_loopuntil = f_loopuntil + 1
+loop until f_loopuntil = 4
+
+; --- break / continue ---
+f_break = 0
+for i 1 10
+  if i > 3 then
+    break
+  endif
+  f_break = f_break + i
+next                             ; 1+2+3 = 6
+
+f_cont = 0
+for i 1 5
+  if i = 3 then
+    continue
+  endif
+  f_cont = f_cont + i
+next                             ; 1+2+4+5 = 12
+
+; break 只跳出內層
+f_breaknest = 0
+for a 1 2
+  for b 1 5
+    if b > 2 then
+      break
+    endif
+    f_breaknest = f_breaknest + 1
+  next
+next                             ; 2 × 2 = 4
+
+; while 裡面的 break
+f_breakwhile = 0
+while 1
+  f_breakwhile = f_breakwhile + 1
+  if f_breakwhile >= 3 then
+    break
+  endif
+endwhile
+
+; --- goto（往後跳）---
+f_goto = 0
+goto skip
+f_goto = 1
+:skip
+f_goto2 = 2
+
+; goto 往前跳（當迴圈用）
+f_gotoloop = 0
+:top
+f_gotoloop = f_gotoloop + 1
+if f_gotoloop < 3 goto top
+
+; --- call / return ---
+f_call = 0
+call sub
+f_after = 1
+goto done
+
+:sub
+f_call = 7
+return
+
+:done
+end

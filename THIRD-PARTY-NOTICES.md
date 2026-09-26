@@ -153,7 +153,47 @@ Transitive dependencies it pulls in: `nix` (MIT) and, on macOS only, `io-kit-sys
 
 ---
 
-## 6. Rust crates
+## 6. TeraTerm (ttpmacro) — BSD-3-Clause
+
+- Used for: the TTL macro interpreter, `src-tauri/src/ttl/` — **translated section by section from**
+  `ttpmacro/ttl.cpp`, `ttmparse.cpp`, `ttmbuff.c` and `ttmparse.h` (the reserved-word table
+  and error codes are taken directly from the source).
+- Upstream: <https://github.com/TeraTermProject/teraterm>
+- Copyright (C) 1994-1998 T. Teranishi / (C) 2005- TeraTerm Project
+
+The reference checkout lives in `reference/teraterm/` and is **not** part of this repository
+(`reference/` is git-ignored). BSD-3-Clause requires the copyright notice, the conditions and
+the disclaimer to accompany redistributions, so the full licence text below must ship with the
+installers (stage 5).
+
+```
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions
+are met:
+
+1. Redistributions of source code must retain the above copyright
+   notice, this list of conditions and the following disclaimer.
+2. Redistributions in binary form must reproduce the above copyright
+   notice, this list of conditions and the following disclaimer in the
+   documentation and/or other materials provided with the distribution.
+3. The name of the author may not be used to endorse or promote products
+   derived from this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE AUTHORS ``AS IS'' AND ANY EXPRESS OR
+IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+IN NO EVENT SHALL THE AUTHORS BE LIABLE FOR ANY DIRECT, INDIRECT,
+INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+```
+
+---
+
+## 7. Rust crates
 
 Linked as dependencies, each under MIT or MIT/Apache-2.0:
 `windows-sys`, `libloading`, `serde`, `serde_json`, `tokio`, `chrono`,

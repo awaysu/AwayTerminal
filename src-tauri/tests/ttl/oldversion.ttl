@@ -1,0 +1,38 @@
+; 舊版相容測試：把舊版 AwayTerminal `samples/sample.ttl` 裡**不碰連線**的部分照原樣跑一次。
+;
+; 舊版那個檔的 send／wait／messagebox 屬於第二批（TASK-013），這裡把它們拿掉，
+; 其餘（for + int2str、變數與運算式、if/then/else/endif）**一字不改**，
+; 確認新版對舊版寫法的解讀完全一樣。
+
+; --- for 迴圈 + int2str（舊版 sample.ttl 的第一段）---
+acc = ''
+for i 1 3
+  int2str istr i
+  strconcat acc istr
+next
+; acc 應該是 '123'
+
+; --- 變數、運算式、if/then/else/endif（舊版 sample.ttl 的第二段，原文照抄）---
+a = 2
+b = 3
+c = a + b
+int2str cstr c
+ok = 0
+if c = 5 then
+  ok = 1
+else
+  ok = 2
+endif
+
+; 舊版 README 寫的「單行式 if 不支援 break/continue，請用區塊 if」——
+; 新版兩種都支援（照 TeraTerm），這裡確認區塊式那種照樣正確。
+sum = 0
+for i 1 5
+  if i = 3 then
+    continue
+  endif
+  sum = sum + i
+next
+; sum 應該是 12
+
+end

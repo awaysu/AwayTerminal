@@ -1,0 +1,10 @@
+; include 測試：主檔
+;
+; TeraTerm 的 include 是「把另一個檔疊在上面跑到底，再回到這裡繼續」。
+; 變數是全域的（看得到），**標籤是那一層的**——被 include 的檔跑完之後它的標籤就消失了
+; （原碼 CloseBuff → DelLabVar），所以主檔不能 call 它裡面的副程式。
+i_before = 1
+include 'inc_lib.ttl'
+i_after = lib_value + 1          ; 42（被 include 的檔設的變數看得到）
+i_from_lib = lib_called          ; 1（include 的內容真的跑過了）
+end

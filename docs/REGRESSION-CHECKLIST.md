@@ -390,7 +390,47 @@ TEMP 路徑印出完整結果，Documents 路徑印完 `path = …` 就停住。
 | Q19 | 👤 WSL／ADB 的自動偵測連線 | 沙盒**預設是關的**（它們是拿來操作機器的工具） | 判斷寫在 `custom.rs` 的 `default_sandbox` | PASS（單元測試） | | |
 | Q20 | 👤 沙盒 worktree 是從哪個狀態開的 | **目前 HEAD**——agent 看不到你還沒 commit 的修改。成果要用 `git merge sandbox/…` 拿回來 | `docs/AGENT-SANDBOX.md`「工作流程」 | | | |
 
-## L. 我的最愛（巨集 / 輸入文字視窗待填，階段 3）
+## T. TTL 巨集（第一批：語法／運算式／流程控制）
+
+行為基準、`ttpmacro/` 檔案對照、指令清單、與舊版 C# 版的差異都在 `docs/TTL.md`。
+自動驗證：`cd src-tauri && cargo run --example ttl_probe`（跑 `tests/ttl/*.ttl`，比對每個變數）。
+
+| # | 怎麼測 | 預期結果 | 基準 | Win | mac | Linux |
+|---|---|---|---|---|---|---|
+| T1 | `cargo run --example ttl_probe` | **21 PASS / 0 FAIL**（124 個變數檢查 + 13 個錯誤案例） | — | PASS | | |
+| T2 | 運算式優先權 | **位元運算比比較運算緊**（`0 = 2 & 1` ＝ 1）；和 C 相反 | `ttmparse.cpp` 的 11 層 | PASS | | |
+| T3 | `and`／`or`／`xor`／`not` | 是**位元**運算（`2 and 1` ＝ 0）；邏輯要用 `&& \|\| !` | `CheckReservedWord` → RsvBAnd… | PASS | | |
+| T4 | 整數寬度 | 32-bit 有號、溢位環繞（`$FFFFFFFF` ＝ -1） | 原碼的 `int` | PASS | | |
+| T5 | 移位邊界 | 負位移＝反向；`>= 32` 飽和（算術右移負數是 -1）；`>>>` 是邏輯右移 | `EvalBitShift` 的梯子 | PASS | | |
+| T6 | `/` 與 `%` 對 0 | 兩個都是 `Divide by zero.` | `Val2==0 && op!=Mul` | PASS | | |
+| T7 | 字串常值 | **沒有反斜線轉義**；`'ab'#33"cd"` 相接（中間有空白就不算） | `GetString`／`GetQuotedStr` | PASS | | |
+| T8 | 字元碼 | `#65`／`#$41`；值必須 1～255 | `GetCharByCode` | PASS | | |
+| T9 | 長度上限 | 識別字 31、字串 511、一行 1023（超過的**丟掉**） | `MaxNameLen`／`MaxStrLen`／`MaxLineLen` | PASS | | |
+| T10 | 大小寫 | 指令／變數／標籤全部不敏感 | `_stricmp` | PASS | | |
+| T11 | 註解 | `;` 到行尾；`/* */`（可跨行、一行可多段） | `GetFirstChar` | PASS | | |
+| T12 | `if` 三種寫法 | 區塊式、`elseif`、單行式 `if <cond> <指令>`（含 `break`／`continue`） | `TTLIf` | PASS | | |
+| T13 | 巢狀 if 被跳過時 | 裡面的 `if`／`endif` 也要數層數，不可以配錯 | `ExecCmnd` 的旗標階梯 | PASS | | |
+| T14 | `for` 方向 | 起＝迄跑一圈；起 > 迄是**遞減** | `TTLFor` 的 `i<ValEnd`／`i>ValEnd` | PASS | | |
+| T15 | `while`／`until`／`do`／`loop` | 四組配對都對，`loop while`／`loop until` 也對 | `TTLWhile`／`TTLDo`／`TTLLoop` | PASS | | |
+| T16 | `break`／`continue` | break 跳出**最內層**、continue 跳到迴圈結尾再繼續 | `BreakLoop` | PASS | | |
+| T17 | `goto` | 往前、往後都能跳 | `JumpToLabel` | PASS | | |
+| T18 | `call`／`return` | 回到 `call` 的下一行；`return` 沒有對應的 call 是 `Invalid control.` | `CallToLabel`／`ReturnFromSub` | PASS | | |
+| T19 | 堆疊上限 | call／for／while 疊 10 層以上是 `Stack overflow.` | `MAXSP` 10 | PASS | | |
+| T20 | `include` | 變數全域可見；**標籤只在那一層**（被 include 的檔跑完就消失） | `BuffInclude`／`DelLabVar` | PASS | | |
+| T21 | 陣列 | `intdim`／`strdim` 先宣告；索引 0 起算；超範圍 `Index out of range.`；重複宣告／大小 0 是語法錯誤 | `TTLDim`／`GetIndex` | PASS | | |
+| T22 | 目標變數自動建立 | `int2str istr i` 不必先宣告 `istr` | `GetStrVar`／`GetIntVar` | PASS | | |
+| T23 | 型別不能換 | `a = 1` 之後 `a = 'x'` 是 `Type mismatch.` | `ExecCmnd` 的賦值那段 | PASS | | |
+| T24 | 標籤與變數同名 | 算重複定義 | 同一張變數表 | PASS | | |
+| T25 | 錯誤訊息 | 英文字**逐字**照 `errdlg.cpp`（含 `Label requiered.` 的拼字錯誤），帶行號與檔名 | `DispErr` | PASS | | |
+| T26 | 沒實作的指令 | `sendln` 這種第二批的指令回 `Unknown command.`，**不會被當成變數** | `ErrNotSupported` | PASS | | |
+| T27 | 舊版巨集 | 舊版 `samples/sample.ttl` 不碰連線的部分原樣跑，結果一樣 | 舊版 `MacroRunner.cs` | PASS（`oldversion.ttl`） | | |
+| T28 | 參數是運算式 | `strcopy 'abc' 1 -5 t` 的 `1 -5` 會被讀成 `1-5`（要傳負數得加括號） | `GetIntVal` | PASS | | |
+| T29 | 一步＝一行 | `Interp::step()` 一次只跑一行（第二批的 `wait`／`pause` 靠這個掛起） | `Exec()` | PASS | | |
+| T30 | 👤 `sprintf` 的浮點（`%f`） | 這一批**不支援**，回 `result=2` ＋語法錯誤（見 `docs/TTL.md` 4.3） | — | PASS（單元測試） | | |
+| T31 | 👤 `gettime` 的時區參數 | **不支援**（會改整個行程的 `TZ`），回 `result=2` | 見 `docs/TTL.md` 4.3 | PASS | | |
+| T32 | 👤 `setenv` | 只影響本行程，**會影響之後開的分頁**（第二批的 UI 要提醒） | `_putenv_s` | ⬜ 需目視 | | |
+
+## L. 我的最愛（輸入文字視窗待填，階段 3）
 
 舊版對應 `MainWindow.Favorites.cs` + `Dialogs/FavoritesDialog`。程式在
 `src-tauri/src/favorites.rs` + `src/favs.js`。
@@ -500,6 +540,10 @@ TEMP 路徑印出完整結果，Documents 路徑印完 `path = …` 就停住。
 | COM 的讀取方式 | blocking read（`ReadTimeout = InfiniteTimeout`） | **25ms 短逾時輪詢** | `serialport` 的 `read` 要靠逾時才回得來，否則關分頁時執行緒永遠卡住。**「關分頁」不靠這個逾時**：`close()` 自己發結束事件（同舊版 `Dispose`） |
 | COM 的同位 Mark／Space、1.5 停止位元、RTS/CTS+XON/XOFF | `System.IO.Ports` 都有 | **沒有**（`serialport` 不支援）→ 清單不列、設定裡有就降級並印黃字 | 見 `docs/COM.md` 第 3 節。真的需要時要自己用 Win32 DCB 或 fork crate |
 | COM 對話框的「加到我的最愛」 | 沒有（只能從分頁加） | 有 | 和 SSH／Telnet 對話框一致 |
+| TTL 的 `and`／`or` | 舊版 C# 版當成**邏輯**運算 | **位元**運算 | `CLAUDE.md` 定的基準是 TeraTerm 原碼（`CheckReservedWord` 對映到 RsvBAnd／RsvBOr）。比較運算的結果是 0／1，所以一般巨集看不出差別 |
+| TTL 的運算子優先權 | 舊版照 C 的排法（比較比位元緊） | **位元比比較緊**（原碼的 11 層） | 同上。`a = 1 and b = 1` 兩版讀法不同 |
+| TTL 的整數寬度 | 舊版是 64-bit（C# `long`） | **32-bit 有號、溢位環繞** | 同原碼的 `int`；`$FFFFFFFF` ＝ -1 |
+| TTL 的 `break`／`continue` 在單行式 `if` 裡 | 舊版 README 說不支援 | 支援 | 照原碼，新版比較寬 |
 | Telnet 的視窗大小 | `Resize` 是空的（`// NAWS 可選，暫略`），遠端永遠以為 80×24 | **送 NAWS**（RFC 1073） | `CLAUDE.md` 定案「Telnet 自己實作（加 NAWS）」。`vi`／`top` 才不會畫錯 |
 | 恢復 SSH 分頁 | 只印 `login as: ` 等使用者打帳號（帳號要塞進 `ssh.exe` 命令列） | **直接連**（帳號已經記在 `SshConnParams` 裡），沒有帳號才問 | 和第一次連線的行為一致。密碼兩邊都是重問 |
 | 離開對話框 | WPF `ExitDialog`，含「恢復分頁」與「更新 CLAUDE.md」兩個勾選 | 頁內對話框，只有「恢復分頁」 | 「更新 CLAUDE.md」是代理團隊的功能（階段 4），那時再補 |

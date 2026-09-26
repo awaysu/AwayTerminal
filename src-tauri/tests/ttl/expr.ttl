@@ -1,0 +1,69 @@
+; TTL 巨集測試：運算式與優先權
+; 期望值來自 TeraTerm 的 ttmparse.cpp（11 層優先權），不是自己猜的。
+; 每個檢查都把結果放進一個變數，ttl_probe 跑完再比對。
+
+; --- 基本四則與優先權 ---
+e_add     = 1 + 2 * 3            ; 7（乘比加緊）
+e_paren   = (1 + 2) * 3          ; 9
+e_div     = 7 / 2                ; 3（整數除法）
+e_divneg  = 0 - 7                ; -7
+e_divneg2 = e_divneg / 2         ; -3（往零取整）
+e_mod     = 7 % 3                ; 1
+e_modneg  = e_divneg % 3         ; -1（跟著被除數的號）
+
+; --- 十六進位與 32-bit 環繞 ---
+e_hex     = $ff                  ; 255
+e_hexall  = $FFFFFFFF            ; -1（32-bit 有號）
+e_wrap    = 2147483647 + 1       ; -2147483648
+
+; --- 單元運算子 ---
+e_neg     = -5
+e_bnot    = ~0                   ; -1
+e_lnot    = !5                   ; 0
+e_lnot0   = !0                   ; 1
+e_notword = not 0                ; -1（not 是「位元」運算）
+
+; --- 位元運算比比較運算「緊」（和 C 相反！）---
+; `0 = 2 & 1` → 先算 2&1＝0，再比 0=0 → 1
+e_bitfirst = 0 = 2 & 1           ; 1
+
+; --- 字詞運算子是位元運算，符號才是邏輯運算 ---
+e_and_w   = 2 and 1              ; 0（位元）
+e_and_s   = 2 && 1               ; 1（邏輯）
+e_or_w    = 2 or 1               ; 3
+e_or_s    = 2 || 1               ; 1
+e_xor_w   = 3 xor 1              ; 2
+
+; --- 比較 ---
+e_lt      = 1 < 2                ; 1
+e_le      = 2 <= 2               ; 1
+e_gt      = 3 > 4                ; 0
+e_ge      = 4 >= 4               ; 1
+e_eq      = 1 = 1                ; 1
+e_eq2     = 1 == 1               ; 1
+e_ne      = 1 <> 2               ; 1
+e_ne2     = 1 != 2               ; 1
+
+; --- 移位（邊界行為照原碼那個梯子）---
+e_shl     = 1 << 4               ; 16
+e_shr     = 256 >> 4             ; 16
+e_shr_neg = (0 - 16) >> 2        ; -4（算術右移保留符號）
+e_lshr    = (0 - 16) >>> 28      ; 15（邏輯右移）
+e_shl_sat = 1 << 32              ; 0（>= 32 飽和）
+e_shr_sat = (0 - 1) >> 32        ; -1
+e_shl_neg = 1 << (0 - 1)         ; 0（負的位移量＝反向）
+
+; --- 字串常值：相鄰片段會接起來，#nn 是字元碼 ---
+s_plain   = 'abc'
+s_pieces  = 'ab'#33"cd"          ; ab!cd
+s_hexcode = #$41#$42             ; AB
+s_cjk     = '中文'                ; 6 個位元組
+strlen s_cjk
+n_cjklen  = result               ; 6
+
+; --- 沒有反斜線轉義（反斜線就是反斜線）---
+s_backsl  = 'a\nb'
+strlen s_backsl
+n_backsl  = result               ; 4
+
+end

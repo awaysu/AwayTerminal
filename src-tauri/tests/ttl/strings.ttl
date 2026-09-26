@@ -1,0 +1,102 @@
+; TTL 巨集測試：字串與整數指令（不碰 I/O 的那些）
+; 期望值來自 TeraTerm ttl.cpp 的對應 TTL* 函式。
+
+; --- strlen / strcompare / strscan ---
+strlen 'hello'
+c_len = result                   ; 5
+strcompare 'a' 'b'
+c_cmp1 = result                  ; -1
+strcompare 'b' 'a'
+c_cmp2 = result                  ; 1
+strcompare 'a' 'a'
+c_cmp3 = result                  ; 0
+strscan 'hello' 'll'
+c_scan = result                  ; 3（1 起算）
+strscan 'hello' 'zz'
+c_scan0 = result                 ; 0
+
+; --- strconcat / strcopy ---
+s1 = 'ab'
+strconcat s1 'cd'                ; abcd
+strcopy 'abcdef' 2 3 s2          ; bcd
+strcopy 'abc' 0 99 s3            ; abc（位置 < 1 當 1、長度超過就截短）
+
+; --- strinsert / strremove / strtrim ---
+s4 = 'abc'
+strinsert s4 2 'XY'              ; aXYbc
+s5 = 'abcdef'
+strremove s5 2 3                 ; aef
+s6 = 'xxaxbxx'
+strtrim s6 'x'                   ; axb（只去頭尾）
+
+; --- 大小寫（只動 ASCII）---
+tolower s7 'AbC'
+toupper s8 'AbC'
+
+; --- strsplit / strjoin ---
+strsplit 'a,b,c' ','
+c_split = result                 ; 3
+s9 = groupmatchstr1              ; a
+s10 = groupmatchstr3             ; c
+strjoin s11 '-' 3                ; a-b-c
+
+; 連續的分隔字元會切出空字串（原碼刻意不合併）
+strsplit 'a,,b' ','
+c_split2 = result                ; 3
+
+; --- strspecial：只有 \n \t \0 \\ 會被換掉 ---
+strspecial s12 'a\tb'
+strlen s12
+c_special = result               ; 3（a + TAB + b）
+
+; --- int2str / str2int / code2str / str2code ---
+int2str s13 42
+str2int n1 '123'
+c_str2int = result               ; 1
+str2int n2 '$ff'                 ; 255
+str2int n3 'abc'                 ; 0
+c_str2int0 = result              ; 0
+code2str s14 $4142               ; AB
+str2code n4 'AB'                 ; 16706 = 0x4142
+
+; --- sprintf / sprintf2 ---
+sprintf2 s15 '%d-%s' 7 'x'       ; 7-x
+sprintf2 s16 '%05d' 42           ; 00042
+sprintf2 s17 '%-5d|' 42          ; "42   |"
+sprintf2 s18 '%x/%X/%#x' 255 255 255
+sprintf2 s19 '%*d' 5 42          ; "   42"
+sprintf2 s20 '100%%'             ; 100%
+sprintf '%d' 9                   ; 寫進 inputstr
+s21 = inputstr                   ; 9
+
+; --- 陣列 ---
+intdim arr 3
+arr[0] = 10
+arr[2] = arr[0] + 5
+c_arr = arr[2]                   ; 15
+strdim sarr 2
+sarr[0] = 'hi'
+strconcat sarr[0] '!'
+s22 = sarr[0]                    ; hi!
+
+; --- ifdefined ---
+ifdefined n1
+c_def1 = result                  ; 1（整數）
+ifdefined s1
+c_def3 = result                  ; 3（字串）
+ifdefined nosuchvariable
+c_def0 = result                  ; 0
+ifdefined arr
+c_def5 = result                  ; 5（整數陣列）
+
+; --- rotate / random ---
+rotateleft n5 1 1                ; 2
+rotateleft n6 $80000000 1        ; 1（最高位轉到最低位）
+random n7 3                      ; 0..3
+
+; --- 路徑 ---
+basename s23 'C:\dir\file.txt'   ; file.txt
+dirname s24 'C:\dir\file.txt'    ; C:\dir
+makepath s25 'C:\dir' 'file.txt' ; C:\dir\file.txt
+
+end

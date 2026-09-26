@@ -1,0 +1,11 @@
+; 被 include 的檔：設幾個變數，並示範它自己的標籤在自己這一層可以用
+lib_value = 41
+lib_called = 0
+call lib_sub
+goto lib_done
+
+:lib_sub
+lib_called = 1
+return
+
+:lib_done
