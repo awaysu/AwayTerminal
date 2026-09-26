@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AwayTerminal</title>
+  <style>
+    html, body { height: 100%; margin: 0; background: #1e1e1e; overflow: hidden; }
+    #terminals { position: absolute; inset: 0; }
+    .term { position: absolute; inset: 0; display: flex; flex-direction: column; }
+    /* padding 放在 xterm 元素本身（fit addon 會扣除），放在父層會使最後一行被截掉 */
+    .term-body { flex: 1 1 auto; min-height: 0; position: relative; }
+    .term-body > .terminal, .term-body > .xterm { padding: 4px 4px 0 4px; }
+    .xterm .xterm-viewport { background-color: transparent !important; }
+  </style>
+</head>
+<body>
+  <div id="terminals">
+    <div class="term">
+      <div class="term-body" id="term-body"></div>
+    </div>
+  </div>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

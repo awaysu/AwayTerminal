@@ -1,0 +1,14 @@
+# AwayTerminal Multi-Agent mailbox
+.ai/
+
+# Node
+node_modules/
+
+# Vite build output
+dist/
+
+# Rust / Tauri build output
+src-tauri/target/
+
+# Reference sources (cloned, not part of this repo)
+reference/
