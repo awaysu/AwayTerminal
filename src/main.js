@@ -353,7 +353,33 @@ async function verifySshPath() {
     lines.push(`[verify] 連不上時有把原因印在終端機：${text.includes('連線失敗')}`);
     const st = currentTabState().tabs.find((t) => t.id === info.id);
     lines.push(`[verify] 分頁 kind=${st ? st.kind : '?'}（應為 ssh）`);
+    // 沒勾自動重連 → 應該提示「按 Enter 在此分頁重新連線」
+    lines.push(`[verify] 提示按 Enter 重連：${text.includes('按 Enter')}`);
     await invoke('tab_close', { id: info.id });
+
+    // 勾了自動重連 → 應該印「N 秒後自動重連」並開始退避（3 秒起）
+    const r = await createSession({
+      kind: 'ssh',
+      ssh: { host: '127.0.0.1', port: 1, autoReconnect: true },
+    });
+    let t2 = '';
+    for (let i = 0; i < 20; i++) {
+      await wait(300);
+      t2 = term.tail(r.id, 10).join(' ');
+      if (t2.includes('秒後自動重連')) break;
+    }
+    lines.push(`[verify] 自動重連有排程：${t2.includes('秒後自動重連')}`);
+    const st2 = currentTabState().tabs.find((t) => t.id === r.id);
+    lines.push(`[verify] 退避次數=${st2 ? st2.reconnectAttempt : '?'}（第一次應為 1）`);
+    // 再等一輪，確認退避是往上加的（3 → 6）而不是卡在同一個值
+    for (let i = 0; i < 24; i++) {
+      await wait(500);
+      const s3 = currentTabState().tabs.find((t) => t.id === r.id);
+      if (s3 && s3.reconnectAttempt >= 2) break;
+    }
+    const st3 = currentTabState().tabs.find((t) => t.id === r.id);
+    lines.push(`[verify] 退避次數變成 ${st3 ? st3.reconnectAttempt : '?'}（應 ≥2，代表重試過）`);
+    await invoke('tab_close', { id: r.id });
   } catch (e) {
     lines.push(`[verify] 失敗：${e}`);
   }

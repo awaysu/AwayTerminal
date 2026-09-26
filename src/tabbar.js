@@ -17,6 +17,8 @@ import { listen } from '@tauri-apps/api/event';
 import { T, fmt, iconSvg, elapsedText } from './strings.js';
 import { createSession, log } from './bridge.js';
 import { initConns, openManager, currentConns, reload as reloadConns } from './conns.js';
+import { initSshDialog, openSshDialog, parseHostPort } from './sshdlg.js';
+import { initFavs, addSshFavorite } from './favs.js';
 
 const MIN_PANEL_WIDTH = 120; // 舊版 TabPanelMinWidth
 
@@ -526,7 +528,9 @@ function installStripEvents() {
 // ------------------------------------------------------------------ 選單
 
 function hideMenus() {
-  for (const m of [el.tabMenu, el.newMenu, el.pageMenu, el.termMenu, el.urlMenu]) m.hidden = true;
+  for (const m of [el.tabMenu, el.newMenu, el.pageMenu, el.termMenu, el.urlMenu, el.favsMenu]) {
+    if (m) m.hidden = true;
+  }
 }
 
 function showMenu(menu, x, y, data) {
@@ -743,12 +747,30 @@ async function newSession(kind) {
   try {
     // SSH 不需要本機工作目錄；帳號在終端機裡問（`login as:`，同 PuTTY／舊版）。
     // 完整的 SSH 對話框（帳號、金鑰、保持連線、斷線重連）是 TASK-007。
-    if (kind === 'ssh') {
-      const target = await askText(T['dlg.sshTitle'], T['dlg.sshPrompt'], '');
-      if (target === null || !target.trim()) return;
-      const { host, port } = parseHostPort(target.trim());
-      if (!host) return;
-      await createSession({ kind: 'ssh', ssh: { host, port } });
+    if (kind === 'ssh' || kind === 'ssh-quick') {
+      // 快速連線：一行 host[:port]，其餘用設定的預設值（B6 之前的入口，保留）
+      if (kind === 'ssh-quick') {
+        const target = await askText(T['dlg.sshTitle'], T['dlg.sshPrompt'], '');
+        if (target === null || !target.trim()) return;
+        const { host, port } = parseHostPort(target.trim());
+        if (!host) return;
+        await createSession({ kind: 'ssh', ssh: { host, port } });
+        return;
+      }
+      // 完整對話框（B6）
+      const s = await invoke('settings_get');
+      const r = await openSshDialog({
+        port: 22,
+        useAgent: true,
+        keepaliveMins: s.keepAliveMins,
+        autoReconnect: s.autoReconnect,
+      });
+      if (!r) return;
+      if (r.action === 'favorite') {
+        await addSshFavorite(r.params);
+        return;
+      }
+      await createSession({ kind: 'ssh', ssh: r.params });
       return;
     }
 
@@ -806,21 +828,6 @@ function renderConnMenu(list) {
     }
     el.newConns.appendChild(item);
   }
-}
-
-/** `host`、`host:2222`、`[::1]:22` → `{host, port}`（port 省略＝22，同舊版預設）。 */
-function parseHostPort(text) {
-  const m = /^\[([^\]]+)\](?::(\d+))?$/.exec(text);
-  if (m) return { host: m[1], port: m[2] ? Number(m[2]) : 22 };
-  const i = text.lastIndexOf(':');
-  // 只有一個冒號才當成埠；IPv6 位址請用 [..]:port 寫法
-  if (i > 0 && text.indexOf(':') === i) {
-    const port = Number(text.slice(i + 1));
-    if (Number.isInteger(port) && port > 0 && port < 65536) {
-      return { host: text.slice(0, i), port };
-    }
-  }
-  return { host: text, port: 22 };
 }
 
 // ------------------------------------------------- 主機金鑰確認（照 PuTTY）
@@ -973,6 +980,7 @@ export async function initTabBar() {
   el.urlMenu = $('url-menu');
   el.colorItems = $('color-items');
   el.newConns = $('new-conns');
+  el.favsMenu = $('favs-menu');
   el.menuSandbox = el.tabMenu.querySelector('[data-act="sandbox"]');
   el.menuSandboxClear = el.tabMenu.querySelector('[data-act="sandbox-clear"]');
   el.toast = $('toast');
@@ -1025,6 +1033,7 @@ export async function initTabBar() {
   el.btnView.title = T['tip.viewCycle'];
   setText(el.newMenu, '[data-kind="shell"]', T['tb.powershell']);
   setText(el.newMenu, '[data-kind="ssh"]', T['tb.ssh']);
+  setText(el.newMenu, '[data-kind="ssh-quick"]', T['sd.quick']);
   setText(el.newMenu, '[data-kind="custom"]', T['tb.customCmd']);
   setText(el.tabMenu, '[data-act="rename"]', T['menu.rename']);
   setText(el.tabMenu, '[data-act="log"]', T['menu.log']);
@@ -1068,6 +1077,17 @@ export async function initTabBar() {
   installPanelResize();
   installHostKeyDialog();
   installWeakAlgoDialog();
+  await initSshDialog();
+  await initFavs({
+    createSession,
+    askText,
+    askYesNo,
+    showInfo,
+    toast,
+    hideMenus,
+    showMenuUnder,
+    activeId,
+  });
   // 自訂連線：清單一變就重畫「新分頁 ▾」那一區
   await initConns(renderConnMenu);
 

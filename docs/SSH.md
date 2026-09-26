@@ -25,10 +25,10 @@
 | 連不上時不可以留一個「打字全被吞」的死分頁 | `HandleLoginInput` 的 catch（註解寫得很清楚） | 連線失敗會 `on_exit`，錯誤印在畫面上 | ✅ |
 | 狀態燈：遠端連線看「近期有輸出」（不看子行程） | `UpdateStatuses` 的 else 分支 | 同（`TabKind::Ssh` 不是 `is_local_shell`） | ✅ |
 | 分頁名稱之後跟著遠端目前目錄（提示行解析） | `TracksCwdTitle` 含 `Ssh` | 同（`q…cwd` 對 SSH 分頁也送） | ✅ |
-| 連線對話框：類型／IP 主機（可編輯下拉＋歷史）／Port（ssh 22）／保持連線（分鐘，0=關）／斷線自動重連 | `ConnectDialog.xaml` | **只做了 host[:port] 一行輸入** | ⬜ TASK-009 |
+| 連線對話框：類型／IP 主機（可編輯下拉＋歷史）／Port（ssh 22）／保持連線（分鐘，0=關）／斷線自動重連 | `ConnectDialog.xaml` | 同（`src/sshdlg.js`，欄位表在第 7 節）＋多了帳號／金鑰／進階演算法／環境變數 | ✅ B6 |
 | 保持連線 → `ServerAliveInterval = 分鐘×60`、`ServerAliveCountMax=3`，預設 10 分鐘 | `SshCommand` / `AppSettings.KeepAliveMins` | `keepalive_interval` + `keepalive_max = 3`，間隔取自 `keepAliveMins`（預設 10） | ✅ |
-| 斷線自動重連：退避 3,6,9…最多 30 秒；有輸出就歸零；等待中按 Enter 立刻重連 | `ScheduleReconnect` / `ManualReconnect` | 尚未實作 | ⬜ TASK-009 |
-| `-o SendEnv=CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN` | `SshCommand` | 尚未實作（要做成「進階」裡的環境變數清單，送 SSH `env` request） | ⬜ TASK-009 |
+| 斷線自動重連：退避 3,6,9…最多 30 秒；有輸出就歸零；等待中按 Enter 立刻重連 | `ScheduleReconnect` / `ManualReconnect` | 同（`ssh/reconnect.rs`，對照表在第 5 節）；「歸零」的觸發點刻意不同，見下 | ✅ B5 |
+| `-o SendEnv=CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN` | `SshCommand` | 同（對話框「進階」的環境變數清單 → `channel.set_env`，`request_shell` 之前逐條送） | ✅ B6 |
 
 ### 與舊版**刻意不同**的一點
 
@@ -152,7 +152,7 @@
 空的就是用上面的預設順序。認不出來的名稱會被跳過並在終端機印一行黃字，
 **一整組都認不出來時退回預設**（空清單會讓交握直接失敗，那不是使用者想要的）。
 
-⚠️ 目前**還沒有 UI**（「進階」區屬於 B6，見第 7 節）；要覆寫得手改 `settings.json`。
+UI 在連線對話框的「進階」區（見第 7 節）；也可以手改 `settings.json`。
 
 ### 弱演算法警告
 
@@ -164,7 +164,9 @@
 - 同一條連線只問一次（rekey 也會觸發 `kex_done`）。
 - 前端沒回答時逾時 180 秒 → 當成取消（安全預設）。
 
-## 5. keepalive（B5 的一半）
+## 5. keepalive 與斷線自動重連（B5）
+
+### keepalive
 
 `russh` 的 `keepalive_interval` + `keepalive_max = 3`，送的是 `keepalive@openssh.com`
 global request（PuTTY 預設也是這條）。間隔取自 `settings.json` 的 `keepAliveMins`
@@ -174,7 +176,25 @@ global request（PuTTY 預設也是這條）。間隔取自 `settings.json` 的 
 舊版是把它翻成 `ssh.exe` 的 `-o ServerAliveInterval=分鐘×60 -o ServerAliveCountMax=3`，
 語意一樣。
 
-**斷線自動重連還沒做**（見第 7 節）。
+### 斷線自動重連
+
+程式在 `src-tauri/src/ssh/reconnect.rs`。分頁層記住 `SshConnParams`（**不含密碼**，見第 7 節），session 結束時排下一次重連。
+
+| 舊版行為 | 出處（`MainWindow.xaml.cs`） | 新版 | 一樣嗎 |
+|---|---|---|---|
+| 退避 3、6、9…**上限 30 秒** | `ScheduleReconnect`：`Math.Min(30, 3 * attempt)` | `backoff_secs(attempt)`，同公式（單元測試釘住 3/6/9/27/30/30） | ✅ 一樣 |
+| 沒勾「斷線自動重連」時只在畫面上提示，**按 Enter 才重連** | `OnSessionExit` 的 else 分支 | 同（灰字「連線已中斷。按 Enter 重新連線。」；`session_write_text` 收到含換行的輸入就觸發） | ✅ 一樣 |
+| 等待重連時按 Enter **立刻**重連（不等退避跑完） | `ManualReconnect` | 同（`manual()` 會把排程的 generation 作廢再馬上連） | ✅ 一樣 |
+| 重連前把舊畫面留著，接在同一個 buffer 後面 | 不清畫面 | 同（重連前先送 `b{id}` 把 scrollback 推上去，畫面不會被清） | ✅ 一樣 |
+| 重連成功後退避次數歸零 | `OnSessionOutput` 第一行：**一收到輸出**就歸零 | **改成「shell channel 開成功」才歸零**（`OnConnected`） | ⚠️ 刻意不同 |
+| 使用者自己關分頁 → 不重連 | `_closing` 旗標 | 同（分頁移除後 `on_exit` 找不到分頁就不排程） | ✅ 一樣 |
+| 重連中又斷 → 次數繼續往上加 | 同上 | 同（實測退避次數 1 → 2） | ✅ 一樣 |
+
+**為什麼「歸零」的觸發點要改**：舊版的輸出全部來自 `ssh.exe`，所以「有輸出」等於
+「連上了」。新版是內建 SSH，**我們自己的狀態訊息**（「連線到 host:port …」、`login as:`、
+錯誤訊息）走的是同一條輸出 callback ——照舊版寫會被誤判成「連上了」，退避永遠停在
+第一次的 3 秒。這個是 `--verify` 實際抓出來的（`退避次數` 一直是 1），改成
+「`request_shell` 成功」之後才變成 1 → 2。語意更精確，目的（連成功過就不要繼續拉長退避）一樣。
 
 ## 6. 自動驗證：`ssh_probe`
 
@@ -212,7 +232,22 @@ sshd（綁 `127.0.0.1` 的臨時埠），再用我們的 client 連上去。2026
 
 `--verify` 會多連一次 `127.0.0.1:1`（**沒人在聽**的埠），驗
 `session_create(kind:"ssh")` → 建分頁（`kind=ssh`、`backend=russh`）→
-連不上時把原因印在終端機 → session 正常結束。同樣不碰外部主機。
+連不上時把原因印在終端機 → session 正常結束 → **重連排程**。同樣不碰外部主機。
+
+2026-09-27 的實際輸出：
+
+```
+[verify] 分頁 3 建立：backend=russh title=127.0.0.1
+[verify] 連不上時有把原因印在終端機：true
+[verify] 分頁 kind=ssh（應為 ssh）
+[verify] 提示按 Enter 重連：true
+[verify] 自動重連有排程：true
+[verify] 退避次數=1（第一次應為 1）
+[verify] 退避次數變成 2（應 ≥2，代表重試過）
+```
+
+最後一行是重點：退避次數會往上加，代表重試真的發生了。第一次跑這段時它一直是 1，
+挖出來的原因就是第 5 節寫的「歸零觸發點」。
 
 ### 舊演算法那一組的驗證缺口
 
@@ -229,16 +264,35 @@ sshd（綁 `127.0.0.1` 的臨時埠），再用我們的 client 連上去。2026
 
 ---
 
-## 7. 還沒做的（TASK-009）
+## 7. 連線對話框（B6）
 
-| 項 | 內容 | 為什麼還沒做 |
+`src/sshdlg.js`。「新分頁 ▾ → SSH…」打開。上半照舊版 `ConnectDialog.xaml` 的欄位，
+下半的「進階」是舊版沒有的（舊版這些只能靠 `ssh.exe` 的命令列參數）。
+
+| 欄位 | 預設 | 對應 | 舊版有嗎 |
+|---|---|---|---|
+| 主機（可輸入 `host` 或 `host:port`，自動拆開） | 空 | `host` / `port` | ✅ 有（可編輯下拉＋歷史） |
+| 埠 | 22 | `port` | ✅ 有 |
+| 帳號（留白＝連上後在終端機問 `login as:`） | 空 | `user` | ⬜ 舊版沒有（帳號一律在終端機問） |
+| 金鑰檔（`.ppk` 或 OpenSSH，按鈕選檔） | 空 | `keyPath` | ⬜ 舊版沒有 |
+| 用 Pageant／ssh-agent | 關 | `useAgent` | ⬜ 舊版沒有 |
+| 保持連線（分鐘，0＝關） | 10 | `keepaliveMins` | ✅ 有 |
+| 斷線自動重連 | 跟著 `settings.json` 的 `autoReconnect` | `autoReconnect` | ✅ 有 |
+| 進階 → 演算法四組（kex／主機金鑰／cipher／MAC），勾選、可拖曳排序，警告線以下標紅 | 全勾、順序同預設 | `algos` | ⬜ 舊版沒有 |
+| 進階 → 環境變數（`名稱=值`，一行一條） | `CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN=1` | `env` | ✅ 有（固定寫死那一條） |
+| 「加到我的最愛」 | — | `fav_add`（**不含密碼**） | ✅ 有 |
+
+**密碼欄位刻意沒有**：舊版的連線對話框也沒有密碼欄（`ssh.exe` 自己問），
+密碼一律在終端機當場問、不存檔。我的最愛存的是上表的欄位，沒有密碼。
+
+演算法清單來自 `algo_catalog()`（四組 + 哪些在警告線下），對話框不自己寫死名稱。
+
+### 還沒做的
+
+| 項 | 內容 | 為什麼 |
 |---|---|---|
-| B5 的另一半 | **斷線自動重連**（舊版：退避 3,6,9…最多 30 秒、有輸出歸零、等待中按 Enter 立刻重連、沒勾自動重連時提示「按 Enter 重連」） | 要在分頁層記住連線參數並排程，和 B6 的對話框綁在一起（沒有對話框就沒有地方勾「斷線自動重連」） |
-| B6 | **完整 SSH 對話框**：主機／埠／帳號／密碼或金鑰檔或 Pageant／保持連線／斷線重連／**進階：演算法** | 同上。`algo_catalog()` 指令已經備好（四組清單 + 哪些在警告線下），對話框直接拿來用 |
-| B6 附帶 | `SendEnv`（`CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN`）做成「進階」裡的環境變數清單 | 同上 |
-
-現在要用 SSH：「新分頁 ▾ → SSH…」輸入 `host` 或 `host:port`，帳號在終端機裡問
-（`login as:`）。演算法覆寫、保持連線的間隔、自動重連都只能手改 `settings.json`。
+| 主機歷史下拉 | 舊版主機欄是可編輯下拉，記最近連過的主機 | 我的最愛已經涵蓋「常連的」；歷史清單等使用者說要不要 |
+| Telnet | 對話框的「類型」目前只有 SSH | Telnet 後端還沒做（階段 2 的後半） |
 
 ## 8. ⚠️ 待真機驗證（要使用者的設備清單）
 
@@ -262,7 +316,7 @@ Agent-11 拿到設備清單之後逐台填。
 | S11 | 中文輸出（Big5 或 UTF-8 的設備） | 遠端可能不是 UTF-8；目前原樣轉給 xterm | | | |
 | S12 | 視窗大小改變後遠端跟著換行 | window-change 已驗（測試 sshd），真設備再確認 | | | |
 | S13 | 關分頁的 Ctrl+D ×3 真的讓遠端登出（不是留著 session） | 有些設備要 `exit\r` | | | |
-| S14 | 斷線之後的行為（拔網路線／設備重開） | 目前**沒有**自動重連（TASK-009）。session 層會正常結束（probe 驗過） | | | |
+| S14 | 斷線之後的行為（拔網路線／設備重開） | ✅ 自動重連已做（退避 3/6/9…30 秒，等待中按 Enter 立刻重連）。**真設備要確認**：拔網路線時 russh 多久才發現斷線（沒有 keepalive 的話可能要等 TCP 超時） | | | |
 | S15 | 連線閒置很久不會被切（保持連線） | ✅ keepalive 已做（`keepalive@openssh.com`，預設 10 分鐘）。**真設備要確認它認這條 global request**——有些舊設備不認，那時要改用 null packet | | | |
 | S17 | 弱演算法警告的文案與時機 | 連舊設備時應該跳一次橘框，接受後同一台不再問 | | | |
 | S18 | 伺服器的 banner 有正確顯示（含換行） | TASK-008 補了 `auth_banner`，只有 LF 的 banner 會被轉成 CR LF | | | |

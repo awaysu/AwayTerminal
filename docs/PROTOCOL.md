@@ -17,8 +17,8 @@
 | 方向 | 訊息總數 | 已接 | 未接 |
 |---|---|---|---|
 | JS → host | 12 | **11** | 1 |
-| host → JS | 19 | **15**（含 `o` 以二進位 channel 取代） | 4 |
-| 合計 | **31** | **26** | **5** |
+| host → JS | 19 | **16**（含 `o` 以二進位 channel 取代） | 3 |
+| 合計 | **31** | **27** | **4** |
 
 - TASK-004 接了 9 條：JS→host 的 `p`、`k`、`z`、`a`；host→JS 的 `t`、`x`、`K`、`L`、`q`。
   （`s` 是 TASK-003 收尾時補的——那時漏掉它導致 pane 永遠不 fit，見
@@ -27,12 +27,14 @@
   並把 `a`／`q` 的 `sel`／`selpaste`／`all`／`file` 幾個 kind 補完。
 - TASK-006 接了 `A`（全選）。**舊版 1.2.x 沒有呼叫端**（見下），由 PM 決定當作新功能補進
   終端機右鍵選單。
+- TASK-009 接了 `b`（重連前推 scrollback）。**只用了前半**：舊版的 `b` 還帶兩段 base64
+  （恢復分頁要塞回畫面的內容），斷線重連只需要「把現有畫面推上去、不要清掉」，
+  所以送的是 `b{id}US US`（兩段都空）。恢復分頁（階段 3）才會用到那兩段。
 
-剩下的 5 條：
+剩下的 4 條：
 
 | 訊息 | 為什麼還沒接 |
 |---|---|
-| `b` | 恢復分頁／斷線重連（階段 3） |
 | `g`、`u`、`E` | 代理團隊 Multi-Agent（階段 4） |
 | `G` | 同上（JS→host 那一半） |
 
@@ -74,7 +76,7 @@
 | `L{tab\|split\|columns}` | 切換分頁／分割／分欄三態 | `view_mode_cycle`（工具列按鈕，三態循環順序同舊版 `Split_Click`），並存進 `settings.json` | ✅ 已接 |
 | `T{json}` | 套用字型／顏色／`imeQuietMs`／`restoreLines`／搜尋列文字 | `host::host_ready`，內容來自 `settings.json`（TASK-004 起不再是 Rust 常數） | ✅ 已接 |
 | `q{id}US{…}` | 向前端查詢（回 `a…`） | 狀態輪詢每 600ms 送 `cwd`（同舊版 `UpdateStatuses`）；工具列／右鍵送 `sel`（複製）、`selpaste`（複製且貼上）、`all`（複製全部）、`file`（複製全部存至檔案） | 🟡 部分（`save`＝關閉程式存 scrollback、`text`＝Telegram 遠端查詢，兩個功能都還沒做） |
-| `b{id}US{base64}US{base64}` | 恢復分頁／重連前推進 scrollback（1.0.45） | — | ⬜ 未接（恢復分頁／自動重連） |
+| `b{id}US{base64}US{base64}` | 恢復分頁／重連前推進 scrollback（1.0.45） | 斷線重連前送 `b{id}US US`（兩段 base64 留空）把現有畫面推上去，重連的輸出接在後面、不清畫面 | 🟡 部分（恢復分頁要用的那兩段內容還沒用到，階段 3） |
 | `c{id}` | 清畫面 | `toolbar_clear`：PowerShell／SSH **不送這條**，改對 session 送 Esc → 等 60ms → Ctrl+L（黏著送會被 PSReadLine 當 escape 序列）；Telnet／COM 才送 `c` 清 xterm 緩衝。兩條路都先跳確認 | ✅ 已接 |
 | `S{id}US{up\|down\|top\|bottom}` | 捲動檢視（工具列「翻頁」） | `toolbar_scroll`（翻頁下拉：上一頁／下一頁／最上面／最下面） | ✅ 已接 |
 | `v{id}US{base64}` | 貼上（走 `term.paste()`） | `toolbar_paste`（工具列與右鍵的「純文字貼上」，以及 `selpaste` 的貼回）。**Ctrl+V / Shift+Insert 不經這條**——`terminal.js` 自己攔 `paste` 事件走 `doPaste` | ✅ 已接 |
@@ -136,7 +138,8 @@
 | `toolbar_select_all(id)` | 送 `A…`（新增功能，舊版沒有呼叫端） |
 | `session_create` 的 `kind:"ssh"` + `ssh` 參數 | 內建 SSH（`russh`）。見 `docs/SSH.md` |
 | `ssh_hostkey_answer(id, answer)` | 主機金鑰**與弱演算法**對話框的回覆（`acceptandstore` / `acceptonce` / `reject`）。兩者共用同一個回覆通道 |
-| `algo_catalog()` | 四組演算法的可選名稱與「在警告線下」的標記（B6 的「進階」區要用） |
+| `algo_catalog()` | 四組演算法的可選名稱與「在警告線下」的標記（連線對話框的「進階」區用） |
+| `fav_list()` / `fav_candidate(id)` / `fav_add(item)` / `fav_delete(name)` / `fav_rename(name,newName)` / `fav_move(name,delta)` | 我的最愛。`fav_candidate` 是「目前分頁能不能存成最愛」（不能就把選單那條灰掉，同舊版）。**存的內容不含密碼** |
 | `session_create` 的 `kind:"conn"` + `conn` 參數 | 自訂連線（含沙盒模式）。見 `docs/AGENT-SANDBOX.md` |
 | `custom_list` / `custom_detect` / `custom_save` / `custom_delete` | 自訂連線的讀取／自動偵測／存檔／刪除 |
 | `conn_set_sandbox(name, sandbox)` | 切換某條連線的沙盒開關（**下次啟動生效**） |

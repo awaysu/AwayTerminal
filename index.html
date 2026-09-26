@@ -39,6 +39,7 @@
          「遠端」「其他設定」「關於」，那些功能還沒做 → 這次不放佔位按鈕。 -->
     <div id="toolbar">
       <button id="btn-new" type="button" class="tool-btn">新分頁 ▾</button>
+      <button id="btn-favs" type="button" class="tool-btn">我的最愛 ▾</button>
       <span class="tool-sep"></span>
       <button id="btn-copy" type="button" class="tool-btn">複製</button>
       <button id="btn-paste" type="button" class="tool-btn">純文字貼上</button>
@@ -97,11 +98,36 @@
   <div id="new-menu" class="popup-menu" hidden>
     <div class="menu-item" data-kind="shell">PowerShell</div>
     <div class="menu-item" data-kind="ssh">SSH…</div>
+    <div class="menu-item" data-kind="ssh-quick">快速連線（host[:port]）…</div>
     <div class="menu-sep"></div>
     <div id="new-conns"></div>
     <div class="menu-item" data-kind="custom">自訂指令…</div>
     <div class="menu-sep"></div>
     <div class="menu-item" data-kind="manage">自訂連線設定…</div>
+  </div>
+
+  <!-- 我的最愛下拉（舊版 Favorites_Click：各筆最愛 → 分隔線 → 加到我的最愛 → 設定…） -->
+  <div id="favs-menu" class="popup-menu" hidden>
+    <div id="favs-items"></div>
+    <div class="menu-sep"></div>
+    <div class="menu-item" data-fav="add">加到我的最愛：目前分頁</div>
+    <div class="menu-item" data-fav="manage">設定…</div>
+  </div>
+
+  <!-- 我的最愛設定（舊版 FavoritesDialog：改名、刪除、排序） -->
+  <div id="favs" hidden>
+    <div id="favs-box">
+      <div id="favs-title"></div>
+      <div id="favs-list"></div>
+      <div id="favs-note"></div>
+      <div class="modal-buttons">
+        <button id="favs-up" type="button">上移</button>
+        <button id="favs-down" type="button">下移</button>
+        <button id="favs-rename" type="button">改名</button>
+        <button id="favs-delete" type="button">刪除</button>
+        <button id="favs-close" type="button">關閉</button>
+      </div>
+    </div>
   </div>
 
   <!-- 翻頁下拉（舊版 Page_Click 的 ContextMenu） -->
@@ -198,6 +224,59 @@
         <button id="hk-cancel" type="button">取消</button>
       </div>
     </div>
+  </div>
+
+  <!-- SSH 連線對話框（B6）。欄位照舊版 ConnectDialog 的 SSH 頁，外加「進階」。
+       密碼**沒有欄位**——連上之後在終端機裡問（同 PuTTY／舊版），也不會被存起來。 -->
+  <div id="sshdlg" hidden>
+    <form id="sshdlg-box">
+      <div id="sshdlg-title"></div>
+      <div class="sd-grid">
+        <label id="sd-l-host">IP / 主機</label>
+        <span class="sd-row">
+          <input id="sd-host" type="text" autocomplete="off" spellcheck="false" />
+          <span id="sd-l-port">Port</span>
+          <input id="sd-port" type="number" min="1" max="65535" />
+        </span>
+
+        <label id="sd-l-user">帳號</label>
+        <span class="sd-row">
+          <input id="sd-user" type="text" autocomplete="off" spellcheck="false" />
+          <span id="sd-user-hint" class="sd-hint"></span>
+        </span>
+
+        <label id="sd-l-key">金鑰檔</label>
+        <span class="sd-row">
+          <input id="sd-key" type="text" autocomplete="off" spellcheck="false" />
+          <button id="sd-key-browse" type="button">瀏覽…</button>
+        </span>
+
+        <label id="sd-l-keep">保持連線</label>
+        <span class="sd-row">
+          <input id="sd-keep" type="number" min="0" max="1440" />
+          <span id="sd-keep-hint" class="sd-hint"></span>
+        </span>
+      </div>
+
+      <label class="sd-check"><input id="sd-agent" type="checkbox" /><span id="sd-l-agent"></span></label>
+      <label class="sd-check"><input id="sd-reconnect" type="checkbox" /><span id="sd-l-reconnect"></span></label>
+
+      <details id="sd-adv">
+        <summary id="sd-l-adv"></summary>
+        <div id="sd-adv-note" class="sd-hint"></div>
+        <div id="sd-algos"></div>
+        <label id="sd-l-env" class="sd-envlabel"></label>
+        <textarea id="sd-env" rows="3" spellcheck="false"></textarea>
+        <div id="sd-env-hint" class="sd-hint"></div>
+      </details>
+
+      <div id="sd-note"></div>
+      <div class="modal-buttons">
+        <button id="sd-ok" type="submit">連線</button>
+        <button id="sd-fav" type="button">加到我的最愛</button>
+        <button id="sd-cancel" type="button">取消</button>
+      </div>
+    </form>
   </div>
 
   <!-- 弱演算法警告（PuTTY 的 warn-below-this-line）：協商到警告線以下的演算法時跳。

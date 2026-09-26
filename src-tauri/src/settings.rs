@@ -80,6 +80,9 @@ pub struct AppSettings {
     /// 已經接受過「弱演算法」警告的主機（`host:port`）。照 PuTTY：接受過就不再問。
     pub ssh_weak_accepted: Vec<String>,
 
+    /// 我的最愛（舊版 `AppSettings.Favorites`）。**不存密碼**。
+    pub favorites: Vec<crate::favorites::FavoriteItem>,
+
     /// 自訂連線清單（舊版 `AppSettings.CustomConns`）。
     ///
     /// 舊版 v1.0.18 起**不自動建立任何自訂連線**：全新安裝是空的，使用者自己按
@@ -190,6 +193,7 @@ impl Default for AppSettings {
             keep_alive_mins: 10,
             auto_reconnect: false,
             ssh_weak_accepted: Vec::new(),
+            favorites: Vec::new(),
             custom_conns: Vec::new(),
             // 舊版 MainWindow.xaml 的「配色」子選單那五組，順序照抄
             palette: vec![

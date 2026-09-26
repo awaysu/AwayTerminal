@@ -26,6 +26,7 @@
 pub mod algos;
 pub mod hostkey;
 pub mod prompt;
+pub mod reconnect;
 
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
@@ -87,6 +88,9 @@ pub struct SshOptions {
     pub algos: algos::AlgoOverride,
     /// keepalive 間隔（分鐘）。0＝關閉。同舊版「保持連線」的設定。
     pub keepalive_mins: u32,
+    /// 要送給遠端的環境變數（SSH `env` request）。舊版是 `ssh.exe` 的 `-o SendEnv=…`。
+    /// 伺服器多半設了 `AcceptEnv` 白名單，被拒絕只印一行灰字、**不擋連線**。
+    pub env: Vec<(String, String)>,
 }
 
 /// 主機金鑰要不要接受。由呼叫端提供——app 端跳對話框問使用者，`ssh_probe` 直接給答案。
@@ -175,6 +179,15 @@ impl Drop for SshSession {
 /// 帳號確定之後回報一次（舊版：`login as:` 輸入完就把分頁標題改成 `user@host`）。
 pub type OnUser = Arc<dyn Fn(&str) + Send + Sync>;
 
+/// **shell 真的開起來了**才回報一次（重連的退避次數靠這個歸零）。
+///
+/// 舊版是「一收到輸出就歸零」（`OnSessionOutput` 的第一行）。我們不能照那樣做：
+/// 我們自己的狀態訊息（「連線到 host:port …」、`login as:`）也是走同一條輸出 callback，
+/// 會被誤認成「連上了」而讓退避永遠停在 3 秒（實測踩到）。
+/// 改成「shell channel 開成功」——語意更精確，而且同樣達到
+/// 「連成功過就不要繼續拉長退避」的目的。
+pub type OnConnected = Arc<dyn Fn() + Send + Sync>;
+
 /// 開一條 SSH 連線。**立刻回傳**，連線與驗證在背景進行，過程中的提示走 `on_output`。
 pub fn spawn(
     opts: SshOptions,
@@ -183,6 +196,7 @@ pub fn spawn(
     on_output: OnOutput,
     on_exit: OnExit,
     on_user: Option<OnUser>,
+    on_connected: Option<OnConnected>,
 ) -> Arc<SshSession> {
     let (tx, rx) = mpsc::unbounded_channel();
     let session = Arc::new(SshSession {
@@ -193,7 +207,7 @@ pub fn spawn(
 
     let out = on_output.clone();
     runtime().spawn(async move {
-        let result = run(opts, store, decider, out.clone(), rx, on_user).await;
+        let result = run(opts, store, decider, out.clone(), rx, on_user, on_connected).await;
         if let Err(msg) = &result {
             // 錯誤一律印在終端機裡（黃字），不要只進 log——使用者要看得到為什麼連不上
             echo(&out, &format!("\r\n\x1b[33m{msg}\x1b[0m\r\n"));
@@ -329,6 +343,7 @@ async fn run(
     on_output: OnOutput,
     mut rx: mpsc::UnboundedReceiver<Cmd>,
     on_user: Option<OnUser>,
+    on_connected: Option<OnConnected>,
 ) -> Result<Option<i32>, String> {
     // 演算法順序照 PuTTY（B4）：舊演算法在清單裡但排最後，協商到就跳警告。
     let (preferred, unknown) = algos::preferred(&opts.algos);
@@ -405,10 +420,31 @@ async fn run(
         )
         .await
         .map_err(|e| format!("請求 PTY 失敗：{e}"))?;
+
+    // 送出環境變數（舊版 `ssh.exe` 的 `-o SendEnv=…`）。
+    // 伺服器多半設了 `AcceptEnv` 白名單，沒放行就會回 failure——**只印一行灰字、不擋連線**
+    // （PuTTY 也是這個態度）。`want_reply: false` 讓被拒時不會卡在等回覆。
+    for (k, v) in &opts.env {
+        if k.trim().is_empty() {
+            continue;
+        }
+        if let Err(e) = channel.set_env(false, k.as_str(), v.as_str()).await {
+            echo(
+                &on_output,
+                &format!("\x1b[90m（環境變數 {k} 送不出去：{e}）\x1b[0m\r\n"),
+            );
+        }
+    }
+
     channel
         .request_shell(false)
         .await
         .map_err(|e| format!("開啟 shell 失敗：{e}"))?;
+
+    // 到這裡才算「真的連上了」：重連的退避次數在這裡歸零（見 OnConnected 的說明）
+    if let Some(cb) = &on_connected {
+        cb();
+    }
 
     pump(channel, on_output, rx).await
 }

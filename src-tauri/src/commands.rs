@@ -17,7 +17,7 @@ use tauri::{AppHandle, State};
 use crate::host::emit_host;
 use crate::output::OutputPump;
 use crate::pty::{self, shell, SpawnOptions};
-use crate::session::{ExitInfo, SessionManager, TerminalSession};
+use crate::session::{ExitInfo, SessionManager};
 use crate::settings::{AppSettings, SettingsStore};
 use crate::tabs::{self, Tab, TabKind, TabManager};
 
@@ -114,6 +114,10 @@ pub struct SshArgs {
     pub algos: Option<crate::ssh::algos::AlgoOverride>,
     /// 保持連線的間隔（分鐘）。省略＝用設定裡的值。
     pub keepalive_mins: Option<u32>,
+    /// 斷線自動重連。省略＝用設定裡的值。
+    pub auto_reconnect: Option<bool>,
+    /// 要送給遠端的環境變數（SSH `env` request）。
+    pub env: Option<Vec<(String, String)>>,
 }
 
 /// 開一條連線。
@@ -293,7 +297,7 @@ pub fn session_create(
     // 輸出批次合併：讀取執行緒只把 bytes 丟進 pump，由 pump 執行緒合併後送一包。
     // 這同時避開 tauri 的門檻——`InvokeResponseBody::Raw` 小於 1024 bytes 會被序列化成
     // JSON 數字陣列用 eval 送，合併後的大包才走 fetch 自訂協定拿到真正的二進位。
-    let pump = Arc::new(OutputPump::start(on_event.clone()));
+    let pump = OutputPump::start(on_event.clone());
 
     // 狀態燈要知道「最後一次有輸出是什麼時候」。這條路一個 chunk 走一次，
     // 所以用 AtomicU64 直接寫，不去搶分頁清單的鎖（見 tabs.rs 的註解）。
@@ -396,6 +400,12 @@ pub fn session_create(
         logger,
         fg: None,
         bg: None,
+        out: Some(pump.clone()),
+        cols,
+        rows,
+        ssh: None,
+        reconnect_attempt: 0,
+        reconnect_gen: 0,
         sandbox: sandbox.clone(),
         conn_name: conn_def.as_ref().map(|c| c.name.clone()),
         command_line: sh.command_line,
@@ -439,94 +449,31 @@ fn create_ssh(
     emit_host(&app, format!("n{id}\x1f{tab_title}"));
     emit_host(&app, format!("s{id}"));
 
-    let pump = Arc::new(OutputPump::start(on_event));
+    let pump = OutputPump::start(on_event);
     let last_output = Arc::new(std::sync::atomic::AtomicU64::new(tabs::now_ms()));
     let logger: Arc<std::sync::Mutex<Option<Arc<crate::logging::Logger>>>> =
         Arc::new(std::sync::Mutex::new(None));
 
-    let on_output = {
-        let pump = pump.clone();
-        let last_output = last_output.clone();
-        let logger = logger.clone();
-        Arc::new(move |bytes: &[u8]| {
-            last_output.store(tabs::now_ms(), Ordering::Relaxed);
-            if let Ok(g) = logger.lock() {
-                if let Some(l) = g.as_ref() {
-                    l.write(bytes);
-                }
-            }
-            pump.push(bytes);
-        }) as crate::session::OnOutput
-    };
-    let on_exit = {
-        let pump = pump.clone();
-        Arc::new(move |_info: ExitInfo| {
-            pump.flush_and_stop();
-            // 遠端連線結束時舊版會在畫面上留一行灰字提示（`term.exited`），
-            // 這裡由 ssh 模組自己印（它知道是「連不上」還是「登出」），這邊不重複。
-        }) as crate::session::OnExit
-    };
-    let on_user: crate::ssh::OnUser = {
-        let app = app.clone();
-        let tabs_state = tabs_state.clone();
-        let host = host.clone();
-        Arc::new(move |user: &str| {
-            let target = format!("{user}@{host}");
-            if tabs_state.set_title(id, &target, false) {
-                emit_host(&app, format!("t{id}\x1f{target}"));
-                tabs::emit_state(&app, &tabs_state);
-            }
-        })
+    // 連線參數：分頁層要記住它（重連、我的最愛、對話框都用同一個結構）
+    let params = crate::ssh::reconnect::SshConnParams {
+        host: host.clone(),
+        port,
+        user: args.user.clone().unwrap_or_default(),
+        key_path: args.key_path.clone().unwrap_or_default(),
+        use_agent: args.use_agent.unwrap_or(true),
+        keepalive_mins: args
+            .keepalive_mins
+            .unwrap_or(settings.get().keep_alive_mins),
+        auto_reconnect: args.auto_reconnect.unwrap_or(settings.get().auto_reconnect),
+        algos: args.algos.clone().unwrap_or_default(),
+        env: args.env.clone().unwrap_or_default(),
     };
 
-    let store = Arc::new(crate::ssh::hostkey::HostKeyStore::new(
-        settings.dir().join("known_hosts"),
-    ));
-    println!("[AwayTerminal] known_hosts: {}", store.path().display());
-    let decider = Arc::new(crate::ssh::prompt::AppDecider::new(
-        app.clone(),
-        id,
-        store.path().to_string_lossy().to_string(),
-        (*settings).clone(),
-    ));
-
-    let session = crate::ssh::spawn(
-        crate::ssh::SshOptions {
-            host: host.clone(),
-            port,
-            user: args.user.clone(),
-            cols,
-            rows,
-            auth: crate::ssh::SshAuth {
-                key_path: args.key_path.clone(),
-                key_passphrase: None, // 有密碼的金鑰在終端機裡問（同 PuTTY）
-                use_agent: args.use_agent.unwrap_or(true),
-            },
-            algos: args.algos.clone().unwrap_or_default(),
-            keepalive_mins: args.keepalive_mins.unwrap_or(settings.get().keep_alive_mins),
-        },
-        store,
-        decider,
-        on_output,
-        on_exit,
-        Some(on_user),
-    );
-
-    let info = SessionInfo {
-        id,
-        pid: 0,
-        command_line: format!("ssh://{host}:{port}"),
-        shell: "ssh".to_string(),
-        backend: session.backend_name().to_string(),
-        flags: String::new(),
-        title: tab_title.clone(),
-    };
-    println!("[AwayTerminal] session {id} started: ssh {host}:{port} backend=russh");
-
+    // 分頁先建好（`reconnect::start` 要從分頁拿輸出管線），再建 session
     tabs_state.insert(Tab {
         id,
         kind: TabKind::Ssh,
-        title: tab_title,
+        title: tab_title.clone(),
         title_locked: false,
         cwd_path: String::new(),
         flags: String::new(),
@@ -537,15 +484,39 @@ fn create_ssh(
         logger,
         fg: None,
         bg: None,
+        out: Some(pump),
+        cols,
+        rows,
+        ssh: Some(params.clone()),
+        reconnect_attempt: 0,
+        reconnect_gen: 0,
         sandbox: None, // SSH 不需要沙盒（沒有本機子行程可以隔離）
         conn_name: None,
-        command_line: info.command_line.clone(),
-        backend: info.backend.clone(),
+        command_line: format!("ssh://{host}:{port}"),
+        backend: "russh".to_string(),
     });
     tabs_state.set_active(id);
-    manager.insert(id, session);
+
+    let parts = tabs_state
+        .session_parts_of(id)
+        .ok_or_else(|| "分頁建立失敗".to_string())?;
+    if let Err(e) = crate::ssh::reconnect::start(&app, id, &params, parts) {
+        emit_host(&app, format!("x{id}"));
+        tabs_state.remove(id);
+        return Err(e);
+    }
+    println!("[AwayTerminal] session {id} started: ssh {host}:{port} backend=russh");
     tabs::emit_state(&app, tabs_state);
-    Ok(info)
+
+    Ok(SessionInfo {
+        id,
+        pid: 0,
+        command_line: format!("ssh://{host}:{port}"),
+        shell: "ssh".to_string(),
+        backend: "russh".to_string(),
+        flags: String::new(),
+        title: tab_title,
+    })
 }
 
 /// 寫入原始位元組（`term.onBinary` 用）。
@@ -558,14 +529,35 @@ pub fn session_write(id: u32, data: Vec<u8>, manager: State<'_, SessionManager>)
 
 /// 寫入文字（`term.onData` 用；省掉上行的 JSON 數字陣列）。
 #[tauri::command]
-pub fn session_write_text(id: u32, text: String, manager: State<'_, SessionManager>) {
+pub fn session_write_text(
+    app: AppHandle,
+    id: u32,
+    text: String,
+    manager: State<'_, SessionManager>,
+    tabs_state: State<'_, Arc<TabManager>>,
+) {
     if let Some(s) = manager.get(id) {
         s.write(text.as_bytes());
+        return;
+    }
+    // 沒有連線的分頁：SSH 斷線後按 Enter ＝在同一個分頁重連（舊版 `ManualReconnect`）。
+    // 其餘的打字就安靜丟掉——舊版踩雷是「session 開失敗卻留在分頁上」會讓打字全被吞，
+    // 我們這裡分頁根本沒有 session，所以不會有那種假活著的狀態。
+    if tabs_state.ssh_params_of(id).is_some() && text.contains(['\r', '\n']) {
+        crate::ssh::reconnect::manual(&app, id);
     }
 }
 
 #[tauri::command]
-pub fn session_resize(id: u32, cols: u16, rows: u16, manager: State<'_, SessionManager>) {
+pub fn session_resize(
+    id: u32,
+    cols: u16,
+    rows: u16,
+    manager: State<'_, SessionManager>,
+    tabs_state: State<'_, Arc<TabManager>>,
+) {
+    // 記住最新尺寸：斷線重連要用現在的大小開新 session（同舊版 `tab.Cols/Rows`）
+    tabs_state.set_size(id, cols, rows);
     if let Some(s) = manager.get(id) {
         s.resize(cols, rows);
     }

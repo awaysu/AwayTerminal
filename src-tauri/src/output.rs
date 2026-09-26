@@ -61,6 +61,14 @@ impl OutputPump {
         self.cv.notify_one();
     }
 
+    /// 叫 pump 立刻把緩衝送出去，但**不結束**它。
+    ///
+    /// 斷線重連要沿用同一條 pump（同一條輸出 channel），所以不能用
+    /// [`flush_and_stop`](Self::flush_and_stop)——那會讓之後的輸出全部被丟掉。
+    pub fn flush(&self) {
+        self.cv.notify_all();
+    }
+
     /// 要求排空剩餘輸出後結束 pump；回傳前會等 pump 真的排完
     /// （這樣結束事件一定排在最後一批輸出之後）。
     pub fn flush_and_stop(&self) {

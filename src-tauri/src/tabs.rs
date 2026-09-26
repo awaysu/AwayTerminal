@@ -101,6 +101,17 @@ pub struct Tab {
     /// 「恢復分頁」（階段 3）。色票清單本身在 `settings.palette`。
     pub fg: Option<String>,
     pub bg: Option<String>,
+    /// 這個分頁的輸出管線與 log 槽。斷線重連要沿用它們（同一條 channel）。
+    pub out: Option<Arc<crate::output::OutputPump>>,
+    /// 最後一次由前端回報的尺寸（重連時用，同舊版 `tab.Cols/Rows`）。
+    pub cols: u16,
+    pub rows: u16,
+    /// SSH 連線參數（`None`＝不是 SSH 分頁）。重連、我的最愛、對話框都用這個結構。
+    pub ssh: Option<crate::ssh::reconnect::SshConnParams>,
+    /// 連續重連次數（退避用；一收到輸出就歸零，同舊版 `ReconnectAttempt`）。
+    pub reconnect_attempt: u32,
+    /// 目前這條重連鏈的世代。排程時記下，醒來對不上就放棄（同舊版「一個分頁一條鏈」）。
+    pub reconnect_gen: u64,
     /// 沙盒模式的配置（`None`＝沒開沙盒）。
     pub sandbox: Option<crate::sandbox::Sandbox>,
     /// 這個分頁是哪一條自訂連線開的（右鍵切換沙盒、重新啟動分頁要用）。
@@ -108,6 +119,15 @@ pub struct Tab {
     /// 診斷用。
     pub command_line: String,
     pub backend: String,
+}
+
+/// 重連要沿用的既有管線（見 `TabManager::session_parts_of`）。
+pub struct SessionParts {
+    pub pump: Arc<crate::output::OutputPump>,
+    pub logger: Arc<Mutex<Option<Arc<crate::logging::Logger>>>>,
+    pub last_output: Arc<AtomicU64>,
+    pub cols: u16,
+    pub rows: u16,
 }
 
 /// 傳給前端的一列（`tab-state` event 的內容）。
@@ -132,6 +152,10 @@ pub struct TabView {
     /// 不是目前分頁的狀態——改設定是下次啟動才生效）。
     pub conn_sandbox: Option<bool>,
     pub conn_name: Option<String>,
+    /// 目前沒有連線、但這個分頁可以重連（SSH 分頁斷線後）。
+    pub reconnectable: bool,
+    /// 正在等自動重連（退避倒數中）。
+    pub reconnect_attempt: u32,
 }
 
 #[derive(Clone, serde::Serialize)]
@@ -378,6 +402,77 @@ impl TabManager {
         self.lock().tabs.get(&id).map(|t| t.logger.clone())
     }
 
+    /// 重連要沿用的東西（輸出管線、log 槽、最後回報的尺寸）。
+    pub fn session_parts_of(&self, id: u32) -> Option<SessionParts> {
+        let inner = self.lock();
+        let t = inner.tabs.get(&id)?;
+        Some(SessionParts {
+            pump: t.out.clone()?,
+            logger: t.logger.clone(),
+            last_output: t.last_output.clone(),
+            cols: t.cols,
+            rows: t.rows,
+        })
+    }
+
+    /// 這個分頁目前記住的尺寸。
+    pub fn size_of(&self, id: u32) -> Option<(u16, u16)> {
+        self.lock().tabs.get(&id).map(|t| (t.cols, t.rows))
+    }
+
+    /// 前端回報的尺寸（重連時要用最新的，不是當初開分頁的）。
+    pub fn set_size(&self, id: u32, cols: u16, rows: u16) {
+        if let Some(t) = self.lock().tabs.get_mut(&id) {
+            if cols > 0 && rows > 0 {
+                t.cols = cols;
+                t.rows = rows;
+            }
+        }
+    }
+
+    pub fn ssh_params_of(&self, id: u32) -> Option<crate::ssh::reconnect::SshConnParams> {
+        self.lock().tabs.get(&id).and_then(|t| t.ssh.clone())
+    }
+
+    /// 登入之後把帳號記進參數：重連就不必再問 `login as:`
+    /// （同舊版把 `Restore.Host` 改成 `user@host`）。
+    pub fn set_ssh_user(&self, id: u32, user: &str) {
+        if let Some(t) = self.lock().tabs.get_mut(&id) {
+            if let Some(p) = t.ssh.as_mut() {
+                p.user = user.to_string();
+            }
+        }
+    }
+
+    /// 退避次數 +1 並回傳新值。
+    pub fn bump_reconnect_attempt(&self, id: u32) -> u32 {
+        let mut inner = self.lock();
+        match inner.tabs.get_mut(&id) {
+            Some(t) => {
+                t.reconnect_attempt += 1;
+                t.reconnect_attempt
+            }
+            None => 1,
+        }
+    }
+
+    /// 有輸出＝真的連上了 → 歸零（同舊版）。
+    pub fn reset_reconnect_attempt(&self, id: u32) {
+        if let Some(t) = self.lock().tabs.get_mut(&id) {
+            t.reconnect_attempt = 0;
+        }
+    }
+
+    pub fn set_reconnect_gen(&self, id: u32, gen: u64) {
+        if let Some(t) = self.lock().tabs.get_mut(&id) {
+            t.reconnect_gen = gen;
+        }
+    }
+
+    pub fn reconnect_gen_of(&self, id: u32) -> Option<u64> {
+        self.lock().tabs.get(&id).map(|t| t.reconnect_gen)
+    }
+
     /// 這個分頁的沙盒配置。
     pub fn sandbox_of(&self, id: u32) -> Option<crate::sandbox::Sandbox> {
         self.lock().tabs.get(&id).and_then(|t| t.sandbox.clone())
@@ -430,6 +525,8 @@ impl TabManager {
                     sandbox: t.sandbox.clone(),
                     conn_sandbox: conn_sandbox_of(t.conn_name.as_deref(), conns),
                     conn_name: t.conn_name.clone(),
+                    reconnectable: t.ssh.is_some(),
+                    reconnect_attempt: t.reconnect_attempt,
                 })
                 .collect(),
             active_id: inner.active,
@@ -577,7 +674,86 @@ fn looks_like_drive(s: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{dir_name_of, parse_cwd};
+    use super::{dir_name_of, parse_cwd, Tab, TabKind, TabManager};
+
+    fn tab(id: u32) -> Tab {
+        Tab {
+            id,
+            kind: TabKind::Ssh,
+            title: format!("t{id}"),
+            title_locked: false,
+            cwd_path: String::new(),
+            flags: String::new(),
+            pid: 0,
+            started_at: 0,
+            last_output: Default::default(),
+            busy: false,
+            logger: Default::default(),
+            fg: None,
+            bg: None,
+            out: None,
+            cols: 80,
+            rows: 24,
+            ssh: Some(Default::default()),
+            reconnect_attempt: 0,
+            reconnect_gen: 0,
+            sandbox: None,
+            conn_name: None,
+            command_line: String::new(),
+            backend: String::new(),
+        }
+    }
+
+    /// 退避次數：每排一次 +1，一收到輸出就歸零（同舊版）。
+    #[test]
+    fn reconnect_attempt_bumps_and_resets() {
+        let m = TabManager::new("tab");
+        m.insert(tab(1));
+        assert_eq!(m.bump_reconnect_attempt(1), 1);
+        assert_eq!(m.bump_reconnect_attempt(1), 2);
+        assert_eq!(m.bump_reconnect_attempt(1), 3);
+        m.reset_reconnect_attempt(1);
+        assert_eq!(m.bump_reconnect_attempt(1), 1, "歸零之後要從 1 重新算");
+    }
+
+    /// 一個分頁同時只有一條重連鏈：世代換過之後，舊的那條要認得出自己過期了。
+    #[test]
+    fn reconnect_generation_invalidates_old_chain() {
+        let m = TabManager::new("tab");
+        m.insert(tab(1));
+        m.set_reconnect_gen(1, 7);
+        assert_eq!(m.reconnect_gen_of(1), Some(7));
+        m.set_reconnect_gen(1, 8); // 例如使用者按了 Enter
+        assert_ne!(m.reconnect_gen_of(1), Some(7), "舊鏈醒來時要放棄");
+        // 分頁關掉之後查不到世代 → 排程的執行緒也會放棄
+        m.remove(1);
+        assert_eq!(m.reconnect_gen_of(1), None);
+    }
+
+    /// 尺寸要記住最新的（重連用現在的大小，不是當初開分頁的）。
+    #[test]
+    fn size_is_remembered_for_reconnect() {
+        let m = TabManager::new("tab");
+        m.insert(tab(1));
+        m.set_size(1, 120, 40);
+        assert_eq!(m.size_of(1), Some((120, 40)));
+        // 0 不可以蓋掉：分頁模式下隱藏的 pane 量不到尺寸會回報 0（舊版踩雷），
+        // 那時要保留上一個有效值，不然重連會用 0×0 開 PTY
+        m.set_size(1, 0, 0);
+        assert_eq!(m.size_of(1), Some((120, 40)));
+        // 沒有 out（還沒建 session）就拿不到重連用的 parts
+        assert!(m.session_parts_of(1).is_none());
+    }
+
+    /// 登入後記住帳號：重連不必再問 `login as:`
+    #[test]
+    fn ssh_user_is_remembered_after_login() {
+        let m = TabManager::new("tab");
+        m.insert(tab(1));
+        assert_eq!(m.ssh_params_of(1).map(|p| p.user), Some(String::new()));
+        m.set_ssh_user(1, "root");
+        assert_eq!(m.ssh_params_of(1).map(|p| p.user), Some("root".to_string()));
+    }
 
     #[test]
     fn parses_prompt_lines() {

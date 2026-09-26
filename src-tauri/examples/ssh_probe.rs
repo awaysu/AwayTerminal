@@ -344,7 +344,79 @@ fn main() {
         }
     }
 
-    // --------------------------------------------- 7. 真的 sshd（有就跑，沒有就跳過）
+    // ------------------------ 7. 伺服器在同一埠再起來 → 連回去（重連依賴的語意）
+    {
+        // 分頁層的自動重連（退避／世代／按 Enter）在 `ssh/reconnect.rs`，需要 Tauri 的
+        // state 才跑得起來，所以那一層由單元測試 + app 的 `--verify` 驗。
+        // 這裡驗的是重連**依賴的 session 層語意**：同一個 host:port 的伺服器重新起來之後，
+        // 新 session 連得上、而且**主機金鑰是同一把所以不會再問**。
+        let key3 =
+            ssh_key::PrivateKey::random(&mut rand::rng(), ssh_key::Algorithm::Ed25519).unwrap();
+        let log3 = Arc::new(Mutex::new(ServerLog::default()));
+        let store5 = Arc::new(HostKeyStore::new(dir.join("known_hosts_restart")));
+
+        // 固定一個埠：先問系統要一個空的，關掉之後同一個埠再起第二台
+        let fixed_port = rt.block_on(async {
+            let l = tokio::net::TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+            l.local_addr().unwrap().port()
+        });
+
+        match rt.block_on(start_server_on(fixed_port, key3.clone(), log3.clone())) {
+            Ok(handle) => {
+                let c = Client::connect(
+                    fixed_port,
+                    Some(USER.to_string()),
+                    SshAuth::default(),
+                    store5.clone(),
+                    HostKeyAnswer::AcceptAndStore,
+                );
+                c.expect("password: ", 10);
+                c.session.write(format!("{PASSWORD}\r").as_bytes());
+                let up = c.expect("AWAY_SSH_OK", 15);
+                rt.block_on(async { handle.shutdown("restart test".into()) });
+                let down = c.wait_exit(15);
+                c.close();
+
+                // 同一埠再起一台（**同一把主機金鑰**，模擬設備重開機）
+                let mut restarted = None;
+                for _ in 0..20 {
+                    std::thread::sleep(Duration::from_millis(250));
+                    if let Ok(h) = rt.block_on(start_server_on(fixed_port, key3.clone(), log3.clone()))
+                    {
+                        restarted = Some(h);
+                        break;
+                    }
+                }
+                if restarted.is_none() {
+                    report("同一埠重新起 sshd", false, "埠一直被占著".to_string());
+                } else {
+                    let c2 = Client::connect(
+                        fixed_port,
+                        Some(USER.to_string()),
+                        SshAuth::default(),
+                        store5.clone(),
+                        // 已記錄過 → 不該再問；真問了就會被拒絕而連不上
+                        HostKeyAnswer::Reject,
+                    );
+                    c2.expect("password: ", 10);
+                    c2.session.write(format!("{PASSWORD}\r").as_bytes());
+                    let again = c2.expect("AWAY_SSH_OK", 15);
+                    let asked = c2.decider.seen.lock().unwrap().len();
+                    report(
+                        "伺服器重開後連回去（沿用已接受的主機金鑰）",
+                        up && down && again && asked == 0,
+                        format!(
+                            "第一次連上={up}、斷線事件={down}、重連成功={again}、主機金鑰被問={asked}（要 0）"
+                        ),
+                    );
+                    c2.close();
+                }
+            }
+            Err(e) => report("固定埠起 sshd", false, e.to_string()),
+        }
+    }
+
+    // --------------------------------------------- 8. 真的 sshd（有就跑，沒有就跳過）
     println!("SKIP  真連線測試：需要本機 OpenSSH sshd 與一組帳號密碼，見 docs/SSH.md「待真機驗證」");
 
     println!();
@@ -406,12 +478,14 @@ impl Client {
                 auth,
                 algos: Default::default(),
                 keepalive_mins: 0,
+                env: Vec::new(),
             },
             store,
             decider.clone(),
             on_output,
             on_exit,
             None, // 分頁標題的回報是 app 端的事，probe 不需要
+            None, // 退避歸零也是 app 端的事
         );
 
         Self {
@@ -479,6 +553,32 @@ struct ServerLog {
 
 async fn start_server(key: ssh_key::PrivateKey, log: Arc<Mutex<ServerLog>>) -> std::io::Result<u16> {
     start_server_with(key, log, false).await.map(|(port, _)| port)
+}
+
+/// 在**指定的埠**起一台一般設定的測試 sshd（驗「伺服器重開後連回去」用）。
+/// 埠還被占著時回 Err，呼叫端可以重試。
+async fn start_server_on(
+    port: u16,
+    key: ssh_key::PrivateKey,
+    log: Arc<Mutex<ServerLog>>,
+) -> std::io::Result<russh::server::RunningServerHandle> {
+    let config = Arc::new(russh::server::Config {
+        inactivity_timeout: Some(Duration::from_secs(120)),
+        auth_rejection_time: Duration::from_millis(50),
+        auth_rejection_time_initial: Some(Duration::from_millis(0)),
+        keys: vec![key],
+        ..Default::default()
+    });
+    let listener = tokio::net::TcpListener::bind(("127.0.0.1", port)).await?;
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    tokio::spawn(async move {
+        let mut server = TestServer { log };
+        let running = server.run_on_socket(config, &listener);
+        let _ = tx.send(running.handle());
+        let _ = running.await;
+    });
+    rx.await
+        .map_err(|_| std::io::Error::other("測試 sshd 沒有回報 handle"))
 }
 
 /// `legacy_only = true` 時，伺服器**只**接受舊演算法（`group14-sha1` + `aes128-cbc`

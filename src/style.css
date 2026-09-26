@@ -343,3 +343,72 @@ body.col-resizing { cursor: col-resize; user-select: none; }
 #weakalgo-note { color: #999; font-size: 12px; line-height: 1.6; }
 #weakalgo .modal-buttons button { min-width: 92px; }
 #wa-cancel { border-color: #FDFFB0; }
+
+/* ---------------------------------------------------------------------------
+   TASK-009：SSH 連線對話框（B6）與我的最愛（C）。
+   --------------------------------------------------------------------------- */
+
+#sshdlg {
+  position: fixed; inset: 0; z-index: 330; display: flex; align-items: center; justify-content: center;
+  background: rgba(0,0,0,.45);
+  font: 13px "Microsoft JhengHei", "微軟正黑體", sans-serif;
+}
+#sshdlg-box {
+  width: 560px; max-width: 92vw; max-height: 88vh; overflow: auto; padding: 16px 18px;
+  background: #2d2d30; border: 1px solid #FDFFB0; border-radius: 6px; color: #e0e0e0;
+}
+#sshdlg-title { font-size: 14px; color: #FDFFB0; margin-bottom: 10px; }
+.sd-grid { display: grid; grid-template-columns: auto 1fr; gap: 8px 10px; align-items: center; }
+.sd-grid > label { color: #999; font-size: 12px; white-space: nowrap; }
+.sd-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.sd-row > input[type="text"] { flex: 1 1 auto; min-width: 0; }
+#sshdlg input[type="text"], #sshdlg input[type="number"], #sshdlg textarea, #sshdlg select {
+  background: #1e1e1e; color: #e0e0e0; border: 1px solid #555; outline: none;
+  padding: 4px 6px; font-size: 13px; font-family: inherit;
+}
+#sshdlg input:focus, #sshdlg textarea:focus, #sshdlg select:focus { border-color: #FDFFB0; }
+#sd-port { width: 76px; }
+#sd-keep { width: 76px; }
+.sd-hint { color: #888; font-size: 11px; }
+.sd-check { display: flex; align-items: center; gap: 6px; margin-top: 8px; cursor: pointer; }
+#sd-adv { margin-top: 12px; border-top: 1px solid #555; padding-top: 8px; }
+#sd-adv > summary { cursor: pointer; color: #FDFFB0; font-size: 12px; }
+#sd-algos { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 8px 0; }
+.sd-algo-label { color: #999; font-size: 11px; margin-bottom: 2px; }
+.sd-algo select { width: 100%; font-family: Consolas, monospace; font-size: 11px; }
+.sd-algo option.weak { color: #ffb86c; }
+.sd-envlabel { display: block; color: #999; font-size: 12px; margin-top: 6px; }
+#sd-env { width: 100%; box-sizing: border-box; font-family: Consolas, monospace; font-size: 12px; }
+#sd-note { margin-top: 10px; color: #EF9A9A; font-size: 12px; min-height: 16px; }
+#sshdlg .modal-buttons button {
+  min-width: 96px; padding: 5px 12px; cursor: pointer; font-size: 13px; font-family: inherit;
+  background: #3a3a3d; color: #e0e0e0; border: 1px solid #555; border-radius: 4px;
+}
+#sshdlg .modal-buttons button:hover { background: #50505a; }
+#sd-ok { border-color: #FDFFB0; }
+
+/* 我的最愛 */
+.popup-menu .menu-item.disabled { color: #666; cursor: default; }
+.popup-menu .menu-item.disabled:hover { background: transparent; color: #666; }
+.popup-menu .menu-icon { display: inline-flex; width: 16px; height: 16px; margin-right: 6px; vertical-align: -3px; color: #A5D6A7; }
+.popup-menu .menu-icon svg { width: 100%; height: 100%; fill: currentColor; }
+#favs {
+  position: fixed; inset: 0; z-index: 320; display: flex; align-items: center; justify-content: center;
+  background: rgba(0,0,0,.45);
+  font: 13px "Microsoft JhengHei", "微軟正黑體", sans-serif;
+}
+#favs-box {
+  width: 520px; max-width: 92vw; max-height: 88vh; overflow: auto; padding: 16px 18px;
+  background: #2d2d30; border: 1px solid #FDFFB0; border-radius: 6px; color: #e0e0e0;
+}
+#favs-title { font-size: 14px; color: #FDFFB0; margin-bottom: 10px; }
+#favs-list {
+  max-height: 320px; overflow-y: auto;
+  background: #252528; border: 1px solid #555; border-radius: 4px; padding: 4px;
+}
+#favs-note { margin-top: 8px; color: #EF9A9A; font-size: 12px; min-height: 16px; }
+#favs .modal-buttons button {
+  min-width: 72px; padding: 5px 10px; cursor: pointer; font-size: 12px; font-family: inherit;
+  background: #3a3a3d; color: #e0e0e0; border: 1px solid #555; border-radius: 4px;
+}
+#favs .modal-buttons button:hover { background: #50505a; }

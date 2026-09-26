@@ -5,6 +5,7 @@ pub mod bench;
 pub mod cli;
 pub mod commands;
 pub mod custom;
+pub mod favorites;
 pub mod host;
 pub mod logging;
 pub mod output;
@@ -92,6 +93,12 @@ pub fn run() {
             custom::custom_delete,
             custom::conn_set_sandbox,
             custom::sandbox_clear,
+            favorites::fav_list,
+            favorites::fav_candidate,
+            favorites::fav_add,
+            favorites::fav_delete,
+            favorites::fav_rename,
+            favorites::fav_move,
             sandbox::sandbox_probe,
             sandbox::sandbox_verify_cleanup,
             sandbox::pid_alive,
