@@ -1,0 +1,121 @@
+# Third-party notices
+
+AwayTerminal 2 is licensed under the MIT licence. It ships and/or borrows from the
+third-party components listed below. Each section states what is included, under which
+licence, and — where code was ported rather than linked — which part of this project it
+went into.
+
+---
+
+## 1. xterm.js — MIT
+
+<https://github.com/xtermjs/xterm.js>
+
+Packages `@xterm/xterm` and the addons `@xterm/addon-webgl`, `@xterm/addon-fit`,
+`@xterm/addon-unicode11`, `@xterm/addon-web-links`, `@xterm/addon-serialize`,
+`@xterm/addon-search`. Bundled into the frontend by Vite.
+
+```
+Copyright (c) 2017-2022, The xterm.js authors (https://github.com/xtermjs/xterm.js)
+Copyright (c) 2014-2016, SourceLair, Sàrl (https://www.sourcelair.com)
+Copyright (c) 2012-2013, Christopher Jeffrey (https://github.com/chjj/)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+---
+
+## 2. Windows Terminal (microsoft/terminal) — MIT
+
+<https://github.com/microsoft/terminal>
+
+### 2.1 Redistributed binaries
+
+`src-tauri/resources/conpty/` contains **unmodified** binaries from the Windows Terminal
+project, Authenticode-signed by Microsoft Corporation. They are copied next to the
+executable (as `conpty/`) at build time and are also bundled into the MSI / NSIS installers.
+
+| File | Version | SHA-256 |
+|---|---|---|
+| `conpty.dll` | 1.23.2510.08001 | `7c7430632052ff703540b68371ec43821820aa1335d8e11dfbcd9ff00e9daaed` |
+| `OpenConsole.exe` | 1.23.2510.08001 | `d1fe7faa62f9e955e2ac2371f95d7e5513df4d496255097158f979c94782c5fc` |
+
+Taken verbatim from the npm package `node-pty@1.1.0`
+(`third_party/conpty/1.23.251008001/win10-x64/`), which is how VS Code ships them.
+See `src-tauri/resources/conpty/README.md` for why AwayTerminal uses this ConPTY host
+instead of the Windows 10 inbox `conhost.exe`, and for update instructions.
+
+### 2.2 Behaviour reference
+
+Windows Terminal is also used as the behaviour reference for ConPTY handling in
+`src-tauri/src/pty/` (pipe setup, `PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE`,
+`ConptyReleasePseudoConsole` after the child is attached). No source code was copied.
+
+```
+Copyright (c) Microsoft Corporation.
+
+MIT License
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED *AS IS*, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+---
+
+## 3. Tauri — MIT / Apache-2.0
+
+<https://github.com/tauri-apps/tauri>
+
+The Rust backend and the `@tauri-apps/api` frontend package. Used as a dependency,
+dual-licensed MIT or Apache-2.0; this project uses it under the MIT option.
+
+---
+
+## 4. Rust crates
+
+Linked as dependencies, each under MIT or MIT/Apache-2.0:
+`windows-sys`, `libloading`, `serde`, `serde_json`, `tokio`.
+Full per-crate licence text is reproduced by `cargo about` / `cargo license` output.
+
+---
+
+## Still to be added
+
+These are planned for later stages and are listed here so the notices file tracks the
+plan in `CLAUDE.md`:
+
+- **PuTTY** (MIT) — SSH behaviour reference.
+- **TeraTerm** (BSD-3-Clause) — the TTL macro interpreter is to be ported from
+  `ttpmacro/`, so the BSD-3 notice and copyright line will be required.
+- **russh**, **serialport-rs** and their dependency trees.

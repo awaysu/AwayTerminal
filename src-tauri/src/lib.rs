@@ -1,27 +1,46 @@
-// AwayTerminal2 — Rust 後端（階段 1 骨架，尚未接 PTY）
+// AwayTerminal2 — Rust 後端
 
-/// 最小 IPC 驗證用指令：前端 invoke('ping') 會拿到版本字串。
-#[tauri::command]
-fn ping() -> String {
-    format!(
-        "pong from AwayTerminal {} (tauri {}, {})",
-        env!("CARGO_PKG_VERSION"),
-        tauri::VERSION,
-        std::env::consts::OS
-    )
-}
+pub mod bench;
+pub mod commands;
+pub mod output;
+pub mod pty;
+pub mod session;
+pub mod startup;
 
-/// 前端把實際使用的渲染器（WebGL / DOM）回報到啟動 log，
-/// 讓不開 devtools 也能確認 WebGL addon 有沒有成功啟用。
-#[tauri::command]
-fn report_renderer(renderer: String) {
-    println!("[AwayTerminal] renderer = {renderer}");
-}
+use session::SessionManager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // 一定要在建立任何執行緒 / 子行程之前（見 startup.rs 的說明）
+    startup::prepare_process_environment();
+    println!("[AwayTerminal] ConPTY backend: {}", pty::backend_name());
+
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![ping, report_renderer])
-        .run(tauri::generate_context!())
-        .expect("error while running AwayTerminal");
+        .manage(SessionManager::new())
+        .invoke_handler(tauri::generate_handler![
+            commands::ping,
+            commands::report_renderer,
+            commands::log_line,
+            commands::conpty_backend,
+            commands::session_create,
+            commands::session_write,
+            commands::session_write_text,
+            commands::session_resize,
+            commands::session_close,
+            commands::session_list,
+            bench::bench_raw,
+            bench::bench_vec,
+            bench::bench_base64,
+            bench::bench_channel,
+        ])
+        .build(tauri::generate_context!())
+        .expect("error while building AwayTerminal")
+        .run(|app, event| {
+            // 關閉程式時把所有 session 收乾淨：正常走 ClosePseudoConsole 才不會留殭屍
+            // conhost / OpenConsole 鎖住資料夾（舊版踩雷）。
+            if let tauri::RunEvent::Exit = event {
+                use tauri::Manager;
+                app.state::<SessionManager>().close_all();
+            }
+        });
 }
