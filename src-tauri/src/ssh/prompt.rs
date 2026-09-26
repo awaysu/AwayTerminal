@@ -58,14 +58,21 @@ pub struct AppDecider {
     app: AppHandle,
     tab_id: u32,
     store_path: String,
+    settings: std::sync::Arc<crate::settings::SettingsStore>,
 }
 
 impl AppDecider {
-    pub fn new(app: AppHandle, tab_id: u32, store_path: String) -> Self {
+    pub fn new(
+        app: AppHandle,
+        tab_id: u32,
+        store_path: String,
+        settings: std::sync::Arc<crate::settings::SettingsStore>,
+    ) -> Self {
         Self {
             app,
             tab_id,
             store_path,
+            settings,
         }
     }
 }
@@ -120,6 +127,74 @@ impl HostKeyDecider for AppDecider {
             .remove(&id);
         answer
     }
+
+    /// 協商到警告線以下的演算法。照 PuTTY：**同一台主機接受過就不再問**。
+    fn accept_weak(&self, host: &str, port: u16, weak: &[(&'static str, String)]) -> bool {
+        let key = format!("{host}:{port}");
+        if self.settings.get().ssh_weak_accepted.iter().any(|k| k == &key) {
+            return true; // 之前接受過
+        }
+
+        let id = next_id();
+        let (tx, rx) = std::sync::mpsc::channel();
+        pending()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(id, tx);
+
+        let req = WeakAlgoRequest {
+            id,
+            tab_id: self.tab_id,
+            host: host.to_string(),
+            port,
+            items: weak
+                .iter()
+                .map(|(k, n)| ((*k).to_string(), n.clone()))
+                .collect(),
+        };
+        if self.app.emit("ssh-weak-algo", req).is_err() {
+            pending()
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .remove(&id);
+            return false;
+        }
+
+        // 前端只有「繼續／取消」兩個選項，借用同一個回覆通道：
+        // AcceptAndStore＝繼續並記住這台主機；Reject＝取消。
+        let answer = rx.recv_timeout(ANSWER_TIMEOUT).unwrap_or_else(|_| {
+            println!("[AwayTerminal] 弱演算法確認逾時 → 當成取消");
+            HostKeyAnswer::Reject
+        });
+        pending()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(&id);
+
+        match answer {
+            HostKeyAnswer::Reject => false,
+            _ => {
+                self.settings.update(|s| {
+                    if !s.ssh_weak_accepted.iter().any(|k| k == &key) {
+                        s.ssh_weak_accepted.push(key.clone());
+                    }
+                });
+                true
+            }
+        }
+    }
+}
+
+/// 弱演算法警告要送給前端的內容（PuTTY 的 warn-below-this-line）。
+#[derive(serde::Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct WeakAlgoRequest {
+    id: u64,
+    tab_id: u32,
+    host: String,
+    port: u16,
+    /// 每一項是（類別, 演算法名稱），例 ("加密", "aes128-cbc")。
+    items: Vec<(String, String)>,
 }
 
 /// 前端按下三個按鈕之一時呼叫。

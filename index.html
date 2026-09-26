@@ -200,6 +200,21 @@
     </div>
   </div>
 
+  <!-- 弱演算法警告（PuTTY 的 warn-below-this-line）：協商到警告線以下的演算法時跳。
+       接受之後這台主機就不再問（記在 settings 的 sshWeakAccepted）。 -->
+  <div id="weakalgo" hidden>
+    <div id="weakalgo-box">
+      <div id="weakalgo-title"></div>
+      <div id="weakalgo-body"></div>
+      <table id="weakalgo-list"><tbody></tbody></table>
+      <div id="weakalgo-note"></div>
+      <div class="modal-buttons">
+        <button id="wa-go" type="button">繼續連線</button>
+        <button id="wa-cancel" type="button">取消</button>
+      </div>
+    </div>
+  </div>
+
   <!-- 頁內對話框：取代舊版的 WPF InputDialog / MessageBox / LogDialog -->
   <div id="modal" hidden>
     <form id="modal-form">

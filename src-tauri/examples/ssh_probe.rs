@@ -235,7 +235,116 @@ fn main() {
         log.lock().unwrap().publickey_users.clear();
     }
 
-    // --------------------------------------------- 5. 真的 sshd（有就跑，沒有就跳過）
+    // ------------------------------------ 5. 舊演算法伺服器（風險 3 / B4 的核心）
+    {
+        // 伺服器**只**接受 group14-sha1 + aes128-cbc + hmac-sha1 + ssh-rsa。
+        // 用 russh 預設清單的 client 會在交握就失敗；我們的 PuTTY 式清單要連得上。
+        let legacy_key =
+            ssh_key::PrivateKey::random(&mut rand::rng(), ssh_key::Algorithm::Rsa { hash: None })
+                .unwrap();
+        let legacy_log = Arc::new(Mutex::new(ServerLog::default()));
+        match rt.block_on(start_server_with(legacy_key, legacy_log.clone(), true)) {
+            Ok((lport, _handle)) => {
+                println!("舊演算法 sshd：127.0.0.1:{lport}（group14-sha1 / aes128-cbc / hmac-sha1 / ssh-rsa）");
+                let store3 = Arc::new(HostKeyStore::new(dir.join("known_hosts_legacy")));
+                let c = Client::connect(
+                    lport,
+                    Some(USER.to_string()),
+                    SshAuth::default(),
+                    store3.clone(),
+                    HostKeyAnswer::AcceptAndStore,
+                );
+                c.expect("password: ", 10);
+                c.session.write(format!("{PASSWORD}\r").as_bytes());
+                let ok = c.expect("AWAY_SSH_OK", 15);
+                report(
+                    "只支援舊演算法的伺服器也連得上",
+                    ok,
+                    "kex=group14-sha1 cipher=aes128-cbc mac=hmac-sha1 hostkey=ssh-rsa".to_string(),
+                );
+                // 弱演算法警告要被問到（PuTTY 的 warn-below-this-line）
+                report(
+                    "弱演算法警告有跳出來",
+                    c.decider.weak_asks() >= 1,
+                    format!("被問 {} 次", c.decider.weak_asks()),
+                );
+                c.close();
+
+                // 接受過之後：app 端是記在 settings 裡不再問。probe 的 decider 沒有那份記錄，
+                // 所以這裡驗的是「第二次連線仍然連得上」；不再問那半由單元測試與 app 端負責。
+                let c2 = Client::connect(
+                    lport,
+                    Some(USER.to_string()),
+                    SshAuth::default(),
+                    store3.clone(),
+                    HostKeyAnswer::Reject, // 主機金鑰已記錄 → 不該再問
+                );
+                c2.expect("password: ", 10);
+                c2.session.write(format!("{PASSWORD}\r").as_bytes());
+                let ok2 = c2.expect("AWAY_SSH_OK", 15);
+                report(
+                    "舊演算法伺服器：第二次連線（主機金鑰已記錄）",
+                    ok2,
+                    format!("主機金鑰被問 {} 次（要是 0）", c2.decider.seen.lock().unwrap().len()),
+                );
+                c2.close();
+
+                // 使用者按「取消」→ 不可以連上
+                let c3 = Client::connect(
+                    lport,
+                    Some(USER.to_string()),
+                    SshAuth::default(),
+                    store3.clone(),
+                    HostKeyAnswer::AcceptAndStore,
+                );
+                c3.decider.set_accept_weak(false);
+                let exited = c3.wait_exit(15);
+                report(
+                    "弱演算法警告按取消 → 連線中止",
+                    exited && !c3.text().contains("AWAY_SSH_OK"),
+                    format!("已結束={exited}、沒進到 shell={}", !c3.text().contains("AWAY_SSH_OK")),
+                );
+                c3.close();
+            }
+            Err(e) => report("啟動舊演算法 sshd", false, e.to_string()),
+        }
+    }
+
+    // ------------------------------------------------ 6. 伺服器斷線 → client 收尾
+    {
+        // 起一台可以主動關掉的伺服器，驗「伺服器不見了，client 會結束而不是掛住」。
+        // 自動重連本身是分頁層的行為（`ssh/reconnect`），這裡驗的是 session 層的收尾。
+        let key2 =
+            ssh_key::PrivateKey::random(&mut rand::rng(), ssh_key::Algorithm::Ed25519).unwrap();
+        let log2 = Arc::new(Mutex::new(ServerLog::default()));
+        match rt.block_on(start_server_with(key2, log2, false)) {
+            Ok((p2, handle)) => {
+                let store4 = Arc::new(HostKeyStore::new(dir.join("known_hosts_drop")));
+                let c = Client::connect(
+                    p2,
+                    Some(USER.to_string()),
+                    SshAuth::default(),
+                    store4,
+                    HostKeyAnswer::AcceptAndStore,
+                );
+                c.expect("password: ", 10);
+                c.session.write(format!("{PASSWORD}\r").as_bytes());
+                let up = c.expect("AWAY_SSH_OK", 15);
+                // 伺服器主動關掉
+                rt.block_on(async { handle.shutdown("probe shutdown".into()) });
+                let exited = c.wait_exit(15);
+                report(
+                    "伺服器斷線 → session 正常結束（不會掛住）",
+                    up && exited,
+                    format!("連上過={up}、結束事件有來={exited}"),
+                );
+                c.close();
+            }
+            Err(e) => report("啟動可斷線 sshd", false, e.to_string()),
+        }
+    }
+
+    // --------------------------------------------- 7. 真的 sshd（有就跑，沒有就跳過）
     println!("SKIP  真連線測試：需要本機 OpenSSH sshd 與一組帳號密碼，見 docs/SSH.md「待真機驗證」");
 
     println!();
@@ -295,6 +404,8 @@ impl Client {
                 cols: 80,
                 rows: 24,
                 auth,
+                algos: Default::default(),
+                keepalive_mins: 0,
             },
             store,
             decider.clone(),
@@ -367,24 +478,56 @@ struct ServerLog {
 }
 
 async fn start_server(key: ssh_key::PrivateKey, log: Arc<Mutex<ServerLog>>) -> std::io::Result<u16> {
+    start_server_with(key, log, false).await.map(|(port, _)| port)
+}
+
+/// `legacy_only = true` 時，伺服器**只**接受舊演算法（`group14-sha1` + `aes128-cbc`
+/// + `hmac-sha1` + `ssh-rsa`），用來驗「我們的 client 連得上舊設備」與弱演算法警告。
+///
+/// 回傳 (埠, handle)——handle 可以用來主動關掉伺服器（驗斷線重連用）。
+async fn start_server_with(
+    key: ssh_key::PrivateKey,
+    log: Arc<Mutex<ServerLog>>,
+    legacy_only: bool,
+) -> std::io::Result<(u16, russh::server::RunningServerHandle)> {
+    let preferred = if legacy_only {
+        russh::Preferred {
+            kex: std::borrow::Cow::Owned(vec![russh::kex::DH_G14_SHA1]),
+            cipher: std::borrow::Cow::Owned(vec![russh::cipher::AES_128_CBC]),
+            mac: std::borrow::Cow::Owned(vec![russh::mac::HMAC_SHA1]),
+            key: std::borrow::Cow::Owned(vec![russh::keys::Algorithm::Rsa { hash: None }]),
+            ..russh::Preferred::DEFAULT
+        }
+    } else {
+        russh::Preferred::DEFAULT
+    };
     let config = Arc::new(russh::server::Config {
         inactivity_timeout: Some(Duration::from_secs(120)),
         auth_rejection_time: Duration::from_millis(50),
         auth_rejection_time_initial: Some(Duration::from_millis(0)),
         keys: vec![key],
+        preferred,
         ..Default::default()
     });
 
     let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0)).await?;
     let port = listener.local_addr()?.port();
 
-    let mut server = TestServer { log };
+    // `run_on_socket` 借用 server 與 listener，所以兩個都要搬進 task 裡；
+    // handle 再用 oneshot 傳回來。
+    let (tx, rx) = tokio::sync::oneshot::channel();
     tokio::spawn(async move {
-        if let Err(e) = server.run_on_socket(config, &listener).await {
+        let mut server = TestServer { log };
+        let running = server.run_on_socket(config, &listener);
+        let _ = tx.send(running.handle());
+        if let Err(e) = running.await {
             eprintln!("測試 sshd 結束：{e}");
         }
     });
-    Ok(port)
+    let handle = rx
+        .await
+        .map_err(|_| std::io::Error::other("測試 sshd 沒有回報 handle"))?;
+    Ok((port, handle))
 }
 
 #[derive(Clone)]

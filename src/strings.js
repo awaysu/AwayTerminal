@@ -136,6 +136,16 @@ export const T = {
   'hk.host': '主機',
   'hk.alg': '演算法',
 
+  // 弱演算法警告（PuTTY 的 warn-below-this-line；TASK-008 B4）
+  'wa.title': '這條連線使用較舊的加密演算法',
+  // {0} = host[:port]
+  'wa.body':
+    '{0} 只支援（或優先選用）下面這些演算法。它們仍然可以用，但已經被認為較弱——\n' +
+    '很舊的網路設備通常只有這些，一般的伺服器不該用到。',
+  'wa.note': '按「繼續連線」之後，這台主機就不會再問（記在設定裡）。',
+  'wa.go': '繼續連線',
+  'wa.cancel': '取消',
+
   // ---- 自訂連線（TASK-007，舊版 custom.*）----
   'conn.title': '自訂連線',
   'conn.detect': '自動偵測',

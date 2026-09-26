@@ -305,9 +305,14 @@ pub fn remove_worktree(work_dir: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// 路徑與分支名都要吃得下去：只留英數、`-`、`_`、`.`。
+/// 路徑與分支名都要吃得下去：只留英數、`-`、`_`、`.`，**再接一段名稱的短 hash**。
+///
+/// 為什麼要 hash（TASK-007 Issue 3）：非 ASCII 會整段變成 `-` 再被 trim 掉，
+/// 所以「代理團隊」「我的專案」這種全中文名稱 sanitize 之後都是空的——
+/// 沒有 hash 的話它們會共用同一個沙盒目錄。接上名稱的 8 碼 hash 就不會撞，
+/// 而且同一個名稱永遠得到同一個目錄（重開分頁要接回原本的沙盒）。
 fn sanitize(name: &str) -> String {
-    let s: String = name
+    let cleaned: String = name
         .chars()
         .map(|c| {
             if c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.' {
@@ -317,12 +322,33 @@ fn sanitize(name: &str) -> String {
             }
         })
         .collect();
-    let s = s.trim_matches('-').to_string();
-    if s.is_empty() {
-        "tab".to_string()
-    } else {
-        s
+    // 連續的 `-` 併成一個，看起來才不會是 `-----2`
+    let mut squeezed = String::with_capacity(cleaned.len());
+    for c in cleaned.chars() {
+        if c == '-' && squeezed.ends_with('-') {
+            continue;
+        }
+        squeezed.push(c);
     }
+    let base = squeezed.trim_matches('-');
+    let hash = short_hash(name);
+    if base.is_empty() {
+        hash
+    } else {
+        format!("{base}-{hash}")
+    }
+}
+
+/// 名稱的 8 碼十六進位 hash（FNV-1a，取 64 bit 的高 32 位）。
+///
+/// 只是要「不同名稱不要撞到同一個資料夾」，不是密碼學用途，所以不引入 hash crate。
+fn short_hash(s: &str) -> String {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for b in s.as_bytes() {
+        h ^= *b as u64;
+        h = h.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    format!("{:08x}", (h >> 32) as u32)
 }
 
 // --------------------------------------------------- 驗證用（`--verify` 專用）
@@ -341,6 +367,52 @@ fn sanitize(name: &str) -> String {
 pub struct SandboxProbe {
     pub pwsh: Option<String>,
     pub repo_dir: Option<String>,
+}
+
+/// `--verify` 開始前先清掉上一次的殘留。
+///
+/// `--verify` 會在專案 repo 裡建一個 `__awayterm_verify_*` 的沙盒 worktree 與分支，
+/// 正常跑完會自己清；但如果那次 dev 被 timeout 砍掉（我們驗證時常這樣收尾）就會留著。
+/// 這個指令只動名稱以 `__awayterm_verify` 開頭的東西，不會碰使用者自己的沙盒。
+#[tauri::command]
+pub fn sandbox_verify_cleanup() -> Vec<String> {
+    let mut removed = Vec::new();
+    let Some(repo) = std::env::current_dir().ok().and_then(|d| git_toplevel(&d)) else {
+        return removed;
+    };
+
+    // 1. worktree：從 `git worktree list --porcelain` 找路徑含 __awayterm_verify 的
+    if let Ok(list) = git(&repo, &["worktree", "list", "--porcelain"]) {
+        for line in list.lines() {
+            let Some(path) = line.strip_prefix("worktree ") else {
+                continue;
+            };
+            if !path.contains("__awayterm_verify") {
+                continue;
+            }
+            if git(&repo, &["worktree", "remove", "--force", path]).is_ok() {
+                removed.push(format!("worktree {path}"));
+            }
+        }
+    }
+    let _ = git(&repo, &["worktree", "prune"]);
+
+    // 2. 分支：sandbox/__awayterm_verify…
+    if let Ok(list) = git(&repo, &["branch", "--list", "sandbox/__awayterm_verify*"]) {
+        for line in list.lines() {
+            let branch = line.trim_start_matches('*').trim();
+            if branch.is_empty() {
+                continue;
+            }
+            if git(&repo, &["branch", "-D", branch]).is_ok() {
+                removed.push(format!("branch {branch}"));
+            }
+        }
+    }
+    if !removed.is_empty() {
+        println!("[AwayTerminal] --verify 清掉上次的殘留：{removed:?}");
+    }
+    removed
 }
 
 #[tauri::command]
@@ -419,16 +491,33 @@ mod tests {
 
     #[test]
     fn sanitize_keeps_paths_safe() {
-        assert_eq!(sanitize("ClaudeCode"), "ClaudeCode");
-        assert_eq!(sanitize("Claude Code 2"), "Claude-Code-2");
-        // 非 ASCII 會整段變成 `-` 再被 trim 掉：中文名稱的連線只剩得下數字，
-        // 全中文的名稱會退成 `tab`。路徑與 git 分支名要能吃，這個代價可以接受
-        // （沙盒目錄名不是給人辨識用的，分頁 tooltip 會顯示完整路徑）。
-        assert_eq!(sanitize("我的 分頁 (2)"), "2");
-        assert_eq!(sanitize("代理團隊"), "tab");
-        assert_eq!(sanitize(""), "tab");
-        assert_eq!(sanitize("---"), "tab");
-        assert_eq!(sanitize("a/b\\c:d"), "a-b-c-d");
+        // 看得懂的前綴 + 短 hash（前綴讓人在檔案總管裡認得出來）
+        assert!(sanitize("ClaudeCode").starts_with("ClaudeCode-"));
+        assert!(sanitize("Claude Code 2").starts_with("Claude-Code-2-"));
+        assert!(sanitize("a/b\\c:d").starts_with("a-b-c-d-"));
+        // 連續的 `-` 併成一個（不要做出 `-----2-xxxxxxxx`）
+        assert!(sanitize("我的 分頁 (2)").starts_with("2-"));
+        // 路徑與 git 分支名不可以出現其他字元
+        for name in ["ClaudeCode", "我的 分頁 (2)", "a/b\\c:d", "", "---"] {
+            let s = sanitize(name);
+            assert!(!s.is_empty(), "{name:?} → 空字串");
+            assert!(
+                s.chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.'),
+                "{s} 含有不能進路徑的字元"
+            );
+        }
+    }
+
+    #[test]
+    fn sanitize_does_not_collide_for_cjk_names() {
+        // TASK-007 Issue 3：全中文名稱 sanitize 之後都是空的，沒有 hash 就會撞在一起
+        let a = sanitize("代理團隊");
+        let b = sanitize("我的專案");
+        assert_ne!(a, b, "不同的中文名稱不可以共用同一個沙盒目錄");
+        assert_eq!(a.len(), 8, "sanitize 為空時只剩 8 碼 hash：{a}");
+        // 同一個名稱一定要得到同一個目錄（重開分頁要接回原本的沙盒）
+        assert_eq!(a, sanitize("代理團隊"));
     }
 
     #[test]

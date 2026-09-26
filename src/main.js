@@ -240,6 +240,13 @@ window.awayVerify = awayVerify;
 async function verifySandbox() {
   const lines = ['[verify] 沙盒模式'];
   const CONN = '__awayterm_verify_sandbox';
+  // 上一次 verify 若被 timeout 砍掉會留 worktree 與分支（TASK-007 Issue 6）→ 先清
+  try {
+    const cleaned = await invoke('sandbox_verify_cleanup');
+    if (cleaned.length) lines.push(`[verify] 清掉上次殘留：${cleaned.join('、')}`);
+  } catch (e) {
+    lines.push(`[verify] 清殘留失敗（不影響後面）：${e}`);
+  }
   let tabId = null;
   try {
     const probe = await invoke('sandbox_probe');

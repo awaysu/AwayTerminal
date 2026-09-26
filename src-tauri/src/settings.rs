@@ -72,6 +72,14 @@ pub struct AppSettings {
     /// 上次選過的工作目錄（舊版 `LastDir`）：資料夾選擇視窗會預選它。
     pub last_dir: String,
 
+    // ---- SSH（舊版 KeepAliveMins / AutoReconnect）----
+    /// 保持連線的間隔（分鐘），0＝關閉。舊版預設 10。
+    pub keep_alive_mins: u32,
+    /// 斷線自動重連（舊版連線視窗的勾選）。
+    pub auto_reconnect: bool,
+    /// 已經接受過「弱演算法」警告的主機（`host:port`）。照 PuTTY：接受過就不再問。
+    pub ssh_weak_accepted: Vec<String>,
+
     /// 自訂連線清單（舊版 `AppSettings.CustomConns`）。
     ///
     /// 舊版 v1.0.18 起**不自動建立任何自訂連線**：全新安裝是空的，使用者自己按
@@ -179,6 +187,9 @@ impl Default for AppSettings {
             log_timestamp: true,
             log_append: true,
             last_dir: String::new(),
+            keep_alive_mins: 10,
+            auto_reconnect: false,
+            ssh_weak_accepted: Vec::new(),
             custom_conns: Vec::new(),
             // 舊版 MainWindow.xaml 的「配色」子選單那五組，順序照抄
             palette: vec![

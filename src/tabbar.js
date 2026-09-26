@@ -553,6 +553,46 @@ export function showUrlMenu(url, x, y) {
   showMenu(el.urlMenu, x, y);
 }
 
+/**
+ * 弱演算法警告（PuTTY 的 warn-below-this-line）。
+ *
+ * 和主機金鑰一樣，Rust 端**停在交握中間等答案**（逾時 180 秒＝取消），
+ * 所以一定要回 `ssh_hostkey_answer`（兩邊借用同一個回覆通道：
+ * `acceptandstore`＝繼續並記住這台主機、`reject`＝取消）。
+ */
+function installWeakAlgoDialog() {
+  const answer = (id, value) => {
+    el.weakAlgo.hidden = true;
+    invoke('ssh_hostkey_answer', { id, answer: value }).catch((e) =>
+      log(`[tabbar] 弱演算法回覆失敗：${e}`)
+    );
+  };
+
+  listen('ssh-weak-algo', (e) => {
+    const r = e.payload;
+    const where = r.port === 22 ? r.host : `${r.host}:${r.port}`;
+    el.weakAlgoTitle.textContent = T['wa.title'];
+    el.weakAlgoBody.textContent = fmt('wa.body', where);
+    const tbody = el.weakAlgoList.querySelector('tbody');
+    tbody.textContent = '';
+    for (const [kind, name] of r.items) {
+      const tr = document.createElement('tr');
+      const th = document.createElement('th');
+      th.textContent = kind;
+      const td = document.createElement('td');
+      td.textContent = name;
+      tr.append(th, td);
+      tbody.appendChild(tr);
+    }
+    el.weakAlgoNote.textContent = T['wa.note'];
+    el.weakAlgo.hidden = false;
+    el.waCancel.focus(); // 危險選項不要當預設
+
+    el.waGo.onclick = () => answer(r.id, 'acceptandstore');
+    el.waCancel.onclick = () => answer(r.id, 'reject');
+  }).catch((e) => log(`[tabbar] 掛弱演算法 listener 失敗：${e}`));
+}
+
 /** `m` 協定：下一個空的選取回覆是因為程式接管了滑鼠。 */
 export function noteMouseHint(id) {
   selMouseHintId = String(id);
@@ -948,6 +988,13 @@ export async function initTabBar() {
   el.hkStore = $('hk-store');
   el.hkOnce = $('hk-once');
   el.hkCancel = $('hk-cancel');
+  el.weakAlgo = $('weakalgo');
+  el.weakAlgoTitle = $('weakalgo-title');
+  el.weakAlgoBody = $('weakalgo-body');
+  el.weakAlgoList = $('weakalgo-list');
+  el.weakAlgoNote = $('weakalgo-note');
+  el.waGo = $('wa-go');
+  el.waCancel = $('wa-cancel');
   el.modal = $('modal');
   el.modalForm = $('modal-form');
   el.modalTitle = $('modal-title');
@@ -1012,12 +1059,15 @@ export async function initTabBar() {
   el.hkStore.textContent = T['hk.store'];
   el.hkOnce.textContent = T['hk.once'];
   el.hkCancel.textContent = T['hk.cancel'];
+  el.waGo.textContent = T['wa.go'];
+  el.waCancel.textContent = T['wa.cancel'];
 
   installToolbar();
   installStripEvents();
   installMenus();
   installPanelResize();
   installHostKeyDialog();
+  installWeakAlgoDialog();
   // 自訂連線：清單一變就重畫「新分頁 ▾」那一區
   await initConns(renderConnMenu);
 

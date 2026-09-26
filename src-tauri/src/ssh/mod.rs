@@ -23,10 +23,11 @@
 //! 現在用 `russh` 的預設演算法清單（安全的那組），所以**很舊的設備可能連不上**——
 //! 那正是 `CLAUDE.md` 風險 3 要用使用者的設備實測的部分，見 `docs/SSH.md`。
 
+pub mod algos;
 pub mod hostkey;
 pub mod prompt;
 
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
@@ -82,6 +83,10 @@ pub struct SshOptions {
     pub cols: u16,
     pub rows: u16,
     pub auth: SshAuth,
+    /// 這條連線的演算法覆寫（空的＝用 PuTTY 式的預設順序，見 [`algos`]）。
+    pub algos: algos::AlgoOverride,
+    /// keepalive 間隔（分鐘）。0＝關閉。同舊版「保持連線」的設定。
+    pub keepalive_mins: u32,
 }
 
 /// 主機金鑰要不要接受。由呼叫端提供——app 端跳對話框問使用者，`ssh_probe` 直接給答案。
@@ -94,6 +99,14 @@ pub trait HostKeyDecider: Send + Sync + 'static {
         verdict: &hostkey::Verdict,
         fp: &hostkey::Fingerprints,
     ) -> HostKeyAnswer;
+
+    /// 交握**實際協商到**警告線以下的演算法時呼叫（PuTTY 的 warn-below-this-line）。
+    ///
+    /// 回傳 `true`＝繼續連。實作端要負責「這台主機已經接受過就不要再問」。
+    /// 預設 `false`（安全預設：沒有人回答就當成不接受）。
+    fn accept_weak(&self, _host: &str, _port: u16, _weak: &[(&'static str, String)]) -> bool {
+        false
+    }
 }
 
 /// PuTTY 對話框的三個選項。
@@ -209,10 +222,68 @@ struct Handler {
     store: Arc<hostkey::HostKeyStore>,
     decider: Arc<dyn HostKeyDecider>,
     on_output: OnOutput,
+    /// 弱演算法警告每條連線只問一次（rekey 時 `kex_done` 會再進來）。
+    weak_asked: bool,
 }
 
 impl client::Handler for Handler {
     type Error = russh::Error;
+
+    /// 伺服器在驗證前送的公告文字（有些舊設備會送一大段）。照 PuTTY 顯示在畫面上。
+    async fn auth_banner(
+        &mut self,
+        banner: &str,
+        _session: &mut client::Session,
+    ) -> Result<(), Self::Error> {
+        if !banner.trim().is_empty() {
+            // 遠端的換行可能只有 LF，終端機要 CR LF 才會回到行首
+            let text = banner.replace("\r\n", "\n").replace('\n', "\r\n");
+            echo(&self.on_output, &text);
+        }
+        Ok(())
+    }
+
+    /// 交握完成：檢查**實際協商到**的演算法有沒有在 PuTTY 的警告線以下。
+    async fn kex_done(
+        &mut self,
+        _shared_secret: Option<&[u8]>,
+        names: &russh::Names,
+        _session: &mut client::Session,
+    ) -> Result<(), Self::Error> {
+        let weak = algos::weak_ones(
+            names.kex.as_ref(),
+            names.key.as_str(),
+            names.cipher.as_ref(),
+            names.server_mac.as_ref(),
+        );
+        // 每條連線只問一次（rekey 也會進來這裡）
+        if weak.is_empty() || self.weak_asked {
+            return Ok(());
+        }
+        self.weak_asked = true;
+        if self.decider.accept_weak(&self.host, self.port, &weak) {
+            let list = weak
+                .iter()
+                .map(|(k, n)| format!("{k}={n}"))
+                .collect::<Vec<_>>()
+                .join(" ");
+            echo(
+                &self.on_output,
+                &format!("[90m（使用了較舊的加密演算法：{list}）[0m
+"),
+            );
+            Ok(())
+        } else {
+            echo(
+                &self.on_output,
+                "
+[33m已取消：這條連線會用到較舊、已知較弱的加密演算法。[0m
+",
+            );
+            // 拒絕交握＝斷線。用 Disconnect 讓上層的錯誤訊息合理
+            Err(russh::Error::Disconnect)
+        }
+    }
 
     async fn check_server_key(
         &mut self,
@@ -259,8 +330,25 @@ async fn run(
     mut rx: mpsc::UnboundedReceiver<Cmd>,
     on_user: Option<OnUser>,
 ) -> Result<Option<i32>, String> {
+    // 演算法順序照 PuTTY（B4）：舊演算法在清單裡但排最後，協商到就跳警告。
+    let (preferred, unknown) = algos::preferred(&opts.algos);
+    if !unknown.is_empty() {
+        echo(
+            &on_output,
+            &format!(
+                "[33m設定裡有認不出來的演算法名稱，已略過：{}[0m
+",
+                unknown.join("、")
+            ),
+        );
+    }
     let config = Arc::new(client::Config {
-        // TASK-007 會把演算法順序改成 PuTTY 的清單；現在用 russh 的安全預設。
+        preferred,
+        // 保持連線（同舊版的 ServerAliveInterval／ServerAliveCountMax=3）。
+        // russh 送的是 `keepalive@openssh.com` global request，PuTTY 預設也是這條。
+        keepalive_interval: (opts.keepalive_mins > 0)
+            .then(|| Duration::from_secs(opts.keepalive_mins as u64 * 60)),
+        keepalive_max: 3,
         ..Default::default()
     });
 
@@ -270,6 +358,7 @@ async fn run(
         store,
         decider,
         on_output: on_output.clone(),
+        weak_asked: false,
     };
 
     echo(
@@ -572,6 +661,9 @@ pub struct FixedDecider {
     pub answer: HostKeyAnswer,
     /// 實際被問到的 verdict，測試拿來斷言。
     pub seen: Mutex<Vec<hostkey::Verdict>>,
+    /// 弱演算法警告的答案，以及被問了幾次。
+    accept_weak: AtomicBool,
+    weak_asks: AtomicUsize,
 }
 
 impl FixedDecider {
@@ -579,7 +671,21 @@ impl FixedDecider {
         Arc::new(Self {
             answer,
             seen: Mutex::new(Vec::new()),
+            accept_weak: AtomicBool::new(true),
+            weak_asks: AtomicUsize::new(0),
         })
+    }
+}
+
+impl FixedDecider {
+    /// `ssh_probe` 用：弱演算法要不要接受（以及記錄被問過幾次）。
+    pub fn set_accept_weak(&self, yes: bool) {
+        self.accept_weak
+            .store(yes, std::sync::atomic::Ordering::SeqCst);
+    }
+    pub fn weak_asks(&self) -> usize {
+        self.weak_asks
+            .load(std::sync::atomic::Ordering::SeqCst)
     }
 }
 
@@ -596,5 +702,12 @@ impl HostKeyDecider for FixedDecider {
             .unwrap_or_else(|e| e.into_inner())
             .push(verdict.clone());
         self.answer
+    }
+
+    fn accept_weak(&self, _host: &str, _port: u16, _weak: &[(&'static str, String)]) -> bool {
+        self.weak_asks
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        self.accept_weak
+            .load(std::sync::atomic::Ordering::SeqCst)
     }
 }

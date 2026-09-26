@@ -110,6 +110,10 @@ pub struct SshArgs {
     pub key_path: Option<String>,
     /// 要不要試 Pageant／ssh-agent。預設試（找不到就安靜跳過）。
     pub use_agent: Option<bool>,
+    /// 這條連線的演算法覆寫（B4 的「進階」區）。省略＝用 PuTTY 式的預設順序。
+    pub algos: Option<crate::ssh::algos::AlgoOverride>,
+    /// 保持連線的間隔（分鐘）。省略＝用設定裡的值。
+    pub keepalive_mins: Option<u32>,
 }
 
 /// 開一條連線。
@@ -483,6 +487,7 @@ fn create_ssh(
         app.clone(),
         id,
         store.path().to_string_lossy().to_string(),
+        (*settings).clone(),
     ));
 
     let session = crate::ssh::spawn(
@@ -497,6 +502,8 @@ fn create_ssh(
                 key_passphrase: None, // 有密碼的金鑰在終端機裡問（同 PuTTY）
                 use_agent: args.use_agent.unwrap_or(true),
             },
+            algos: args.algos.clone().unwrap_or_default(),
+            keepalive_mins: args.keepalive_mins.unwrap_or(settings.get().keep_alive_mins),
         },
         store,
         decider,

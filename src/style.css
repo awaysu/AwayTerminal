@@ -322,3 +322,24 @@ body.col-resizing { cursor: col-resize; user-select: none; }
 #conns-note { margin-top: 10px; color: #A5D6A7; font-size: 12px; min-height: 18px; word-break: break-all; }
 #conns .modal-buttons button { min-width: 84px; }
 #cf-delete:disabled { color: #666; cursor: default; }
+
+/* 弱演算法警告（TASK-008 B4）：樣式與主機金鑰對話框同一族，用橘框表示「可以但要注意」 */
+#weakalgo {
+  position: fixed; inset: 0; z-index: 340; display: flex; align-items: center; justify-content: center;
+  background: rgba(0,0,0,.5);
+  font: 13px "Microsoft JhengHei", "微軟正黑體", sans-serif;
+}
+#weakalgo-box {
+  min-width: 440px; max-width: 72vw; padding: 16px 18px;
+  background: #2d2d30; border: 1px solid #ffb86c; border-radius: 6px; color: #e0e0e0;
+}
+#weakalgo-title { font-size: 14px; color: #ffb86c; margin-bottom: 8px; }
+#weakalgo-body { white-space: pre-wrap; line-height: 1.6; }
+#weakalgo-list { margin: 12px 0 8px; border-collapse: collapse; font-size: 12px; }
+#weakalgo-list th {
+  text-align: left; color: #999; font-weight: normal; padding: 2px 12px 2px 0; white-space: nowrap;
+}
+#weakalgo-list td { padding: 2px 0; font-family: Consolas, monospace; color: #ffb86c; }
+#weakalgo-note { color: #999; font-size: 12px; line-height: 1.6; }
+#weakalgo .modal-buttons button { min-width: 92px; }
+#wa-cancel { border-color: #FDFFB0; }

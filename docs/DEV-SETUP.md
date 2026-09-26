@@ -125,12 +125,42 @@ AwayTerminal2/
 實際使用哪一個會印在啟動 log：`[AwayTerminal] ConPTY backend: ...`，
 前端也可以 `invoke('conpty_backend')` 問，並印在終端第二行。
 
+## 最低版本
+
+- **Rust 1.89**（`Cargo.toml` 的 `rust-version`）。`russh` 0.63.3 要求它。
+- Node 20+（Vite 7 與沙盒護欄腳本用）。
+
+## ⚠️ dev 第一次啟動偶發失敗（重跑就好）
+
+Rust 剛重新編譯之後的第一次 `npm run tauri dev`，有時候視窗根本不載入，log 只有：
+
+```
+[0926/235302.181:ERROR:ui\gfx\win\window_impl.cc:172] Failed to unregister class Chrome_WidgetWin_0. Error = 1411
+error: process didn't exit successfully: `target\debug\awayterminal.exe` (exit code: 143)
+```
+
+**這是 WebView2 啟動的暫時性失敗，不是程式的 bug——直接重跑一次就正常。**
+2026-09-26～27 的驗證過程遇到三次，每次重跑都成功。
+
+⚠️ **不要為了這件事去找行程砍。** 這個開發團隊自己就跑在舊版 AwayTerminal 底下
+（`.ai/bus/0014`），而新版 exe 的名稱（`awayterminal.exe`）和舊版（`AwayTerminal.exe`）
+在 Windows 上不分大小寫——按名稱砍等於把團隊連自己一起砍掉。要確認有沒有殘留，用
+
+```powershell
+Get-CimInstance Win32_Process -Filter "Name='awayterminal.exe'" | Select-Object ProcessId, CommandLine
+```
+
+看**命令列**：`C:\Program Files\AwayTerminal\...` 是使用者的舊版，絕對不能動。
+
 ## 驗證用工具（都不需要視窗焦點）
 
 ```powershell
-cargo run --example pty_probe   # PTY 層：PowerShell exit code / cmd exit 偵測 / resize
-cargo test                      # 單元測試（目前只有 base64 對照）
-cargo clippy --all-targets      # 新增的警告要清掉
+cargo run --example pty_probe    # PTY 層：PowerShell exit code / cmd exit 偵測 / resize
+cargo run --example ssh_probe    # SSH：同一支程式裡起測試 sshd，不連任何外部主機
+cargo run --example log_probe    # log 格式（BOM / LF / 去 ANSI / 時間戳）
+cargo test                       # 單元測試
+cargo clippy --all-targets -- -D warnings
+node ..\scripts\test-sandbox-guard.mjs   # 沙盒護欄的 deny/allow 清單
 ```
 
 在 devtools 裡（`npm run tauri dev`）可用：

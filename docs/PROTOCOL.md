@@ -135,7 +135,8 @@
 | `open_url(url)` / `reveal_path(path)` | 用系統瀏覽器開網址（只放行 http/https）／在檔案總管選取檔案 |
 | `toolbar_select_all(id)` | 送 `A…`（新增功能，舊版沒有呼叫端） |
 | `session_create` 的 `kind:"ssh"` + `ssh` 參數 | 內建 SSH（`russh`）。見 `docs/SSH.md` |
-| `ssh_hostkey_answer(id, answer)` | 主機金鑰對話框的回覆（`acceptandstore` / `acceptonce` / `reject`） |
+| `ssh_hostkey_answer(id, answer)` | 主機金鑰**與弱演算法**對話框的回覆（`acceptandstore` / `acceptonce` / `reject`）。兩者共用同一個回覆通道 |
+| `algo_catalog()` | 四組演算法的可選名稱與「在警告線下」的標記（B6 的「進階」區要用） |
 | `session_create` 的 `kind:"conn"` + `conn` 參數 | 自訂連線（含沙盒模式）。見 `docs/AGENT-SANDBOX.md` |
 | `custom_list` / `custom_detect` / `custom_save` / `custom_delete` | 自訂連線的讀取／自動偵測／存檔／刪除 |
 | `conn_set_sandbox(name, sandbox)` | 切換某條連線的沙盒開關（**下次啟動生效**） |
@@ -162,6 +163,7 @@
 | `host-msg`（String） | **所有** host→JS 的舊協定字串都走這一條 |
 | `tab-state`（JSON） | 分頁列狀態（見上一節） |
 | `ssh-hostkey`（JSON） | 主機金鑰要使用者確認。**Rust 端會停在交握中間等答案**（最多 180 秒，逾時＝取消），前端一定要回 `ssh_hostkey_answer`。見 `src-tauri/src/ssh/prompt.rs` |
+| `ssh-weak-algo`（JSON） | 協商到警告線以下的演算法（PuTTY 的 warn-below-this-line）。同樣停在交握中間等答案，回 `ssh_hostkey_answer` |
 
 ---
 

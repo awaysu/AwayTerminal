@@ -242,7 +242,17 @@ TEMP 路徑印出完整結果，Documents 路徑印完 `path = …` 就停住。
 | K19 | 👤 關閉 SSH 分頁 | 送 **Ctrl+D ×3**，遠端 session 真的登出 | 舊版 `GracefulExitBytes` | PASS（probe：收到 3 個 `0x04`） | | |
 | K20 | 👤 SSH 分頁的狀態燈 | 遠端規則：近 0.5 秒有輸出＝紅，否則綠（**不看**子行程） | 舊版 `UpdateStatuses` 的 else 分支 | | | |
 | K21 | 👤 SSH 分頁名稱跟著遠端目錄 | 提示行解析得到就改名（同 shell 分頁） | 舊版 `TracksCwdTitle` 含 `Ssh` | | | |
-| K22 | 👤 舊設備（風險 3） | 見 `docs/SSH.md` 第 6 節 S1～S16 | — | ⬜ 等設備清單 | - | - |
+| K22 | 👤 舊設備（風險 3） | 見 `docs/SSH.md` 第 8 節 S1～S18 | — | ⬜ 等設備清單 | - | - |
+| K23 | `ssh_probe` 的「只支援舊演算法的伺服器」那組 | 連得上（kex `group14-sha1`、cipher `aes128-cbc`、MAC `hmac-sha1`、hostkey `ssh-rsa`） | PuTTY 的清單含舊演算法但排最後 | PASS | | |
+| K24 | 同上 | **弱演算法警告有跳**（橘框，列出是哪幾項） | PuTTY 的 warn-below-this-line | PASS（probe） | | |
+| K25 | 👤 弱演算法警告按「繼續連線」，再連同一台 | **不再問**（記在 `settings.json` 的 `sshWeakAccepted`） | PuTTY | | | |
+| K26 | 弱演算法警告按「取消」 | 交握中止、session 結束、**沒有進到 shell** | 安全預設 | PASS（probe） | | |
+| K27 | 演算法清單的順序 | 四組都是強→弱，SHA-1 kex 在最後三名、`3des-cbc` 最後、`hmac-sha1` 最後、`ssh-rsa` 最後 | `docs/SSH.md` 第 4 節 | PASS（單元測試） | | |
+| K28 | 清單裡的名稱 russh 都認得 | 不然交握時會靜默少一個演算法 | — | PASS（單元測試） | | |
+| K29 | 手改 `settings.json` 放一個不存在的演算法名 | 終端機印一行黃字說略過了；**整組都認不出來時退回預設**（不會變成空清單而連不上） | — | PASS（單元測試） | | |
+| K30 | 👤 連線閒置超過 `keepAliveMins`（預設 10 分鐘） | 連線沒有被切（`keepalive@openssh.com`） | 舊版 `ServerAliveInterval` | ⬜ 需真設備 | | |
+| K31 | 伺服器主動斷線 | session 正常結束，不會掛住 | — | PASS（probe） | | |
+| K32 | 👤 伺服器在驗證前送 banner | banner 顯示出來，而且**不是階梯狀**（只有 LF 的 banner 要轉成 CR LF） | PuTTY | ⬜ 需真設備 | | |
 
 ## K2. 其餘連線後端：Telnet / COM / WSL / ADB（待填，階段 2）
 
@@ -327,7 +337,8 @@ TEMP 路徑印出完整結果，Documents 路徑印完 `path = …` 就停住。
 | SSH 主機金鑰存放 | （舊版沒有，`ssh.exe` 用 `~/.ssh/known_hosts`） | `{app config dir}/known_hosts`，**不碰** `~/.ssh/known_hosts` | 程式不該偷偷寫 OpenSSH 的檔。代價：用 `ssh` 連過的主機這裡仍會問一次 |
 | **沙盒模式** | 沒有 | 自訂連線多一個選項，**預設開啟** | **新增功能**，規格＝`CLAUDE.md`「新增功能」一節。說明見 `docs/AGENT-SANDBOX.md` |
 | 分頁列的沙盒標記 ⬚ | — | 綠色＝有 worktree、灰色＝只有環境變數與 Job Object | 新增；一個字不占空間又看得出來 |
-| 自訂連線「透過 PowerShell 執行」 | 先開互動 PowerShell，**等尺寸就緒後才把指令打進去**（避免以 80 欄啟動） | `pwsh -NoExit -Command "& 'path' args"` | 我們的 PTY 一開始就是前端回報的真實尺寸，沒有 80 欄問題 → 少一套延後打字的機制。使用者看到的結果一樣（工具跑完仍留在 shell 裡） |
+| 自訂連線「透過 PowerShell 執行」 | 先開互動 PowerShell，**等尺寸就緒後才把指令打進去**（避免以 80 欄啟動） | `pwsh -NoExit -Command "& 'path' args"` | 我們的 PTY 一開始就是前端回報的真實尺寸，沒有 80 欄問題 → 少一套延後打字的機制。使用者看到的結果一樣（工具跑完仍留在 shell 裡）。**⚠️ 若使用者回報某個工具以 80 欄啟動，回頭看這一條** |
+| SSH 的 3DES 與 CBC 位置 | PuTTY 把 3DES 放在警告線**之上** | 所有 CBC 與 3DES 都在警告線**之下** | CBC 在 SSH 上有已知攻擊面、3DES 的 64-bit 區塊早就不該當預設。舊設備照樣連得上，只是多一次警告 |
 | 沙盒的 git 忽略 | — | 寫 `.git/info/exclude`，**不動使用者的 `.gitignore`** | `.gitignore` 是會進 commit 的檔，程式不該改它 |
 
 ## 隱含契約（最容易回歸的一類）
@@ -343,3 +354,4 @@ TEMP 路徑印出完整結果，Documents 路徑印完 `path = …` 就停住。
 | 會阻塞的檔案操作不可以在 IPC 執行緒上直接做 | 防毒擋住寫入時整個程式的 IPC 全停（本次實測） | G 的環境雷 |
 | **介面文字要照執行時的字，不是照 XAML** | 舊版 `MainWindow.xaml` 的按鈕內容只是設計時的預設值，`ApplyTexts()` 會用 `Loc.T` 全部換掉（例：XAML 寫「貼上」「清畫面」，執行時是「**純文字貼上**」「**清除畫面**」）。照 XAML 抄就會做出使用者沒見過的文字 | D1 |
 | `ssh-hostkey` event 一定要回 `ssh_hostkey_answer` | Rust 的 SSH 任務停在交握中間等答案，前端不回就卡到逾時（180 秒）才當成取消——使用者看到的是「連線很久沒反應」 | K8～K12 |
+| `ssh-weak-algo` event 也一定要回 `ssh_hostkey_answer`（兩者共用同一個回覆通道） | 同上：不回就卡 180 秒。加新的「交握中間問使用者」的事件時都要記得配一個前端 listener | K24～K26 |
