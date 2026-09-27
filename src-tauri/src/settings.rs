@@ -124,7 +124,11 @@ pub struct AppSettings {
     /// 要持久化得等「恢復分頁」把分頁本身存下來（階段 3）。見 docs/REGRESSION-CHECKLIST.md。
     pub palette: Vec<ColorPair>,
 
-    /// `zh` | `en`（中英切換是之後的任務，先存著）。
+    /// 介面語言：`zh-TW` | `en` | `zh-CN` | `ja` | `ko` | `es` | `de` | `fr`。
+    ///
+    /// **空字串＝使用者還沒選過** → 第一次啟動時由前端用系統語言對一個（`strings.js`
+    /// 的 `matchLang`）並存回來。舊版預設一律繁中、沒有系統語言偵測（見 docs/SETTINGS.md）。
+    /// ⚠️ 舊設定檔裡是 `zh`（只有中英兩種的時候）→ 讀進來時當成 `zh-TW`。
     pub language: String,
 }
 
@@ -241,7 +245,7 @@ impl Default for AppSettings {
                 ColorPair { fg: "#C0CAF5".into(), bg: "#1A1B26".into() },
                 ColorPair { fg: "#EBDBB2".into(), bg: "#282828".into() },
             ],
-            language: "zh".to_string(),
+            language: String::new(),
         }
     }
 }

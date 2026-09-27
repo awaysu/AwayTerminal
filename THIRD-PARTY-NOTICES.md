@@ -237,7 +237,16 @@ certificate store, which keeps behaviour identical on Windows, macOS and Linux.
 
 ---
 
-## 10. Rust crates
+## 10. sys-locale — MIT OR Apache-2.0
+
+- Used for: reading the operating system's language **once**, on first run, to pick one of the
+  eight UI languages (`src-tauri/src/i18n.rs`, `system_locale`).
+- Upstream: <https://github.com/1Password/sys-locale>
+- Read-only: it queries the OS locale and changes nothing.
+
+---
+
+## 11. Rust crates
 
 Linked as dependencies, each under MIT or MIT/Apache-2.0:
 `windows-sys`, `libloading`, `serde`, `serde_json`, `tokio`, `chrono`,

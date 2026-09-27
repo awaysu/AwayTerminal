@@ -426,7 +426,7 @@ pub async fn macro_pick_file(app: AppHandle, title: Option<String>) -> Option<St
     let (tx, rx) = std::sync::mpsc::channel();
     app.dialog()
         .file()
-        .set_title(title.as_deref().unwrap_or(t("dlg.pickMacro")))
+        .set_title(title.unwrap_or_else(|| t("dlg.pickMacro")))
         .add_filter(t("dlg.teratermMacro"), &["ttl"])
         .add_filter(t("dlg.allFiles"), &["*"])
         .pick_file(move |f| {

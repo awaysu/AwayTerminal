@@ -12,7 +12,9 @@
 // onLangChange(applyTexts);   // 註冊時就會先套一次，所以不必自己再呼叫一次
 // ```
 
-import { setLang, getLang } from './strings.js';
+import { invoke } from '@tauri-apps/api/core';
+
+import { setLang, getLang, T, hasKey } from './strings.js';
 
 /** 已註冊的「重套文字」函式。 */
 const hooks = [];
@@ -30,10 +32,46 @@ export function onLangChange(fn) {
   }
 }
 
-/** 切語言：換掉 `strings.js` 的語言，然後叫每個模組重套文字。 */
+/**
+ * Rust 端會用到的 key（第一次問過就記住；它是編譯進去的，不會變）。
+ * @type {string[] | null}
+ */
+let rustKeys = null;
+
+/**
+ * 把 Rust 端需要的字串推給後端。
+ *
+ * **翻譯只有一份**：八種語言都在 `src/lang/*.js`，Rust 端不存八種語言，
+ * 只在啟動與切語言時收到「已經是目前語言」的那幾十條
+ * （寫進終端機畫面的訊息是背景執行緒產生的，沒辦法回代碼讓前端查表——
+ *  理由寫在 `src-tauri/src/i18n.rs` 的最上面）。
+ *
+ * 失敗不影響使用：Rust 端有內建的繁中／英文後備。
+ */
+export async function pushToBackend() {
+  try {
+    if (!rustKeys) rustKeys = await invoke('i18n_keys');
+    const strings = {};
+    for (const k of rustKeys) {
+      // ⚠️ 只推**表裡真的有**的 key：查不到時 `T[k]` 會回 key 本身，
+      // 推過去 Rust 就會把 `err.needHost` 這種字直接顯示給使用者。
+      // 少推一條 → Rust 用它內建的繁中／英文後備（難看但看得懂）。
+      if (hasKey(k)) strings[k] = T[k];
+    }
+    const n = await invoke('i18n_push', { lang: getLang(), strings });
+    return n;
+  } catch (e) {
+    console.error('[i18n] 推字串給後端失敗（後端會用內建的繁中／英文）', e);
+    return 0;
+  }
+}
+
+/** 切語言：換掉 `strings.js` 的語言、通知後端、然後叫每個模組重套文字。 */
 export function applyLang(code) {
   if (code === getLang()) return;
   setLang(code);
+  // 後端的訊息（錯誤、終端機畫面上的字）也要跟著換
+  pushToBackend();
   for (const fn of hooks) {
     try {
       fn();

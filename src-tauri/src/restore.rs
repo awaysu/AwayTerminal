@@ -35,7 +35,7 @@ use crate::tabs::TabManager;
 
 /// 分隔行的文字（舊版 `Loc.T("term.restoredSep")`，`{0}`＝上次關閉時間）。
 /// 隨語言換，所以是函式不是常數（`i18n` 的 key＝`term.restoreSeparator`）。
-pub fn sep_format() -> &'static str {
+pub fn sep_format() -> String {
     crate::i18n::t("term.restoreSeparator")
 }
 

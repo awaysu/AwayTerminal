@@ -9,10 +9,8 @@
 
 import { invoke } from '@tauri-apps/api/core';
 
-import { T } from './strings.js';
-import { fmt } from './strings.js';
-import { applyLang, getLang } from './i18n.js';
-import { onLangChange } from './i18n.js';
+import { T, fmt, LANGS, getLang as currentLang } from './strings.js';
+import { applyLang, onLangChange } from './i18n.js';
 import { log } from './bridge.js';
 
 const el = {};
@@ -36,7 +34,9 @@ function expand(hex) {
 }
 
 function fill(s) {
-  (s.language === 'en' ? el.langEn : el.langZh).checked = true;
+  // 舊設定檔可能是只有中英兩種時期的 `zh` → 當成 zh-TW
+  const lang = s.language === 'zh' ? 'zh-TW' : s.language || currentLang();
+  el.lang.value = LANGS.some((l) => l.code === lang) ? lang : currentLang();
   el.family.value = s.fontFamily;
   el.size.value = String(s.fontSize);
   el.fg.value = s.foreground;
@@ -92,7 +92,7 @@ function close() {
 
 async function save(e) {
   e?.preventDefault();
-  const lang = el.langEn.checked ? 'en' : 'zh';
+  const lang = el.lang.value;
   const patch = {
     language: lang,
     fontFamily: el.family.value,
@@ -130,6 +130,8 @@ async function save(e) {
 function applyTexts() {
   el.title.textContent = T['settings.title'];
   el.lLang.textContent = T['settings.groupLang'];
+  el.lLangPick.textContent = T['settings.groupLang'];
+  el.langNote.textContent = T['settings.langNote'];
   el.lFont.textContent = T['settings.groupFont'];
   el.lFamily.textContent = T['font.family'];
   el.lSize.textContent = T['font.size'];
@@ -170,9 +172,12 @@ export function initSettings(injected) {
   el.form = $('setdlg-box');
   el.title = $('setdlg-title');
   el.btn = $('btn-settings');
-  el.langZh = $('st-lang-zh');
-  el.langEn = $('st-lang-en');
+  el.lang = $('st-lang');
   el.lLang = $('st-l-lang');
+  el.lLangPick = $('st-l-langpick');
+  el.langNote = $('st-lang-note');
+  // 選項的文字用**該語言自己的寫法**（使用者看不懂目前語言時也找得到自己的）
+  el.lang.innerHTML = LANGS.map((l) => `<option value="${l.code}">${l.name}</option>`).join('');
   el.lFont = $('st-l-font');
   el.lFamily = $('st-l-family');
   el.lSize = $('st-l-size');
@@ -266,5 +271,5 @@ export function initSettings(injected) {
     }
   });
 
-  return { openSettings, currentLang: getLang };
+  return { openSettings, currentLang };
 }

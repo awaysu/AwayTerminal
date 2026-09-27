@@ -74,6 +74,9 @@ pub fn run() {
             prefs::settings_apply,
             prefs::ssh_weak_clear,
             prefs::font_list,
+            i18n::i18n_keys,
+            i18n::system_locale,
+            i18n::i18n_push,
             update::update_check,
             update::about_info,
             update::update_verify,
@@ -152,8 +155,12 @@ pub fn run() {
             if let Ok(docs) = app.path().document_dir() {
                 store.fill_log_dir(&docs);
             }
-            // 介面語言要在任何訊息產生之前設好（背景執行緒寫進畫面的字也吃這個）
-            i18n::set_lang(&store.get().language);
+            // 內建後備的語言要在任何訊息產生之前設好（背景執行緒寫進畫面的字也吃這個）。
+            // 空的＝使用者還沒選過 → 保持預設（繁中）；前端啟動時會用系統語言決定並推字串過來。
+            let lang = store.get().language;
+            if !lang.is_empty() {
+                i18n::set_lang(&lang);
+            }
             settings::spawn_autosave(store.clone());
 
             let view_mode = store.get().view_mode;

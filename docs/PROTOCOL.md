@@ -153,6 +153,9 @@
 | `compose_load_file()` | 「輸入文字」載入檔案：選檔 → 解碼（BOM → 嚴格 UTF-8 → Big5）→ 回 `{text, encoding}`；**上限 2MB**，超過回 `Err`。取消回 `null` |
 | `compose_save_file(text)` | 把文字框內容存成檔（**UTF-8 無 BOM**）；回存到哪裡，取消回 `null` |
 | `compose_send(id, text, sendEnter, remember?)` | 送出：換行統一成 CRLF → emit `v{id}{US}{base64}`（＝**貼上**那條路），`sendEnter` 時再等 200ms 寫一個 `\r`（同舊版 `SendSnippet`）。`remember` 預設 `true`＝把勾選狀態存進 `settings.json` |
+| `i18n_keys()` | Rust 端會用到的字串 key（129 個）。前端照這份清單推字串過去 |
+| `i18n_push(lang, strings)` | 前端把**已經翻好的**那 129 條推給後端（啟動時與切語言時各一次），Rust 存成 runtime 表並**重送 `T{json}`**。翻譯只有一份（`src/lang/*.js`），理由見 `docs/SETTINGS.md` 2.3 |
+| `system_locale()` | 系統語言（例 `zh-Hant-TW`）。**只有第一次啟動**用它挑介面語言 |
 | `settings_apply(patch)` | 設定視窗按「確定」：每個欄位都是 `Option`（沒帶的不動），夾好範圍後寫檔、**重送 `T{json}`**、設定 Rust 端的語言，回傳套用後的完整設定。見 `docs/SETTINGS.md` |
 | `ssh_weak_clear()` | 清掉「已接受的弱演算法」記錄，回傳清了幾筆（設定視窗的按鈕） |
 | `font_list()` | 設定視窗字型下拉的候選（**只回這台機器真的有的**；瀏覽器沒有列出系統字型的標準做法，所以是候選清單 ∩ `%WINDIR%\Fonts`） |

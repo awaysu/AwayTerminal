@@ -20,7 +20,8 @@ import { invoke, Channel } from '@tauri-apps/api/core';
 import { bridgeReady, log, createSession } from './bridge.js';
 import { initTabBar, currentTabState } from './tabbar.js';
 import { T } from './strings.js';
-import { applyLang, getLang } from './i18n.js';
+import { applyLang, getLang, pushToBackend } from './i18n.js';
+import { matchLang, setLang, LANGS } from './strings.js';
 
 // --- terminal.js 期待的全域（沿用 UMD 的命名空間形狀，這樣 terminal.js 一個字都不用改）---
 window.Terminal = Terminal;
@@ -235,6 +236,7 @@ async function awayVerify() {
   await verifyCompose();
   await verifySettings();
   await verifyLanguage();
+  await verifyAllLanguages();
   await verifyUpdate();
   await verifyRestore();
   await verifySandbox();
@@ -305,6 +307,53 @@ async function verifySettings() {
   log(lines.join('\n'));
 }
 
+/**
+ * 八種語言各切一次（TASK-015 修訂版）：
+ * 工具列第一個按鈕的文字八個都不一樣、都不是 `undefined`，而且 Rust 端的訊息跟著換。
+ */
+async function verifyAllLanguages() {
+  const lines = ['[verify] 八種語言'];
+  const before = getLang();
+  try {
+    const btn = document.getElementById('btn-copy');
+    const seen = new Map();
+    let bad = 0;
+    for (const { code, name } of LANGS) {
+      applyLang(code);
+      await wait(120);
+      const label = btn ? btn.textContent : '';
+      // Rust 端的訊息也要跟著換（`sandbox_clear` 回的是我們自己的字串）
+      const err = await invoke('sandbox_clear', { id: 999999 }).catch((e) => String(e));
+      // 「看起來像沒查到的代碼」＝整串沒有空白、而且長得像 `err.xxx`
+      const looksLikeCode = (v) => /^[a-z][\w.]*$/.test(v);
+      const ok =
+        !!label &&
+        !/undefined/.test(label) &&
+        !looksLikeCode(label) &&
+        !!err &&
+        !/undefined/.test(err) &&
+        !looksLikeCode(err);
+      if (!ok) bad++;
+      seen.set(code, label);
+      lines.push(
+        `[verify]   ${code.padEnd(6)} ${name.padEnd(8)} 工具列=${JSON.stringify(label)}　後端=${JSON.stringify(err)}`,
+      );
+    }
+    const labels = [...seen.values()];
+    const uniq = new Set(labels);
+    lines.push(`[verify] 八個都有文字、沒有 undefined：${bad === 0}`);
+    lines.push(
+      `[verify] 八個工具列文字互不相同：${uniq.size === labels.length}（${uniq.size}/${labels.length}）`,
+    );
+  } catch (e) {
+    lines.push(`[verify] 失敗：${e}`);
+  } finally {
+    applyLang(before);
+    await invoke('settings_apply', { patch: { language: before } }).catch(() => {});
+  }
+  log(lines.join('\n'));
+}
+
 /** 語言切換（TASK-015 B）：切成英文 → 前端字串、Rust 的錯誤訊息都要變英文，且**不必重啟**。 */
 async function verifyLanguage() {
   const lines = ['[verify] 中／英介面切換'];
@@ -317,7 +366,8 @@ async function verifyLanguage() {
     const errZh = await invoke('sandbox_clear', { id: 999999 }).catch((e) => String(e));
 
     await invoke('settings_apply', { patch: { language: 'en' } });
-    applyLang('en');
+    applyLang('en'); // 這一步會推字串給後端，後端接著重送 `T{json}`（搜尋列的字）
+    await wait(400);
     const enLabel = btn ? btn.textContent : '';
     const errEn = await invoke('sandbox_clear', { id: 999999 }).catch((e) => String(e));
 
@@ -911,6 +961,24 @@ window.awayBenchSmall = awayBenchSmall;
 // ------------------------------------------------------------------ 啟動
 
 (async () => {
+  // 語言要在**任何介面文字被設定之前**決定好（initTabBar 會套一次文字）。
+  //   - 設定裡有存過 → 用它（使用者改過就固定，同舊版）
+  //   - 沒存過（第一次啟動）→ 用系統語言對到我們的八種，對不到用 en（**新增行為**，舊版沒有）
+  try {
+    const s = await invoke('settings_get');
+    const sys = await invoke('system_locale').catch(() => '');
+    const pick = s.language ? s.language : matchLang(sys);
+    setLang(pick);
+    if (!s.language) {
+      // 第一次啟動：把選到的語言存起來，之後就不再跟著系統跑
+      await invoke('settings_apply', { patch: { language: pick } }).catch(() => {});
+      log(`[i18n] 第一次啟動：系統語言 ${sys || '(未知)'} → 介面語言 ${pick}`);
+    }
+    await pushToBackend();
+  } catch (e) {
+    log(`[i18n] 語言初始化失敗（用繁體中文）：${e}`);
+  }
+
   // host→JS 的 listener 要在 terminal.js 送 `ready` 之前掛好
   await bridgeReady;
   // 分頁列也要先掛好 `tab-state` 的 listener：第一條 session 是 terminal.js 送出

@@ -1,33 +1,41 @@
-//! Rust 端的中／英字串表（搬移舊版 `Localization/Loc.cs` 的做法）。
+//! Rust 端使用者可見字串的取得方式。
 //!
-//! ## 為什麼是「Rust 端自己有一份表」而不是「回代碼給前端查表」
+//! ## 一份翻譯，不是兩份
 //!
-//! TASK-015 B 要求兩種選一種、寫下理由。選這種，理由三條：
+//! 八種語言的字串在**前端**（`src/lang/<代碼>.js`）。Rust 端**不存八種語言**：
+//! 前端啟動時與切語言時把「Rust 會用到的那幾十條」推過來（[`i18n_push`]），
+//! 這裡存成一張 runtime 的表；推之前（啟動最早期）用下面內建的繁中／英文當後備。
 //!
-//! 1. **漏掉的代價不一樣**。回代碼的話，漏改一處使用者會看到 `err.connNotFound`
-//!    這種東西（等於壞掉）；這裡漏改一處只是那一句留在繁中（難看但看得懂）。
-//! 2. **不必動協定**。錯誤字串是 `Result<_, String>` 的 `Err`、終端機畫面的訊息是
-//!    直接寫進 pane 的位元組——改成代碼要動 `bridge.js`、對話框、`--verify` 的比對，
-//!    改動面反而更大。
-//! 3. **有些訊息本來就沒辦法代碼化**：它們帶作業系統給的原文
-//!    （`開啟 COM5 失敗：系統找不到指定的檔案。`）。前端查表也翻不了後半段。
+//! ### 為什麼不是「Rust 回代碼、前端查表」（PM 在 TASK-015 修訂版要求的做法）
+//!
+//! 一部分做得到、一部分做不到，所以整個改成「推字串進來」：
+//!
+//! 1. **做不到的**：**直接寫進終端機畫面的訊息**（重連倒數、SSH 的「連線到 …」、
+//!    巨集結束提示、COM 降級警告、恢復分頁的分隔行）。那些是背景執行緒把**位元組**
+//!    寫進 pane，和 PTY 的輸出走同一條路——前端拿到的是終端機內容，沒有機會查表。
+//! 2. **回代碼的風險**：漏改一處，使用者就看到 `err.connNotFound` 這種字（等於壞掉）；
+//!    這個做法漏改一處只是那一句退回內建的繁中／英文（難看但看得懂）。
+//! 3. **有些訊息帶作業系統的原文**（`開啟 COM5 失敗：系統找不到指定的檔案。`），
+//!    前端查表也翻不了後半段——參數化之後仍然是原文。
+//!
+//! 兩種做法的共同目標「翻譯只有一份」都達到了：`i18n_keys()` 回報 Rust 需要哪些 key，
+//! `scripts/test-i18n.mjs` 會檢查前端的表裡都有，所以不會漏。
 //!
 //! 另外 [`crate::ttl::error`] 本來就有 `message()`（英文，照 `errdlg.cpp`）與
-//! `message_zh()` 兩份，這裡只要照語言挑一個，不必搬 100 多條錯誤碼過去。
+//! `message_zh()` 兩份，TTL 的 22 條錯誤訊息照語言挑一個就好（`message_for_lang`）。
 //!
-//! ## 邊界：只翻「使用者看得到的」
+//! ## 邊界：只處理「使用者看得到的」
 //!
-//! | 種類 | 翻不翻 | 為什麼 |
+//! | 種類 | 處理 | 為什麼 |
 //! |---|---|---|
-//! | `Err(...)` 回給前端的（對話框／提示） | ✅ | 使用者直接看到 |
-//! | 寫進終端機畫面的（重連倒數、SSH 狀態、巨集結束） | ✅ | 同上 |
-//! | 檔案選擇／存檔對話框的標題與篩選器 | ✅ | 同上 |
-//! | `T{json}`（搜尋列、代理狀態標籤） | ✅ | 前端直接顯示 |
-//! | `println!("[AwayTerminal] …")` | ❌ | **開發診斷**：打包後的 app 沒有 stdout；而且 `--verify` 與踩雷紀錄都在比對這些字串 |
-//! | `--verify` 專用的訊息（`execverify.rs`） | ❌ | 只有開發時跑得到 |
+//! | `Err(...)` 回給前端的（對話框／提示） | ✅ 查表 | 使用者直接看到 |
+//! | 寫進終端機畫面的（重連倒數、SSH 狀態、巨集結束） | ✅ 查表 | 同上 |
+//! | 檔案選擇／存檔對話框的標題與篩選器 | ✅ 查表 | 同上 |
+//! | `T{json}`（搜尋列、代理狀態標籤） | ✅ 查表 | 前端直接顯示 |
+//! | `println!("[AwayTerminal] …")` | ❌ 不翻 | **開發診斷**：打包後的 app 沒有 stdout；`--verify` 與踩雷紀錄都在比對這些字串 |
+//! | `--verify` 專用的訊息 | ❌ 不翻 | 只有開發時跑得到 |
 //!
-//! 清單（哪個檔有幾條）在 `docs/SETTINGS.md`，由
-//! `scripts/i18n-audit.mjs` 重新產生，所以「有沒有漏」是可以重複驗的。
+//! 清單（哪個檔有幾條）在 `docs/SETTINGS.md`，由 `scripts/i18n-audit.mjs` 重新產生。
 //!
 //! ## 用法
 //!
@@ -39,44 +47,59 @@
 //!
 //! 參數用 `{0}`／`{1}`（同舊版 `string.Format`，也同前端 `strings.js` 的 `fmt()`）。
 
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::{Mutex, OnceLock};
 
-/// 目前語言。`0` ＝繁中，`1` ＝英文。
+use tauri::Manager;
+
+/// 目前語言（只分「內建後備要用哪一份」）。`0` ＝繁中，`1` ＝英文。
 ///
 /// 放成 process 全域的原子變數，因為寫進終端機畫面的訊息是在**背景執行緒**
 /// （PTY 讀取、重連、巨集）產生的，拿不到 tauri 的 `State`。
 static LANG: AtomicU8 = AtomicU8::new(0);
 
-/// 設定語言（`"zh"`／`"en"`；其他值一律當 `zh`）。啟動時與設定視窗按確定時呼叫。
-pub fn set_lang(code: &str) {
-    LANG.store(u8::from(code == "en"), Ordering::Relaxed);
+/// 前端推過來的字串（key → 已經是目前語言的字）。
+fn pushed() -> &'static Mutex<HashMap<String, String>> {
+    static P: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
+    P.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-/// 現在是英文嗎。
+/// 設定內建後備要用哪一種語言。
+///
+/// `zh-TW`／`zh` 以外的中文（`zh-CN`…）也走繁中那一份——只是後備，
+/// 真正的簡中字串由前端推過來。非中文一律用英文那一份。
+pub fn set_lang(code: &str) {
+    let zh = code.starts_with("zh");
+    LANG.store(u8::from(!zh), Ordering::Relaxed);
+}
+
+/// 內建後備現在是英文嗎（`ttl::error::message_for_lang` 也用這個）。
 pub fn is_en() -> bool {
     LANG.load(Ordering::Relaxed) == 1
 }
 
-/// 查一個字串。**查不到就回 key 本身**（fail-soft；`table_is_sane` 測試會抓漏）。
-pub fn t(key: &str) -> &'static str {
-    match TABLE.iter().find(|(k, _, _)| *k == key) {
-        Some((_, zh, en)) => {
-            if is_en() {
-                en
-            } else {
-                zh
-            }
+/// 查一個字串：**前端推過來的優先**，沒有就用內建的繁中／英文，都沒有就回 key 本身。
+///
+/// 回 `String` 而不是 `&'static str`：推過來的字是 runtime 才有的。
+pub fn t(key: &str) -> String {
+    if let Some(v) = pushed().lock().ok().and_then(|m| m.get(key).cloned()) {
+        if !v.is_empty() {
+            return v;
         }
+    }
+    match TABLE.iter().find(|(k, _, _)| *k == key) {
+        Some((_, zh, en)) => (if is_en() { *en } else { *zh }).to_string(),
         None => {
             debug_assert!(false, "i18n: 沒有這個 key：{key}");
-            leak_key(key)
+            key.to_string()
         }
     }
 }
 
 /// 查一個字串並填入參數（`{0}`／`{1}`…）。
 pub fn tf(key: &str, args: &[&str]) -> String {
-    fill(t(key), args)
+    fill(&t(key), args)
 }
 
 /// `{0}`／`{1}`… 的取代（同舊版 `string.Format`、前端 `fmt()`）。
@@ -88,10 +111,63 @@ pub fn fill(template: &str, args: &[&str]) -> String {
     out
 }
 
-/// 查不到 key 時要回 `&'static str`，只能洩掉一份。**只會發生在寫錯 key 的時候**，
-/// 而且 debug build 會先 panic，所以不會在正常使用中累積。
-fn leak_key(key: &str) -> &'static str {
-    Box::leak(key.to_string().into_boxed_str())
+/// 支援的介面語言（順序＝設定視窗下拉的順序，和前端 `strings.js` 的 `LANGS` 一致）。
+///
+/// ⚠️ 加語言時**兩邊都要加**：這裡與 `src/lang/`＋`strings.js` 的 `LANGS`。
+/// `scripts/test-i18n.mjs` 會比對兩邊（前端表缺 key 會叫）。
+pub const LANGS: &[&str] = &["zh-TW", "en", "zh-CN", "ja", "ko", "es", "de", "fr"];
+
+/// 這是我們支援的語言代碼嗎（`zh` 是舊設定檔的寫法，當成 `zh-TW`）。
+pub fn is_supported_lang(code: &str) -> bool {
+    code == "zh" || LANGS.contains(&code)
+}
+
+/// 系統語言（例如 `zh-Hant-TW`、`ja-JP`）。
+///
+/// **只在第一次啟動時用**：前端把它對到支援的八種語言（`strings.js` 的 `matchLang`），
+/// 對不到就用 `en`。使用者在設定視窗改過之後就固定，不再看系統。
+/// 舊版沒有這個行為（舊版預設一律繁中）→ `docs/SETTINGS.md` 標為**新增**。
+#[tauri::command]
+pub fn system_locale() -> String {
+    sys_locale::get_locale().unwrap_or_default()
+}
+
+/// Rust 端會用到的 key（前端照這份清單推字串過來）。
+#[tauri::command]
+pub fn i18n_keys() -> Vec<&'static str> {
+    TABLE.iter().map(|(k, _, _)| *k).collect()
+}
+
+/// 前端把「已經翻好的字」推過來（啟動時與切語言時各一次）。
+///
+/// `lang` 只用來決定內建後備要用哪一份；`strings` 是 key → 目前語言的字。
+///
+/// ⚠️ 推完要**重送 `T{json}`**：那包 JSON 裡有搜尋列與代理狀態的字，
+/// 它們是 `theme_json()` 用 `t()` 取的 → 不重送的話搜尋列會留在上一個語言
+///（`--verify` 抓到過：切成英文之後搜尋列還是「搜尋」）。
+#[tauri::command]
+pub fn i18n_push(
+    app: tauri::AppHandle,
+    lang: String,
+    strings: HashMap<String, String>,
+) -> usize {
+    let n = set_pushed(&lang, strings);
+    if let Some(store) = app.try_state::<std::sync::Arc<crate::settings::SettingsStore>>() {
+        let theme = store.get().theme_json();
+        crate::host::emit_host(&app, format!("T{theme}"));
+    }
+    println!("[AwayTerminal] i18n：語言={lang}，前端推了 {n} 條字串過來（已重送 T{{json}}）");
+    n
+}
+
+/// [`i18n_push`] 的本體（不含 tauri 的部分，測試用這個）。
+pub fn set_pushed(lang: &str, strings: HashMap<String, String>) -> usize {
+    set_lang(lang);
+    let n = strings.len();
+    if let Ok(mut m) = pushed().lock() {
+        *m = strings;
+    }
+    n
 }
 
 /// `(key, 繁中, English)`。
@@ -291,6 +367,14 @@ static TABLE: &[(&str, &str, &str)] = &[
     ("update.failed",     "檢查失敗（請確認網路後再試）", "Check failed (check your connection and try again)"),
 ];
 
+/// 測試用：把前端推過來的字串清掉（各測試之間不要互相影響）。
+#[cfg(test)]
+pub fn clear_pushed_for_test() {
+    if let Ok(mut m) = pushed().lock() {
+        m.clear();
+    }
+}
+
 /// 測試用的鎖：`LANG` 是 process 全域的，`cargo test` 會平行跑，
 /// 所以**任何會改語言的測試**（含別的模組的）都要先拿這個鎖，
 /// 不然會偶發地讀到另一個測試設的語言。
@@ -323,17 +407,51 @@ mod tests {
         }
     }
 
-    /// 切語言真的會換，而且切回來也對。
+    /// 內建**後備**的語言切換（前端還沒推字串過來時用的那一份）。
+    ///
+    /// 只有兩份：中文與英文。`zh-CN` 這種也走中文那一份（只是後備，
+    /// 真正的簡中字串由前端推過來）；非中文一律走英文那一份。
     #[test]
-    fn switches_language() {
+    fn switches_fallback_language() {
         let _g = test_lock();
-        set_lang("zh");
+        clear_pushed_for_test();
+        set_lang("zh-TW");
         assert_eq!(t("err.needHost"), "請輸入主機");
+        set_lang("zh-CN");
+        assert_eq!(t("err.needHost"), "請輸入主機", "簡中的後備用中文那一份");
         set_lang("en");
         assert_eq!(t("err.needHost"), "Please enter a host");
-        // 認不出來的語言代碼一律當繁中（同舊版 `Loc.SetLang`）
         set_lang("de");
-        assert_eq!(t("err.needHost"), "請輸入主機");
+        assert_eq!(t("err.needHost"), "Please enter a host", "非中文的後備用英文");
+    }
+
+    /// 前端推過來的字串**優先於**內建後備，而且空字串不算（會退回後備）。
+    #[test]
+    fn pushed_strings_win() {
+        let _g = test_lock();
+        clear_pushed_for_test();
+        set_lang("de");
+        let mut m = std::collections::HashMap::new();
+        m.insert("err.needHost".to_string(), "Bitte einen Host angeben.".to_string());
+        m.insert("err.needName".to_string(), String::new()); // 空的 → 退回後備
+        set_pushed("de", m);
+        assert_eq!(t("err.needHost"), "Bitte einen Host angeben.");
+        assert_eq!(t("err.needName"), "Please enter a name");
+        // 帶參數的也走同一條路
+        let mut m2 = std::collections::HashMap::new();
+        m2.insert("err.connNotFound".to_string(), "Nicht gefunden: {0}".to_string());
+        set_pushed("de", m2);
+        assert_eq!(tf("err.connNotFound", &["claude"]), "Nicht gefunden: claude");
+        clear_pushed_for_test();
+    }
+
+    /// `i18n_keys()` 是前端要推哪些 key 的依據，不能是空的，也不能有重複。
+    #[test]
+    fn keys_are_reported_for_the_frontend() {
+        let keys = i18n_keys();
+        assert!(keys.len() > 100, "至少有 100 條，實際 {}", keys.len());
+        let uniq: std::collections::HashSet<_> = keys.iter().collect();
+        assert_eq!(uniq.len(), keys.len(), "i18n_keys() 有重複");
     }
 
     /// 參數取代（多位數也要對：`{1}` 不能被 `{0}` 吃掉）。

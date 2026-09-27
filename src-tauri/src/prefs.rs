@@ -66,7 +66,10 @@ pub fn settings_apply(
 ) -> AppSettings {
     let after = settings.update(|s| {
         if let Some(lang) = &patch.language {
-            s.language = if lang == "en" { "en" } else { "zh" }.to_string();
+            // 認得的八種才收（前端的 `LANGS`）；認不出來就不動，避免把設定寫壞
+            if crate::i18n::is_supported_lang(lang) {
+                s.language = lang.clone();
+            }
         }
         if let Some(f) = &patch.font_family {
             // 舊版：空白就退回 Cascadia Mono

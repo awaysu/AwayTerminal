@@ -88,11 +88,21 @@ html, body { height: 100%; margin: 0; background: #1e1e1e; overflow: hidden; }
   flex: 0 0 auto; display: flex; align-items: center; gap: 4px; padding: 4px 6px;
   background: #2d2d30; user-select: none;
   font: 12px "Microsoft JhengHei", "微軟正黑體", sans-serif;
+  /* 德文／法文的按鈕文字比中文長很多（「Einstellungen」「Paramètres」）：
+     視窗窄的時候讓工具列橫向捲，而不是把最右邊的分頁列箭頭擠出去。
+     `overflow-y: hidden` 是為了不要冒出垂直捲軸（下拉選單是 position:fixed，不受影響）。 */
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
 }
-.tool-spacer { flex: 1 1 auto; }
+#toolbar::-webkit-scrollbar { height: 6px; }
+#toolbar::-webkit-scrollbar-thumb { background: #4a4a50; border-radius: 3px; }
+.tool-spacer { flex: 1 1 auto; min-width: 8px; }
 .tool-btn {
   background: #3a3a3d; color: #e0e0e0; border: 0; border-radius: 4px;
   padding: 5px 12px; cursor: pointer; font-size: 12px; font-family: inherit;
+  /* 長文字不要被壓成兩行或被截掉（按鈕會變寬，工具列則可橫向捲） */
+  flex: 0 0 auto; white-space: nowrap;
 }
 .tool-btn:hover { background: #50505a; }
 /* 分頁列顯示／隱藏的小箭頭（舊版 TabPanelToggle，壓在工具列最右端）*/

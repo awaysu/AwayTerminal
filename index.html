@@ -443,10 +443,12 @@
 
       <fieldset>
         <legend id="st-l-lang"></legend>
-        <div class="st-radios">
-          <label><input type="radio" name="st-lang" id="st-lang-zh" value="zh" /><span>中文</span></label>
-          <label><input type="radio" name="st-lang" id="st-lang-en" value="en" /><span>English</span></label>
+        <!-- 八種語言（選項由 strings.js 的 LANGS 產生，各自用自己的語言寫） -->
+        <div class="st-grid">
+          <label id="st-l-langpick" for="st-lang"></label>
+          <span class="sd-row"><select id="st-lang"></select></span>
         </div>
+        <div id="st-lang-note" class="sd-hint"></div>
       </fieldset>
 
       <fieldset>

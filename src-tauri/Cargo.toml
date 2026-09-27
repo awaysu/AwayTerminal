@@ -37,6 +37,9 @@ encoding_rs = "0.8.42"
 # 預設帶 rustls + webpki-roots（不碰系統憑證庫，跨平台行為一致）。
 # ⚠️ 這是**唯一**一個會連外的功能，而且只有使用者按下「檢查更新」才會跑。
 ureq = "3.4.2"
+# 第一次啟動時的系統語言（對到我們支援的八種介面語言）。MIT OR Apache-2.0。
+# 只讀，不改任何系統設定。
+sys-locale = "0.3.2"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = [

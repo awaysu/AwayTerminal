@@ -1,0 +1,502 @@
+// 介面文字：English（en）
+//
+// 一種語言一個檔，`src/strings.js` 把它們合起來。key 與註解和 `zh-TW.js` 一一對應——
+// **新增字串時八個檔都要加**，漏了 `node scripts/test-i18n.mjs` 會列出來。
+//
+// Taken from the old `Localization/Loc.cs` where a key existed there; the rest is new.
+export default {
+
+
+  // 工具列（舊版 tb.*）
+  'tb.new': 'New tab',
+  'tb.powershell': 'PowerShell',
+  'tb.customCmd': 'Custom command…',
+  'tb.split': 'Split',
+  'tb.tabs': 'Tabs',
+  'tb.columns': 'Columns',
+  // 舊版三個 tip 的文字一樣，照抄
+  'tip.viewCycle': 'Click to cycle: tabs → split → columns',
+  'tip.tabPanel': 'Show / hide the tab list',
+  'tip.tabClose': 'Close',
+
+  // 分頁右鍵選單（舊版 menu.*）
+  'menu.rename': 'Rename',
+  'menu.close': 'Close',
+
+  // 分頁 tooltip（舊版 tip.tabElapsed）
+  'tip.tabElapsed': 'running',
+
+  // 對話框（舊版 dlg.* / msg.*）
+  'dlg.renameTitle': 'Rename',
+  'dlg.renamePrompt': 'Tab name:',
+  'dlg.customTitle': 'Custom command',
+  'dlg.customPrompt': 'Command to run (e.g. claude, codex, wsl):',
+  'msg.closeTabTitle': 'Close Tab',
+  // {0} = 分頁名稱
+  'msg.closeTabConfirm': 'Close "{0}"?',
+  'dlg.ok': 'OK',
+  'dlg.cancel': 'Cancel',
+  'dlg.yes': 'Yes',
+  'dlg.no': 'No',
+
+  // 連線種類（舊版 kind.*；後端也會送 kindLabel，這份是前端的後備）
+  'kind.powershell': 'PowerShell',
+  'kind.claude': 'Claude Code',
+  'kind.custom': 'Custom connection',
+
+  'msg.connectFail': 'Connection failed',
+  'msg.noTabs': 'No tabs. Click "New tab" to open one.',
+
+  // 工具列：編輯群組（舊版 tb.* / tip.*）
+  'tb.copy': 'Copy',
+  'tb.paste': 'Paste as text',
+  'tb.copyall': 'Copy All',
+  'tb.clear': 'Clear',
+  'tb.page': 'Scroll',
+  'tip.copy': 'Copy selection',
+  'tip.paste': 'Paste clipboard as plain text',
+  'tip.copyall': 'Copy all buffer text',
+  'tip.clear': 'Clear screen',
+  'tip.page': 'Scroll the view (page up/down, top/bottom)',
+
+  // 翻頁下拉（舊版 page.*）
+  'page.up': 'Page up',
+  'page.down': 'Page down',
+  'page.top': 'Go to top',
+  'page.bottom': 'Go to bottom',
+
+  // 終端機右鍵選單（舊版 ctx.*）
+  'ctx.copy': 'Copy',
+  'ctx.copyPaste': 'Copy and paste',
+  'ctx.copyAllFile': 'Copy all to file',
+  'ctx.search': 'Find',
+  'ctx.openUrl': 'Open in browser',
+  'ctx.copyUrl': 'Copy URL',
+
+  // 分頁右鍵：配色與 log（舊版 menu.*）
+  'menu.color': 'Colors',
+  'menu.colorDefault': 'Default (settings colors)',
+  'menu.colorSample': 'Aa sample text',
+  'menu.log': 'Record log…',
+
+  // toast（舊版 toast.*，等效 ShowCopyFeedback）
+  'toast.copied': 'Copied',
+  'toast.copiedPasted': 'Copied and pasted',
+  'toast.copiedAll': 'All text copied',
+  'toast.noSelection': 'Nothing selected',
+  'toast.noSelectionMouse': 'Nothing selected (this program captures the mouse: hold Shift while dragging to select)',
+  'toast.urlCopied': 'URL copied',
+  'toast.saved': 'Saved',
+
+  // 清除畫面（舊版 msg.clear*）
+  'msg.clearTitle': 'Clear Screen',
+  'msg.clearConfirm': 'Clear the screen of "{0}"?',
+
+  // log（舊版 dlg.logTitle / log.* / msg.*）
+  'dlg.logTitle': 'Record Log',
+  'log.path': 'Log file path:',
+  'log.browse': 'Browse…',
+  'log.timestamp': 'Prefix each line with [yy-MM-dd HH:mm:ss]',
+  'log.append': 'Append if the file exists',
+  'log.start': 'Start logging',
+  'log.needPath': 'Please enter the log file path.',
+  'msg.stopLogAsk': 'Stop logging?',
+  'msg.logFail': 'Cannot start logging:',
+  'msg.saveFail': 'Save failed',
+  'tip.tabLogging': '● Recording log',
+
+  // 選工作目錄（舊版 dlg.pickDir*）
+  'dlg.pickDirPs': 'Choose the PowerShell working folder',
+  'dlg.pickDirCustom': 'Choose the working folder (you can create a new folder here)',
+
+  // 全選（舊版有這個字串但沒有呼叫端，TASK-006 當新功能補上）
+  'ctx.selectAll': 'Select all',
+
+  // ---- SSH（TASK-006）----
+  // 舊版的字面：`tb.ssh` = SSH/Telnet、`tip.ssh` = 開 SSH / Telnet（一個入口、對話框裡選類型）
+  'tb.ssh': 'SSH/Telnet',
+  'dlg.sshTitle': 'Open SSH',
+  'dlg.telnetTitle': 'Open Telnet',
+  'dlg.telnetPrompt': 'Host (add :port; default 23):',
+  // 舊版 ConnectDialog 是「類型／IP 主機／Port／保持連線／斷線自動重連」五個欄位；
+  // 完整對話框是 TASK-007，這裡先用一行 host[:port]
+  'dlg.sshPrompt': 'Host (add :port; default 22):',
+
+  // 主機金鑰確認。語意照 PuTTY，文字翻成繁中。
+  'hk.titleUnknown': 'The host key is not recorded yet',
+  'hk.titleChanged': '⚠ Warning: the host key does not match!',
+  'hk.bodyUnknown':
+    "This host's key is not in this program's cache, so there is no way to be sure it is the machine " +
+      'you meant to reach.\nPlease verify the fingerprint below by some other trustworthy means.',
+  'hk.bodyChanged':
+    'This may be a security problem! This host’s key differs from the one this program recorded.\n' +
+      'That means either the administrator changed the key, or this connection is being impersonated ' +
+      '(a man-in-the-middle).\nIf you are not sure, press "Cancel" and confirm the new fingerprint ' +
+      'with the server administrator first.',
+  'hk.noteUnknown': '"Accept and store" remembers this key, so the same host will not be asked about again.',
+  // {0} = known_hosts 路徑、{1} = 行號
+  'hk.noteChanged': 'The old record is on line {1} of {0}. To switch to the new key, delete that line first, or press "Accept and store" to overwrite it.',
+  'hk.store': 'Accept and store',
+  'hk.once': 'Just this once',
+  'hk.cancel': 'Cancel',
+  'hk.host': 'Host',
+  'hk.alg': 'Algorithm',
+
+  // 弱演算法警告（PuTTY 的 warn-below-this-line；TASK-008 B4）
+  'wa.title': 'This connection uses older cryptographic algorithms',
+  // {0} = host[:port]
+  'wa.body':
+    '{0} only supports (or preferred) the algorithms below. They still work, but they are considered ' +
+      'weak—very old network devices often have nothing else, while an ordinary server should not ' +
+      'be using them.',
+  'wa.note': 'After "Continue", this host will not be asked about again (it is remembered in the settings).',
+  'wa.go': 'Continue',
+  'wa.cancel': 'Cancel',
+
+  // ---- 連線對話框（TASK-009 B6；TASK-010 加 Telnet 類型）----
+  // 對話框標題逐字照舊版 `conn.title`
+  'sd.title': 'Open SSH / Telnet',
+  'sd.type': 'Type',
+  'sd.host': 'IP / host',
+  'sd.port': 'Port',
+  'sd.user': 'User',
+  'sd.userHint': 'Leave empty = ask login as: in the terminal after connecting',
+  'sd.key': 'Key file',
+  'sd.keep': 'Keep-alive',
+  'sd.keepHint': 'minutes, 0 = off',
+  'sd.agent': 'Also try keys from Pageant / ssh-agent',
+  'sd.reconnect': 'Auto-reconnect on disconnect',
+  'sd.adv': 'Advanced: algorithms and environment variables',
+  'sd.advNote': 'Select none = use the default order (strongest first). ⚠ marks algorithms below the warning line; you will be asked before one is used.',
+  'sd.kex': 'Key exchange',
+  'sd.hostKey': 'Host key',
+  'sd.cipher': 'Cipher',
+  'sd.mac': 'MAC',
+  'sd.env': 'Send environment variables (one KEY=VALUE per line)',
+  'sd.envHint': 'Most servers have an AcceptEnv allow-list; anything not allowed only prints a grey line and does not affect the connection.',
+  'sd.connect': 'Connect',
+  'sd.addFav': 'Add to favorites',
+  'sd.needHost': 'Please enter a host.',
+
+  // ---- 連接埠（TASK-011；舊版 Dialogs/ComDialog + Loc 的 com.*）----
+  'tb.com': 'COM',
+  'tip.com': 'Open COM port',
+  'kind.com': 'Serial port (COM)',
+  'com.title': 'Open COM Port',
+  'com.open': 'Open',
+  'common.reset': 'Reset to default',
+  // 欄位名稱照舊版 XAML 的英文（使用者看到的就是這些字）
+  'cd.port': 'Port',
+  'cd.baud': 'Baud rate',
+  'cd.data': 'Data bits',
+  'cd.parity': 'Parity',
+  'cd.stop': 'Stop bits',
+  'cd.flow': 'Flow control',
+  'cd.rescan': 'Rescan',
+  'cd.needPort': 'Please choose or type a port.',
+  'cd.noPorts': 'No serial port detected (plug in a USB-to-serial adapter, then press "Rescan").',
+
+  // ---- TTL 巨集（TASK-013；舊版 Loc 的 menu.macro／msg.stopMacroAsk／dlg.macroTitle）----
+  'menu.macro': 'Run macro…',
+  'macro.title': 'Run macro',
+  'macro.stopAsk': 'Stop the macro?',
+  'macro.readFail': 'Could not read the macro:',
+  'macro.pick': 'Choose a TTL macro',
+  'macro.errorTitle': 'Macro error',
+  // {0}=訊息 {1}=檔名 {2}=行號 {3}=那一行的內容
+  'macro.errorBody': '{0}\n\n{1} line {2}:\n{3}',
+  // 分頁 tooltip 多一行（新增；舊版只有「巨集執行中」）
+  'tip.tabMacro': '● Macro running: {0} (line {1})',
+
+  // ---- 輸入文字（TASK-014；舊版 Loc 的 compose.*，文字逐字照抄）----
+  'tb.compose': 'Compose',
+  'tip.compose': 'Compose the text first, then send it to the current tab (type Chinese with your IME here; it is not sent key by key)',
+  'compose.title': 'Compose',
+  'compose.placeholder': 'Type the text to send (multi-line OK; Ctrl+Enter sends)',
+  'compose.send': 'Send',
+  'compose.back': 'Back',
+  'compose.clear': 'Clear',
+  'compose.save': 'Save',
+  'compose.undo': 'Undo',
+  'compose.sendEnter': 'Send Enter after submit',
+  'compose.noTab': 'No tab to send to',
+  'compose.loadFile': 'Load file',
+  // {0} = 用哪種編碼解出來的（新增：舊版沒有告訴使用者）
+  'compose.loaded': 'Loaded ({0})',
+  // {0} = 存到哪裡
+  'compose.saved': 'Saved: {0}',
+
+  // ---- 離開程式與恢復分頁（TASK-010；舊版 Dialogs/ExitDialog + 1.0.45）----
+  'exit.title': 'Quit AwayTerminal',
+  'exit.body': 'Quit the program?',
+  // 文字逐字照舊版 Loc 的 exit.restore
+  'exit.restore': 'Restore current tabs next time (with scrollback)',
+  'exit.go': 'Quit',
+  // {0} = 分頁數
+  'restore.done': 'Restored {0} tab(s)',
+  'restore.failed': '{0} tab(s) could not be restored (see the backend log)',
+  'sd.quick': 'Quick connect (host[:port])…',
+
+  // ---- 我的最愛（TASK-009 C；舊版 fav.* / tb.favorites / tip.favorites）----
+  'tb.favorites': 'Favorites',
+  'tip.favorites': 'Favorites: open one, or add the current tab',
+  'fav.empty': '(no favorites yet)',
+  'fav.add': 'Add to favorites',
+  'fav.addNamed': 'Add to favorites: {0}',
+  'fav.settings': 'Settings…',
+  'fav.added': 'Added to favorites: {0}',
+  'fav.deleteAsk': 'Remove "{0}" from favorites?',
+  'fav.nameTitle': 'Favorites',
+  'fav.namePrompt': 'Name:',
+  'fav.up': 'Move up',
+  'fav.down': 'Move down',
+
+  // ---- 自訂連線（TASK-007，舊版 custom.*）----
+  'conn.title': 'Custom connections',
+  'conn.detect': 'Auto-detect',
+  'conn.new': 'New',
+  'conn.save': 'Save',
+  'conn.delete': 'Delete',
+  'conn.empty': 'The list is empty. Press "Auto-detect" to find the tools installed on this machine.',
+  'conn.newHint': 'Add a connection: fill in the name and the path to the executable, then press "Save".',
+  'conn.saved': 'Saved.',
+  'conn.deleted': 'Deleted.',
+  'conn.detectNone': 'No new tools found (they may already be in the list, or none are installed).',
+  'conn.detectDone': 'Added:',
+  'conn.sandboxOn': 'Sandbox',
+  'conn.sandboxOff': 'No sandbox',
+  'conn.hiddenTag': 'Hidden',
+  'dlg.close': 'Close',
+  'tb.manageConns': 'Custom connections…',
+
+  // ---- 沙盒模式（新功能）----
+  'sb.menu': 'Sandbox mode',
+  'sb.clear': 'Remove sandbox…',
+  'sb.tipOn': 'Sandbox: {0}',
+  'sb.tipBranch': 'Sandbox branch: {0}',
+  'sb.tipNoWorktree': 'Sandbox (no worktree; not a git repository)',
+  'sb.tipOff': 'Sandbox: off',
+  'sb.changedTitle': 'Sandbox mode',
+  // {0} = 連線名稱、{1} = 開啟/關閉
+  'sb.changedBody': 'Sandbox mode for "{0}" is now {1}.\nThe change takes effect **the next time this tab starts**.\nRestart this tab now? (the current connection will be closed)',
+  'sb.on': 'on',
+  'sb.off': 'off',
+  'sb.restartNow': 'Restart tab',
+  'sb.later': 'Later',
+  'sb.clearTitle': 'Remove sandbox',
+  // {0} = worktree 路徑、{1} = 分支
+  'sb.clearBody': 'Remove this sandbox\'s worktree?\n\n{0}\n\nThe branch {1} is **kept** - if it holds work that has not been merged, you can still get it back with git merge (see docs/AGENT-SANDBOX.md).',
+  'sb.cleared': 'The sandbox was removed (the branch was kept).',
+  'sb.noSandbox': 'This tab has no sandbox.',
+  // ---- 設定視窗（TASK-015 A；舊版 Dialogs/SettingsDialog + Loc 的 settings.* / font.*）----
+  'tb.settings': 'Settings',
+  'tip.settings': 'Font, colors, language and other settings',
+  'settings.title': 'Settings',
+  // machine-translation notice (under the language picker, and on the About page)
+  'settings.langNote': 'Every language other than Traditional Chinese and English is machine-translated; corrections are welcome.',
+  'settings.groupLang': 'Language',
+  'settings.groupFont': 'Font & colors',
+  'font.family': 'Font',
+  'font.size': 'Size',
+  'font.fg': 'Text color',
+  'font.bg': 'Background color',
+  'font.pick': 'Click to pick a color',
+  'settings.groupIme': 'Claude input timing',
+  'settings.imeQuiet': 'Wait for quiet before send (ms)',
+  'settings.imeQuietHelpLink': 'What is this?',
+  'settings.imeQuietHelpTitle': 'Wait for quiet before send (ms)',
+  // 逐字照舊版（很長，是使用者真的會讀的說明）
+  'settings.imeQuietHelp':
+    'This setting only affects Claude Code tabs.\n\n' +
+      'When you commit IME (Zhuyin) text, paste, or press Backspace while Claude is repainting ' +
+      '(running, or the suggestion text is updating), sending immediately can occasionally make ' +
+      'Claude echo the just-typed text twice, or miscompute the cursor column when full-width and ' +
+      'half-width characters are mixed (a column short, or a leftover ghost).\n\n' +
+      "When enabled, these inputs wait until Claude's output has been quiet for this many " +
+      'milliseconds before being sent, avoiding the repaint window and reducing those problems.\n\n' +
+      '• The delay only applies while Claude is busy repainting; typing at an idle prompt has 0 delay.\n' +
+      '• Normal letters/digits, Enter and Ctrl keys are unaffected.\n' +
+      '• Higher = more conservative (fewer glitches, slightly more delay when busy); lower = snappier, weaker protection.\n' +
+      '• Set 0 to turn this off (send immediately).\n\n' +
+      "Default is 20. This is a mitigation that lowers the frequency; the root cause is Claude Code's own screen repaint.",
+  // 檔案總管右鍵選單：**還沒做**（Windows 登錄檔那一段是 TASK-016），所以灰掉並註明
+  'settings.groupShell': 'File Explorer',
+  'settings.shellMenu':     'Add "Open in AwayTerminal" to the folder context menu (opens a PowerShell tab there)',
+  'settings.todo': '(not ported yet)',
+
+  // ---- 新版多的設定（舊版只能手改 settings.json）----
+  'settings.groupMore': 'Other',
+  'settings.restoreLines': 'Scrollback lines kept for tab restore',
+  'settings.restoreLinesHint': '0 = do not keep the screen record',
+  'settings.exitRestore': 'Tick "restore tabs" by default when quitting',
+  'settings.keepAlive': 'Keep-alive (min, 0 = off)',
+  'settings.autoReconnect': 'New connections auto-reconnect by default',
+  'settings.logDir': 'Default folder for logs',
+  'settings.browse': 'Browse…',
+  'settings.logTimestamp': 'Prefix each log line with a timestamp',
+  'settings.logAppend': 'Append to the log file if it exists',
+  'settings.groupSandbox': 'Sandbox mode',
+  'settings.sandboxDefault': 'New custom connections start with the sandbox on',
+  'settings.sandboxNote':     'The sandbox guards against mistakes, not against malice (see docs/AGENT-SANDBOX.md). Changing this does not affect existing connections.',
+  'settings.weakClear': 'Clear the list of accepted weak algorithms',
+  // {0} = 幾筆
+  'settings.weakCount': '{0} host(s) currently remembered',
+  'settings.weakCleared': 'Cleared.',
+  'settings.needRestart': '(takes effect the next time a tab starts)',
+  'common.ok': 'OK',
+  'common.cancel': 'Cancel',
+
+  // ---- 關於（TASK-015 C；舊版 About_Click）----
+  'tb.about': 'About',
+  'tip.about': 'Version, license and update check',
+  'about.title': 'About AwayTerminal',
+  'about.version': 'Version',
+  'about.buildTime': 'Build time',
+  'about.author': 'Author',
+  'about.download': 'Download',
+  'about.license': 'License',
+  'about.thirdParty': 'Third-party components',
+  'about.noticesLink': 'Full third-party notices',
+  'about.noticesFail': 'Could not read THIRD-PARTY-NOTICES.md',
+  'about.close': 'Close',
+
+  // ---- 檢查更新（照舊版：只有按下去才查，失敗只在按鈕旁顯示一行）----
+  'update.check': 'Check for updates',
+  'update.checking': 'Checking...',
+  'update.latest': 'You are up to date',
+  'update.failed': 'Check failed (check your connection and try again)',
+  'update.title': 'Check for updates',
+  'update.found': 'A new version is available',
+  'update.current': 'Current version',
+  'update.latestVer': 'Latest version',
+  'update.notes': "What's new",
+  'update.goDownload': 'Open download page',
+  'update.close': 'Close',
+
+  // ---- Backend (Rust) messages: errors, terminal-pane text, file dialog titles ----
+  // Pushed to the backend on start and on language change (`i18n_push`).
+
+  'err.sshNeedsParams': 'kind=ssh requires the ssh parameters',
+  'err.telnetNeedsParams': 'kind=telnet requires the telnet parameters',
+  'err.connNeedsName': 'kind=conn requires conn (the connection name)',
+  'err.customNeedsCommand': 'kind=custom requires command',
+  'err.needHost': 'Please enter a host',
+  'err.connNotFound': 'Custom connection not found: {0}',
+  'err.commandNotFound': 'Command not found: {0}',
+  'err.exeMissing': 'Executable does not exist: {0}',
+  'err.unsupportedKind': 'Connection type not supported yet: {0}',
+  'err.noPowerShell': 'Neither pwsh.exe nor powershell.exe was found (not on PATH, not in System32)',
+  'err.noPowerShellVia': 'PowerShell not found (via_powershell needs it)',
+  'err.launchFailed': 'Failed to start {0}: {1}',
+  'err.tabCreateFailed': 'Could not create the tab',
+  'err.tabNotFound': 'Tab {0} not found',
+  'err.tabNotFoundPlain': 'Tab not found',
+  'err.tabsNotReady': 'The tab list is not ready yet',
+  'err.settingsNotReady': 'Settings are not ready yet',
+  'err.connListNotReady': 'The connection list is not ready yet',
+  'host.linkClicked': 'A link in the terminal was clicked (the open menu is not implemented yet)',
+  'host.mouseTakeover': 'The app took over the mouse (copy/selection is not implemented yet)',
+  'host.agentRatio': 'Multi-Agent splitter ratio (agent teams are not implemented yet)',
+  'host.unknown': 'unknown',
+  'dlg.loadTextFile': 'Load a text file',
+  'dlg.save': 'Save',
+  'dlg.textFiles': 'Text files',
+  'dlg.allFiles': 'All files',
+  'dlg.pickMacro': 'Choose a TTL macro',
+  'dlg.teratermMacro': 'TeraTerm macro',
+  'err.filePickFailed': 'The file dialog failed: {0}',
+  'err.savePickFailed': 'The save dialog failed: {0}',
+  'err.readFileFailed': 'Could not read the file: {0}',
+  'err.saveFileFailed': 'Could not save the file: {0}',
+  'err.writeFailed': 'Write failed: {0}',
+  'err.readFailed': 'Read failed: {0}',
+  'compose.loadTooBig': 'The file is too large (limit {0} MB); nothing was loaded.',
+  'err.notBig5': 'This text cannot be represented in Big5',
+  'fav.title': 'Favorites',
+  'fav.exists': 'Already in favorites: {0}',
+  'fav.nameTaken': 'There is already an entry named "{0}"',
+  'err.needName': 'Please enter a name',
+  'err.needExePath': 'Please enter the path to the executable',
+  'err.needLogPath': 'Please choose where to save the log.',
+  'err.logStartFailed': 'Could not start logging: {0}',
+  'err.macroLogNoName': 'The macro\'s logopen did not give a file name',
+  'err.logOpenTimeout': 'Opening {0} timed out ({1} s with no response). Antivirus or folder protection on this machine may be blocking the write - add AwayTerminal to its exclusions, or choose a different folder for logs.',
+  'err.saveFailed': 'Saving failed: {0}',
+  'err.onlyHttp': 'Only http/https is allowed: {0}',
+  'err.tempOnlyPath': 'Only paths inside the temporary folder are accepted ({0})',
+  'search.placeholder': 'Search',
+  'search.prev': 'Previous (Shift+Enter)',
+  'search.next': 'Next (Enter)',
+  'search.close': 'Close (Esc)',
+  'ma.stateIdle': 'idle',
+  'ma.stateBusy': 'busy',
+  'ma.stateQueued': 'mail queued',
+  'ma.stateExited': 'ended',
+  'ma.stateBusyQueued': 'busy · mail queued',
+  'term.restoreSeparator': '──── above is the record from before the last exit ({0}) ────',
+  'term.connEnded': '[connection closed]',
+  'term.pressEnter': '[press Enter to reconnect in this tab]',
+  'term.reconnectIn': '[disconnected; reconnecting in {0} s... (close the tab to stop)]',
+  'err.sandboxDirFailed': 'Could not create the sandbox folder: {0}',
+  'err.gitFailed': 'git failed ({0}): {1}',
+  'err.notGitRepo': 'Not inside a git repository',
+  'err.tabNoSandbox': 'This tab has no sandbox',
+  'err.sandboxNoWorktree': 'This sandbox has no worktree (not a git repository); there is nothing to remove',
+  'algo.kex': 'Key exchange',
+  'algo.hostkey': 'Host key',
+  'algo.cipher': 'Cipher',
+  'algo.mac': 'MAC',
+  'err.sshRuntime': 'Could not create the SSH runtime',
+  'term.sshCertUnsupported': 'This host uses an OpenSSH certificate as its host key, which is not supported yet.',
+  'term.sshConnecting': 'Connecting to {0}:{1} ...',
+  'term.sshEnvFailed': '(could not send the environment variable {0}: {1})',
+  'term.sshKeyRejected': 'The key was rejected; trying another method.',
+  'term.sshKeyAuthFailed': 'Key authentication failed ({0}).',
+  'err.sshConnectFailed': 'Connection failed: {0}',
+  'err.sshNoUser': 'No user name was entered; the connection was cancelled.',
+  'err.sshSessionFailed': 'Could not open the session: {0}',
+  'err.sshPtyFailed': 'The PTY request failed: {0}',
+  'err.sshShellFailed': 'Could not open the shell: {0}',
+  'err.sshAuthFailed': 'Authentication failed: {0}',
+  'err.sshAuthFailedPlain': 'Authentication failed.',
+  'err.sshBadPassword3': 'Wrong password three times; the connection was closed.',
+  'err.sshKeyRead': 'Could not read the key file {0}: {1}',
+  'err.sshKeyDecrypt': 'Could not decrypt the key: {0}',
+  'err.sshKeyLoad': 'Could not load the key: {0}',
+  'err.pageantMissing': 'Pageant not found: {0}',
+  'err.noAuthSock': 'SSH_AUTH_SOCK is not set',
+  'err.agentConnect': 'Could not connect to ssh-agent: {0}',
+  'err.agentIdentities': 'The agent did not return an identity list: {0}',
+  'err.cancelled': 'Cancelled.',
+  'err.connCancelled': 'The connection was cancelled.',
+  'err.mkdirFailed': 'Could not create the folder: {0}',
+  'err.keySerialize': 'Could not serialise the key: {0}',
+  'err.knownHostsOpen': 'Could not open known_hosts: {0}',
+  'err.knownHostsWrite': 'Could not write known_hosts: {0}',
+  'err.hostNotFoundWhy': 'Host {0} not found: {1}',
+  'err.hostNotFound': 'Host {0} not found',
+  'err.connectFailed': 'Could not connect to {0}: {1}',
+  'com.parityUnsupported': 'Parity {0} is not supported by the library (only None/Odd/Even); using None instead',
+  'com.stopBitsUnsupported': 'Stop bits {0} are not supported by the library (only 1 and 2); using 1 instead',
+  'com.flowRtsXonUnsupported': 'Flow control RTS/CTS+XON/XOFF is not supported by the library; using RTS/CTS instead',
+  'com.flowUnknown': 'Flow control {0} was not recognised; using None instead',
+  'com.dataBitsUnsupported': 'Data bits {0} are not supported; using 8 instead',
+  'err.comOpenFailed': 'Could not open {0}: {1}',
+  'err.comDtrFailed': 'Could not set DTR: {0}',
+  'err.comRtsFailed': 'Could not set RTS: {0}',
+  'err.comHandleFailed': '{0}: could not duplicate the handle: {1}',
+  'err.conptyCreate': 'ConptyCreatePseudoConsole failed (HRESULT 0x{0})',
+  'err.createPseudoCon': 'CreatePseudoConsole failed (HRESULT 0x{0})',
+  'err.attrListSizeZero': 'InitializeProcThreadAttributeList reported a size of 0',
+  'err.unixPtyTodo': 'The PTY backend for this platform is not implemented yet (Windows ConPTY is done; forkpty is a later task)',
+  'err.unixPtyShort': 'unix pty (not implemented yet)',
+  'err.macroRunning': 'This tab is already running a macro',
+  'err.macroReadFail': 'Could not read the macro: {0}',
+  'err.macroThread': 'Could not start the macro thread: {0}',
+  'err.noFileLoader': 'This interpreter has no file loader, so include is unavailable: {0}',
+  'err.noSuchFile': 'No such file: {0}',
+  'term.macroInterrupted': '[macro interrupted: {0}]',
+  'term.macroDone': '[macro finished: {0}]',
+  'term.macroError': '[macro error] {0} {1}:{2}',
+  'term.regexOptUnsupported': '[macro] regexoption {0} is not supported in this version (see docs/TTL-REGEX.md)',
+};

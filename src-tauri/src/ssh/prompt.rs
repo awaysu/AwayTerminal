@@ -129,7 +129,7 @@ impl HostKeyDecider for AppDecider {
     }
 
     /// 協商到警告線以下的演算法。照 PuTTY：**同一台主機接受過就不再問**。
-    fn accept_weak(&self, host: &str, port: u16, weak: &[(&'static str, String)]) -> bool {
+    fn accept_weak(&self, host: &str, port: u16, weak: &[(String, String)]) -> bool {
         let key = format!("{host}:{port}");
         if self.settings.get().ssh_weak_accepted.iter().any(|k| k == &key) {
             return true; // 之前接受過

@@ -109,7 +109,7 @@ pub trait HostKeyDecider: Send + Sync + 'static {
     ///
     /// 回傳 `true`＝繼續連。實作端要負責「這台主機已經接受過就不要再問」。
     /// 預設 `false`（安全預設：沒有人回答就當成不接受）。
-    fn accept_weak(&self, _host: &str, _port: u16, _weak: &[(&'static str, String)]) -> bool {
+    fn accept_weak(&self, _host: &str, _port: u16, _weak: &[(String, String)]) -> bool {
         false
     }
 }
@@ -753,7 +753,7 @@ impl HostKeyDecider for FixedDecider {
         self.answer
     }
 
-    fn accept_weak(&self, _host: &str, _port: u16, _weak: &[(&'static str, String)]) -> bool {
+    fn accept_weak(&self, _host: &str, _port: u16, _weak: &[(String, String)]) -> bool {
         self.weak_asks
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         self.accept_weak

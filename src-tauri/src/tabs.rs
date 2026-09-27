@@ -36,15 +36,15 @@ pub enum TabKind {
 
 impl TabKind {
     /// 舊版 `TerminalTab` 建構子裡的 `KindKey` → 繁中顯示字（`Localization/Loc.cs`）。
-    pub fn label(self) -> &'static str {
+    pub fn label(self) -> String {
         match self {
-            TabKind::PowerShell => "PowerShell",
-            TabKind::Claude => "Claude Code",
+            TabKind::PowerShell => "PowerShell".to_string(),
+            TabKind::Claude => "Claude Code".to_string(),
             TabKind::Custom => t("kind.custom"),
-            TabKind::Ssh => "SSH",
-            TabKind::Telnet => "Telnet",
+            TabKind::Ssh => "SSH".to_string(),
+            TabKind::Telnet => "Telnet".to_string(),
             TabKind::Com => t("kind.com"),
-            TabKind::Adb => "ADB",
+            TabKind::Adb => "ADB".to_string(),
         }
     }
 
@@ -148,7 +148,7 @@ pub struct TabView {
     pub id: u32,
     pub kind: TabKind,
     /// 種類的繁中名稱，圖示 tooltip 用（舊版 `KindTip` 的前半）。
-    pub kind_label: &'static str,
+    pub kind_label: String,
     pub title: String,
     pub cwd_path: String,
     pub flags: String,

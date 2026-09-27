@@ -149,7 +149,7 @@ const WEAK_CIPHER: &[&str] = &[
 const WEAK_MAC: &[&str] = &["hmac-sha1", "hmac-sha1-etm@openssh.com", "hmac-sha1-96", "hmac-md5"];
 
 /// 這四個名稱裡有沒有在警告線以下的？回傳「哪幾個」（給對話框列出來）。
-pub fn weak_ones(kex: &str, host_key: &str, cipher: &str, mac: &str) -> Vec<(&'static str, String)> {
+pub fn weak_ones(kex: &str, host_key: &str, cipher: &str, mac: &str) -> Vec<(String, String)> {
     let mut out = Vec::new();
     if WEAK_KEX.contains(&kex) {
         out.push((t("algo.kex"), kex.to_string()));
@@ -341,7 +341,7 @@ mod tests {
     fn legacy_combo_is_flagged_weak() {
         let w = weak_ones("diffie-hellman-group14-sha1", "ssh-rsa", "aes128-cbc", "hmac-sha1");
         assert_eq!(w.len(), 4, "四項都該被標出來：{w:?}");
-        let kinds: Vec<&str> = w.iter().map(|(k, _)| *k).collect();
+        let kinds: Vec<&str> = w.iter().map(|(k, _)| k.as_str()).collect();
         assert_eq!(kinds, vec![t("algo.kex"), t("algo.hostkey"), t("algo.cipher"), t("algo.mac")]);
     }
 

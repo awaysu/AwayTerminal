@@ -13,7 +13,7 @@
 
 import { invoke } from '@tauri-apps/api/core';
 
-import { T } from './strings.js';
+import { T, LANGS, getLang } from './strings.js';
 import { onLangChange } from './i18n.js';
 
 const el = {};
@@ -79,6 +79,12 @@ function authorImage(parts) {
   return canvas;
 }
 
+/** 目前語言的自稱（關於頁顯示）。 */
+function langName() {
+  const hit = LANGS.find((l) => l.code === getLang());
+  return hit ? `${hit.name} (${hit.code})` : getLang();
+}
+
 function render() {
   el.rows.textContent = '';
   el.rows.append(row(T['about.version'], `v${info.version}`));
@@ -95,6 +101,8 @@ function render() {
   el.rows.append(row(T['about.download'], info.downloadUrl, true));
   el.rows.append(row('Source Code', info.sourceUrl, true));
   el.rows.append(row(T['about.license'], 'MIT　© 2026 Chih-Wei Su (Awaysu)'));
+  // 介面語言：目前語言 ＋「機器翻譯，歡迎修正」（PM 在 TASK-015 修訂版要求關於頁也放一行）
+  el.rows.append(row(T['settings.groupLang'], `${langName()}　${T['settings.langNote']}`));
   // 第三方元件：xterm.js 的版本是 build 時從 node_modules 讀的**實際**版本
   //（舊版寫死成 5.5.0，實際是 6.0.0 —— CLAUDE.md 記著這條雷）
   el.rows.append(

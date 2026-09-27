@@ -12,7 +12,7 @@
 
 | 舊版欄位 | 舊版控制項 | 新版 | 預設 | 套用時機 |
 |---|---|---|---|---|
-| 語言 中文／English | `ZhRadio`／`EnRadio` | 同（radio） | `zh` | **按確定**（不必重啟，見第 2 節） |
+| 語言 中文／English | `ZhRadio`／`EnRadio` | **八種語言的下拉**（舊版只有兩個 radio） | 第一次啟動看系統語言 | **按確定**（不必重啟，見第 2 節） |
 | 字型 | `FontCombo`（可編輯下拉，`Fonts.SystemFontFamilies`） | `<input list>` ＋ `font_list()` | `Cascadia Mono` | 按確定 → `T{json}` 即時套到所有分頁 |
 | 大小 | `SizeCombo`（8～28，可自己打） | `<input type=number>` 6～40 | `14` | 同上 |
 | 文字顏色 | `FgBox` ＋色塊（`ColorDialog`） | 文字框 ＋ `<input type=color>` | `#E0E0E0` | 同上 |
@@ -56,60 +56,104 @@ xterm.js 兩邊一致（`prefs::valid_color`，有測試）。
 
 ---
 
-## 2. i18n 的做法與 Rust 端字串清單
+## 2. i18n：八種語言
 
-### 2.1 兩邊各有一份字串表
+### 2.1 語言清單
+
+順序＝設定視窗下拉的順序（PM 在 TASK-015 修訂版定的）。選項的文字用**該語言自己的寫法**，
+使用者看不懂目前語言時也找得到自己的。
+
+| 代碼 | 語言 | 字串來源 |
+|---|---|---|
+| `zh-TW` | 繁體中文 | **主語言**：key 的來源，文字照舊版 `Localization/Loc.cs` |
+| `en` | English | 舊版 `Loc.cs` 有同名 key 的照抄（連標點），其餘自己寫 |
+| `zh-CN` | 简体中文 | 從繁中轉，**術語照大陸慣用**（设置／粘贴／串口／标签页／宏／主机密钥） |
+| `ja` | 日本語 | 機械翻譯，術語照 TeraTerm／Windows Terminal 的日文介面（設定／貼り付け／シリアルポート／タブ／マクロ／ホスト鍵） |
+| `ko` | 한국어 | 同上（설정／붙여넣기／시리얼 포트／탭／매크로／호스트 키） |
+| `es` | Español | 同上（Configuración／Pegar／Puerto serie／Pestaña／Macro／Clave de host） |
+| `de` | Deutsch | 同上（Einstellungen／Einfügen／Serieller Port／Tab／Makro／Hostschlüssel） |
+| `fr` | Français | 同上（Paramètres／Coller／Port série／Onglet／Macro／Clé d’hôte） |
+
+每個語言檔的檔頭、設定視窗語言下拉的下面、關於頁都有一行「機器翻譯，歡迎修正」
+（`settings.langNote`，各語言自己的寫法）。繁中與英文不是機器翻譯，所以那一行說的是
+「除了繁體中文與 English 之外」。
+
+### 2.2 檔案與退回鏈
+
+- 一種語言一個檔：`src/lang/<代碼>.js`（key 與註解和 `zh-TW.js` 一一對應）。
+- `src/strings.js` 把八個合起來，提供 `T['key']`（Proxy，存取的那一刻才挑語言）與
+  `fmt('key', 參數…)`。
+- **退回鏈：選的語言 → `en` → `zh-TW` → key 本身**。所以少翻一條不會出現 `undefined`，
+  只會看到英文（或繁中）。`scripts/test-i18n.mjs` 仍然當它是「沒做完」。
+
+### 2.3 Rust 端：**翻譯只有一份**
+
+Rust 端**不存八種語言**。前端在啟動與切語言時，把「Rust 會用到的那 129 條」
+（`i18n_keys()` 回報）**已經翻好的字**推給後端（`i18n_push`）；Rust 存成一張 runtime 的表。
+推之前（啟動最早期）用 `i18n.rs` 內建的繁中／英文當後備。
 
 | | 前端 | Rust 端 |
 |---|---|---|
-| 檔案 | `src/strings.js`（`'key': [繁中, English]`） | `src-tauri/src/i18n.rs`（`(key, 繁中, English)`） |
-| 取用 | `T['key']`（Proxy，存取時才挑語言）、`fmt('key', 參數)` | `t("key")`、`tf("key", &[參數])` |
-| 切換 | `applyLang('en')` → 每個模組的 `applyTexts()` 重跑一次 | `i18n::set_lang("en")`（`AtomicU8`，背景執行緒也讀得到） |
+| 檔案 | `src/lang/*.js`（八種） | `src-tauri/src/i18n.rs`（**只有繁中／英文的後備**＋ runtime 表） |
+| 取用 | `T['key']`、`fmt('key', …)` | `t("key")`、`tf("key", &[…])` |
+| 切換 | `applyLang('ja')` → 每個模組的 `applyTexts()` 重跑 ＋ 推給後端 | `i18n_push` 收到就換（`AtomicU8` ＋ runtime 表，背景執行緒也讀得到） |
 | 參數 | `{0}`／`{1}` | 同 |
-| 查不到 key | 回 key 本身 | 回 key 本身（debug build 會先 `debug_assert` 叫） |
+| 查不到 | 退回鏈（見上） | 推過來的 → 內建後備 → key 本身 |
 
-**為什麼 Rust 端不用「回代碼給前端查表」**（PM 要求二選一並寫理由）：
+**為什麼不是 PM 原本說的「Rust 回代碼、前端查表」**：
 
-1. **漏掉的代價**：回代碼漏改一處，使用者會看到 `err.connNotFound` 這種字（等於壞掉）；
-   Rust 端自己查表漏改一處只是那一句留在繁中（難看但看得懂）。
-2. **不必動協定**：錯誤字串是 `Result<_, String>` 的 `Err`、終端機訊息是直接寫進 pane 的
-   位元組。改成代碼要動 `bridge.js`、每個對話框、`--verify` 的比對——改動面更大。
-3. **有些訊息翻不動**：它們帶作業系統的原文（`開啟 COM5 失敗：系統找不到指定的檔案。`），
+1. **一部分做不到**：**直接寫進終端機畫面的訊息**（重連倒數、SSH 的「連線到 …」、
+   巨集結束提示、COM 降級警告、恢復分頁分隔行）是背景執行緒把**位元組**寫進 pane，
+   和 PTY 輸出走同一條路——前端拿到的是終端機內容，沒有機會查表。
+2. **回代碼的風險**：漏改一處，使用者就看到 `err.connNotFound` 這種字（等於壞掉）；
+   現在的做法漏一條只是退回內建的繁中／英文。
+3. **有些訊息帶作業系統原文**（`開啟 COM5 失敗：系統找不到指定的檔案。`），
    前端查表也翻不了後半段。
-4. `ttl/error.rs` 本來就有 `message()`（英文，照 `errdlg.cpp`）與 `message_zh()` 兩份，
-   只要多一個 `message_for_lang()` 就好，不必把 22 個錯誤碼送到前端。
 
-### 2.2 Rust 端字串清單（哪些翻、哪些不翻）
+兩種做法的共同目標「**翻譯只有一份**」都達到了，而且是可以驗的（下一節）。
 
-| 種類 | 翻不翻 | 數量 | 為什麼 |
-|---|---|---|---|
-| `Err(...)` 回給前端的（對話框／提示） | ✅ | — | 使用者直接看到 |
-| 寫進終端機畫面的（重連倒數、SSH 狀態、巨集結束、COM 降級警告） | ✅ | — | 同上 |
-| 檔案選擇／存檔對話框的標題與篩選器 | ✅ | — | 同上 |
-| `T{json}`（搜尋列、代理狀態標籤） | ✅ | — | 前端直接顯示 |
-| TTL 的 22 條錯誤訊息 | ✅（本來就有兩份） | 22 | `errdlg.cpp` 的英文＋新版的繁中 |
-| `println!("[AwayTerminal] …")` | ❌ | 57 | **開發診斷**：打包後沒有 stdout；`--verify` 與踩雷紀錄都在比對這些字串 |
-| 例外（寫進 `.git/info/exclude` 的註解、字型 fallback 清單、`--verify` 專用訊息） | ❌ | 12 | 不是介面文字 |
+⚠️ `i18n_push` 之後 Rust 會**重送 `T{json}`**：那包 JSON 裡有搜尋列與代理狀態的字。
+不重送的話搜尋列會留在上一個語言（`--verify` 抓到過）。
 
-**這張表是可以重新產生的**：`node scripts/i18n-audit.mjs` 會掃過
-`src-tauri/src/**/*.rs`，把每一條含中文的字串字面歸類，**出現沒歸類的就 exit 1**。
-2026-09-27 的結果：字串表 130 條、TTL 錯誤 22 條、`println!` 57 條、例外 12 條、
-**沒歸類的 0 條**。
+### 2.4 Rust 端字串清單（哪些翻、哪些不翻）
 
-### 2.3 前端字串
+| 種類 | 翻不翻 | 條數 |
+|---|---|---|
+| `Err(...)` 回給前端的、寫進終端機畫面的、檔案對話框標題、`T{json}` 的字 | ✅ | **129** |
+| TTL 的 22 條錯誤訊息（本來就有 `message()` 英文 ＋ `message_zh()`） | ✅ 照語言挑一個 | 22 |
+| `println!("[AwayTerminal] …")` | ❌ 開發診斷（打包後沒有 stdout；`--verify` 與踩雷紀錄都在比對這些字） | 57 |
+| 例外（`.git/info/exclude` 的註解、字型 fallback 清單、`--verify` 專用） | ❌ | 12 |
+| **沒歸類的** | — | **0** |
 
-`src/strings.js` 共 **265** 個 key。英文的來源：
+### 2.5 怎麼新增一種語言
 
-- **93 個**舊版 `Loc.cs` 有同名 key → 英文**照抄**（連標點與大小寫）。
-  其中 5 個的中文和舊版不一樣（例：舊版 `tb.new` 是「新連接」，我們是「新分頁」），
-  英文照我們的中文調整。
-- **其餘**是新版才有的東西（內建 SSH／Telnet／COM 對話框、TTL 巨集、沙盒、
-  恢復分頁、設定、關於）→ 自己寫。
+1. 複製 `src/lang/en.js` 成 `src/lang/<代碼>.js`，翻好（key 與順序不要動）。
+2. `src/strings.js`：`import` 它，加進 `LANGS`（顯示名稱用該語言自己的寫法）與 `TABLES`。
+3. `src-tauri/src/i18n.rs` 的 `LANGS` 也加一個代碼（設定視窗才存得進去）。
+4. `node scripts/test-i18n.mjs` —— 缺的 key、空字串、參數編號不一致都會列出來。
+5. 想加系統語言的對映規則（例如 `pt-BR` → `pt`）改 `strings.js` 的 `matchLang()`。
 
-切語言**不必重啟**（同舊版）：`applyLang()` 會叫每個模組的 `applyTexts()`；
-Rust 端的 `set_lang()` 同時換掉後端訊息與 `T{json}` 裡的字。
+### 2.6 測試
 
----
+```
+node scripts/test-i18n.mjs
+```
+
+檢查六件事：八種語言的 key 是否齊（缺的逐條印）、有沒有空字串、有沒有多餘的 key、
+`{0}`／`{1}` 的參數編號是否一致、**Rust 端需要的 129 個 key 前端都有**、
+工具列文字是否過長（只提醒）。**每個任務都要跑**——新字串沒補齊八語就算沒做完。
+
+2026-09-27：八種語言各 **389** 個 key，缺漏 0、空字串 0、多餘 0、參數不符 0。
+
+### 2.7 預設語言與不跟著語言變的東西
+
+- **第一次啟動**（`settings.language` 是空的）：用系統語言（`sys-locale`）對到這八種，
+  對不到用 `en`；然後把選到的存回設定。使用者在設定視窗改過就固定，不再看系統。
+  **舊版沒有這個行為**（舊版預設一律繁中）→ 新增。
+- 舊設定檔寫的是 `zh`（只有中英兩種的時期）→ 讀進來當 `zh-TW`（`setLang` 有處理，有測試）。
+- **日期／時間格式不跟著語言變**：log 的時間戳是舊版的相容格式
+  （`[yy-MM-dd HH:mm:ss]`，改了會讓舊的 log 解析不了），分頁 tooltip 的「執行 日:時:分」
+  也照舊版（`elapsedText`）。這次只翻文字。
 
 ## 3. 關於頁與更新檢查
 
@@ -159,11 +203,13 @@ Rust 端的 `set_lang()` 同時換掉後端訊息與 `T{json}` 裡的字。
 ## 4. 驗證
 
 ```
-cargo test                          229 passed（i18n 4、prefs 2、update 6）
+cargo test                          231 passed（i18n 6、prefs 2、update 6）
+node scripts/test-i18n.mjs          八種語言各 389 個 key，缺漏 0
 node scripts/i18n-audit.mjs         沒歸類的 0 條
 npm run tauri dev -- -- -- --verify 1
   [verify] 設定視窗（app 端路徑）
   [verify] 中／英介面切換
+  [verify] 八種語言（八個工具列文字互不相同、後端訊息跟著換）
   [verify] 檢查更新
 ```
 

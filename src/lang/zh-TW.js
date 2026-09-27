@@ -1,0 +1,499 @@
+// 介面文字：繁體中文（zh-TW）
+//
+// 一種語言一個檔，`src/strings.js` 把它們合起來。key 與註解和 `zh-TW.js` 一一對應——
+// **新增字串時八個檔都要加**，漏了 `node scripts/test-i18n.mjs` 會列出來。
+//
+// 這是**主語言**（字串的來源，來自舊版 `Localization/Loc.cs`）。
+export default {
+
+
+  // 工具列（舊版 tb.*）
+  'tb.new': '新分頁',
+  'tb.powershell': 'PowerShell',
+  'tb.customCmd': '自訂指令…',
+  'tb.split': '視窗分割',
+  'tb.tabs': '視窗分頁',
+  'tb.columns': '視窗分欄',
+  // 舊版三個 tip 的文字一樣，照抄
+  'tip.viewCycle': '點按循環：分頁 → 分割 → 分欄',
+  'tip.tabPanel': '顯示／隱藏分頁列表',
+  'tip.tabClose': '關閉',
+
+  // 分頁右鍵選單（舊版 menu.*）
+  'menu.rename': '更改名稱',
+  'menu.close': '關閉',
+
+  // 分頁 tooltip（舊版 tip.tabElapsed）
+  'tip.tabElapsed': '執行',
+
+  // 對話框（舊版 dlg.* / msg.*）
+  'dlg.renameTitle': '更改名稱',
+  'dlg.renamePrompt': '分頁名稱：',
+  'dlg.customTitle': '自訂指令',
+  'dlg.customPrompt': '要執行的指令（例：claude、codex、wsl）：',
+  'msg.closeTabTitle': '關閉分頁',
+  // {0} = 分頁名稱
+  'msg.closeTabConfirm': '確定要關閉「{0}」？',
+  'dlg.ok': '確定',
+  'dlg.cancel': '取消',
+  'dlg.yes': '是',
+  'dlg.no': '否',
+
+  // 連線種類（舊版 kind.*；後端也會送 kindLabel，這份是前端的後備）
+  'kind.powershell': 'PowerShell',
+  'kind.claude': 'Claude Code',
+  'kind.custom': '自訂連線',
+
+  'msg.connectFail': '連線失敗',
+  'msg.noTabs': '沒有分頁。按「新分頁」開一個。',
+
+  // 工具列：編輯群組（舊版 tb.* / tip.*）
+  'tb.copy': '複製',
+  'tb.paste': '純文字貼上',
+  'tb.copyall': '複製全部',
+  'tb.clear': '清除畫面',
+  'tb.page': '翻頁',
+  'tip.copy': '複製選取的文字',
+  'tip.paste': '把剪貼簿內容以純文字貼進終端機',
+  'tip.copyall': '複製全部緩衝文字',
+  'tip.clear': '清除畫面',
+  'tip.page': '捲動畫面（上/下一頁、最上/最下面）',
+
+  // 翻頁下拉（舊版 page.*）
+  'page.up': '上一頁',
+  'page.down': '下一頁',
+  'page.top': '移到最上面',
+  'page.bottom': '移到最下面',
+
+  // 終端機右鍵選單（舊版 ctx.*）
+  'ctx.copy': '複製',
+  'ctx.copyPaste': '複製且貼上',
+  'ctx.copyAllFile': '複製全部存至檔案',
+  'ctx.search': '搜尋',
+  'ctx.openUrl': '從瀏覽器開啟',
+  'ctx.copyUrl': '複製網址',
+
+  // 分頁右鍵：配色與 log（舊版 menu.*）
+  'menu.color': '配色',
+  'menu.colorDefault': '預設（設定顏色）',
+  'menu.colorSample': 'Aa 範例文字',
+  'menu.log': '記錄 log…',
+
+  // toast（舊版 toast.*，等效 ShowCopyFeedback）
+  'toast.copied': '複製成功',
+  'toast.copiedPasted': '已複製並貼上',
+  'toast.copiedAll': '已複製全部文字',
+  'toast.noSelection': '沒有選取文字',
+  'toast.noSelectionMouse': '沒有選取文字（此程式接管了滑鼠：按住 Shift 再拖曳選取）',
+  'toast.urlCopied': '已複製網址',
+  'toast.saved': '已存檔',
+
+  // 清除畫面（舊版 msg.clear*）
+  'msg.clearTitle': '清除畫面',
+  'msg.clearConfirm': '確定要清除「{0}」的畫面嗎？',
+
+  // log（舊版 dlg.logTitle / log.* / msg.*）
+  'dlg.logTitle': '記錄 log',
+  'log.path': 'log 存檔位置：',
+  'log.browse': '瀏覽…',
+  'log.timestamp': '每行前面加時間戳 [yy-MM-dd HH:mm:ss]',
+  'log.append': '檔案已存在時附加（append）',
+  'log.start': '開始記錄',
+  'log.needPath': '請輸入 log 存檔位置。',
+  'msg.stopLogAsk': '要停止記錄 log 嗎？',
+  'msg.logFail': '無法開始記錄：',
+  'msg.saveFail': '存檔失敗',
+  'tip.tabLogging': '● 記錄 log 中',
+
+  // 選工作目錄（舊版 dlg.pickDir*）
+  'dlg.pickDirPs': '選擇 PowerShell 工作目錄（可在此按「建立新資料夾」）',
+  'dlg.pickDirCustom': '選擇工作目錄（可在此按「建立新資料夾」）',
+
+  // 全選（舊版有這個字串但沒有呼叫端，TASK-006 當新功能補上）
+  'ctx.selectAll': '全選',
+
+  // ---- SSH（TASK-006）----
+  // 舊版的字面：`tb.ssh` = SSH/Telnet、`tip.ssh` = 開 SSH / Telnet（一個入口、對話框裡選類型）
+  'tb.ssh': 'SSH/Telnet',
+  'dlg.sshTitle': '開 SSH',
+  'dlg.telnetTitle': '開 Telnet',
+  'dlg.telnetPrompt': '主機（可加 :埠，預設 23）：',
+  // 舊版 ConnectDialog 是「類型／IP 主機／Port／保持連線／斷線自動重連」五個欄位；
+  // 完整對話框是 TASK-007，這裡先用一行 host[:port]
+  'dlg.sshPrompt': '主機（可加 :埠，預設 22）：',
+
+  // 主機金鑰確認。語意照 PuTTY，文字翻成繁中。
+  'hk.titleUnknown': '主機金鑰尚未記錄',
+  'hk.titleChanged': '⚠ 警告：主機金鑰不符！',
+  'hk.bodyUnknown':
+    '這台伺服器的主機金鑰沒有記錄在本程式的快取裡，無法確定它就是你想連的那一台。\n' +
+      '請用其他可信的方式核對下面的指紋。',
+  'hk.bodyChanged':
+    '可能有安全問題！這台伺服器的主機金鑰與本程式記錄的不同。\n' +
+      '這代表：伺服器的管理者換過金鑰，或者這條連線被冒充（中間人攻擊）。\n' +
+      '如果不確定，請按「取消」，並先向伺服器管理者確認新的指紋。',
+  'hk.noteUnknown': '按「接受並儲存」會把這把金鑰記下來，以後連同一台就不再詢問。',
+  // {0} = known_hosts 路徑、{1} = 行號
+  'hk.noteChanged': '舊記錄在 {0} 第 {1} 行。要改用新金鑰請先刪掉那一行，或按「接受並儲存」覆蓋。',
+  'hk.store': '接受並儲存',
+  'hk.once': '只這次',
+  'hk.cancel': '取消',
+  'hk.host': '主機',
+  'hk.alg': '演算法',
+
+  // 弱演算法警告（PuTTY 的 warn-below-this-line；TASK-008 B4）
+  'wa.title': '這條連線使用較舊的加密演算法',
+  // {0} = host[:port]
+  'wa.body':
+    '{0} 只支援（或優先選用）下面這些演算法。它們仍然可以用，但已經被認為較弱——\n' +
+      '很舊的網路設備通常只有這些，一般的伺服器不該用到。',
+  'wa.note': '按「繼續連線」之後，這台主機就不會再問（記在設定裡）。',
+  'wa.go': '繼續連線',
+  'wa.cancel': '取消',
+
+  // ---- 連線對話框（TASK-009 B6；TASK-010 加 Telnet 類型）----
+  // 對話框標題逐字照舊版 `conn.title`
+  'sd.title': '開 SSH / Telnet',
+  'sd.type': '類型',
+  'sd.host': 'IP / 主機',
+  'sd.port': 'Port',
+  'sd.user': '帳號',
+  'sd.userHint': '留空＝連上後在終端機問 login as:',
+  'sd.key': '金鑰檔',
+  'sd.keep': '保持連線',
+  'sd.keepHint': '分鐘，0＝關閉',
+  'sd.agent': '也試 Pageant／ssh-agent 裡的金鑰',
+  'sd.reconnect': '斷線自動重連',
+  'sd.adv': '進階：演算法與環境變數',
+  'sd.advNote': '都不選＝用預設順序（先強後弱）。⚠ 是警告線以下的舊演算法，協商到時會先問你。',
+  'sd.kex': '金鑰交換',
+  'sd.hostKey': '主機金鑰',
+  'sd.cipher': '加密',
+  'sd.mac': '訊息驗證',
+  'sd.env': '送出環境變數（一行一個 KEY=VALUE）',
+  'sd.envHint': '伺服器多半設了 AcceptEnv 白名單，沒放行只會印一行灰字、不影響連線。',
+  'sd.connect': '連線',
+  'sd.addFav': '加到我的最愛',
+  'sd.needHost': '請輸入主機。',
+
+  // ---- 連接埠（TASK-011；舊版 Dialogs/ComDialog + Loc 的 com.*）----
+  'tb.com': '連接埠',
+  'tip.com': '開 COM 埠',
+  'kind.com': '連接埠 (COM)',
+  'com.title': '開連接埠',
+  'com.open': '開啟',
+  'common.reset': '回到預設',
+  // 欄位名稱照舊版 XAML 的英文（使用者看到的就是這些字）
+  'cd.port': 'Port',
+  'cd.baud': 'Baud rate',
+  'cd.data': 'Data bits',
+  'cd.parity': 'Parity',
+  'cd.stop': 'Stop bits',
+  'cd.flow': 'Flow control',
+  'cd.rescan': '重新掃描',
+  'cd.needPort': '請選擇或輸入連接埠。',
+  'cd.noPorts': '目前偵測不到任何連接埠（USB 轉序列線插上後按「重新掃描」）。',
+
+  // ---- TTL 巨集（TASK-013；舊版 Loc 的 menu.macro／msg.stopMacroAsk／dlg.macroTitle）----
+  'menu.macro': '執行巨集…',
+  'macro.title': '執行巨集',
+  'macro.stopAsk': '要停止巨集嗎？',
+  'macro.readFail': '無法讀取巨集：',
+  'macro.pick': '選擇 TTL 巨集',
+  'macro.errorTitle': '巨集錯誤',
+  // {0}=訊息 {1}=檔名 {2}=行號 {3}=那一行的內容
+  'macro.errorBody': '{0}\n\n{1} 第 {2} 行：\n{3}',
+  // 分頁 tooltip 多一行（新增；舊版只有「巨集執行中」）
+  'tip.tabMacro': '● 巨集執行中：{0}（第 {1} 行）',
+
+  // ---- 輸入文字（TASK-014；舊版 Loc 的 compose.*，文字逐字照抄）----
+  'tb.compose': '輸入文字',
+  'tip.compose': '先打好文字再送到目前分頁（中文用輸入法打在這裡，不會被逐鍵送出）',
+  'compose.title': '輸入文字',
+  'compose.placeholder': '在此輸入要送出的文字（可多行，Ctrl+Enter 送出）',
+  'compose.send': '送出',
+  'compose.back': '返回',
+  'compose.clear': '清除',
+  'compose.save': '儲存',
+  'compose.undo': '復原',
+  'compose.sendEnter': '送出後送 Enter',
+  'compose.noTab': '沒有分頁可送',
+  'compose.loadFile': '載入文字檔',
+  // {0} = 用哪種編碼解出來的（新增：舊版沒有告訴使用者）
+  'compose.loaded': '已載入（{0}）',
+  // {0} = 存到哪裡
+  'compose.saved': '已儲存：{0}',
+
+  // ---- 離開程式與恢復分頁（TASK-010；舊版 Dialogs/ExitDialog + 1.0.45）----
+  'exit.title': '離開 AwayTerminal',
+  'exit.body': '要關閉程式嗎？',
+  // 文字逐字照舊版 Loc 的 exit.restore
+  'exit.restore': '下次開啟恢復目前分頁（含畫面上的舊訊息）',
+  'exit.go': '離開',
+  // {0} = 分頁數
+  'restore.done': '已恢復 {0} 個分頁',
+  'restore.failed': '有 {0} 個分頁恢復失敗（詳情見後端 log）',
+  'sd.quick': '快速連線（host[:port]）…',
+
+  // ---- 我的最愛（TASK-009 C；舊版 fav.* / tb.favorites / tip.favorites）----
+  'tb.favorites': '我的最愛',
+  'tip.favorites': '我的最愛：點選開啟，或把目前分頁加進來',
+  'fav.empty': '（還沒有我的最愛）',
+  'fav.add': '加到我的最愛',
+  'fav.addNamed': '加到我的最愛：{0}',
+  'fav.settings': '設定…',
+  'fav.added': '已加入我的最愛：{0}',
+  'fav.deleteAsk': '確定要從我的最愛刪除「{0}」？',
+  'fav.nameTitle': '我的最愛',
+  'fav.namePrompt': '名稱：',
+  'fav.up': '上移',
+  'fav.down': '下移',
+
+  // ---- 自訂連線（TASK-007，舊版 custom.*）----
+  'conn.title': '自訂連線',
+  'conn.detect': '自動偵測',
+  'conn.new': '新增',
+  'conn.save': '儲存',
+  'conn.delete': '刪除',
+  'conn.empty': '清單是空的。按「自動偵測」找出這台機器上裝了哪些工具。',
+  'conn.newHint': '新增一條連線：填名稱與執行檔路徑後按「儲存」。',
+  'conn.saved': '已儲存。',
+  'conn.deleted': '已刪除。',
+  'conn.detectNone': '沒有找到新的工具（可能都已經在清單裡，或都沒安裝）。',
+  'conn.detectDone': '已加入：',
+  'conn.sandboxOn': '沙盒',
+  'conn.sandboxOff': '無沙盒',
+  'conn.hiddenTag': '隱藏',
+  'dlg.close': '關閉',
+  'tb.manageConns': '自訂連線設定…',
+
+  // ---- 沙盒模式（新功能）----
+  'sb.menu': '沙盒模式',
+  'sb.clear': '清除沙盒…',
+  'sb.tipOn': '沙盒：{0}',
+  'sb.tipBranch': '沙盒分支：{0}',
+  'sb.tipNoWorktree': '沙盒（無 worktree，不是 git repo）',
+  'sb.tipOff': '沙盒：關閉',
+  'sb.changedTitle': '沙盒模式',
+  // {0} = 連線名稱、{1} = 開啟/關閉
+  'sb.changedBody': '「{0}」的沙盒模式已{1}。\n這個改變要等**下次啟動這個分頁**才生效。\n要現在就重新啟動這個分頁嗎？（會關掉目前的連線）',
+  'sb.on': '開啟',
+  'sb.off': '關閉',
+  'sb.restartNow': '重新啟動分頁',
+  'sb.later': '稍後',
+  'sb.clearTitle': '清除沙盒',
+  // {0} = worktree 路徑、{1} = 分支
+  'sb.clearBody': '要移除這個沙盒的 worktree 嗎？\n\n{0}\n\n分支 {1} 會**保留**——裡面若有還沒合併的成果，之後仍然可以用 git merge 取回（做法見 docs/AGENT-SANDBOX.md）。',
+  'sb.cleared': '沙盒已移除（分支保留）。',
+  'sb.noSandbox': '這個分頁沒有沙盒。',
+  // ---- 設定視窗（TASK-015 A；舊版 Dialogs/SettingsDialog + Loc 的 settings.* / font.*）----
+  'tb.settings': '其他設定',
+  'tip.settings': '字型、顏色、語言與其他設定',
+  'settings.title': '設定',
+  // 機器翻譯的說明（設定視窗的語言下拉底下，以及關於頁各一行）
+  'settings.langNote': '除了「繁體中文」與 English 之外都是機器翻譯，歡迎修正。',
+  'settings.groupLang': '語言',
+  'settings.groupFont': '字體背景顏色',
+  'font.family': '字型',
+  'font.size': '大小',
+  'font.fg': '文字顏色',
+  'font.bg': '背景顏色',
+  'font.pick': '點我選顏色',
+  'settings.groupIme': 'Claude 輸入送出',
+  'settings.imeQuiet': '送出前等待靜止 (ms)',
+  'settings.imeQuietHelpLink': '這是什麼？',
+  'settings.imeQuietHelpTitle': '送出前等待靜止 (ms)',
+  // 逐字照舊版（很長，是使用者真的會讀的說明）
+  'settings.imeQuietHelp':
+    '此設定只作用於 Claude Code 分頁。\n\n' +
+      '打注音（整段送出）、貼上、或按 Backspace 時，若 Claude 正在重繪畫面（執行中、' +
+      '建議文字在跳），直接送出偶爾會讓 Claude 把剛輸入的字重複顯示成兩份，或在全形/半形' +
+      '混合時把游標位置算錯、少一格或留殘影。\n\n' +
+      '開啟後，這幾類輸入會等 Claude 畫面靜止「這麼多毫秒」才送出，避開重繪空檔、降低上述問題。\n\n' +
+      '• 只有 Claude 忙碌重繪時才會有這點延遲；停在提示列打字時 0 延遲。\n' +
+      '• 一般英數打字、Enter、Ctrl 鍵不受影響。\n' +
+      '• 數字越大越保守（較不易出錯，忙碌時延遲略增）；越小反應越快、保護越弱。\n' +
+      '• 設 0 = 關閉此功能（立即送出）。\n\n' +
+      '預設 20。這是降低問題頻率的緩解措施；根本原因在 Claude Code 端的畫面重繪。',
+  // 檔案總管右鍵選單：**還沒做**（Windows 登錄檔那一段是 TASK-016），所以灰掉並註明
+  'settings.groupShell': '檔案總管',
+  'settings.shellMenu':     '資料夾右鍵選單加入「用 AwayTerminal 開啟」（在該資料夾開 PowerShell 分頁）',
+  'settings.todo': '（這項還沒搬過來）',
+
+  // ---- 新版多的設定（舊版只能手改 settings.json）----
+  'settings.groupMore': '其他',
+  'settings.restoreLines': '恢復分頁保留的行數',
+  'settings.restoreLinesHint': '0＝不保留畫面紀錄',
+  'settings.exitRestore': '關閉程式時預設勾「恢復分頁」',
+  'settings.keepAlive': '保持連線（分鐘，0＝關）',
+  'settings.autoReconnect': '新連線預設開啟斷線自動重連',
+  'settings.logDir': 'log 預設資料夾',
+  'settings.browse': '瀏覽…',
+  'settings.logTimestamp': 'log 每行加時間戳',
+  'settings.logAppend': 'log 檔已存在時附加在後面',
+  'settings.groupSandbox': '沙盒模式',
+  'settings.sandboxDefault': '新增的自訂連線預設開啟沙盒',
+  'settings.sandboxNote':     '沙盒是防呆不是防壞（說明見 docs/AGENT-SANDBOX.md）。改這裡不會動到已經存在的連線。',
+  'settings.weakClear': '清除已接受的弱演算法記錄',
+  // {0} = 幾筆
+  'settings.weakCount': '目前記了 {0} 台主機',
+  'settings.weakCleared': '已清除。',
+  'settings.needRestart': '（下次啟動分頁才生效）',
+  'common.ok': '確定',
+  'common.cancel': '取消',
+
+  // ---- 關於（TASK-015 C；舊版 About_Click）----
+  'tb.about': '關於',
+  'tip.about': '版本、授權與檢查更新',
+  'about.title': '關於 AwayTerminal',
+  'about.version': '版本',
+  'about.buildTime': '編譯時間',
+  'about.author': '作者',
+  'about.download': '下載',
+  'about.license': '授權',
+  'about.thirdParty': '第三方元件',
+  'about.noticesLink': '完整第三方授權聲明',
+  'about.noticesFail': '讀不到 THIRD-PARTY-NOTICES.md',
+  'about.close': '關閉',
+
+  // ---- 檢查更新（照舊版：只有按下去才查，失敗只在按鈕旁顯示一行）----
+  'update.check': '檢查更新',
+  'update.checking': '檢查中…',
+  'update.latest': '已是最新版本',
+  'update.failed': '檢查失敗（請確認網路後再試）',
+  'update.title': '檢查更新',
+  'update.found': '有新版本可用',
+  'update.current': '目前版本',
+  'update.latestVer': '最新版本',
+  'update.notes': '更新內容',
+  'update.goDownload': '前往下載頁',
+  'update.close': '關閉',
+
+  // ---- 後端（Rust）的訊息：錯誤、終端機畫面上的字、檔案對話框標題 ----
+  // 這些由前端在啟動與切語言時推給後端（`i18n_push`），所以**翻譯只有一份**。
+  // 加 key 的時候 `src-tauri/src/i18n.rs` 的表也要加，`scripts/test-i18n.mjs` 會比對。
+
+  'err.sshNeedsParams': 'kind=ssh 需要 ssh 參數',
+  'err.telnetNeedsParams': 'kind=telnet 需要 telnet 參數',
+  'err.connNeedsName': 'kind=conn 需要 conn（連線名稱）',
+  'err.customNeedsCommand': 'kind=custom 需要 command',
+  'err.needHost': '請輸入主機',
+  'err.connNotFound': '找不到自訂連線：{0}',
+  'err.commandNotFound': '找不到指令：{0}',
+  'err.exeMissing': '執行檔不存在：{0}',
+  'err.unsupportedKind': '尚未支援的連線種類：{0}',
+  'err.noPowerShell': '找不到 pwsh.exe 或 powershell.exe（PATH 與 System32 都沒有）',
+  'err.noPowerShellVia': '找不到 PowerShell（via_powershell 需要它）',
+  'err.launchFailed': '啟動 {0} 失敗：{1}',
+  'err.tabCreateFailed': '分頁建立失敗',
+  'err.tabNotFound': '找不到分頁 {0}',
+  'err.tabNotFoundPlain': '找不到分頁',
+  'err.tabsNotReady': '分頁清單還沒準備好',
+  'err.settingsNotReady': '設定還沒準備好',
+  'err.connListNotReady': '連線清單還沒準備好',
+  'host.linkClicked': '點了終端機裡的連結（開啟選單尚未實作）',
+  'host.mouseTakeover': '程式接管滑鼠提示（複製／選取功能尚未實作）',
+  'host.agentRatio': 'Multi-Agent 分隔線比例（代理團隊尚未實作）',
+  'host.unknown': '未知',
+  'dlg.loadTextFile': '載入文字檔',
+  'dlg.save': '儲存',
+  'dlg.textFiles': '文字檔',
+  'dlg.allFiles': '所有檔案',
+  'dlg.pickMacro': '選擇 TTL 巨集',
+  'dlg.teratermMacro': 'TeraTerm 巨集',
+  'err.filePickFailed': '檔案選擇失敗：{0}',
+  'err.savePickFailed': '存檔對話框失敗：{0}',
+  'err.readFileFailed': '讀取檔案失敗：{0}',
+  'err.saveFileFailed': '儲存檔案失敗：{0}',
+  'err.writeFailed': '寫入失敗：{0}',
+  'err.readFailed': '讀檔失敗：{0}',
+  'compose.loadTooBig': '檔案太大（上限 {0} MB），未載入。',
+  'err.notBig5': '這段文字沒辦法用 Big5 表示',
+  'fav.title': '我的最愛',
+  'fav.exists': '已經在我的最愛裡了：{0}',
+  'fav.nameTaken': '已經有一筆叫「{0}」了',
+  'err.needName': '請輸入名稱',
+  'err.needExePath': '請輸入執行檔路徑',
+  'err.needLogPath': '請輸入 log 存檔位置。',
+  'err.logStartFailed': '無法開始記錄：{0}',
+  'err.macroLogNoName': '巨集的 logopen 沒有給檔名',
+  'err.logOpenTimeout': '開啟 {0} 逾時（{1} 秒沒有反應）。這台機器的防毒／資料夾保護可能擋住了寫入，請把 AwayTerminal 加進例外，或把 log 位置換到別的資料夾。',
+  'err.saveFailed': '存檔失敗：{0}',
+  'err.onlyHttp': '只允許 http/https：{0}',
+  'err.tempOnlyPath': '只接受暫存資料夾底下的路徑（{0}）',
+  'search.placeholder': '搜尋',
+  'search.prev': '上一個 (Shift+Enter)',
+  'search.next': '下一個 (Enter)',
+  'search.close': '關閉 (Esc)',
+  'ma.stateIdle': '閒置',
+  'ma.stateBusy': '忙碌',
+  'ma.stateQueued': '有信待送',
+  'ma.stateExited': '已結束',
+  'ma.stateBusyQueued': '忙碌 · 有信待送',
+  'term.restoreSeparator': '──── 以上為上次關閉前的紀錄（{0}）────',
+  'term.connEnded': '[連線已結束]',
+  'term.pressEnter': '[按 Enter 在此分頁重新連線]',
+  'term.reconnectIn': '[連線中斷，{0} 秒後自動重連…（關閉分頁可停止）]',
+  'err.sandboxDirFailed': '建立沙盒目錄失敗：{0}',
+  'err.gitFailed': 'git 執行失敗（{0}）：{1}',
+  'err.notGitRepo': '不在 git repo 裡',
+  'err.tabNoSandbox': '這個分頁沒有沙盒',
+  'err.sandboxNoWorktree': '這個沙盒沒有 worktree（不是 git repo），沒有東西要移除',
+  'algo.kex': '金鑰交換',
+  'algo.hostkey': '主機金鑰',
+  'algo.cipher': '加密',
+  'algo.mac': '訊息驗證',
+  'err.sshRuntime': '建立 SSH runtime 失敗',
+  'term.sshCertUnsupported': '這台主機用 OpenSSH 憑證當主機金鑰，目前還不支援。',
+  'term.sshConnecting': '連線到 {0}:{1} …',
+  'term.sshEnvFailed': '（環境變數 {0} 送不出去：{1}）',
+  'term.sshKeyRejected': '金鑰被拒絕，改用其他方式。',
+  'term.sshKeyAuthFailed': '金鑰驗證失敗（{0}）。',
+  'err.sshConnectFailed': '連線失敗：{0}',
+  'err.sshNoUser': '沒有輸入帳號，連線取消。',
+  'err.sshSessionFailed': '開啟 session 失敗：{0}',
+  'err.sshPtyFailed': '請求 PTY 失敗：{0}',
+  'err.sshShellFailed': '開啟 shell 失敗：{0}',
+  'err.sshAuthFailed': '驗證失敗：{0}',
+  'err.sshAuthFailedPlain': '驗證失敗。',
+  'err.sshBadPassword3': '密碼錯誤三次，連線結束。',
+  'err.sshKeyRead': '讀不到金鑰檔 {0}：{1}',
+  'err.sshKeyDecrypt': '金鑰解密失敗：{0}',
+  'err.sshKeyLoad': '金鑰讀取失敗：{0}',
+  'err.pageantMissing': '找不到 Pageant：{0}',
+  'err.noAuthSock': '沒有 SSH_AUTH_SOCK',
+  'err.agentConnect': '連不上 ssh-agent：{0}',
+  'err.agentIdentities': 'agent 沒有回應身分清單：{0}',
+  'err.cancelled': '已取消。',
+  'err.connCancelled': '連線已取消。',
+  'err.mkdirFailed': '建立資料夾失敗：{0}',
+  'err.keySerialize': '金鑰序列化失敗：{0}',
+  'err.knownHostsOpen': '開啟 known_hosts 失敗：{0}',
+  'err.knownHostsWrite': '寫入 known_hosts 失敗：{0}',
+  'err.hostNotFoundWhy': '找不到主機 {0}：{1}',
+  'err.hostNotFound': '找不到主機 {0}',
+  'err.connectFailed': '連線 {0} 失敗：{1}',
+  'com.parityUnsupported': '同位檢查 {0} 這個函式庫不支援（只有 None／Odd／Even），已改用 None',
+  'com.stopBitsUnsupported': '停止位元 {0} 這個函式庫不支援（只有 1 與 2），已改用 1',
+  'com.flowRtsXonUnsupported': '流量控制 RTS/CTS+XON/XOFF 這個函式庫不支援，已改用 RTS/CTS',
+  'com.flowUnknown': '流量控制 {0} 認不出來，已改用 None',
+  'com.dataBitsUnsupported': '資料位元 {0} 不支援，已改用 8',
+  'err.comOpenFailed': '開啟 {0} 失敗：{1}',
+  'err.comDtrFailed': '設定 DTR 失敗：{0}',
+  'err.comRtsFailed': '設定 RTS 失敗：{0}',
+  'err.comHandleFailed': '{0} 無法複製 handle：{1}',
+  'err.conptyCreate': 'ConptyCreatePseudoConsole 失敗 (HRESULT 0x{0})',
+  'err.createPseudoCon': 'CreatePseudoConsole 失敗 (HRESULT 0x{0})',
+  'err.attrListSizeZero': 'InitializeProcThreadAttributeList 回報大小 0',
+  'err.unixPtyTodo': '此平台的 PTY 後端尚未實作（Windows ConPTY 已完成，forkpty 待後續任務）',
+  'err.unixPtyShort': 'unix pty (尚未實作)',
+  'err.macroRunning': '這個分頁已經在跑巨集了',
+  'err.macroReadFail': '無法讀取巨集：{0}',
+  'err.macroThread': '開不了巨集執行緒：{0}',
+  'err.noFileLoader': '這個直譯器沒有檔案載入器，include 不能用：{0}',
+  'err.noSuchFile': '沒有這個檔：{0}',
+  'term.macroInterrupted': '[巨集已中斷：{0}]',
+  'term.macroDone': '[巨集執行完畢：{0}]',
+  'term.macroError': '[巨集錯誤] {0} {1}:{2}',
+  'term.regexOptUnsupported': '[巨集] regexoption {0} 這個版本沒有支援（見 docs/TTL-REGEX.md）',
+};
