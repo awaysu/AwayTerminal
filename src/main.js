@@ -16,10 +16,11 @@ import { Unicode11Addon } from '@xterm/addon-unicode11';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import { SerializeAddon } from '@xterm/addon-serialize';
 import { invoke, Channel } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 
 import { bridgeReady, log, createSession } from './bridge.js';
-import { initTabBar, currentTabState } from './tabbar.js';
-import { T } from './strings.js';
+import { initTabBar, currentTabState, askYesNo, showInfo } from './tabbar.js';
+import { T, fmt } from './strings.js';
 import { applyLang, getLang, pushToBackend } from './i18n.js';
 import { matchLang, setLang, LANGS } from './strings.js';
 
@@ -238,6 +239,9 @@ async function awayVerify() {
   await verifyLanguage();
   await verifyAllLanguages();
   await verifyUpdate();
+  await verifyAdb();
+  await verifyShellMenu();
+  await verifyMigrate();
   await verifyRestore();
   await verifySandbox();
 }
@@ -958,6 +962,205 @@ async function awayBenchSmall(iterations = 200) {
 }
 window.awayBenchSmall = awayBenchSmall;
 
+/**
+ * ADB 驗證（TASK-016 B）：路徑搜尋與裝置清單那條路。
+ *
+ * 這台機器不一定裝了 adb、也不一定接著手機，所以驗的是「**流程對不對**」：
+ * 找不到 adb 要明確說找不到（而不是噴錯），有 adb 就要列得出裝置（可能是 0 台）。
+ */
+async function verifyAdb() {
+  const lines = ['[verify] ADB（app 端路徑）'];
+  try {
+    const r = await invoke('adb_devices', { adbPath: null });
+    lines.push(`[verify] adb 路徑：${r.adb || '(找不到)'}`);
+    if (!r.adb) {
+      lines.push(`[verify] 找不到 adb 時有給下載頁：${!!r.downloadUrl}（${r.downloadUrl}）`);
+      lines.push('[verify] 沒有 adb → 裝置清單那段跳過（這台機器沒裝）');
+    } else {
+      const usable = r.devices.filter((d) => d.state === 'device');
+      lines.push(
+        `[verify] 裝置 ${r.devices.length} 台（可用 ${usable.length}）：` +
+          (r.devices.map((d) => `${d.serial}/${d.state}`).join('、') || '(沒有)'),
+      );
+      lines.push('[verify] 0 台時前端會提示 adb.noDevice，不會開分頁（見 src/adb.js）');
+    }
+    // 指定一個不存在的路徑 → 要退回自動搜尋（不是直接失敗）
+    const r2 = await invoke('adb_devices', { adbPath: 'C:\\__no_such_adb__.exe' });
+    lines.push(`[verify] 指定不存在的路徑會退回自動搜尋：${r2.adb === r.adb}`);
+  } catch (e) {
+    lines.push(`[verify] 失敗：${e}`);
+  }
+  log(lines.join('\n'));
+}
+
+/**
+ * 檔案總管右鍵選單驗證（TASK-016 C）：寫入 → 讀回 → 刪除。
+ *
+ * ⚠️ **只碰 `HKCU`**，而且用的是**測試專用的 key 名稱**（`shell_menu_apply` 在測試模式下
+ * 才會用專用名稱，所以這裡走的是真的 key）→ 因此結束時一定要復原成原本的狀態。
+ */
+async function verifyShellMenu() {
+  const lines = ['[verify] 檔案總管右鍵選單（只碰 HKCU，而且用測試專用的 key）'];
+  let real = null;
+  try {
+    // 使用者真的那個 key：**只讀**，不動它（裡面可能是舊版 v1.2.8 登錄的）
+    real = await invoke('shell_menu_state', { sandbox: false });
+    lines.push(
+      `[verify] 使用者真的那個 key：已登錄=${real.enabled}${real.command ? '（' + real.command + '）' : ''}（只讀）`,
+    );
+    const on = await invoke('shell_menu_apply', {
+      enable: true,
+      text: 'AwayTerminal --verify',
+      sandbox: true,
+    });
+    lines.push(
+      `[verify] 登錄後讀回：已登錄=${on.enabled}、command=${on.command}` +
+        `　（要有 --open-dir 與 %V：${/--open-dir/.test(on.command) && on.command.includes('%V')}）`,
+    );
+    lines.push(`[verify] 指向目前的執行檔：${on.command.includes(real.exe)}`);
+    const off = await invoke('shell_menu_apply', { enable: false, text: '', sandbox: true });
+    lines.push(`[verify] 移除後讀回：已登錄=${off.enabled}（要 false）`);
+  } catch (e) {
+    lines.push(`[verify] 失敗：${e}`);
+  } finally {
+    // 測試專用的 key 一定要收乾淨；使用者真的那個 key 從頭到尾沒被動過
+    const left = await invoke('shell_menu_state', { sandbox: true }).catch(() => ({}));
+    lines.push(`[verify] 測試專用的 key 已清掉：${left.enabled === false}`);
+    const still = await invoke('shell_menu_state', { sandbox: false }).catch(() => ({}));
+    lines.push(
+      `[verify] 使用者的 key 沒被動過：${!!real && still.command === real.command}` +
+        `（${still.command || '(沒有登錄)'}）`,
+    );
+    log(lines.join('\n'));
+  }
+}
+
+/**
+ * 匯入舊版設定驗證（TASK-016 D）：**用一份手寫的舊版格式 JSON**（含中文路徑、
+ * 新版不支援的 COM 值、代理團隊的最愛），比對匯入結果。
+ *
+ * ⚠️ 不碰使用者真的舊檔，也不留下匯入的結果（驗完把設定還原）。
+ */
+async function verifyMigrate() {
+  const lines = ['[verify] 匯入舊版設定'];
+  const before = await invoke('settings_get');
+  const tmp = await invoke('temp_dir');
+  const file = `${tmp}\\awayterm-verify-old-settings.json`;
+  const old = {
+    FontFamily: 'Consolas',
+    FontSize: 19,
+    Foreground: '#00FF00',
+    Background: '#101010',
+    ImeQuietMs: 35,
+    Language: 'zh',
+    LogDir: 'D:\\紀錄\\AwayTerminal',
+    ComPort: 'COM7',
+    ComParity: 'Mark',
+    ComStopBits: 'OnePointFive',
+    ComFlow: 'RequestToSendXOnXOff',
+    RestoreBufferLines: 500,
+    TelegramBotToken: '123:abc',
+    CustomConns: [
+      { Name: '__verify_conn__', Path: 'C:\\x.exe', Args: '-a', Icon: 'run', CloseKey: 'ctrl-d', CloseCount: 2, PickDir: true },
+    ],
+    Favorites: [
+      { Name: '__verify_fav__', Tab: { Type: 'ssh', Host: '192.168.1.9', Port: 2222, User: 'root' }, TeamSetup: '' },
+      { Name: '__verify_team__', Tab: { Type: 'ps' }, TeamSetup: '{"folder":"x"}' },
+    ],
+    SavedTabs: [{ Type: 'ps' }],
+    AdbPath: 'C:\\adb.exe',
+  };
+  try {
+    await invoke('save_text_to_file_at', { path: file, text: JSON.stringify(old) });
+    const r = await invoke('migrate_import', { path: file });
+    const now = await invoke('settings_get');
+    lines.push(
+      `[verify] 套用 ${r.applied} 個欄位、${r.conns} 條自訂連線、${r.favorites} 筆我的最愛、跳過 ${r.skipped.length} 項`,
+    );
+    lines.push(
+      `[verify] 字型／字級／顏色：${now.fontFamily === 'Consolas' && now.fontSize === 19 && now.foreground === '#00FF00'}`,
+    );
+    lines.push(`[verify] 語言 zh → zh-TW：${now.language === 'zh-TW'}`);
+    lines.push(`[verify] 中文路徑沒壞：${now.logDir === 'D:\\紀錄\\AwayTerminal'}`);
+    lines.push(
+      `[verify] 新版不支援的 COM 值降級並提醒（${now.comParity}/${now.comStopBits}/${now.comFlow}）：` +
+        `${now.comParity === 'None' && now.comStopBits === 'One' && now.comFlow === 'RequestToSend' && r.warnings.length === 3}`,
+    );
+    lines.push(`[verify] Telegram token 有存下來（功能還沒做）：${now.telegramBotToken === '123:abc'}`);
+    const fav = now.favorites.find((f) => f.name === '__verify_fav__');
+    lines.push(
+      `[verify] SSH 最愛的參數：${!!fav && fav.ssh && fav.ssh.host === '192.168.1.9' && fav.ssh.port === 2222}`,
+    );
+    lines.push(`[verify] 代理團隊的最愛有跳過：${r.skippedFavorites.includes('__verify_team__')}`);
+    lines.push(`[verify] SavedTabs 沒有匯入（工作階段狀態）：${r.skipped.includes('SavedTabs')}`);
+  } catch (e) {
+    lines.push(`[verify] 失敗：${e}`);
+  } finally {
+    // 還原設定（連自訂連線與我的最愛一起清掉驗證用的那兩筆）
+    await invoke('settings_apply', {
+      patch: {
+        fontFamily: before.fontFamily,
+        fontSize: before.fontSize,
+        foreground: before.foreground,
+        background: before.background,
+        imeQuietMs: before.imeQuietMs,
+        language: before.language,
+        logDir: before.logDir,
+        restoreBufferLines: before.restoreBufferLines,
+      },
+    }).catch(() => {});
+    await invoke('custom_delete', { name: '__verify_conn__' }).catch(() => {});
+    await invoke('fav_delete', { name: '__verify_fav__' }).catch(() => {});
+    log(lines.join('\n'));
+  }
+}
+
+/**
+ * 第一次啟動時問要不要匯入舊版設定（`CLAUDE.md` 的「匯入舊版 settings.json」）。
+ *
+ * 只在**第一次啟動**（新版還沒有 settings.json）而且舊檔存在時問一次；
+ * 之後隨時可以從設定視窗的「匯入舊版設定…」再做。**舊檔只讀，不會被改。**
+ */
+async function offerMigration() {
+  try {
+    const p = await invoke('migrate_probe');
+    if (!p.oldExists || !p.firstRun) return;
+    const yes = await askYesNo(T['migrate.title'], fmt('migrate.ask', p.oldPath, p.conns, p.favorites));
+    if (!yes) return;
+    const r = await invoke('migrate_import', {});
+    log(
+      `[migrate] 匯入舊版設定：套用 ${r.applied} 個欄位、${r.conns} 條自訂連線、` +
+        `${r.favorites} 筆我的最愛（跳過 ${r.skipped.length} 項）`,
+    );
+    await window.AwayAsk?.info?.(
+      T['migrate.title'],
+      fmt('migrate.done', r.applied, r.conns, r.favorites) +
+        (r.warnings.length ? '\n\n' + r.warnings.join('\n') : ''),
+    );
+  } catch (e) {
+    log(`[migrate] 失敗：${e}`);
+  }
+}
+
+/**
+ * 在指定資料夾開一個 shell 分頁（檔案總管右鍵「用 AwayTerminal 開啟」）。
+ *
+ * 舊版 `OpenDirFromShell`：資料夾不存在就提示、存在就開一個 PowerShell 分頁在那裡。
+ */
+async function openDirTab(dir) {
+  try {
+    const ok = await invoke('dir_exists', { path: dir });
+    if (!ok) {
+      log(`[open-dir] 找不到資料夾：${dir}`);
+      return;
+    }
+    await createSession({ kind: 'shell', cwd: dir });
+    log(`[open-dir] 已在 ${dir} 開了一個分頁`);
+  } catch (e) {
+    log(`[open-dir] 失敗：${e}`);
+  }
+}
+
 // ------------------------------------------------------------------ 啟動
 
 (async () => {
@@ -1000,9 +1203,20 @@ window.awayBenchSmall = awayBenchSmall;
     cmd: params.get('cmd') || cli.cmd || null,
     verify: parseInt(params.get('verify') || '', 10) || cli.verify || 0,
     bench: params.get('bench') === '1' || cli.bench,
+    // 檔案總管右鍵「用 AwayTerminal 開啟」（參數名照舊版：`--open-dir`）
+    openDir: params.get('openDir') || cli.openDir || null,
   };
   // bridge.js 的 onReady 會讀這個決定第一條 session 用什麼指令開
   window.AwayLaunch = opt;
+
+  // 檔案總管右鍵開資料夾：
+  //   - **已經在跑**：第二個實例把路徑交給我們（單一執行個體 plugin）→ `open-dir` event
+  //   - **還沒在跑**：那個實例就是自己 → `--open-dir` 參數（下面 terminal.js 載完再開，
+  //     讓它成為作用中分頁，同舊版「恢復分頁之後再開」）
+  await listen('open-dir', (e) => {
+    const dir = typeof e.payload === 'string' ? e.payload : '';
+    if (dir) openDirTab(dir);
+  });
 
   // terminal.js 是舊版原檔（IIFE），載入即執行並在最後送 `ready`
   try {
@@ -1011,6 +1225,12 @@ window.awayBenchSmall = awayBenchSmall;
     log(`[main] 載入 terminal.js 失敗：${e && e.stack ? e.stack : e}`);
     throw e;
   }
+
+  // 第一次啟動而且有舊版設定 → 問要不要匯入（舊檔只讀，不會被改）
+  if (!opt.verify) await offerMigration();
+
+  // 啟動參數帶的資料夾（右鍵開啟時沒有既有實例可轉交）→ 開一個 shell 分頁在那裡
+  if (opt.openDir) await openDirTab(opt.openDir);
 
   if (opt.bench) {
     try {

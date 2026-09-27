@@ -101,6 +101,14 @@ pub struct AppSettings {
     pub saved_tabs: Vec<crate::restore::SavedTab>,
     /// 離開對話框「下次開啟恢復目前分頁」的勾選狀態（舊版 `ExitRestoreTabs`，預設開）。
     pub exit_restore_tabs: bool,
+    /// Telegram 遠端（舊版 `RemoteEnabled`／`TelegramBotToken`／`TelegramChatId`／`RemoteNotify`）。
+    ///
+    /// **功能是階段 4**；這裡先存著，因為匯入舊版設定時不該把使用者的 token 弄丟
+    /// （PM 在 TASK-016 D 指定）。⚠️ token 是機密：不進 log、不進 tooltip、不進恢復分頁。
+    pub remote_enabled: bool,
+    pub telegram_bot_token: String,
+    pub telegram_chat_id: i64,
+    pub remote_notify: bool,
     /// **新版多的**：新加入的自訂連線預設要不要開沙盒（設定視窗可改；預設開，
     /// 同 `CLAUDE.md`「沙盒模式…預設開啟」）。已存在的連線不受影響。
     /// ⚠️ WSL／ADB 這類「拿來操作機器」的工具即使這裡是開，自動偵測仍然預設關
@@ -234,6 +242,10 @@ impl Default for AppSettings {
             favorites: Vec::new(),
             saved_tabs: Vec::new(),
             exit_restore_tabs: true,
+            remote_enabled: false,
+            telegram_bot_token: String::new(),
+            telegram_chat_id: 0,
+            remote_notify: false,
             sandbox_default: true,
             compose_send_enter: true,
             custom_conns: Vec::new(),

@@ -496,4 +496,32 @@ export default {
   'term.macroDone': '[巨集執行完畢：{0}]',
   'term.macroError': '[巨集錯誤] {0} {1}:{2}',
   'term.regexOptUnsupported': '[巨集] regexoption {0} 這個版本沒有支援（見 docs/TTL-REGEX.md）',
+  // ---- ADB（TASK-016 B；舊版 v1.0.18 起 ADB 是「自訂連線」，開的時候走裝置流程）----
+  'tb.adb': 'ADB',
+  'tip.adb': '開 ADB shell',
+  'adb.notInstalled': '找不到 adb。AwayTerminal 不再內建 adb，請自行安裝 Android SDK Platform Tools\n（或在「設定」中指定 adb.exe 路徑）。\n\n已搜尋：PATH、ANDROID_HOME / ANDROID_SDK_ROOT、Android Studio 預設位置。\n\n要開啟官方下載頁嗎？',
+  'adb.noDevice': '沒有偵測到 adb 裝置。',
+  'adb.pickDevice': '選擇裝置',
+  'adb.opened': 'ADB：{0}',
+  'err.adbNotFound': '找不到 adb',
+  // ---- 檔案總管右鍵選單（TASK-016 C）----
+  'shell.menuText': '用 AwayTerminal 開啟',
+  'settings.shellMenuHint': '勾了會在 HKCU 寫兩個 key（不碰 HKLM，免管理員）',
+  'shell.dirMissing': '找不到資料夾：\n{0}',
+  // ---- 匯入舊版設定（TASK-016 D；舊檔只讀）----
+  'settings.groupMigrate': '舊版設定',
+  'migrate.button': '匯入舊版設定…',
+  'migrate.pick': '選舊版的 settings.json',
+  'migrate.title': '匯入舊版設定',
+  'migrate.ask': '找到舊版 AwayTerminal 的設定：\n{0}\n\n裡面有 {1} 條自訂連線、{2} 筆我的最愛。\n要匯入嗎？（舊檔只會被讀取，不會改動）',
+  'migrate.done': '已匯入：{0} 個設定欄位、{1} 條自訂連線、{2} 筆我的最愛。',
+  // ---- TASK-016 的後端訊息（登錄檔、匯入舊設定）----
+  'migrate.warnParity': '同位檢查 {0} 在新版不支援（serialport 只有 None／Odd／Even），已改成 None',
+  'migrate.warnStopBits': '停止位元 1.5 在新版不支援，已改成 1',
+  'migrate.warnFlow': '流量控制 RTS/CTS+XON/XOFF 在新版不支援，已改成 RTS/CTS',
+  'err.noExePath': '拿不到執行檔路徑',
+  'err.registryWrite': '寫登錄檔失敗（{0}）：{1}',
+  'err.registryDelete': '刪登錄檔失敗（{0}）：{1}',
+  'err.oldSettingsBadJson': '舊版設定檔不是合法的 JSON：{0}',
+  'err.noOldSettings': '這個平台沒有舊版設定檔',
 };

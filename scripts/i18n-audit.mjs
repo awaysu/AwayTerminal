@@ -53,9 +53,17 @@ for (const file of walk(ROOT)) {
   // `println!(` 常常跨行（字串在下一行），所以要記住「還在 println! 的括號裡」，
   // 不然那些診斷訊息會被當成沒歸類的（第一版就是這樣，7 條假警報）。
   let printlnDepth = 0;
+  // 明確標記「這一段的字串只會進 log／文件」的區塊：
+  //   // i18n-audit:log-only-begin <理由>
+  //   …
+  //   // i18n-audit:log-only-end
+  // 用在「一張給人看的原因表」這種地方（翻成八種語言沒有意義，而且會馬上和文件不同步）。
+  let logOnly = false;
   lines.forEach((line, i) => {
     if (/^\s*#\[cfg\(test\)\]/.test(line)) inTest = true;
     if (inTest) return;
+    if (line.includes('i18n-audit:log-only-begin')) logOnly = true;
+    else if (line.includes('i18n-audit:log-only-end')) logOnly = false;
     const trimmed = line.trim();
     if (trimmed.startsWith('//')) return;
     const inPrintln = printlnDepth > 0;
@@ -72,7 +80,7 @@ for (const file of walk(ROOT)) {
       let kind;
       if (rel.endsWith('/i18n.rs')) kind = 'table';
       else if (rel.endsWith('/ttl/error.rs')) kind = 'errmsg';
-      else if (inPrintln || line.includes('println!')) kind = 'log';
+      else if (logOnly || inPrintln || line.includes('println!')) kind = 'log';
       else if (ALLOW.some(([f, needle]) => rel.endsWith(f.replace('src/', 'src/')) && (needle === '' || text.includes(needle)))) kind = 'allow';
       else kind = 'missed';
 

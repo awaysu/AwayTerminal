@@ -45,7 +45,7 @@ pub fn sep_format() -> String {
 #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct SavedTab {
-    /// `shell` | `conn` | `ssh` | `telnet` | `com`（對得上 `session_create` 的 `kind`）。
+    /// `shell` | `conn` | `ssh` | `telnet` | `com` | `adb`（對得上 `session_create` 的 `kind`）。
     pub kind: String,
     pub title: String,
     /// `shell`／`conn`：工作目錄（**沙盒之前**的那個；沙盒會自己重新準備）。
@@ -58,6 +58,11 @@ pub struct SavedTab {
     pub buffer_file: String,
     /// 分頁最初開啟的時間（epoch ms）。恢復後 tooltip 的執行時長接著算、不歸零（舊版 1.1.4）。
     pub opened_ms: u64,
+    /// `adb`：裝置序號（空＝只有一台時直接開的那種）。舊版 `SavedTab.AdbSerial`。
+    pub adb_serial: String,
+    /// `adb`：當初用的 `adb.exe` 路徑。舊版 `SavedTab.Path`——
+    /// **恢復時不再跑 `adb devices`**（同舊版 1.0.30），直接用這兩個值重開。
+    pub adb_path: String,
 }
 
 /// scrollback 的暫存目錄（舊版 `%LOCALAPPDATA%\AwayTerminal\restore`）。

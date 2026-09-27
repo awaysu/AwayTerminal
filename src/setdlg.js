@@ -17,6 +17,8 @@ const el = {};
 let hooks = {};
 /** 開啟時的設定（按「取消」要能原樣回去，也用來判斷哪些欄位真的被改了）。 */
 let opened = null;
+/** 開啟時「檔案總管右鍵選單」是不是已經登錄（只在勾選變了才動登錄檔）。 */
+let shellMenuBefore = false;
 
 function $(id) {
   return document.getElementById(id);
@@ -54,6 +56,21 @@ function fill(s) {
   el.sandboxDefault.checked = s.sandboxDefault !== false;
   el.weakCount.textContent = fmt('settings.weakCount', (s.sshWeakAccepted || []).length);
   el.note.textContent = '';
+  // 檔案總管右鍵選單：狀態直接讀登錄檔（不是讀設定——使用者可能用別的方式刪過）
+  shellMenuBefore = false;
+  el.shellMenu.disabled = true;
+  invoke('shell_menu_state')
+    .then((st) => {
+      shellMenuBefore = !!st.enabled;
+      el.shellMenu.checked = shellMenuBefore;
+      el.shellMenu.disabled = false;
+      el.shellNote.textContent = st.enabled ? st.command : T['settings.shellMenuHint'];
+    })
+    .catch(() => {
+      // 非 Windows：這個功能沒有（command 也不存在）→ 維持灰掉並註明
+      el.shellMenu.checked = false;
+      el.shellMenu.disabled = true;
+        });
 }
 
 /** 「回到預設」：只重設**舊版那個按鈕會重設的欄位**（語言與其他組不動，同舊版）。 */
@@ -117,6 +134,20 @@ async function save(e) {
     el.note.textContent = String(err);
     return;
   }
+  // 檔案總管右鍵選單：勾＝寫入、取消＝刪除（只在勾選狀態真的變了才動登錄檔）
+  if (!el.shellMenu.disabled && el.shellMenu.checked !== shellMenuBefore) {
+    try {
+      const st = await invoke('shell_menu_apply', {
+        enable: el.shellMenu.checked,
+        // 選單文字跟著語言（同舊版 `Loc.T("shell.menuText")`）
+        text: T['shell.menuText'],
+      });
+      log(`[settings] 檔案總管右鍵選單：${st.enabled ? '已登錄' : '已移除'}${st.command ? '（' + st.command + '）' : ''}`);
+    } catch (err) {
+      el.note.textContent = String(err);
+      return;
+    }
+  }
   // 介面文字：前端自己換（Rust 那邊有自己的一份表，見 src-tauri/src/i18n.rs）
   applyLang(after.language);
   close();
@@ -156,9 +187,10 @@ function applyTexts() {
   el.lSandboxDefault.textContent = T['settings.sandboxDefault'];
   el.sandboxNote.textContent = T['settings.sandboxNote'];
   el.weakClear.textContent = T['settings.weakClear'];
+  el.lMigrate.textContent = T['settings.groupMigrate'];
+  el.migrate.textContent = T['migrate.button'];
   el.lShell.textContent = T['settings.groupShell'];
   el.lShellMenu.textContent = T['settings.shellMenu'];
-  el.shellNote.textContent = T['settings.todo'];
   el.reset.textContent = T['common.reset'];
   el.ok.textContent = T['common.ok'];
   el.cancel.textContent = T['common.cancel'];
@@ -217,6 +249,9 @@ export function initSettings(injected) {
   el.sandboxNote = $('st-sandbox-note');
   el.weakClear = $('st-weak-clear');
   el.weakCount = $('st-weak-count');
+  el.lMigrate = $('st-l-migrate');
+  el.migrate = $('st-migrate');
+  el.migrateNote = $('st-migrate-note');
   el.lShell = $('st-l-shell');
   el.lShellMenu = $('st-l-shellmenu');
   el.shellNote = $('st-shell-note');
@@ -258,6 +293,24 @@ export function initSettings(injected) {
       if (dir) el.logDir.value = dir;
     } catch (e) {
       el.note.textContent = String(e);
+    }
+  });
+
+  // 匯入舊版設定（選檔；第一次啟動的自動提示在 main.js）
+  el.migrate.addEventListener('click', async () => {
+    el.migrateNote.textContent = '';
+    try {
+      const file = await invoke('migrate_pick_file');
+      if (!file) return;
+      const r = await invoke('migrate_import', { path: file });
+      el.migrateNote.textContent = fmt('migrate.done', r.applied, r.conns, r.favorites);
+      // 匯進來的值要立刻反映在畫面上
+      opened = await invoke('settings_get');
+      fill(opened);
+      applyLang(opened.language);
+      if (r.warnings.length) el.note.textContent = r.warnings.join('　');
+    } catch (e) {
+      el.migrateNote.textContent = String(e);
     }
   });
 

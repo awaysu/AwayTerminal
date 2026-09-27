@@ -21,6 +21,9 @@ pub struct LaunchArgs {
     pub verify: u32,
     /// `--bench`：啟動時跑一次 IPC bench。
     pub bench: bool,
+    /// `--open-dir <路徑>`：檔案總管右鍵「用 AwayTerminal 開啟」送來的資料夾
+    /// （**參數名照舊版**，不是 `--dir`）。也接受「單一個存在的資料夾路徑」＝把資料夾拖到 exe 上。
+    pub open_dir: Option<String>,
 }
 
 impl LaunchArgs {
@@ -28,7 +31,8 @@ impl LaunchArgs {
         Self::parse(std::env::args().skip(1))
     }
 
-    fn parse(args: impl IntoIterator<Item = String>) -> Self {
+    /// 解析一串參數（`from_env` 與單一執行個體的 callback 都用它）。
+    pub fn parse(args: impl IntoIterator<Item = String>) -> Self {
         let mut out = Self::default();
         let mut it = args.into_iter().peekable();
         while let Some(arg) = it.next() {
@@ -49,6 +53,16 @@ impl LaunchArgs {
                     out.verify = value().and_then(|v| v.trim().parse().ok()).unwrap_or(1);
                 }
                 "--bench" => out.bench = true,
+                "--open-dir" => {
+                    out.open_dir = value().map(|v| v.trim().trim_matches('"').to_string()).filter(|v| !v.is_empty());
+                }
+                // 裸參數：是一個存在的資料夾就當成 --open-dir（把資料夾拖到 exe 上，同舊版）
+                other if !other.starts_with('-') => {
+                    let p = std::path::Path::new(other);
+                    if out.open_dir.is_none() && p.is_dir() {
+                        out.open_dir = Some(other.to_string());
+                    }
+                }
                 _ => {}
             }
         }

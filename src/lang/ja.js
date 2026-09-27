@@ -480,4 +480,32 @@ export default {
   'term.macroDone': '[マクロが終了しました：{0}]',
   'term.macroError': '[マクロエラー] {0} {1}:{2}',
   'term.regexOptUnsupported': '[マクロ] regexoption {0} はこのバージョンでは未対応です（docs/TTL-REGEX.md を参照）',
+  // ---- ADB (TASK-016 B) ----
+  'tb.adb': 'ADB',
+  'tip.adb': 'ADB シェルを開く',
+  'adb.notInstalled': 'adb が見つかりません。AwayTerminal は adb を同梱していないため、Android SDK Platform Tools をインストールしてください\n（または「設定」で adb.exe のパスを指定してください）。\n\n検索した場所：PATH、ANDROID_HOME / ANDROID_SDK_ROOT、Android Studio の既定の場所。\n\n公式のダウンロードページを開きますか？',
+  'adb.noDevice': 'adb デバイスが検出されませんでした。',
+  'adb.pickDevice': 'デバイスを選択',
+  'adb.opened': 'ADB：{0}',
+  'err.adbNotFound': 'adb が見つかりません',
+  // ---- Explorer context menu (TASK-016 C) ----
+  'shell.menuText': 'AwayTerminal で開く',
+  'settings.shellMenuHint': 'オンにすると HKCU に 2 つのキーを書きます（HKLM は触りません。管理者権限は不要）',
+  'shell.dirMissing': 'フォルダーが見つかりません：\n{0}',
+  // ---- Importing v1 settings (TASK-016 D; the old file is only read) ----
+  'settings.groupMigrate': '旧バージョンの設定',
+  'migrate.button': '旧バージョンの設定を取り込む…',
+  'migrate.pick': '旧バージョンの settings.json を選択',
+  'migrate.title': '旧バージョンの設定を取り込む',
+  'migrate.ask': '旧 AwayTerminal の設定が見つかりました：\n{0}\n\nカスタム接続 {1} 件、お気に入り {2} 件があります。\n取り込みますか？（旧ファイルは読み取るだけで、変更しません）',
+  'migrate.done': '取り込みました：設定 {0} 項目、カスタム接続 {1} 件、お気に入り {2} 件。',
+  // ---- Backend messages added in TASK-016 (registry, v1 import) ----
+  'migrate.warnParity': 'パリティ {0} は新バージョンでは未対応です（serialport は None／Odd／Even のみ）。None に変更しました',
+  'migrate.warnStopBits': 'ストップビット 1.5 は新バージョンでは未対応です。1 に変更しました',
+  'migrate.warnFlow': 'フロー制御 RTS/CTS+XON/XOFF は新バージョンでは未対応です。RTS/CTS に変更しました',
+  'err.noExePath': '実行ファイルのパスを取得できません',
+  'err.registryWrite': 'レジストリの書き込みに失敗しました（{0}）：{1}',
+  'err.registryDelete': 'レジストリキーの削除に失敗しました（{0}）：{1}',
+  'err.oldSettingsBadJson': '旧バージョンの設定ファイルが正しい JSON ではありません：{0}',
+  'err.noOldSettings': 'このプラットフォームには旧バージョンの設定ファイルがありません',
 };

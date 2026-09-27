@@ -499,4 +499,32 @@ export default {
   'term.macroDone': '[macro finished: {0}]',
   'term.macroError': '[macro error] {0} {1}:{2}',
   'term.regexOptUnsupported': '[macro] regexoption {0} is not supported in this version (see docs/TTL-REGEX.md)',
+  // ---- ADB (TASK-016 B) ----
+  'tb.adb': 'ADB',
+  'tip.adb': 'Open ADB shell',
+  'adb.notInstalled': 'adb was not found. AwayTerminal no longer bundles adb - please install the Android SDK Platform Tools (or set the path to adb.exe in Settings).\n\nSearched: PATH, ANDROID_HOME / ANDROID_SDK_ROOT, and the default Android Studio location.\n\nOpen the official download page?',
+  'adb.noDevice': 'No adb device detected.',
+  'adb.pickDevice': 'Pick a device',
+  'adb.opened': 'ADB: {0}',
+  'err.adbNotFound': 'adb was not found',
+  // ---- Explorer context menu (TASK-016 C) ----
+  'shell.menuText': 'Open in AwayTerminal',
+  'settings.shellMenuHint': 'Ticking this writes two keys under HKCU (never HKLM, no administrator needed)',
+  'shell.dirMissing': 'Folder not found:\n{0}',
+  // ---- Importing v1 settings (TASK-016 D; the old file is only read) ----
+  'settings.groupMigrate': 'Settings from v1',
+  'migrate.button': 'Import settings from v1…',
+  'migrate.pick': 'Choose the old settings.json',
+  'migrate.title': 'Import settings from v1',
+  'migrate.ask': 'Found settings from the old AwayTerminal:\n{0}\n\nIt has {1} custom connection(s) and {2} favorite(s).\nImport them? (the old file is only read, never changed)',
+  'migrate.done': 'Imported: {0} setting(s), {1} custom connection(s), {2} favorite(s).',
+  // ---- Backend messages added in TASK-016 (registry, v1 import) ----
+  'migrate.warnParity': 'Parity {0} is not supported in v2 (serialport has only None/Odd/Even); changed to None',
+  'migrate.warnStopBits': '1.5 stop bits are not supported in v2; changed to 1',
+  'migrate.warnFlow': 'Flow control RTS/CTS+XON/XOFF is not supported in v2; changed to RTS/CTS',
+  'err.noExePath': 'Could not determine the executable path',
+  'err.registryWrite': 'Could not write the registry ({0}): {1}',
+  'err.registryDelete': 'Could not delete the registry key ({0}): {1}',
+  'err.oldSettingsBadJson': 'The old settings file is not valid JSON: {0}',
+  'err.noOldSettings': 'There is no v1 settings file on this platform',
 };

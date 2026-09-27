@@ -480,4 +480,32 @@ export default {
   'term.macroDone': '[macro finalizada: {0}]',
   'term.macroError': '[error de macro] {0} {1}:{2}',
   'term.regexOptUnsupported': '[macro] regexoption {0} no se admite en esta versión (consulta docs/TTL-REGEX.md)',
+  // ---- ADB (TASK-016 B) ----
+  'tb.adb': 'ADB',
+  'tip.adb': 'Abrir un shell de ADB',
+  'adb.notInstalled': 'No se ha encontrado adb. AwayTerminal ya no incluye adb: instala las Android SDK Platform Tools\n(o indica la ruta de adb.exe en la configuración).\n\nSe ha buscado en: PATH, ANDROID_HOME / ANDROID_SDK_ROOT y la ubicación predeterminada de Android Studio.\n\n¿Abrir la página de descarga oficial?',
+  'adb.noDevice': 'No se ha detectado ningún dispositivo adb.',
+  'adb.pickDevice': 'Elige un dispositivo',
+  'adb.opened': 'ADB: {0}',
+  'err.adbNotFound': 'No se ha encontrado adb',
+  // ---- Explorer context menu (TASK-016 C) ----
+  'shell.menuText': 'Abrir en AwayTerminal',
+  'settings.shellMenuHint': 'Al marcarlo se escriben dos claves en HKCU (nunca en HKLM, sin permisos de administrador)',
+  'shell.dirMissing': 'Carpeta no encontrada:\n{0}',
+  // ---- Importing v1 settings (TASK-016 D; the old file is only read) ----
+  'settings.groupMigrate': 'Configuración de la v1',
+  'migrate.button': 'Importar la configuración de la v1…',
+  'migrate.pick': 'Elige el settings.json antiguo',
+  'migrate.title': 'Importar la configuración de la v1',
+  'migrate.ask': 'Se ha encontrado la configuración del AwayTerminal antiguo:\n{0}\n\nContiene {1} conexión(es) personalizada(s) y {2} favorito(s).\n¿Importarla? (el archivo antiguo solo se lee, nunca se modifica)',
+  'migrate.done': 'Importado: {0} ajuste(s), {1} conexión(es) personalizada(s), {2} favorito(s).',
+  // ---- Backend messages added in TASK-016 (registry, v1 import) ----
+  'migrate.warnParity': 'La paridad {0} no se admite en la v2 (serialport solo tiene None/Odd/Even); se ha cambiado a None',
+  'migrate.warnStopBits': '1,5 bits de parada no se admiten en la v2; se ha cambiado a 1',
+  'migrate.warnFlow': 'El control de flujo RTS/CTS+XON/XOFF no se admite en la v2; se ha cambiado a RTS/CTS',
+  'err.noExePath': 'No se ha podido determinar la ruta del ejecutable',
+  'err.registryWrite': 'No se pudo escribir en el registro ({0}): {1}',
+  'err.registryDelete': 'No se pudo eliminar la clave del registro ({0}): {1}',
+  'err.oldSettingsBadJson': 'El archivo de configuración antiguo no es JSON válido: {0}',
+  'err.noOldSettings': 'En esta plataforma no hay archivo de configuración de la v1',
 };

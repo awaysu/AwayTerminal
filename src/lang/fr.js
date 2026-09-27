@@ -480,4 +480,32 @@ export default {
   'term.macroDone': '[macro terminée : {0}]',
   'term.macroError': '[erreur de macro] {0} {1}:{2}',
   'term.regexOptUnsupported': '[macro] regexoption {0} n’est pas pris en charge dans cette version (voir docs/TTL-REGEX.md)',
+  // ---- ADB (TASK-016 B) ----
+  'tb.adb': 'ADB',
+  'tip.adb': 'Ouvrir un shell ADB',
+  'adb.notInstalled': 'adb est introuvable. AwayTerminal ne fournit plus adb : installez les Android SDK Platform Tools\n(ou indiquez le chemin de adb.exe dans les paramètres).\n\nRecherché dans : PATH, ANDROID_HOME / ANDROID_SDK_ROOT et l’emplacement par défaut d’Android Studio.\n\nOuvrir la page de téléchargement officielle ?',
+  'adb.noDevice': 'Aucun appareil adb détecté.',
+  'adb.pickDevice': 'Choisir un appareil',
+  'adb.opened': 'ADB : {0}',
+  'err.adbNotFound': 'adb est introuvable',
+  // ---- Explorer context menu (TASK-016 C) ----
+  'shell.menuText': 'Ouvrir dans AwayTerminal',
+  'settings.shellMenuHint': 'Cochée, cette option écrit deux clés sous HKCU (jamais HKLM, sans droits administrateur)',
+  'shell.dirMissing': 'Dossier introuvable :\n{0}',
+  // ---- Importing v1 settings (TASK-016 D; the old file is only read) ----
+  'settings.groupMigrate': 'Paramètres de la v1',
+  'migrate.button': 'Importer les paramètres de la v1…',
+  'migrate.pick': 'Choisir l’ancien settings.json',
+  'migrate.title': 'Importer les paramètres de la v1',
+  'migrate.ask': 'Paramètres de l’ancien AwayTerminal trouvés :\n{0}\n\nIl contient {1} connexion(s) personnalisée(s) et {2} favori(s).\nLes importer ? (l’ancien fichier est seulement lu, jamais modifié)',
+  'migrate.done': 'Importé : {0} paramètre(s), {1} connexion(s) personnalisée(s), {2} favori(s).',
+  // ---- Backend messages added in TASK-016 (registry, v1 import) ----
+  'migrate.warnParity': 'La parité {0} n’est pas prise en charge dans la v2 (serialport n’a que None/Odd/Even) ; remplacée par None',
+  'migrate.warnStopBits': '1,5 bit d’arrêt n’est pas pris en charge dans la v2 ; remplacé par 1',
+  'migrate.warnFlow': 'Le contrôle de flux RTS/CTS+XON/XOFF n’est pas pris en charge dans la v2 ; remplacé par RTS/CTS',
+  'err.noExePath': 'Impossible de déterminer le chemin de l’exécutable',
+  'err.registryWrite': 'Impossible d’écrire dans le registre ({0}) : {1}',
+  'err.registryDelete': 'Impossible de supprimer la clé de registre ({0}) : {1}',
+  'err.oldSettingsBadJson': 'L’ancien fichier de paramètres n’est pas un JSON valide : {0}',
+  'err.noOldSettings': 'Il n’y a pas de fichier de paramètres v1 sur cette plateforme',
 };

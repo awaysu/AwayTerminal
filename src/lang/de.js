@@ -480,4 +480,32 @@ export default {
   'term.macroDone': '[Makro beendet: {0}]',
   'term.macroError': '[Makrofehler] {0} {1}:{2}',
   'term.regexOptUnsupported': '[Makro] regexoption {0} wird in dieser Version nicht unterstützt (siehe docs/TTL-REGEX.md)',
+  // ---- ADB (TASK-016 B) ----
+  'tb.adb': 'ADB',
+  'tip.adb': 'ADB-Shell öffnen',
+  'adb.notInstalled': 'adb wurde nicht gefunden. AwayTerminal liefert adb nicht mehr mit – installiere bitte die Android SDK Platform Tools\n(oder gib den Pfad zu adb.exe in den Einstellungen an).\n\nGesucht wurde in: PATH, ANDROID_HOME / ANDROID_SDK_ROOT und am Standardort von Android Studio.\n\nDie offizielle Downloadseite öffnen?',
+  'adb.noDevice': 'Es wurde kein adb-Gerät erkannt.',
+  'adb.pickDevice': 'Gerät auswählen',
+  'adb.opened': 'ADB: {0}',
+  'err.adbNotFound': 'adb wurde nicht gefunden',
+  // ---- Explorer context menu (TASK-016 C) ----
+  'shell.menuText': 'In AwayTerminal öffnen',
+  'settings.shellMenuHint': 'Aktiviert schreibt zwei Schlüssel unter HKCU (niemals HKLM, keine Administratorrechte nötig)',
+  'shell.dirMissing': 'Ordner nicht gefunden:\n{0}',
+  // ---- Importing v1 settings (TASK-016 D; the old file is only read) ----
+  'settings.groupMigrate': 'Einstellungen aus v1',
+  'migrate.button': 'Einstellungen aus v1 importieren…',
+  'migrate.pick': 'Die alte settings.json auswählen',
+  'migrate.title': 'Einstellungen aus v1 importieren',
+  'migrate.ask': 'Einstellungen des alten AwayTerminal gefunden:\n{0}\n\nDarin sind {1} eigene Verbindung(en) und {2} Favorit(en).\nImportieren? (die alte Datei wird nur gelesen, nie verändert)',
+  'migrate.done': 'Importiert: {0} Einstellung(en), {1} eigene Verbindung(en), {2} Favorit(en).',
+  // ---- Backend messages added in TASK-016 (registry, v1 import) ----
+  'migrate.warnParity': 'Die Parität {0} wird in v2 nicht unterstützt (serialport hat nur None/Odd/Even); auf None geändert',
+  'migrate.warnStopBits': '1,5 Stoppbits werden in v2 nicht unterstützt; auf 1 geändert',
+  'migrate.warnFlow': 'Die Flusssteuerung RTS/CTS+XON/XOFF wird in v2 nicht unterstützt; auf RTS/CTS geändert',
+  'err.noExePath': 'Der Pfad der ausführbaren Datei konnte nicht ermittelt werden',
+  'err.registryWrite': 'Die Registrierung konnte nicht geschrieben werden ({0}): {1}',
+  'err.registryDelete': 'Der Registrierungsschlüssel konnte nicht gelöscht werden ({0}): {1}',
+  'err.oldSettingsBadJson': 'Die alte Einstellungsdatei ist kein gültiges JSON: {0}',
+  'err.noOldSettings': 'Auf dieser Plattform gibt es keine v1-Einstellungsdatei',
 };

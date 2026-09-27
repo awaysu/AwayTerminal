@@ -1,5 +1,6 @@
 // AwayTerminal2 — Rust 後端
 
+pub mod adb;
 pub mod b64;
 pub mod bench;
 pub mod cli;
@@ -11,6 +12,7 @@ pub mod favorites;
 pub mod host;
 pub mod i18n;
 pub mod logging;
+pub mod migrate;
 pub mod output;
 pub mod prefs;
 pub mod pty;
@@ -19,6 +21,8 @@ pub mod restore;
 pub mod sandbox;
 pub mod session;
 pub mod settings;
+#[cfg(windows)]
+pub mod shellmenu;
 pub mod ssh;
 pub mod startup;
 pub mod status;
@@ -50,6 +54,22 @@ pub fn run() {
     }
 
     tauri::Builder::default()
+        // 單一執行個體（TASK-016 C）：檔案總管右鍵會再啟動一個 exe，
+        // 它把 `--open-dir <路徑>` 交給**已經在跑的**那個視窗，然後自己結束
+        //（同舊版 `IpcPipe`，只是底層從 Named Pipe 換成 plugin 的 mutex + 訊息）。
+        .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
+            let dir = crate::cli::LaunchArgs::parse(argv.into_iter().skip(1)).open_dir;
+            println!("[AwayTerminal] 單一執行個體：第二個實例來了，--open-dir={dir:?}");
+            // 把視窗拉到前面（使用者按了右鍵選單，期待看到視窗）
+            if let Some(w) = app.get_webview_window("main") {
+                let _ = w.unminimize();
+                let _ = w.show();
+                let _ = w.set_focus();
+            }
+            if let Some(dir) = dir {
+                let _ = app.emit("open-dir", dir);
+            }
+        }))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .manage(SessionManager::new())
@@ -70,6 +90,15 @@ pub fn run() {
             commands::tabs_reorder,
             commands::view_mode_cycle,
             commands::tab_panel_set,
+            adb::adb_devices,
+            #[cfg(windows)]
+            shellmenu::shell_menu_apply,
+            #[cfg(windows)]
+            shellmenu::shell_menu_state,
+            commands::dir_exists,
+            migrate::migrate_probe,
+            migrate::migrate_pick_file,
+            migrate::migrate_import,
             commands::settings_get,
             prefs::settings_apply,
             prefs::ssh_weak_clear,
@@ -150,6 +179,10 @@ pub fn run() {
         .setup(|app| {
             // 設定檔要在任何 command 跑起來之前備好（`host_ready` 的 T{json} 直接讀它）
             let dir = app.path().app_config_dir()?;
+            // 「這次是不是第一次啟動」要在**任何寫檔之前**問（autosave 很快就會把檔案寫出來，
+            // 之後再問就永遠是 false）。匯入舊版設定的提示靠這個旗標。
+            let first_run = !dir.join("settings.json").is_file();
+            app.manage(crate::migrate::FirstRun(first_run));
             let store = Arc::new(SettingsStore::load(&dir));
             // 空的 log_dir 補成「我的文件\AwayTerminalLogs」（同舊版 AppSettings.Load）
             if let Ok(docs) = app.path().document_dir() {

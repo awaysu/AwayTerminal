@@ -153,6 +153,13 @@
 | `compose_load_file()` | 「輸入文字」載入檔案：選檔 → 解碼（BOM → 嚴格 UTF-8 → Big5）→ 回 `{text, encoding}`；**上限 2MB**，超過回 `Err`。取消回 `null` |
 | `compose_save_file(text)` | 把文字框內容存成檔（**UTF-8 無 BOM**）；回存到哪裡，取消回 `null` |
 | `compose_send(id, text, sendEnter, remember?)` | 送出：換行統一成 CRLF → emit `v{id}{US}{base64}`（＝**貼上**那條路），`sendEnter` 時再等 200ms 寫一個 `\r`（同舊版 `SendSnippet`）。`remember` 預設 `true`＝把勾選狀態存進 `settings.json` |
+| `adb_devices(adbPath?)` | ADB：adb 在哪（路徑搜尋順序照舊版）＋ `adb devices` 的結果（**含 offline／unauthorized**，由前端決定能不能選）。找不到 adb 時 `adb` 是 `null` 並附官方下載頁 |
+| `session_create` 的 `kind:"adb"` + `adb` 參數 | 開 `adb shell`／`adb -s <序號> shell`。前端先用 `adb_devices` 選好裝置。見 `docs/WINDOWS-INTEGRATION.md` |
+| `dir_exists(path)` | 這個資料夾在不在（檔案總管右鍵開啟前先確認，同舊版） |
+| `shell_menu_state(sandbox?)` / `shell_menu_apply(enable, text, sandbox?)` | 檔案總管右鍵選單：讀狀態／登錄或移除。**只碰 `HKCU`**。`sandbox: true` 用**測試專用的 key**（`--verify` 專用，碰不到使用者真的那個選單） |
+| `migrate_probe()` | 有沒有舊版設定可以匯入（`oldExists`／`firstRun`／`conns`／`favorites`） |
+| `migrate_import(path?)` | 匯入舊版設定（**舊檔只讀**），回傳套用了幾項、跳過哪些、有哪些提醒。見 `docs/MIGRATION.md` |
+| `migrate_pick_file()` | 選一個舊版的 `settings.json`（預設開在舊版的資料夾） |
 | `i18n_keys()` | Rust 端會用到的字串 key（129 個）。前端照這份清單推字串過去 |
 | `i18n_push(lang, strings)` | 前端把**已經翻好的**那 129 條推給後端（啟動時與切語言時各一次），Rust 存成 runtime 表並**重送 `T{json}`**。翻譯只有一份（`src/lang/*.js`），理由見 `docs/SETTINGS.md` 2.3 |
 | `system_locale()` | 系統語言（例 `zh-Hant-TW`）。**只有第一次啟動**用它挑介面語言 |
@@ -194,6 +201,7 @@
 | tauri event | 用途 |
 |---|---|
 | `host-msg`（String） | **所有** host→JS 的舊協定字串都走這一條 |
+| `open-dir`（String） | 檔案總管右鍵「用 AwayTerminal 開啟」：**第二個實例**把資料夾路徑轉交過來（單一執行個體 plugin）。前端開一個 shell 分頁在那裡 |
 | `tab-state`（JSON） | 分頁列狀態（見上一節） |
 | `ssh-hostkey`（JSON） | 主機金鑰要使用者確認。**Rust 端會停在交握中間等答案**（最多 180 秒，逾時＝取消），前端一定要回 `ssh_hostkey_answer`。見 `src-tauri/src/ssh/prompt.rs` |
 | `macro-dialog`（JSON） | 巨集要問使用者（`messagebox`／`yesnobox`／`inputbox`／`passwordbox`／`listbox`／`statusbox`／`filenamebox`／`dirnamebox`）。**巨集的執行緒會停在那裡等**，前端一定要回 `macro_answer`（`statusbox`／`closesbox` 例外，那兩個不等） |

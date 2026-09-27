@@ -23,6 +23,7 @@ import { initMacro, runMacroForTab } from './macro.js';
 import { initCompose, openCompose } from './compose.js';
 import { initSettings } from './setdlg.js';
 import { initAbout } from './about.js';
+import { initAdb, openAdb, isAdbConn } from './adb.js';
 import { onLangChange } from './i18n.js';
 import { initFavs, addConnFavorite } from './favs.js';
 
@@ -105,6 +106,7 @@ export function toast(text) {
 
 function resetModal() {
   el.modalInput.hidden = true;
+  el.modalList.hidden = true;
   el.modalExtra.hidden = true;
   el.modalCheck1.checked = false;
   el.modalCheck2.checked = false;
@@ -115,6 +117,52 @@ function closeModal() {
   el.modal.hidden = true;
   el.modalForm.onsubmit = null;
   resetModal();
+}
+
+/**
+ * 從清單挑一個。回傳 Promise<string|null>（取消＝null）。
+ *
+ * 舊版的 ADB 選裝置是「新分頁」按鈕底下的 ContextMenu；我們用頁內對話框的清單，
+ * 因為還要能顯示**不能選**的項目（offline／unauthorized 的裝置）。
+ *
+ * @param {{value: string, label: string, disabled?: boolean}[]} items
+ * @param {{value: string, label: string, disabled?: boolean}[]} [extra] 灰掉、不能選的
+ */
+function askFromList(title, items, extra) {
+  return new Promise((resolve) => {
+    resetModal();
+    el.modalTitle.textContent = title;
+    el.modalPrompt.textContent = '';
+    el.modalList.textContent = '';
+    for (const it of [...items, ...(extra || [])]) {
+      const o = document.createElement('option');
+      o.value = it.value;
+      o.textContent = it.label;
+      if (it.disabled) o.disabled = true;
+      el.modalList.appendChild(o);
+    }
+    el.modalList.hidden = false;
+    if (items.length) el.modalList.selectedIndex = 0;
+    el.modalOk.textContent = T['dlg.ok'];
+    el.modalCancel.textContent = T['dlg.cancel'];
+    el.modal.hidden = false;
+    el.modalList.focus();
+    const done = (v) => {
+      closeModal();
+      resolve(v);
+    };
+    el.modalForm.onsubmit = (e) => {
+      e.preventDefault();
+      const o = el.modalList.selectedOptions[0];
+      done(o && !o.disabled ? o.value : null);
+    };
+    // 雙擊直接選（清單的自然操作）
+    el.modalList.ondblclick = () => {
+      const o = el.modalList.selectedOptions[0];
+      if (o && !o.disabled) done(o.value);
+    };
+    el.modalCancel.onclick = () => done(null);
+  });
 }
 
 /** 文字輸入對話框。回傳 Promise<string|null>（取消＝null）。 */
@@ -144,7 +192,7 @@ function askText(title, prompt, initial) {
 }
 
 /** 是／否確認。回傳 Promise<boolean>。 */
-function askYesNo(title, prompt) {
+export function askYesNo(title, prompt) {
   return new Promise((resolve) => {
     resetModal();
     el.modalTitle.textContent = title;
@@ -188,7 +236,7 @@ function askTwo(title, prompt, yes, no) {
 }
 
 /** 只有一個「確定」的訊息框（錯誤訊息用）。 */
-function showInfo(title, prompt) {
+export function showInfo(title, prompt) {
   return new Promise((resolve) => {
     resetModal();
     el.modalTitle.textContent = title;
@@ -847,6 +895,12 @@ async function newSession(kind) {
 async function openConn(name) {
   const c = currentConns().find((x) => x.name === name);
   if (!c) return;
+  // 指向 adb 的自訂連線：先 `adb devices` 再開（同舊版 `OpenCustom` 的 `IsAdbExe` 分支）。
+  // 直接跑 `adb shell` 在接了兩台以上時只會噴錯。
+  if (isAdbConn(c)) {
+    await openAdb(c.path);
+    return;
+  }
   try {
     let cwd = null;
     if (c.pickDir) {
@@ -1136,6 +1190,7 @@ export async function initTabBar() {
   el.modalCheck2 = $('modal-check2');
   el.modalCheck1Text = $('modal-check1-text');
   el.modalCheck2Text = $('modal-check2-text');
+  el.modalList = $('modal-list');
   el.modalOk = $('modal-ok');
   el.modalCancel = $('modal-cancel');
 
@@ -1153,6 +1208,7 @@ export async function initTabBar() {
   await initCompose({ toast });
   initSettings({ showInfo, hideMenus });
   initAbout({ showInfo, hideMenus });
+  initAdb({ showInfo, askYesNo: (body) => askYesNo(T['tb.adb'], body), pickFromList: askFromList, createSession });
   await initFavs({
     createSession,
     askText,

@@ -588,6 +588,74 @@ TEMP 路徑印出完整結果，Documents 路徑印完 `path = …` 就停住。
 | AB10 | 👤 有新版時 | 跳視窗：目前／最新版本＋更新內容，按「前往下載頁」開軟體頁 | `ShowUpdateDialog` | | | |
 | AB11 | 啟動程式 | **不會自動查更新**（舊版也不會） | — | PASS（程式裡只有按鈕那條路） | | |
 
+## WS. WSL 分頁（TASK-016 A）
+
+⚠️ **WSL 在舊版就已經是「自訂連線」**，不是內建選單項目，**舊版也不列發行版**
+（證據見 `docs/WINDOWS-INTEGRATION.md` 第 1 節）。所以這一組驗的是「自訂連線那條路對 WSL 也成立」。
+
+| # | 怎麼測 | 預期結果 | 舊版出處 | Win | mac | Linux |
+|---|---|---|---|---|---|---|
+| WS1 | 「自訂連線設定…」→「自動偵測」 | 這台機器有 `wsl.exe` 就會出現 `WSL` 這一筆（圖示 wsl、參數空、不選工作目錄） | `KnownTools` 第 49 行 | PASS（單元測試 `auto_detect_*`） | — | — |
+| WS2 | 👤 沒裝 WSL 的機器 | 自動偵測**不會**加 WSL（找不到執行檔就不加） | 同 | | — | — |
+| WS3 | 👤「新分頁 ▾」→ WSL | 開一個 WSL 分頁，拿到 WSL 的提示字元 | `OpenCustom` | | — | — |
+| WS4 | 👤 WSL 分頁的名稱 | 跟著提示行的目前目錄（和 PowerShell／SSH 一樣） | `TracksCwdTitle` 的註解列了 WSL | | — | — |
+| WS5 | 👤 關 WSL 分頁 | 送 Ctrl+C ×3（`CustomConn` 的預設關閉鍵） | 同 | | — | — |
+| WS6 | WSL 的沙盒預設 | **關**（和 ADB 一樣：使用者拿它操作機器，開沙盒只會莫名進到 worktree） | ⬜ 新增（舊版沒有沙盒） | PASS（單元測試） | — | — |
+| WS7 | 👤 WSL 分頁存成我的最愛 → 從最愛開 | 照 `conn` 那條路重開 | 舊版同 | | — | — |
+| WS8 | 👤 勾了「恢復分頁」關程式 → 重開 | WSL 分頁回來（`kind=conn`） | 舊版同 | | — | — |
+
+## AD. ADB 分頁（TASK-016 B）
+
+行為對照表在 `docs/WINDOWS-INTEGRATION.md` 第 2 節。
+
+| # | 怎麼測 | 預期結果 | 舊版出處 | Win | mac | Linux |
+|---|---|---|---|---|---|---|
+| AD1 | `cargo test adb` | 5 條全過（檔名判斷、`adb devices` 解析含 offline／unauthorized、空輸出、命令列格式、候選清單） | `IsAdbExe`／`AdbDevices`／`OpenAdbShell` | PASS | — | — |
+| AD2 | `--verify` 的 ADB 那一步 | 印出 adb 路徑與裝置數；**指定不存在的路徑會退回自動搜尋** | `ResolveAdbPath` | PASS | | |
+| AD3 | 👤 沒裝 adb 的機器點 ADB | 說明「找不到 adb…」＋問要不要開官方下載頁 | `PromptInstallAdb` | | | |
+| AD4 | 👤 有 adb、**沒接手機** | 提示「沒有偵測到 adb 裝置。」，**不開分頁** | `adb.noDevice` | PASS（`--verify` 這台機器就是 0 台） | | |
+| AD5 | 👤 接**一台**手機 | **直接開**，分頁名稱 `ADB`，跑的是 `adb shell` | `OpenAdbFlow` 的 1 台分支 | ⬜ 需真機 | | |
+| AD6 | 👤 接**兩台以上** | 跳清單選序號，分頁名稱＝**序號**，跑的是 `adb -s <序號> shell` | 同上的 2 台以上分支 | ⬜ 需真機 | | |
+| AD7 | 👤 接一台**沒授權**的手機（螢幕上還沒按「允許」） | 清單裡看得到它、**灰的不能選**，旁邊寫 `unauthorized`（**舊版會說「沒有偵測到裝置」**） | 刻意不同 | ⬜ 需真機 | | |
+| AD8 | 👤 開著 ADB 分頁把線拔掉 | 分頁不會卡住（`adb shell` 自己結束 → 走 session 結束那條路） | 舊版同 | ⬜ 需真機 | | |
+| AD9 | 👤 關 ADB 分頁 | 送 Ctrl+C ×3 | `ConPtySession` 預設 | | | |
+| AD10 | 👤 勾「恢復分頁」關程式 → 重開 | ADB 分頁回來，**不再跑 `adb devices`**（用存下來的路徑與序號） | 舊版 1.0.30 | | | |
+| AD11 | ⚠️ adb 是 Store 別名時 | 關分頁不一定收得掉 `adb.exe`（AppX 服務開的行程不在 Job Object 裡） | 同 `pwsh` 那條已知限制 | 已知限制 | | |
+
+## EX. 檔案總管右鍵選單與單一執行個體（TASK-016 C）
+
+登錄檔 key 清單在 `docs/WINDOWS-INTEGRATION.md` 第 3 節。**只碰 `HKCU`。**
+
+| # | 怎麼測 | 預期結果 | 舊版出處 | Win | mac | Linux |
+|---|---|---|---|---|---|---|
+| EX1 | `cargo test shellmenu` | 2 條全過；寫入→讀回→刪除**都在測試專用的 key**（`AwayTerminal_UnitTest`） | `ShellIntegration` | PASS | — | — |
+| EX2 | `--verify` 的右鍵選單那一步 | 登錄→讀回（有 `--open-dir` 與 `%V`、指向目前的 exe）→移除；結尾印「**使用者的 key 沒被動過**」 | — | PASS | — | — |
+| EX3 | 👤 設定 → 檔案總管 → 勾起來 → 確定 | 資料夾右鍵與資料夾內空白處右鍵都出現「用 AwayTerminal 開啟」 | 兩個 `Roots` | | — | — |
+| EX4 | 👤 點那個選單項目（**程式沒開**） | 程式啟動並在那個資料夾開一個 PowerShell 分頁 | `--open-dir` ＋ ready 之後開 | | — | — |
+| EX5 | 👤 點那個選單項目（**程式已經開著**） | **不開第二個視窗**：現有視窗跳到前面並多一個分頁 | `IpcPipe` → 新版 single-instance plugin | | — | — |
+| EX6 | 👤 取消勾選 → 確定 | 右鍵選單消失（兩個位置都刪掉） | `Unregister` | | — | — |
+| EX7 | 👤 把資料夾拖到 exe 上 | 同 EX4（裸參數也當成 `--open-dir`） | `App.xaml.cs` 的裸路徑分支 | | — | — |
+| EX8 | 👤 選單項目指向被刪掉的資料夾 | 提示找不到資料夾，不開分頁 | `shell.dirMissing` | | — | — |
+| EX9 | 登錄檔範圍 | **只有** `HKCU\Software\Classes\Directory\{shell,Background\shell}\AwayTerminal`；`HKLM` 一個都沒碰 | 同舊版 | PASS（測試＋`--verify` 都比對過） | — | — |
+| EX10 | 👤 MSIX 版 | 右鍵選單**不會出現**（登錄檔被虛擬化，要 COM 擴充）——舊版就有這個限制 | 舊版註解 | ⬜ 階段 5 | — | — |
+
+## MG. 匯入舊版設定（TASK-016 D）
+
+完整欄位對照表在 **`docs/MIGRATION.md`**。
+
+| # | 怎麼測 | 預期結果 | 舊版出處 | Win | mac | Linux |
+|---|---|---|---|---|---|---|
+| MG1 | `cargo test migrate` | 9 條全過（含中文路徑、`Mark` 同位降級、代理團隊的最愛跳過、壞檔不改壞設定、BOM） | — | PASS | — | — |
+| MG2 | `--verify` 的匯入那一步 | 用臨時的舊版格式 JSON 走一次：欄位、語言 `zh`→`zh-TW`、中文路徑、COM 降級＋3 個提醒、Telegram token、SSH 最愛的參數、`SavedTabs` 沒匯入 | — | PASS | — | — |
+| MG3 | 👤 **第一次啟動**（新版還沒有 settings.json）且舊檔存在 | 問一次「要匯入嗎？」，訊息裡有舊檔路徑與「{n} 條自訂連線、{m} 筆我的最愛」 | ⬜ 新增 | | — | — |
+| MG4 | 👤 按「不要」 | 什麼都不匯入，而且**不再問**（新版的 settings.json 一存在就不是第一次啟動了） | ⬜ 新增 | | — | — |
+| MG5 | 👤 匯入之後 | 字型／顏色立刻套用、自訂連線出現在「新分頁 ▾」、我的最愛出現在下拉 | ⬜ 新增 | | — | — |
+| MG6 | 👤 設定 → 舊版設定 → 匯入舊版設定… | 檔案對話框**預設開在舊版的資料夾**；選了之後畫面上有摘要 | ⬜ 新增 | | — | — |
+| MG7 | 👤 匯入兩次 | 第二次不會把自訂連線／我的最愛變成兩份（同名不重複加） | ⬜ 新增 | PASS（單元測試） | — | — |
+| MG8 | **舊檔有沒有被動到** | 匯入前後舊檔的內容與修改時間完全一樣（只讀） | PM 指定 | PASS（程式只有 `read_to_string`） | — | — |
+| MG9 | 👤 匯入含 `Mark` 同位的舊檔 | 降級成 `None` **並且畫面上看得到提醒** | `docs/COM.md` 第 3 節 | PASS（`--verify` 驗到 3 個提醒） | — | — |
+| MG10 | 👤 舊檔裡有代理團隊的我的最愛 | 跳過並在摘要裡列出名稱（階段 4 才有功能） | ⬜ 新增 | PASS（單元測試＋`--verify`） | — | — |
+
 ## L. 我的最愛
 
 舊版對應 `MainWindow.Favorites.cs` + `Dialogs/FavoritesDialog`。程式在
@@ -726,6 +794,11 @@ TEMP 路徑印出完整結果，Documents 路徑印完 `path = …` 就停住。
 | 預設語言 | 一律繁中 | **第一次啟動看系統語言**（`sys-locale`），對不到八種就用 `en`；改過就固定 | 新增；舊版沒有偵測 |
 | 語言字串的位置 | `Localization/Loc.cs`（一個檔、兩種語言） | `src/lang/<代碼>.js`（一種語言一個檔）＋ `strings.js` 合併 | 八種語言放一個檔會變成幾千行；一檔一語言好改也好加 |
 | Rust 端的字串 | 同一個 `Loc.cs` | **前端在啟動與切語言時推 129 條過去**（`i18n_push`），Rust 只留繁中／英文後備 | 翻譯只有一份。寫進終端機畫面的訊息是背景執行緒產生的，沒辦法回代碼讓前端查表（見 `docs/SETTINGS.md` 2.3） |
+| ADB 的 `offline`／`unauthorized` 裝置 | 濾掉（畫面說「沒有偵測到 adb 裝置」） | **列出來但灰掉不能選**，旁邊寫狀態 | 插了沒授權的手機時舊版的訊息會讓人以為線沒插好；可用的裝置行為完全一樣 |
+| ADB 選裝置的 UI | 「新分頁」按鈕底下的 ContextMenu | 頁內清單對話框 | 要能顯示灰掉的項目，也和其他頁內對話框一致 |
+| WSL「列發行版」 | **舊版沒有這個功能**（WSL 是一筆自訂連線，開預設發行版） | 也沒有 | 任務書寫了要列，但那不是搬移而是新功能；`CLAUDE.md` 的規矩是行為相容優先、新功能要使用者定案（`docs/WINDOWS-INTEGRATION.md` 第 1 節有證據與做法） |
+| 右鍵選單的勾選狀態 | 存在 `settings.json` 的 `ExplorerMenu` | **直接讀登錄檔的實際狀態** | 使用者可能用別的方式刪過那個 key；讀實際狀態才不會顯示錯 |
+| 匯入舊版設定 | 舊版沒有這件事 | 第一次啟動問一次 ＋ 設定視窗一個按鈕 | `CLAUDE.md` 的搬移清單有「匯入舊版 settings.json」 |
 | 連接埠對話框的欄位標籤 | 中文介面下也是英文（`Port`／`Baud rate`…） | 繁中／英文照舊；**其他六種語言用該語言的說法**（波特率／ボーレート／Baudrate…） | 舊版那幾個英文標籤是既有行為，不動；新語言沒有「舊行為」要照，就用當地說法 |
 | 更新的 `platform=` 參數 | 固定 `windows` | 依平台（`windows`／`macos`／`linux`） | 舊版只有 Windows |
 
@@ -744,6 +817,7 @@ TEMP 路徑印出完整結果，Documents 路徑印完 `path = …` 就停住。
 | `ssh-hostkey` event 一定要回 `ssh_hostkey_answer` | Rust 的 SSH 任務停在交握中間等答案，前端不回就卡到逾時（180 秒）才當成取消——使用者看到的是「連線很久沒反應」 | K8～K12 |
 | `ssh-weak-algo` event 也一定要回 `ssh_hostkey_answer`（兩者共用同一個回覆通道） | 同上：不回就卡 180 秒。加新的「交握中間問使用者」的事件時都要記得配一個前端 listener | K24～K26 |
 | **舊版靠外部程式（`ssh.exe`、`telnet.exe` 之類）副作用成立的規則，內建實作要重新檢查觸發點** | 照抄會得到「看起來對、其實永遠不成立／永遠成立」的條件。實際案例：舊版「**一收到輸出**就把重連退避歸零」——它的輸出全部來自 `ssh.exe`，所以等於「連上了」；內建 SSH 之後我們自己的狀態訊息（「連線到 …」、`login as:`、錯誤訊息）走同一條輸出 callback，退避永遠停在第一次的 3 秒（`--verify` 抓到）。搬 Telnet／COM／ADB 時每一條「有輸出」「行程結束」類的規則都要重新問一次「這個訊號現在還是原來的意思嗎」 | M8、M9、TN12、CM16 |
+| **測試與 `--verify` 不可以動使用者真的在用的系統狀態**（登錄檔、選單、服務…） | 使用者的機器上**已經有**舊版登錄的右鍵選單 key（v1.2.8 每次啟動都重新登錄）。TASK-016 我踩兩次：①單元測試直接 register/unregister 真的 key → 選單指到**測試執行檔**；②`--verify` 用「重新登錄」實作「復原」→ 指到 **dev 的 exe**。現在兩者都走**測試專用的 key 名稱**（`AwayTerminal_UnitTest`），`--verify` 另外印一行比對「使用者的 key 沒被動過」 | EX1、EX2、EX9 |
 | **要收掉自己開的行程，只能用 handle（Job Object／PID），而且那個 PID 必須是自己這次開的** | 按名稱砍（`taskkill /IM`、`Stop-Process -Name`）會把整個團隊連自己一起砍掉——這台機器的團隊就跑在舊版 AwayTerminal 底下，而新版 exe 的名稱和舊版一樣。**已知漏洞**：用 **Store 的 app execution alias** 開的行程（很多機器上的 `pwsh`）由 AppX 服務建立，不在我們的 job 裡 → 收不到（`examples/job_probe.rs` 兩種都實測過） | T70～T73、Q7 |
 | **切語言之後要把字串推給 Rust，而且 Rust 收到要重送 `T{json}`** | 後端的錯誤訊息與終端機畫面上的字會留在上一個語言（它們不在前端手上）；搜尋列與代理狀態的字也會留著——那包 JSON 是 `theme_json()` 用 `t()` 取的。`--verify` 抓到過：切成英文之後搜尋列還是「搜尋」 | LG3、LG4、LG12 |
 | **介面文字改了之後要讓每個模組重套一次**（`i18n.js` 的 `onLangChange`） | 舊版的對話框是「每次開啟才建立」的，所以建構子讀 `Loc.T` 就自動是新語言；我們的對話框是**一直存在的 DOM**，只在 init 設一次文字 → 切語言之後那個對話框永遠是舊語言。加新的頁內對話框時一定要 `onLangChange(applyTexts)` | LG3、LG4 |

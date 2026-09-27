@@ -480,4 +480,32 @@ export default {
   'term.macroDone': '[매크로 실행을 마쳤습니다: {0}]',
   'term.macroError': '[매크로 오류] {0} {1}:{2}',
   'term.regexOptUnsupported': '[매크로] regexoption {0} 은(는) 이 버전에서 지원하지 않습니다 (docs/TTL-REGEX.md 참조)',
+  // ---- ADB (TASK-016 B) ----
+  'tb.adb': 'ADB',
+  'tip.adb': 'ADB 셸 열기',
+  'adb.notInstalled': 'adb 를 찾을 수 없습니다. AwayTerminal 은 adb 를 포함하지 않으므로 Android SDK Platform Tools 를 설치하세요\n(또는 “설정”에서 adb.exe 경로를 지정하세요).\n\n검색한 곳: PATH, ANDROID_HOME / ANDROID_SDK_ROOT, Android Studio 기본 위치.\n\n공식 다운로드 페이지를 열까요?',
+  'adb.noDevice': 'adb 장치가 감지되지 않았습니다.',
+  'adb.pickDevice': '장치 선택',
+  'adb.opened': 'ADB: {0}',
+  'err.adbNotFound': 'adb 를 찾을 수 없습니다',
+  // ---- Explorer context menu (TASK-016 C) ----
+  'shell.menuText': 'AwayTerminal로 열기',
+  'settings.shellMenuHint': '선택하면 HKCU에 키 두 개를 씁니다 (HKLM은 건드리지 않고 관리자 권한도 필요 없습니다)',
+  'shell.dirMissing': '폴더를 찾을 수 없습니다:\n{0}',
+  // ---- Importing v1 settings (TASK-016 D; the old file is only read) ----
+  'settings.groupMigrate': '이전 버전 설정',
+  'migrate.button': '이전 버전 설정 가져오기…',
+  'migrate.pick': '이전 버전의 settings.json 선택',
+  'migrate.title': '이전 버전 설정 가져오기',
+  'migrate.ask': '이전 AwayTerminal 의 설정을 찾았습니다:\n{0}\n\n사용자 지정 연결 {1}개, 즐겨찾기 {2}개가 있습니다.\n가져올까요? (이전 파일은 읽기만 하며 변경하지 않습니다)',
+  'migrate.done': '가져왔습니다: 설정 {0}개, 사용자 지정 연결 {1}개, 즐겨찾기 {2}개.',
+  // ---- Backend messages added in TASK-016 (registry, v1 import) ----
+  'migrate.warnParity': '패리티 {0} 은(는) 새 버전에서 지원하지 않습니다 (serialport 는 None／Odd／Even 만). None 으로 변경했습니다',
+  'migrate.warnStopBits': '정지 비트 1.5 는 새 버전에서 지원하지 않습니다. 1 로 변경했습니다',
+  'migrate.warnFlow': '흐름 제어 RTS/CTS+XON/XOFF 는 새 버전에서 지원하지 않습니다. RTS/CTS 로 변경했습니다',
+  'err.noExePath': '실행 파일 경로를 가져올 수 없습니다',
+  'err.registryWrite': '레지스트리 쓰기에 실패했습니다 ({0}): {1}',
+  'err.registryDelete': '레지스트리 키 삭제에 실패했습니다 ({0}): {1}',
+  'err.oldSettingsBadJson': '이전 버전 설정 파일이 올바른 JSON 이 아닙니다: {0}',
+  'err.noOldSettings': '이 플랫폼에는 이전 버전 설정 파일이 없습니다',
 };

@@ -246,11 +246,21 @@ certificate store, which keeps behaviour identical on Windows, macOS and Linux.
 
 ---
 
-## 11. Rust crates
+## 11. winreg / tauri-plugin-single-instance — MIT
+
+- `winreg` — used for the Explorer context menu: it writes two keys under **HKCU only**
+  (`src-tauri/src/shellmenu.rs`). Upstream: <https://github.com/gentoo90/winreg-rs>. MIT.
+- `tauri-plugin-single-instance` — used so the Explorer context menu hands the folder to the
+  window that is already running instead of opening a second one (replaces v1's named pipe).
+  Part of the Tauri plugins workspace; MIT / Apache-2.0.
+
+---
+
+## 12. Rust crates
 
 Linked as dependencies, each under MIT or MIT/Apache-2.0:
 `windows-sys`, `libloading`, `serde`, `serde_json`, `tokio`, `chrono`,
-`tauri-plugin-dialog`, `tauri-plugin-opener`, `md5`.
+`tauri-plugin-dialog`, `tauri-plugin-opener`, `md5`, `sys-locale`.
 Full per-crate licence text is reproduced by `cargo about` / `cargo license` output.
 
 ---

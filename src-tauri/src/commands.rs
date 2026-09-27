@@ -136,6 +136,16 @@ pub struct TelnetArgs {
     pub auto_reconnect: Option<bool>,
 }
 
+/// ADB 的額外參數（`kind = "adb"` 時才看）。前端先呼叫 `adb_devices` 選好裝置。
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdbArgs {
+    /// `adb.exe` 的路徑（前端先呼叫 `adb_devices` 拿到的那個；空＝再找一次）。
+    pub path: Option<String>,
+    /// 裝置序號。省略／空＝只有一台，開 `adb shell`（同舊版）。
+    pub serial: Option<String>,
+}
+
 /// COM（連接埠）的額外參數（`kind = "com"` 時才看）。
 ///
 /// 欄位與字串值照舊版 `ComDialog` 與 `settings.json`（見 [`crate::com::ComParams`]）。
@@ -183,6 +193,8 @@ pub fn session_create(
     ssh: Option<SshArgs>,
     telnet: Option<TelnetArgs>,
     com: Option<ComArgs>,
+    // `kind = "adb"`：adb.exe 路徑與（可省的）裝置序號。
+    adb: Option<AdbArgs>,
     // `kind = "conn"`：要開哪一條自訂連線（依名稱）。
     conn: Option<String>,
     // 恢復分頁：要倒回哪一筆的畫面（`restore_list` 的索引）。
@@ -287,6 +299,26 @@ pub fn session_create(
                 command_line: String::new(), // 下面依沙盒與 via_powershell 組出來
                 name: c.name.clone(),
                 title: c.name.clone(),
+                exe,
+            }
+        }
+        // ADB：舊版 v1.0.18 起 ADB 是「自訂連線」，但**開的時候走裝置流程**
+        //（`OpenAdbFlow` → `OpenAdbShell`），所以這裡是獨立的 kind。
+        // 前端先呼叫 `adb_devices` 選好序號，再帶 `adb: { path, serial }` 過來。
+        "adb" => {
+            let args = adb.as_ref();
+            let exe = crate::adb::resolve_path(args.and_then(|a| a.path.as_deref()))
+                .ok_or_else(|| t("err.adbNotFound").to_string())?;
+            let serial = args.and_then(|a| a.serial.as_deref()).unwrap_or("");
+            shell::Shell {
+                command_line: crate::adb::command_line(&exe, Some(serial)),
+                name: "adb".to_string(),
+                // 分頁名稱：有序號用序號、沒有用 ADB（同舊版 `OpenAdbShell` 的 title）
+                title: if serial.trim().is_empty() {
+                    "ADB".to_string()
+                } else {
+                    serial.to_string()
+                },
                 exe,
             }
         }
@@ -845,6 +877,12 @@ pub fn view_mode_cycle(
     settings.update(|s| s.view_mode = mode.clone());
     tabs::emit_state(&app, &tabs_state);
     mode
+}
+
+/// 這個資料夾存在嗎（檔案總管右鍵開啟前先確認；舊版 `OpenDirFromShell` 也先檢查）。
+#[tauri::command]
+pub fn dir_exists(path: String) -> bool {
+    !path.trim().is_empty() && std::path::Path::new(path.trim()).is_dir()
 }
 
 /// 設定檔目前的內容（前端啟動時讀一次，套用分頁列寬度／顯示等）。

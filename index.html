@@ -422,6 +422,8 @@
       <div id="modal-title"></div>
       <div id="modal-prompt"></div>
       <input id="modal-input" type="text" autocomplete="off" spellcheck="false" />
+      <!-- 從清單挑一個（ADB 選裝置用；舊版是「新分頁」按鈕下的選單） -->
+      <select id="modal-list" size="6" hidden></select>
       <div id="modal-extra" hidden>
         <button id="modal-browse" type="button">瀏覽…</button>
         <label><input id="modal-check1" type="checkbox" /><span id="modal-check1-text"></span></label>
@@ -511,8 +513,16 @@
       </fieldset>
 
       <fieldset>
+        <legend id="st-l-migrate"></legend>
+        <div class="sd-row st-weak">
+          <button id="st-migrate" type="button"></button>
+          <span id="st-migrate-note" class="sd-hint"></span>
+        </div>
+      </fieldset>
+
+      <fieldset>
         <legend id="st-l-shell"></legend>
-        <label class="sd-check"><input id="st-shellmenu" type="checkbox" disabled /><span id="st-l-shellmenu"></span></label>
+        <label class="sd-check"><input id="st-shellmenu" type="checkbox" /><span id="st-l-shellmenu"></span></label>
         <div id="st-shell-note" class="sd-hint"></div>
       </fieldset>
 

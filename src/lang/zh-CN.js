@@ -480,4 +480,32 @@ export default {
   'term.macroDone': '[宏执行完毕：{0}]',
   'term.macroError': '[宏错误] {0} {1}:{2}',
   'term.regexOptUnsupported': '[宏] regexoption {0} 这个版本不支持（见 docs/TTL-REGEX.md）',
+  // ---- ADB (TASK-016 B) ----
+  'tb.adb': 'ADB',
+  'tip.adb': '打开 ADB shell',
+  'adb.notInstalled': '找不到 adb。AwayTerminal 不再内置 adb，请自行安装 Android SDK Platform Tools\n（或在“设置”中指定 adb.exe 路径）。\n\n已搜索：PATH、ANDROID_HOME / ANDROID_SDK_ROOT、Android Studio 默认位置。\n\n要打开官方下载页吗？',
+  'adb.noDevice': '没有检测到 adb 设备。',
+  'adb.pickDevice': '选择设备',
+  'adb.opened': 'ADB：{0}',
+  'err.adbNotFound': '找不到 adb',
+  // ---- Explorer context menu (TASK-016 C) ----
+  'shell.menuText': '用 AwayTerminal 打开',
+  'settings.shellMenuHint': '勾选后会在 HKCU 写两个键（不碰 HKLM，无需管理员）',
+  'shell.dirMissing': '找不到文件夹：\n{0}',
+  // ---- Importing v1 settings (TASK-016 D; the old file is only read) ----
+  'settings.groupMigrate': '旧版设置',
+  'migrate.button': '导入旧版设置…',
+  'migrate.pick': '选择旧版的 settings.json',
+  'migrate.title': '导入旧版设置',
+  'migrate.ask': '找到旧版 AwayTerminal 的设置：\n{0}\n\n里面有 {1} 条自定义连接、{2} 个收藏。\n要导入吗？（旧文件只会被读取，不会修改）',
+  'migrate.done': '已导入：{0} 个设置项、{1} 条自定义连接、{2} 个收藏。',
+  // ---- Backend messages added in TASK-016 (registry, v1 import) ----
+  'migrate.warnParity': '校验位 {0} 在新版不支持（serialport 只有 None／Odd／Even），已改成 None',
+  'migrate.warnStopBits': '停止位 1.5 在新版不支持，已改成 1',
+  'migrate.warnFlow': '流控制 RTS/CTS+XON/XOFF 在新版不支持，已改成 RTS/CTS',
+  'err.noExePath': '获取不到可执行文件路径',
+  'err.registryWrite': '写注册表失败（{0}）：{1}',
+  'err.registryDelete': '删注册表项失败（{0}）：{1}',
+  'err.oldSettingsBadJson': '旧版设置文件不是合法的 JSON：{0}',
+  'err.noOldSettings': '这个平台没有旧版设置文件',
 };
