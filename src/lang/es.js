@@ -555,4 +555,20 @@ export default {
   'exit.mdPrompt': 'Actualiza CLAUDE.md para registrar los cambios clave de esta sesión.',
   'err.noSuchDir': 'No existe la carpeta: {0}',
   'err.agentNeedsSlot': 'kind=agent requiere agent (el equipo y la casilla)',
+
+  // ---- 代理團隊設定…（TASK-018；舊版 Loc.cs 的同名 key）----
+  'ma.menuSetup': 'Ajustes del equipo de agentes\u2026',
+  'ma.dlgApply': 'Aplicar',
+  'ma.dlgRunning': 'En ejecución',
+  'ma.dlgNotRunning': 'No activado',
+  'ma.dlgNotStarted': 'Sin ejecutar',
+  'ma.dlgExited': 'Terminado',
+  'ma.dlgWillStart': ' \u00b7 se inicia al aplicar',
+  'ma.dlgWillRestart': ' \u00b7 se reinicia al aplicar',
+  'ma.dlgWillClose': ' \u00b7 se cierra al aplicar',
+  'ma.dlgRestart': 'Reiniciar',
+  'ma.dlgRestartOn': '\u2713 Se reiniciará',
+  'ma.applyAsk': 'Al aplicar:\n{0}\n\nUn agente en ejecución que se cierra o se reinicia pierde su conversación actual. ¿Aplicar?',
+  'ma.applyClose': '\u2022 {0} se cerrará',
+  'ma.applyRestart': '\u2022 {0} se reiniciará',
 };

@@ -194,6 +194,10 @@ ESC+CR 軟換行都照原樣），其餘直接寫進 PTY。
 - **`.ai/bus/` 在 worktree 裡**（agent 在裡面工作就在裡面收信）。
 - 護欄設定在團隊的 worktree 裡產生一次（Claude Code 的 `PreToolUse` hook、Codex／Gemini
   的 `--sandbox` 參數）。同一家 CLI 只寫一次。
+- `common.md` 的 `## Sandbox Mode` 那一段告訴 agent 這件事：**只 `git add` 自己改的檔**
+  （禁止 `git add -A`／`git commit -a`／`git stash`——會把隊友做一半的東西一起提交或丟掉）、
+  撞到 `index.lock` 就重試一次、不要切分支／reset／rebase／刪 worktree、成果留在
+  `sandbox/...` 分支由使用者合併。**那是這份規則檔裡唯一一段新版加的內容**，其餘一字不動。
 - Job Object：**一個分頁一個**（見下方「刻意與舊版／規格不同」）。
 
 團隊名是中文時路徑會變 `<sanitized>-<hash>`（和自訂連線的沙盒同一條規則）。
@@ -230,6 +234,69 @@ Claude Code 分頁打「請更新 CLAUDE.md…」，等到它們都安靜 4 秒�
 
 ---
 
+## 11. 既有團隊的「代理團隊設定…」（TASK-018）
+
+分頁右鍵「代理團隊設定…」開同一個視窗，只是變成「既有團隊」模式：每格多一行狀態
+（執行中／已結束／未執行／未啟用 ＋「· 套用後啟動／重新啟動／關閉」）和一個「重新啟動」按鈕。
+
+改得動的東西與**改了之後對已在跑的 agent 做什麼**（逐項照舊版 `ApplyAgentSetup`）：
+
+| 改什麼 | 對執行中的 agent 做什麼 |
+|---|---|
+| 投遞上限 | 不動任何 agent。如果目前是「**因為到上限而暫停**」而且新上限還沒到 → **自動解除暫停**（計數照舊、**不歸零**；歸零只發生在右鍵「投遞」選次數那條路） |
+| 閒置檢查 | 不動任何 agent；「整組從什麼時候開始閒置」歸零重算 |
+| 沙盒 | **不能改**（worktree 是建團隊時開的）→ 顯示目前狀態並停用 |
+| 勾掉某一格 | 關掉那個分頁（執行中＝結束那個 CLI）、`enabled = false`、清掉它的佇列 |
+| 加一格 | 用新設定啟動那一格 |
+| 換 CLI 或換角色 | **關掉舊分頁、同一格用新設定重開**——角色是**啟動時注入**的（`--append-system-prompt-file`／`developer_instructions`），不重開它讀到的還是舊角色 |
+| 按「重新啟動」 | 設定沒變也重開（舊版 `WantRestart`） |
+| 格 1 | 「啟用」永遠勾著、點不動——使用者就是要跟它說話 |
+
+其餘規則：
+
+- **會結束執行中 agent 的變更要先確認**：「套用後：・Agent-12 · Software Engineer · Codex 會重新啟動…
+  執行中的 agent 關閉或重新啟動後，它目前的對話就結束了。要套用嗎？」（用 pane 標題上的全名，
+  才對得出是哪一格）
+- **什麼都沒變＝當作取消**，不重開任何東西。
+- 關／開的過程中 `suspend_relink` 打開：`tab_close` 不逐格重排也不拆組，全部做完才一次
+  重綁（否則關掉倒數第二格時會先拆組，正要開的那幾格就沒有組可以回）。
+- **名單變了 → 每一格的角色檔都重組**（隊友清單要對），而且寄一封 INFO 給 PM：
+  「The team roster changed. Enabled agents now: … Your role file … has been regenerated.
+  Re-read its Runtime Context section before assigning more work.」
+  收件人＝有 PM 角色、而且**不是這一輪剛啟動**的那一格（剛啟動的本來就讀的是新檔），
+  沒有 PM 角色就寄給代表列那一格。
+- 全部格都失敗／都關掉 → 拆組。
+- 關掉的那格如果是作用中分頁，`tab_close` 會跳到別的分頁 → 收尾時把焦點拉回這一組。
+
+## 12. 恢復代理團隊分頁（TASK-018）
+
+關閉程式時每一格都存一筆 `kind = "agent"` 的紀錄（`SavedTab` 的 `agent*` 欄位；
+一組的設定每一格都存一份，恢復時取第一格的）：
+
+| 欄位 | 用途 |
+|---|---|
+| `agentKey` | 同一組的各格共用 → 恢復時靠它把它們綁回一組 |
+| `agentIndex` | 格號 1～4 |
+| `agentGroupNumber` | 上次的組號，**沒被占用就沿用** → Agent ID 不變 |
+| `agentBackend`／`agentRole` | CLI 與角色 |
+| `agentRatio` | 上下列比例 |
+| `agentMaxMessages`／`agentIdleCheck` | 投遞上限與閒置檢查 |
+| `agentSandbox` | 那一組有沒有開沙盒 |
+| `connName`（既有欄位） | 上次跑的是哪一條連線 → 恢復時**優先沿用它的執行檔／參數** |
+
+行為（照舊版 `RestoreAgentGroup`）：
+
+- 資料夾不見了 → **這一組不恢復**，log 一行，其餘分頁照開。
+- 同資料夾、同組號（沒被占用才沿用）、同比例、同上限、同閒置檢查。
+- 每格照上次的執行檔／參數：**絕對路徑一律要存在**才算數（npm 版的 `.cmd` 也一樣——
+  CLI 移除了還開 PowerShell 分頁跑不存在的 `.cmd`，那一格會顯示「執行中」、信打進 shell），
+  只有「靠 PATH 找」的裸名才交給 PowerShell 解析。查不到就重新偵測一次。
+- **角色檔以目前的 `roles/` 重新組合**——CLI 是新 session，OpenCode／Gemini 會重打第一句。
+- scrollback 照一般分頁倒回（`b` 協定，在 `n` 之後、`s` 之前）。
+- 沙盒團隊：`prepare()` 看到 worktree 還在就沿用。
+- 投遞計數從 0 開始（本次執行內的序號），但 `.delivered` 在工作區裡，所以**上次已經投遞過的信
+  不會再投一次**。
+
 ## 刻意與舊版／規格不同
 
 | # | 舊版／規格 | 這裡 | 為什麼 |
@@ -242,12 +309,10 @@ Claude Code 分頁打「請更新 CLAUDE.md…」，等到它們都安靜 4 秒�
 | 6 | 組角色檔失敗只記 log | 建團隊直接失敗 | 角色檔空的話 agent 根本不知道自己是誰，開起來只會浪費使用者的額度 |
 | 7 | 舊版寫死 `one Windows desktop` | 依平台換字（Windows／macOS／Linux） | 跨平台 |
 
-## 還沒做（TASK-017 明說留下的）
+## 還沒做
 
 | 項目 | 舊版對應 | 說明 |
 |---|---|---|
-| **既有團隊的「代理團隊設定…」** | `AgentSetup_Click` ／ `ApplyAgentSetup` | 對已經開著的團隊啟動沒啟用的格、關掉取消勾選的格、重新啟動改了 CLI／角色的格（含「套用後會關閉／重新啟動」的確認）。建團隊、投遞、停止、關閉都已經做完。 |
-| **恢復代理團隊分頁** | `RestoreAgentGroup` | 上次關閉時存的一組（同 `AgentKey` 的各格）→ 同資料夾、同組號、同比例重開。需要在 `SavedTab` 加 `agentKey`／`agentIndex`／`agentBackend`／`agentRole`／`agentRatio`／`agentGroupNumber` 幾個欄位。 |
 | 改團隊名稱（右鍵「更改名稱」） | 分頁改名 | 現在改的是代表列那個分頁的標題，重綁時會被組名蓋回去。 |
 
 ## 怎麼驗
@@ -256,8 +321,13 @@ Claude Code 分頁打「請更新 CLAUDE.md…」，等到它們都安靜 4 秒�
 cargo test --lib                          # agent::* 的單元測試（含執行期脈絡逐字比對）
 cargo build --example fake_agent
 cargo run   --example agent_probe         # 信箱往返，全程在 %TEMP%，不啟動真的 CLI
-npm run tauri dev -- -- --verify 2        # 最後一段是代理團隊的整條路
+npm run verify                            # ＝ --verify 2；最後兩段是代理團隊的整條路與恢復
 ```
+
+整套 `--verify` **要走 `npm run verify`**（`scripts/dev-verify.mjs`）：它在逾時或被中斷時用
+`taskkill /PID <pid> /T /F` 依 PID 收掉整棵行程樹，並清掉 `%TEMP%` 的驗證資料夾。
+直接用 `timeout` 包 `npx tauri dev` 會留下抓著 `target\debug` 的孤兒，下一次 `cargo build`
+就會 `os error 32`（TASK-017 實際踩到，見 `docs/DEV-SETUP.md`）。
 
 `agent_probe` 與 `--verify` 都**不啟動真的 claude／codex**（用 `examples/fake_agent.rs`）、
 **不動使用者的自訂連線清單**（`agent_verify_begin` 的覆寫只活在記憶體裡）、

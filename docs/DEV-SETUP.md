@@ -163,6 +163,20 @@ cargo clippy --all-targets -- -D warnings
 node ..\scripts\test-sandbox-guard.mjs   # 沙盒護欄的 deny/allow 清單
 ```
 
+整套 `--verify`（會開視窗、跑完自己關掉）**一律走這支包裝**，不要自己用 `timeout` 包：
+
+```powershell
+npm run verify           # ＝ node scripts/dev-verify.mjs 2 420（分頁數、逾時秒）
+npm run verify 3 600
+```
+
+⚠️ **為什麼一定要用它**：直接 `timeout ... npx tauri dev` 逾時只砍最外層，留下
+`npx → @tauri-apps/cli → vite（佔著 1420）` 與 `target\debug\awayterminal.exe → OpenConsole.exe`
+一整串孤兒；那個 `awayterminal.exe` 抓著 `target\debug`，下一次 `cargo build` 就會
+`os error 32`（TASK-017 留了一隻，把 PM 的建置擋住）。`dev-verify.mjs` 收尾時用
+`taskkill /PID <pid> /T /F` **依 PID 收整棵樹**（絕不依名稱——依名稱會把使用者的
+AwayTerminal 和正在跑的代理團隊一起砍掉），並清掉 `%TEMP%` 底下的 `awayterm-verify-team-*`。
+
 在 devtools 裡（`npm run tauri dev`）可用：
 
 ```js
@@ -240,6 +254,18 @@ awayDump(6)           // 把 xterm buffer 尾端印到後端 log，驗證輸出�
 
 > 注意：`tauri.conf.json` 要設 `mainBinaryName: "AwayTerminal"`，否則執行檔會叫
 > `awayterminal.exe`（Cargo package 名），與產品名不一致。
+
+## ⚠️ 不要對這個 repo 跑 prettier 或任何格式化工具
+
+這個 repo **刻意沒有** `.prettierrc`，也**不要加**（PM 決定，2026-09-27）：
+
+1. `src/terminal.js` 是從舊版逐字搬過來的，靠「diff 只有那幾行」來證明行為沒變
+   （`docs/TERMINAL-JS-DIFF.md`）。格式化工具一跑就全毀。
+2. 其餘檔案的風格本來就不統一，沒有一個設定能同時符合。
+
+沒有設定檔時 `npx prettier --write` 會用它自己的預設值（雙引號、80 欄）把**整個檔**重排：
+TASK-017 我在 5 個檔上跑了一次，diff 從約 800 行變成 5740 行，只能 `git checkout` 還原再重做。
+要調格式就手改那幾行。
 
 ## 尚未做的事（後續任務）
 

@@ -4,7 +4,7 @@ Agent ID: Agent-12
 Role: Software Engineer
 Provider: ClaudeCode
 Team session: MAS-1
-Project directory: C:\Users\Awaysu\Desktop\AwayTerminal2
+Project directory: C:\Projects\Example
 Enabled agents:
   - Agent-11  Product Manager    (ClaudeCode)
   - Agent-12  Software Engineer  (ClaudeCode)   <- you

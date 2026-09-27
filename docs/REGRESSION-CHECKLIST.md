@@ -785,8 +785,25 @@ TEMP 路徑印出完整結果，Documents 路徑印完 `path = …` 就停住。
 | MA47 | 👤 真的 Codex／OpenCode／Gemini | Codex 的 `developer_instructions` 吃得下；OpenCode／Gemini 的第一句打進去後回 READY | — | ⬜ | — | — |
 | MA48 | 👤 八語 | 切每一種語言，建團隊視窗、右鍵選單、投遞那一行都跟著換 | — | ⬜ | — | — |
 | MA49 | 👤 離開前更新 CLAUDE.md | 有一般 claude 分頁才能勾；勾了會停在對話框顯示「正在請 Claude Code 更新…」；**代理團隊的格不算** | `ExitDialog` | ⬜ | — | — |
-| MA50 | 既有團隊的「設定…」 | **還沒做**（TASK-017 明說留下）；`docs/MULTI-AGENT.md` 最後一節 | `ApplyAgentSetup` | ⬜ 未做 | — | — |
-| MA51 | 恢復代理團隊分頁 | **還沒做**（同上） | `RestoreAgentGroup` | ⬜ 未做 | — | — |
+| MA50 | 右鍵「代理團隊設定…」→ 改投遞上限 | 換上限；**因為到上限而暫停**且新上限還沒到 → 自動解除（計數**不歸零**） | `ApplyAgentSetup` | PASS | — | — |
+| MA51 | 設定…→ 改閒置檢查 | 換值並把「從什麼時候開始閒置」歸零 | 同上 | PASS | — | — |
+| MA52 | 設定…→ 勾掉某一格 | 那個分頁關掉、從名單移除、佇列清空 | 同上 | PASS（`--verify`） | — | — |
+| MA53 | 設定…→ 加一格 | 用新設定啟動；其餘格不受影響 | 同上 | PASS（`--verify`） | — | — |
+| MA54 | 設定…→ 換 CLI 或換角色 | **關掉重開**（角色是啟動時注入的） | 同上 | PASS（`--verify`：格 2 換成 QA 後重讀角色檔） | — | — |
+| MA55 | 設定…→ 按「重新啟動」 | 設定沒變也重開 | `WantRestart` | PASS（單元測試 `action_for`） | — | — |
+| MA56 | 設定…→ 什麼都沒改按套用 | 當作取消，不重開任何東西 | 同上 | PASS（`changed = false`） | — | — |
+| MA57 | 設定…→ 名單變了 | 每格角色檔重組 ＋ 寄一封 INFO 給 PM 要它重讀 Runtime Context | 同上 | PASS（`--verify`） | — | — |
+| MA58 | 設定…的過程中不重排 | 關好幾格再開好幾格，中途不拆組（`suspend_relink`） | `_suspendRelink` | PASS | — | — |
+| MA59 | 👤 設定…的狀態列 | 每格顯示「執行中／已結束／未執行／未啟用」＋「· 套用後啟動／重新啟動／關閉」 | `RefreshSlot` | ⬜ | — | — |
+| MA60 | 👤 設定…會結束對話時先確認 | 「套用後：・Agent-12 · … 會重新啟動」＋「目前的對話就結束了。要套用嗎？」 | `ma.applyAsk` | ⬜ | — | — |
+| MA61 | 👤 設定…的沙盒勾選 | 顯示目前狀態但**不能改**（worktree 是建團隊時開的） | 新版限制 | ⬜ | — | — |
+| MA62 | 恢復代理團隊分頁 | 同資料夾、**同組號**（沒被占用）、同比例、同上限；兩格都回來 | `RestoreAgentGroup` | PASS（`--verify`） | — | — |
+| MA63 | 恢復：Agent ID 沿用 | 角色檔重新組好，裡面的 `Agent ID:` 和上次一樣 | 同上 | PASS（`--verify`） | — | — |
+| MA64 | 恢復：畫面倒回 | 上次那一格的 scrollback 回到新 pane（`b` 協定） | 同上 | PASS（`--verify`） | — | — |
+| MA65 | 恢復：執行檔沿用 | 照上次的執行檔／參數；**絕對路徑不存在就重新偵測** | `LaunchSlot` 的 `saved` 分支 | PASS（程式碼對照） | — | — |
+| MA66 | 恢復：資料夾不見了 | 這一組不恢復、log 一行，其餘分頁照開 | 同上 | PASS | — | — |
+| MA67 | 恢復：不重投上次的信 | `.delivered` 在工作區裡，重開後不會再投一次 | `.delivered` | PASS（`--verify` 印出筆數） | — | — |
+| MA68 | 👤 恢復後的排版 | `g` 重綁、比例和上次一樣、外框顏色照格號 | 同上 | ⬜ | — | — |
 
 ## N. AI 聊天室 / Telegram 遠端（待填，階段 4）
 
@@ -824,6 +841,8 @@ TEMP 路徑印出完整結果，Documents 路徑印完 `path = …` 就停住。
 | 拆組（`u` 協定） | JS 有 `ungroupAll()`，C# 端**沒有呼叫者**（死協定，同 `A` 全選） | 解散團隊時**還有分頁活著**才送 | 否則那些 pane 會卡在一個沒有團隊的 `.agents` 外框裡，還掛著 agent 標籤與狀態小標 |
 | 組角色檔失敗 | 只記 log，照樣開 | 建團隊直接失敗 | 角色檔空的話 agent 根本不知道自己是誰，開起來只會白花使用者的額度 |
 | 執行期脈絡的「共用桌面」那句 | 寫死 `one Windows desktop` | 依平台換字 | 跨平台 |
+| `common.md` 的沙盒段 | 沒有（舊版沒有沙盒） | 多一段 `## Sandbox Mode`（只 `git add` 自己的檔、禁止 `-A`／`-a`／`stash`、`index.lock` 重試一次） | 團隊共用一棵 worktree 是新版才有的狀況。**規則檔其餘一字不動**，那一段有註解標明是新版加的 |
+| 既有團隊的沙盒勾選 | （舊版沒有沙盒） | 顯示目前狀態但**不能改** | worktree 是建團隊時開的；中途換掉會讓已經在跑的 agent 的工作目錄和團隊對不上 |
 | 沙盒的 git 忽略 | — | 寫 `.git/info/exclude`，**不動使用者的 `.gitignore`** | `.gitignore` 是會進 commit 的檔，程式不該改它 |
 | 重連退避「歸零」的觸發點 | **一收到輸出**就歸零（`OnSessionOutput` 第一行） | **shell channel 開成功**才歸零（`OnConnected`） | 舊版的輸出全來自 `ssh.exe`＝一定是遠端的。新版內建 SSH，自己的狀態訊息（「連線到 …」、`login as:`、錯誤訊息）走同一條輸出 callback，照舊版寫會被誤判成「連上了」→ 退避永遠停在 3 秒（`--verify` 抓到）。目的一樣，判斷更精確 |
 | SSH 連線對話框的欄位 | 類型／主機／埠／保持連線／自動重連 | 多了帳號、金鑰檔、Pageant、進階（演算法四組 + 環境變數） | 舊版這些只能靠 `ssh.exe` 命令列參數；內建 SSH 之後沒有命令列可下，只能做進對話框。**密碼欄兩邊都沒有**（當場問、不存檔） |
@@ -894,5 +913,7 @@ TEMP 路徑印出完整結果，Documents 路徑印完 `path = …` 就停住。
 | **投遞只能在收件人閒置時做**，而且「閒置」是 6 個條件同時成立 | 少一條就會把字打進正在工作的 CLI：被當成它自己訊息的一部分、或整段被吃掉。舊版實測抓到的兩個極端：①Codex 的星星閃爍動畫讓畫面永遠不靜止（→ `tui.whimsy=false`）②經 PowerShell 啟動時提示行出來後 node 還在載入（→ 多等一點） | MA19、MA20 |
 | **代理團隊的測試一律用假 agent，而且不碰使用者的資料目錄** | ①啟動真的 claude／codex 會花掉使用者的額度、還會碰到真的登入狀態；②角色檔寫在 `<設定資料夾>/multiagent/sessions/<組號>/`，`--verify` 建團隊時會 `clear_session()`——**使用者此刻正開著同組號的團隊就會被刪掉**（第一次跑 `--verify` 實際寫進了真的資料目錄，之後改成 `%TEMP%` 覆寫）。`agent_verify_begin` 同時覆寫「要跑哪支 exe」與「資料目錄」，`agent_verify_end` 兩個都清掉 | MA2、MA3 |
 | **假 agent 要從角色檔知道自己是誰** | 給它寫死的預設 ID，兩格都會以為自己是 `Agent-11` → 回信寄錯人（`0002-Agent-11-to-Agent-11.md`）。真的 agent 也是從角色檔的 `Agent ID:` 那一行知道的，測試替身要照做（第一次 `--verify` 抓到） | MA3 |
+| **`--verify` 一定要走 `npm run verify`（`scripts/dev-verify.mjs`）** | 直接用 `timeout` 包 `npx tauri dev`，逾時只砍最外層，留下 `npx → cli → vite（佔著 1420）` 與 `target\debug\awayterminal.exe → OpenConsole.exe` 一整串孤兒；那個 `awayterminal.exe` 抓著 `target\debug`，**下一次 `cargo build` 就 `os error 32`**（TASK-017 留了一隻，PM 的建置直接跑不動）。包裝收尾時用 `taskkill /PID <pid> /T /F` 依 PID 收整棵樹——**絕不依名稱**，依名稱會把使用者的 AwayTerminal 和正在跑的代理團隊一起砍掉 | MA2、MA3 |
+| **測試的 `%TEMP%` 資料夾要用 Drop 守衛刪，不是在最後一行刪** | assert 失敗時那一行跑不到，資料夾就留著（TASK-017 留下兩個 `awayterm-roles-compose-*`）。`roles.rs` 的測試改用 `struct TempDir` + `impl Drop` | MA1 |
 | **剛關掉的 PTY 還占著資料夾** | 優雅結束鍵 60ms ＋ 收行程的執行緒還在跑 → 馬上刪 `%TEMP%` 會拿到 `os error 32`。要等一下並重試（`agent_verify_end` 重試 10 次 × 400ms） | MA3 |
 | `macro-dialog` event 一定要回 `macro_answer` | 巨集的執行緒停在那裡等（每 100ms 檢查中斷）。不回就會一直卡著，使用者看到「巨集不動了」。`statusbox`／`closesbox` 是例外（不等回覆） | T50、T51 |

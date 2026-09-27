@@ -574,4 +574,20 @@ export default {
   'exit.mdPrompt': 'Please update CLAUDE.md to record this session\'s key changes.',
   'err.noSuchDir': 'No such folder: {0}',
   'err.agentNeedsSlot': 'kind=agent requires agent (the team and slot)',
+
+  // ---- 代理團隊設定…（TASK-018；舊版 Loc.cs 的同名 key）----
+  'ma.menuSetup': 'Multi-Agent settings\u2026',
+  'ma.dlgApply': 'Apply',
+  'ma.dlgRunning': 'Running',
+  'ma.dlgNotRunning': 'Not enabled',
+  'ma.dlgNotStarted': 'Not running',
+  'ma.dlgExited': 'Ended',
+  'ma.dlgWillStart': ' \u00b7 starts on Apply',
+  'ma.dlgWillRestart': ' \u00b7 restarts on Apply',
+  'ma.dlgWillClose': ' \u00b7 closes on Apply',
+  'ma.dlgRestart': 'Restart',
+  'ma.dlgRestartOn': '\u2713 Will restart',
+  'ma.applyAsk': 'After applying:\n{0}\n\nA running agent that is closed or restarted loses its current conversation. Apply?',
+  'ma.applyClose': '\u2022 {0} will be closed',
+  'ma.applyRestart': '\u2022 {0} will be restarted',
 };

@@ -24,7 +24,7 @@ import { initCompose, openCompose } from './compose.js';
 import { initSettings } from './setdlg.js';
 import { initAbout } from './about.js';
 import { initAdb, openAdb, isAdbConn } from './adb.js';
-import { initAgentDialog, openAgentTeam } from './agentdlg.js';
+import { initAgentDialog, openAgentTeam, openAgentSetup } from './agentdlg.js';
 import { onLangChange } from './i18n.js';
 import { initFavs, addConnFavorite } from './favs.js';
 
@@ -809,6 +809,10 @@ function installMenus() {
     if (item.dataset.act === 'color' || item.dataset.act === 'ma-delivery') return; // 有子選單，點父項不動作
     const team = teamOfTab(id);
     hideMenus();
+    if (item.dataset.act === 'ma-setup') {
+      if (team) openAgentSetup(team.key, createSession);
+      return;
+    }
     if (item.dataset.act === 'ma-limit') {
       if (team) setTeamLimit(team.key, item.dataset.limit || '30');
       return;
@@ -1241,6 +1245,7 @@ function applyTexts() {
     // 代理團隊那幾項（「投遞」有子選單，只換前面那段文字）
     const dev = el.tabMenu.querySelector('[data-act="ma-delivery"]');
     if (dev && dev.firstChild) dev.firstChild.nodeValue = T['ma.menuDelivery'];
+    setText(el.tabMenu, '[data-act="ma-setup"]', T['ma.menuSetup']);
     setText(el.tabMenu, '[data-act="ma-stop"]', T['ma.menuStop']);
     setText(el.tabMenu, '[data-act="ma-bus"]', T['ma.menuOpenBus']);
     setText(el.newMenu, '[data-kind="manage"]', T['tb.manageConns']);

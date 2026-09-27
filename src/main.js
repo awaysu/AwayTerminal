@@ -245,6 +245,7 @@ async function awayVerify() {
   await verifyRestore();
   await verifySandbox();
   await verifyAgentTeam();
+  await verifyAgentRestore();
 }
 window.awayVerify = awayVerify;
 
@@ -299,17 +300,25 @@ async function verifyAgentTeam() {
     // 兩格的畫面：假 agent 印出「角色檔讀到了」＝`--append-system-prompt-file` 真的送到
     let st = await invoke('agent_verify_state', { key });
     lines.push(`[verify] 分頁 id：${st.tabs.join(',')}　比例=${st.ratio}`);
-    await waitUntil(15000, () =>
+    // 角色檔是否組好、Agent ID 對不對：**讀檔**（不看畫面，理由見 `RoleFileInfo` 的註解）
+    for (const r of st.roles) {
+      lines.push(
+        `[verify]   ${r.slotId} 角色檔：Agent ID=${r.agentId}　Role=${r.role}　` +
+          `三層=${r.threeLayers}　${r.bytes} bytes`
+      );
+    }
+    const roleOk =
+      st.roles.length === 2 && st.roles.every((r) => r.threeLayers && r.agentId === r.slotId);
+    lines.push(`[verify] 角色檔（含執行期脈絡）組好、Agent ID 正確：${roleOk}`);
+    // 「CLI 真的把它讀進去了」只有看畫面才知道 → 參考行，不當成 pass/fail
+    //（pane 這時可能是 0×0，`b` 協定的 held 還沒把新輸出寫出來）
+    await waitUntil(8000, () =>
       st.tabs.every((id) => term.tail(id, 40).join('\n').includes('runtime-context=true'))
     );
     for (const id of st.tabs) {
       const tail = term.tail(id, 40).filter((l) => l.includes('role-file=') || l.includes('ready'));
-      for (const t of tail) lines.push(`[verify]   pane ${id} | ${t}`);
+      for (const t of tail) lines.push(`[verify]   （參考）pane ${id} | ${t}`);
     }
-    const roleOk = st.tabs.every((id) =>
-      term.tail(id, 40).join('\n').includes('runtime-context=true my-id=true')
-    );
-    lines.push(`[verify] 角色檔（含執行期脈絡）送到兩格：${roleOk}`);
 
     // 分隔線比例（`G` 協定那條路）
     await invoke('agent_ratio', { bottomTab: st.tabs[0], ratio: 0.35 });
@@ -378,6 +387,63 @@ async function verifyAgentTeam() {
     );
     lines.push(`[verify] 兩格都收到停止句：${gotStop}`);
 
+    // ---- 套用設定（TASK-018 A）：加一格、換角色、關一格 ----
+    let st2 = await invoke('agent_team_state', { key });
+    lines.push(
+      `[verify] 目前各格：${st2.slots
+        .map((x) => `${x.index}:${x.state}/${x.backend || '-'}/${x.role || 'None'}`)
+        .join('  ')}`,
+    );
+    // 格 3 加進來（Architect）＋格 2 換角色（QA）＝格 2 會重新啟動
+    const applySetup = {
+      dir,
+      title: '',
+      slots: [
+        { enabled: true, backend: 'claude-code', role: 'product-manager', restart: false },
+        { enabled: true, backend: 'claude-code', role: 'qa-engineer', restart: false },
+        { enabled: true, backend: 'claude-code', role: 'software-architect', restart: false },
+        { enabled: false, backend: '', role: '', restart: false },
+      ],
+      maxMessages: 50,
+      idleCheckMinutes: 0,
+      sandbox: true,
+    };
+    const applyPlan = await invoke('agent_team_apply', { key, setup: applySetup });
+    lines.push(
+      `[verify] 套用：關 ${applyPlan.closeTabs.join(',') || '-'}　開 ${
+        applyPlan.launch.map((x) => `${x.agentId}/${x.roleTitle}`).join(',') || '-'
+      }　名單變了=${applyPlan.rosterChanged}`,
+    );
+    for (const id of applyPlan.closeTabs.slice().reverse()) await invoke('tab_close', { id });
+    for (const slot of applyPlan.launch) {
+      await createSession({ kind: 'agent', agent: { team: key, index: slot.index } });
+    }
+    await invoke('agent_team_apply_done', { key, rosterChanged: applyPlan.rosterChanged });
+    st2 = await invoke('agent_team_state', { key });
+    lines.push(
+      `[verify] 套用後：${st2.slots
+        .map((x) => `${x.index}:${x.state}/${x.role || 'None'}`)
+        .join('  ')}　上限=${(await invoke('agent_verify_state', { key })).messageCount >= 0 ? applySetup.maxMessages : '?'}`,
+    );
+    const after = await invoke('agent_verify_state', { key });
+    lines.push(`[verify] 套用後在跑的格：${after.running}（要 3）　分頁 ${after.tabs.join(',')}`);
+    // 換了角色的那一格：角色檔要以**新角色**重新組好（讀檔，不看畫面）
+    const qa = after.roles.find((r) => r.slotId.endsWith('2'));
+    lines.push(
+      `[verify] 重新啟動的那一格角色檔：${
+        qa ? `${qa.slotId} Role=${qa.role} 三層=${qa.threeLayers}` : '(沒有)'
+      }`
+    );
+    lines.push(
+      `[verify] 換角色後角色檔重組成 QA Engineer：${!!qa && qa.role === 'QA Engineer' && qa.threeLayers}`
+    );
+    // 名單變了 → AwayTerminal 應該寄一封 INFO 給 PM
+    const roster = await waitUntil(15000, async () => {
+      const v = await invoke('agent_verify_state', { key });
+      return v.busFiles.some((f) => f.includes('AwayTerminal-to-Agent-'));
+    });
+    lines.push(`[verify] 名單變了 → 通知 PM 重讀角色檔：${roster}`);
+
     // ---- 關閉整組 ----
     const tabs = await invoke('agent_team_tabs', { key });
     for (const id of tabs.slice().reverse()) await invoke('tab_close', { id });
@@ -395,6 +461,133 @@ async function verifyAgentTeam() {
     }
     if (dir) {
       await new Promise((r) => setTimeout(r, 800)); // 讓剛關掉的 PTY 收尾完再刪資料夾
+      const msg = await invoke('agent_verify_end', { dir }).catch((e) => String(e));
+      lines.push(`[verify] 收尾：${msg}`);
+    }
+    log(lines.join('\n'));
+  }
+}
+
+
+/**
+ * 恢復代理團隊分頁（TASK-018 B）：建一個假 agent 團隊 → 走**真的存檔那條路**
+ * （`restore_verify_save`）→ `restore_list()` → `agent_team_restore` → 兩格回來、
+ * 組號沿用、比例一樣、畫面倒回。
+ *
+ * ⚠️ 和 `verifyAgentTeam` 一樣：假 agent、`%TEMP%`、資料目錄覆寫，不碰使用者的東西。
+ * 存檔會寫進 `settings.savedTabs`，所以**驗完要把設定還原**（同 `verifyMigrate` 的做法）。
+ */
+async function verifyAgentRestore() {
+  const term = window.AwayTerm;
+  const lines = ['[verify] 恢復代理團隊分頁（假 agent、全程在 %TEMP%）'];
+  let dir = null;
+  let key = null;
+  const before = await invoke('settings_get');
+  try {
+    dir = await invoke('agent_verify_begin');
+    const setup = {
+      dir,
+      title: '',
+      slots: [
+        { enabled: true, backend: 'claude-code', role: 'product-manager', restart: false },
+        { enabled: true, backend: 'claude-code', role: 'software-engineer', restart: false },
+        { enabled: false, backend: '', role: '', restart: false },
+        { enabled: false, backend: '', role: '', restart: false },
+      ],
+      maxMessages: 50,
+      idleCheckMinutes: 0,
+      sandbox: false, // 這一段驗的是恢復，不要每次都開新 worktree
+    };
+    const plan = await invoke('agent_team_create', { setup });
+    key = plan.key;
+    for (const slot of plan.slots) {
+      await createSession({ kind: 'agent', agent: { team: key, index: slot.index } });
+    }
+    await invoke('agent_team_ready', { key });
+    await invoke('agent_ratio', { bottomTab: (await invoke('agent_verify_state', { key })).tabs[0], ratio: 0.28 });
+    let st = await invoke('agent_verify_state', { key });
+    lines.push(`[verify] 建好：組號=${plan.number}　分頁=${st.tabs.join(',')}　比例=${st.ratio}`);
+    // 每格畫面上留一個記號，證明 scrollback 真的倒回來
+    for (const id of st.tabs) {
+      term.writeOutput(id, new TextEncoder().encode(`\r\nAWAY_AGENT_MARK_${id}\r\n`));
+    }
+    await new Promise((r) => setTimeout(r, 600));
+
+    // 走真的存檔那條路（和關閉程式時一樣）
+    const saved = await invoke('restore_verify_save');
+    lines.push(`[verify] 存下 ${saved} 個分頁（含這一組 ${st.tabs.length} 格）`);
+    const list = await invoke('restore_list');
+    const agentRows = list
+      .map((e, i) => ({ e, i }))
+      .filter(({ e }) => e.kind === 'agent' && e.agentKey === key);
+    lines.push(
+      `[verify] 存檔裡的代理團隊格：${agentRows
+        .map(({ e }) => `${e.agentIndex}:${e.agentBackend}/${e.agentRole}`)
+        .join('  ')}`,
+    );
+    const first = agentRows[0] && agentRows[0].e;
+    lines.push(
+      `[verify] 組的資訊存到了：組號=${first && first.agentGroupNumber}　比例=${
+        first && first.agentRatio
+      }　上限=${first && first.agentMaxMessages}　沙盒=${first && first.agentSandbox}`,
+    );
+
+    // 關掉原本那一組，再恢復
+    for (const id of st.tabs.slice().reverse()) await invoke('tab_close', { id });
+    await invoke('agent_team_gone', { key }).catch(() => {});
+    key = null;
+    const { restoreAgentTeam } = await import('./agentdlg.js');
+    const n = await restoreAgentTeam(
+      agentRows.map(({ i }) => i),
+      createSession,
+    );
+    lines.push(`[verify] 恢復了 ${n} 格（要 2）`);
+    const teams = await invoke('agent_teams');
+    const back = teams.find((t) => t.dir === dir);
+    if (!back) throw new Error('恢復後找不到那一組');
+    key = back.key;
+    lines.push(
+      `[verify] 恢復後：組號=${back.number}（要和 ${first.agentGroupNumber} 一樣）　` +
+        `比例=${back.ratio}（要 ${first.agentRatio}）　上限=${back.maxMessages}（要 ${first.agentMaxMessages}）`,
+    );
+    const st3 = await invoke('agent_verify_state', { key });
+    lines.push(`[verify] 恢復後的分頁：${st3.tabs.join(',')}　在跑 ${st3.running} 格`);
+    // Agent ID 沿用 → **讀角色檔**（不看畫面，理由同上）
+    for (const r of st3.roles) {
+      lines.push(`[verify]   ${r.slotId} 角色檔：Agent ID=${r.agentId}　Role=${r.role}`);
+    }
+    const idOk =
+      st3.roles.length === 2 &&
+      st3.roles.every((r) => r.threeLayers && r.agentId === r.slotId) &&
+      st3.roles[0].agentId === `Agent-${back.number}1`;
+    lines.push(`[verify] 角色檔重新組好、Agent ID 沿用：${idOk}`);
+    // 畫面倒回：上次的記號要在新 pane 的 scrollback 裡
+    const markOk = await waitUntil(15000, () =>
+      st3.tabs.some((id) => term.tail(id, 200).join('\n').includes('AWAY_AGENT_MARK_')),
+    );
+    lines.push(`[verify] 上次的畫面倒回來了：${markOk}`);
+    // 信箱計數延續（`.delivered` 在 worktree／專案裡，不會因為重開而消失）
+    lines.push(`[verify] 信箱檔案：${st3.busFiles.length} 封　已投遞記錄：${st3.delivered.length} 筆`);
+  } catch (e) {
+    lines.push(`[verify] 失敗：${e}`);
+  } finally {
+    if (key) {
+      const tabs = await invoke('agent_team_tabs', { key }).catch(() => []);
+      for (const id of tabs.slice().reverse()) await invoke('tab_close', { id }).catch(() => {});
+      await invoke('agent_team_gone', { key }).catch(() => {});
+    }
+    // 存檔把 `settings.savedTabs` 換掉了 → 清乾淨（`restore_verify_clear` ＝ save(restore:false)，
+    // 同「關程式時沒勾恢復分頁」那條路）。**不要留下一組假 agent 的恢復紀錄**，
+    // 否則使用者下次啟動會看到兩個莫名的 agent 分頁。
+    await invoke('restore_verify_clear').catch(() => {});
+    const left = await invoke('settings_get').catch(() => ({}));
+    lines.push(
+      `[verify] savedTabs 已清掉：${(left.savedTabs || []).length} 筆（驗證前 ${
+        (before.savedTabs || []).length
+      } 筆；關程式時會依當下的分頁重新存）`,
+    );
+    if (dir) {
+      await new Promise((r) => setTimeout(r, 800));
       const msg = await invoke('agent_verify_end', { dir }).catch((e) => String(e));
       lines.push(`[verify] 收尾：${msg}`);
     }

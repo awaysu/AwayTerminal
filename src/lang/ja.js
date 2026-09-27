@@ -555,4 +555,20 @@ export default {
   'exit.mdPrompt': 'CLAUDE.md を更新して、今回の作業の要点と変更を記録してください。',
   'err.noSuchDir': 'そのフォルダーはありません: {0}',
   'err.agentNeedsSlot': 'kind=agent には agent（チームと枠番号）が必要です',
+
+  // ---- 代理團隊設定…（TASK-018；舊版 Loc.cs 的同名 key）----
+  'ma.menuSetup': 'エージェントチームの設定…',
+  'ma.dlgApply': '適用',
+  'ma.dlgRunning': '実行中',
+  'ma.dlgNotRunning': '無効',
+  'ma.dlgNotStarted': '未実行',
+  'ma.dlgExited': '終了',
+  'ma.dlgWillStart': ' · 適用後に起動',
+  'ma.dlgWillRestart': ' · 適用後に再起動',
+  'ma.dlgWillClose': ' · 適用後に終了',
+  'ma.dlgRestart': '再起動',
+  'ma.dlgRestartOn': '✓ 再起動します',
+  'ma.applyAsk': '適用すると:\n{0}\n\n実行中のエージェントを終了または再起動すると、現在の会話は失われます。適用しますか？',
+  'ma.applyClose': '・{0} を終了します',
+  'ma.applyRestart': '・{0} を再起動します',
 };

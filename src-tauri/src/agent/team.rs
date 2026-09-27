@@ -61,6 +61,9 @@ pub struct Slot {
     pub pending_first_message: Option<String>,
     /// 組好的角色檔路徑。
     pub role_file: String,
+    /// 恢復分頁時要沿用的執行檔／參數（舊版 `LaunchSlot` 的 `saved` 分支：
+    /// 「每格照上次的執行檔／參數」）。`None`＝重新解析一次。
+    pub saved_conn: Option<crate::settings::CustomConn>,
     /// 待投遞的信（FIFO）。
     pub queue: VecDeque<AgentMessage>,
     /// 上一次打字給這格的時間（epoch ms；0＝還沒打過）。
@@ -116,6 +119,45 @@ impl Slot {
     pub fn short_label(&self) -> String {
         format!("{} {}", self.agent_id(), self.role_title)
     }
+
+    /// 套用設定時「這一格要怎麼處理」（舊版 `MultiAgentDialog.ActionOf`）。
+    ///
+    /// | 目前 | 想要 | 結果 |
+    /// |---|---|---|
+    /// | 沒有分頁 | 啟用 | `Start` |
+    /// | 沒有分頁 | 不啟用 | `None` |
+    /// | 有分頁 | 不啟用 | `Close` |
+    /// | 有分頁 | 啟用、CLI／角色都沒變、沒按重新啟動 | `None` |
+    /// | 有分頁 | 啟用、CLI 或角色變了，或按了重新啟動 | `Restart` |
+    ///
+    /// 「改角色也要重開」是因為**角色是啟動時注入的**（`--append-system-prompt-file`／
+    /// `developer_instructions`），不重開它讀到的還是舊角色。
+    pub fn action_for(&self, want_enabled: bool, backend: &str, role: &str, want_restart: bool) -> SlotAction {
+        // 格 1 永遠啟用（設定視窗的勾選是停用的）
+        let want_enabled = want_enabled || self.index == 1;
+        if self.tab.is_none() {
+            return if want_enabled { SlotAction::Start } else { SlotAction::None };
+        }
+        if !want_enabled {
+            return SlotAction::Close;
+        }
+        let same = self.backend.eq_ignore_ascii_case(backend) && self.role.eq_ignore_ascii_case(role);
+        if same && !want_restart {
+            SlotAction::None
+        } else {
+            SlotAction::Restart
+        }
+    }
+}
+
+/// 套用設定後這一格會發生什麼事。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SlotAction {
+    None,
+    Start,
+    Restart,
+    Close,
 }
 
 /// 一個團隊。
@@ -157,6 +199,11 @@ pub struct Team {
     pub bus: Option<super::bus::SharedBus>,
     /// 最後點過的那一格（分頁 id）：點分頁列那一列時回到它。
     pub last_focused: Option<u32>,
+    /// 套用設定中：`tab_close` 不要逐格重排或拆組（做完再一起處理）。
+    /// 舊版是 `MainWindow._suspendRelink`。
+    pub suspend_relink: bool,
+    /// 這一輪套用設定「剛啟動」的格號（通知 PM 時要排除它們——它們的角色檔是新讀的）。
+    pub fresh: Vec<u32>,
 }
 
 impl Team {
@@ -181,6 +228,8 @@ impl Team {
             sandbox_cfg: None,
             bus: None,
             last_focused: None,
+            suspend_relink: false,
+            fresh: Vec::new(),
         }
     }
 
@@ -326,6 +375,49 @@ mod tests {
         assert_eq!(clamp_ratio(0.0), 0.15);
         assert_eq!(clamp_ratio(1.0), 0.85);
         assert_eq!(clamp_ratio(f64::NAN), 0.5);
+    }
+
+    /// 套用設定的四種結果（舊版 `ActionOf` 的真值表）。
+    #[test]
+    fn decides_what_to_do_with_each_slot() {
+        let mut s = Slot::new(1, 2);
+        s.backend = "claude-code".to_string();
+        s.role = "software-engineer".to_string();
+
+        // 還沒啟動
+        assert_eq!(s.action_for(true, "claude-code", "software-engineer", false), SlotAction::Start);
+        assert_eq!(s.action_for(false, "claude-code", "software-engineer", false), SlotAction::None);
+
+        // 已經在跑
+        s.tab = Some(7);
+        assert_eq!(s.action_for(true, "claude-code", "software-engineer", false), SlotAction::None);
+        assert_eq!(s.action_for(false, "", "", false), SlotAction::Close);
+        // 換 CLI 或換角色都要重開（角色是啟動時注入的）
+        assert_eq!(s.action_for(true, "codex", "software-engineer", false), SlotAction::Restart);
+        assert_eq!(s.action_for(true, "claude-code", "qa-engineer", false), SlotAction::Restart);
+        // 什麼都沒變但按了「重新啟動」
+        assert_eq!(s.action_for(true, "claude-code", "software-engineer", true), SlotAction::Restart);
+        // 大小寫不算變
+        assert_eq!(s.action_for(true, "Claude-Code", "Software-Engineer", false), SlotAction::None);
+    }
+
+    /// 格 1 不能關（勾選是停用的，所以「不啟用」也當成啟用）。
+    #[test]
+    fn slot_one_can_never_be_closed() {
+        let mut s = Slot::new(1, 1);
+        s.backend = "claude-code".to_string();
+        s.tab = Some(7);
+        assert_eq!(s.action_for(false, "claude-code", "", false), SlotAction::None);
+        s.tab = None;
+        assert_eq!(s.action_for(false, "claude-code", "", false), SlotAction::Start);
+    }
+
+    /// 恢復時的組號：上次的沒被占用就沿用（Agent ID 才不會變）。
+    #[test]
+    fn restore_prefers_the_previous_group_number() {
+        assert_eq!(next_free_number(&[1, 3], 3), 2, "上次的 3 被占用了 → 最小空號");
+        assert_eq!(next_free_number(&[2], 3), 3, "上次的 3 沒被占用 → 沿用");
+        assert_eq!(next_free_number(&[], 7), 7);
     }
 
     /// 代表列＝最小格號、有分頁的那格。

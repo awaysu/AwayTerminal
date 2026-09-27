@@ -555,4 +555,20 @@ export default {
   'exit.mdPrompt': '请更新 CLAUDE.md，把这次工作的重点与变更记录进去。',
   'err.noSuchDir': '没有这个文件夹：{0}',
   'err.agentNeedsSlot': 'kind=agent 需要 agent（团队与格号）',
+
+  // ---- 代理團隊設定…（TASK-018；舊版 Loc.cs 的同名 key）----
+  'ma.menuSetup': '代理团队设置…',
+  'ma.dlgApply': '应用',
+  'ma.dlgRunning': '运行中',
+  'ma.dlgNotRunning': '未启用',
+  'ma.dlgNotStarted': '未运行',
+  'ma.dlgExited': '已结束',
+  'ma.dlgWillStart': ' · 应用后启动',
+  'ma.dlgWillRestart': ' · 应用后重新启动',
+  'ma.dlgWillClose': ' · 应用后关闭',
+  'ma.dlgRestart': '重新启动',
+  'ma.dlgRestartOn': '✓ 将重新启动',
+  'ma.applyAsk': '应用后：\n{0}\n\n运行中的 agent 关闭或重新启动后，它目前的对话就结束了。要应用吗？',
+  'ma.applyClose': '・{0} 会关闭',
+  'ma.applyRestart': '・{0} 会重新启动',
 };

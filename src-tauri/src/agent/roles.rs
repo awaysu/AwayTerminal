@@ -70,9 +70,14 @@ pub const DEFAULT_SLOT_ROLES: &[&str] = &[
 
 /// 以前各版內建範本的正規化 SHA-256（改範本時把「改之前」那版的雜湊加進來）。
 ///
-/// v2 還沒有發佈過任何版本，所以是空的——沒有記錄的檔案一律當成「使用者的版本」不動，
-/// 和舊版 `PreviousDefaults` 查不到時的行為一致。
-pub const PREVIOUS_DEFAULTS: &[(&str, &[&str])] = &[];
+/// 正常情況用不到它：v2 每次寫檔都會更新 `.defaults.json`，所以判斷「使用者改過沒有」
+/// 靠記錄就夠。這張表是給**記錄不見了**的資料目錄用的（使用者自己刪掉 `.defaults.json`，
+/// 或從別台複製 `multiagent/` 過來）。查不到就一律當成「使用者的版本」不動——
+/// 和舊版 `PreviousDefaults` 的行為一致。
+pub const PREVIOUS_DEFAULTS: &[(&str, &[&str])] = &[
+    // TASK-018 加了「## Sandbox Mode」那一段之前的版本（commit 58849e3）
+    ("common.md", &["a7a3fc9b00fe105d5bb19e75d8df8063d876b49f2a741dea7c7d7091c2ba6144"]),
+];
 
 const MANIFEST_FILE: &str = ".defaults.json";
 
@@ -602,15 +607,34 @@ fn pad(s: &str, width: usize) -> String {
 mod tests {
     use super::*;
 
-    fn temp_dir(tag: &str) -> PathBuf {
+    /// 測試用的 `%TEMP%` 資料夾，**drop 就刪掉**。
+    ///
+    /// 為什麼要 Drop 而不是在測試最後一行刪：assert 失敗時那一行跑不到，
+    /// 資料夾就留在 `%TEMP%` 裡（TASK-017 留下兩個 `awayterm-roles-compose-*`，
+    /// PM 在收尾清單裡抓到）。
+    struct TempDir(PathBuf);
+
+    impl std::ops::Deref for TempDir {
+        type Target = Path;
+        fn deref(&self) -> &Path {
+            &self.0
+        }
+    }
+
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn temp_dir(tag: &str) -> TempDir {
         let dir = std::env::temp_dir().join(format!(
             "awayterm-roles-{tag}-{}-{:?}",
             std::process::id(),
             std::thread::current().id()
         ));
-        let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        dir
+        TempDir(dir)
     }
 
     fn team_of(number: u32, dir: &str) -> Team {
@@ -640,7 +664,6 @@ mod tests {
         }
         let manifest = load_manifest(&dir).unwrap();
         assert_eq!(manifest.len(), TEMPLATES.len());
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// 使用者改過的檔不動；`restore_defaults` 才覆寫回去。
@@ -658,7 +681,6 @@ mod tests {
         assert_eq!(title_of(&dir, "qa-engineer"), "My QA");
         restore_defaults(&dir);
         assert!(!std::fs::read_to_string(&mine).unwrap().contains("我自己改的"));
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// 「只是舊版、使用者沒改過」→ 換成新版（舊版 `.defaults.json` 的用途）。
@@ -682,7 +704,6 @@ mod tests {
             !std::fs::read_to_string(&target).unwrap().contains("上一版"),
             "沒改過的舊版範本應該被換成新版"
         );
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// CRLF 只差在換行不算「使用者改過」（正規化雜湊）。
@@ -710,7 +731,6 @@ mod tests {
         assert_eq!(title_of(&dir, ""), "None");
         // 沒有這個檔＝檔名轉 Title Case
         assert_eq!(title_of(&dir, "my-own-role"), "My Own Role");
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// 下拉順序：內建五個照舊版順序（設計師在 QA 前），自訂的排後面。
@@ -731,7 +751,6 @@ mod tests {
                 "aaa-custom"
             ]
         );
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// 三層組合：common → 角色 → 執行期脈絡，各層之間一條 `---`。
@@ -749,7 +768,6 @@ mod tests {
         assert!(text.contains("Agent ID: Agent-32"));
         // 成品資料夾照組號分開
         assert!(path.parent().unwrap().ends_with("3"));
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// `clear_session` 只清自己組號那一個資料夾。
@@ -767,17 +785,19 @@ mod tests {
         clear_session(&dir, 3);
         assert!(!session_dir(&dir, 3).join("Agent-31.md").exists());
         assert!(keep.is_file(), "別組的成品不能被清掉");
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// 執行期脈絡：**和舊版模板逐字比對**（fixture 在 `resources/multiagent/runtime-context.txt`）。
     #[test]
     fn runtime_context_matches_the_v1_template() {
         let expected = include_str!("../../resources/multiagent/runtime-context.txt");
-        let team = team_of(1, "C:\\Users\\Awaysu\\Desktop\\AwayTerminal2");
+        // fixture 是從**舊版真的產生出來的**那一份抓出來的（v1.2.8 執行中的 Agent-12.md），
+        // 只把裡面的專案路徑換成中性路徑——那是執行時的值，兩邊用同一個字串就不影響
+        // 「逐字比對」的意義（TASK-018：原本的 fixture 含使用者名稱）。
+        let team = team_of(1, "C:\\Projects\\Example");
         let me = &team.slots[1];
         let got = runtime_context(&team, me);
-        // fixture 是從舊版產生的檔案抓出來的（LF），比對前把換行統一
+        // fixture 是 LF，比對前把換行統一
         assert_eq!(
             got.replace("\r\n", "\n"),
             expected.replace("\r\n", "\n"),

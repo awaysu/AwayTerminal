@@ -41,10 +41,34 @@ export async function restoreSavedTabs(createSession) {
   }
   if (!Array.isArray(list) || list.length === 0) return 0;
 
+  // 代理團隊的格要**整組一起**恢復（同一個 agentKey 的那幾筆交給 `agent_team_restore`，
+  // 它要重新算組號、開沙盒、組角色檔，然後前端才逐格開 session）。
+  // 依「第一次出現的位置」處理，其餘分頁照原順序。
+  const teamOrder = [];
+  const teamIndices = new Map();
+  for (let i = 0; i < list.length; i++) {
+    const key = list[i].kind === 'agent' ? list[i].agentKey || `#${i}` : null;
+    if (!key) continue;
+    if (!teamIndices.has(key)) {
+      teamIndices.set(key, []);
+      teamOrder.push(key);
+    }
+    teamIndices.get(key).push(i);
+  }
+
   let ok = 0;
+  const doneTeams = new Set();
   for (let i = 0; i < list.length; i++) {
     const st = list[i];
     try {
+      if (st.kind === 'agent') {
+        const key = st.agentKey || `#${i}`;
+        if (doneTeams.has(key)) continue; // 這一組已經在前面整組恢復過了
+        doneTeams.add(key);
+        const { restoreAgentTeam } = await import('./agentdlg.js');
+        ok += await restoreAgentTeam(teamIndices.get(key) || [i], createSession);
+        continue;
+      }
       const args = argsOf(st, i);
       if (!args) continue;
       await createSession(args);
@@ -54,6 +78,7 @@ export async function restoreSavedTabs(createSession) {
       console.warn(`[restore] 第 ${i + 1} 筆恢復失敗`, e);
     }
   }
+  void teamOrder;
   return ok;
 }
 
@@ -74,6 +99,9 @@ function argsOf(st, index) {
         title,
         restore: index,
       };
+    case 'agent':
+      // 代理團隊走 `restoreAgentTeam()`（整組），不會經過這裡
+      return null;
     case 'ssh':
       if (!st.conn) return null;
       // 帳號已經記在參數裡（登入時記下的）→ 直接連；沒有才會問 login as:。**密碼一律重問。**

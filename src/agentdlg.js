@@ -22,6 +22,8 @@ import { log } from './bridge.js';
 const el = {};
 /** `agent_setup_options()` 的結果。 */
 let opts = null;
+/** 既有團隊的目前狀態（`agent_team_state()`）；`null`＝正在建新團隊。 */
+let existing = null;
 let resolveOpen = null;
 
 function $(id) {
@@ -81,7 +83,17 @@ function buildSlots() {
     const backend = document.createElement('select');
     const roleLabel = document.createElement('label');
     const role = document.createElement('select');
-    box.append(head, cliLabel, backend, roleLabel, role);
+    // 狀態列（執行中／已結束／未啟用 ＋ 套用後會怎樣 ＋ 重新啟動）：**只有既有的組才顯示**，
+    // 新開的組不留空白（同舊版 `foot.Visibility = _group == null ? Collapsed : Visible`）
+    const foot = document.createElement('div');
+    foot.className = 'ma-slot-foot';
+    const status = document.createElement('span');
+    status.className = 'ma-slot-status';
+    const restart = document.createElement('button');
+    restart.type = 'button';
+    restart.className = 'ma-slot-restart';
+    foot.append(status, restart);
+    box.append(head, cliLabel, backend, roleLabel, role, foot);
     el.slots.appendChild(box);
 
     const ui = {
@@ -93,10 +105,40 @@ function buildSlots() {
       backend,
       roleLabel,
       role,
+      foot,
+      status,
+      restart,
+      // 既有團隊：這一格目前的狀態與原本的選擇（判斷「改了沒有」用）
+      state: 'notRunning',
+      origBackend: '',
+      origRole: '',
+      wantRestart: false,
     };
     el.slotUi.push(ui);
     enable.addEventListener('change', () => refreshSlot(i));
+    backend.addEventListener('change', () => refreshSlot(i));
+    role.addEventListener('change', () => refreshSlot(i));
+    restart.addEventListener('click', () => {
+      ui.wantRestart = !ui.wantRestart;
+      refreshSlot(i);
+    });
   }
+}
+
+/**
+ * 這一格按「套用」後會怎樣（舊版 `MultiAgentDialog.ActionOf`）。
+ * 回 `''`（不動）／`start`／`restart`／`close`。新開的組只有 `start`／`''`。
+ */
+function actionOf(i) {
+  const ui = el.slotUi[i];
+  const on = ui.enable.checked || i === 0;
+  if (!existing) return on ? 'start' : '';
+  if (ui.state === 'notRunning') return on ? 'start' : '';
+  if (!on) return 'close';
+  const changed =
+    ui.backend.value.toLowerCase() !== (ui.origBackend || '').toLowerCase() ||
+    ui.role.value.toLowerCase() !== (ui.origRole || '').toLowerCase();
+  return changed || ui.wantRestart ? 'restart' : '';
 }
 
 function refreshSlot(i) {
@@ -109,6 +151,22 @@ function refreshSlot(i) {
   const on = ui.enable.checked;
   ui.backend.disabled = ui.role.disabled = !on;
   ui.box.classList.toggle('off', !on);
+
+  ui.foot.hidden = !existing;
+  if (!existing) return;
+  // 「重新啟動」只對已經啟動過的格有意義
+  ui.restart.hidden = !(on && ui.state !== 'notRunning');
+  ui.restart.textContent = T[ui.wantRestart ? 'ma.dlgRestartOn' : 'ma.dlgRestart'];
+  const status =
+    ui.state === 'running'
+      ? T['ma.dlgRunning']
+      : ui.state === 'exited'
+        ? T['ma.dlgExited']
+        : T[on ? 'ma.dlgNotStarted' : 'ma.dlgNotRunning'];
+  const will = { start: 'ma.dlgWillStart', restart: 'ma.dlgWillRestart', close: 'ma.dlgWillClose' }[
+    actionOf(i)
+  ];
+  ui.status.textContent = will ? status + T[will] : status;
 }
 
 /** 把介面文字重設一次（切語言時會被叫；註冊在 `i18n.js`）。 */
@@ -209,9 +267,12 @@ function read() {
     enabled: i === 0 ? true : ui.enable.checked,
     backend: ui.backend.value,
     role: ui.role.value,
+    restart: ui.wantRestart,
   }));
   for (let i = 0; i < slots.length; i++) {
-    if (slots[i].enabled && !slots[i].backend) {
+    // 只有真的要啟動／重開的格才需要選代理人類型（舊版同一個判斷）
+    const act = actionOf(i);
+    if ((act === 'start' || act === 'restart') && !slots[i].backend) {
       el.noBackend.hidden = false;
       el.noBackend.textContent = fmt('ma.dlgNeedBackend', `Agent-x${i + 1}`);
       return null;
@@ -227,41 +288,72 @@ function read() {
   };
 }
 
-/** 開對話框，回傳 `TeamSetup`（取消＝null）。 */
-async function openDialog(dir) {
+/**
+ * 開對話框，回傳 `TeamSetup`（取消＝null）。
+ * `state` 給了＝既有團隊的「代理團隊設定…」（舊版 `MultiAgentDialog(dir, group)`）。
+ */
+async function openDialog(dir, state) {
   try {
     opts = await invoke('agent_setup_options');
   } catch (e) {
     log(`[agentdlg] 讀取設定選項失敗：${e}`);
     return null;
   }
+  existing = state || null;
   el.dirPath = dir;
   el.dir.textContent = dir;
-  el.limit.value = String(opts.defaultMaxMessages);
-  el.idle.value = String(opts.defaultIdleCheck);
-  el.sandbox.checked = true;
+  el.limit.value = String(existing ? existing.maxMessages : opts.defaultMaxMessages);
+  el.idle.value = String(existing ? existing.idleCheckMinutes : opts.defaultIdleCheck);
+  // 沙盒是建團隊時決定的（worktree 已經開好），既有團隊不能改 → 顯示目前狀態並停用
+  el.sandbox.checked = existing ? existing.sandbox : true;
+  el.sandbox.disabled = !!existing;
+  el.ok.textContent = existing ? T['ma.dlgApply'] : T['ma.dlgOpen'];
   applyTexts();
+  if (existing) el.ok.textContent = T['ma.dlgApply'];
 
-  // 沒有裝任何一家 CLI＝不能開（舊版 `ma.dlgNoBackend` ＋ 停用「開啟」）
+  // 沒有裝任何一家 CLI＝不能開新團隊（舊版 `ma.dlgNoBackend` ＋ 停用「開啟」）。
+  // 既有團隊照樣能按套用——可能只是要關掉一格或改上限。
   const none = opts.backends.length === 0;
   el.noBackend.hidden = !none;
   if (none) el.noBackend.textContent = T['ma.dlgNoBackend'];
-  el.ok.disabled = none;
+  el.ok.disabled = none && !existing;
 
   for (let i = 0; i < el.slotUi.length; i++) {
     const ui = el.slotUi[i];
-    fillSelect(
-      ui.backend,
-      [{ value: '', title: '' }].concat(
-        opts.backends.map((b) => ({ value: b.key, title: b.name })),
-      ),
-      (b) => b.title,
-    );
-    // 預設：每一格都用第一家找得到的 CLI（舊版也是拿第一個可用的）
-    ui.backend.value = opts.backends.length ? opts.backends[0].key : '';
-    ui.role.value = opts.defaultRoles[i] || '';
-    // 新開的組：格 1、2 預設啟用（PM ＋ SE 是最小可用團隊），3、4 使用者自己勾
-    ui.enable.checked = i < 2;
+    const slot = existing ? existing.slots.find((x) => x.index === i + 1) : null;
+    const list = opts.backends.map((b) => ({ value: b.key, title: b.name }));
+    // 用過的 CLI 這台已經找不到了也照樣列出來（舊版同款：否則那一格會顯示成別家的）
+    if (slot && slot.backend && !list.some((b) => b.value === slot.backend)) {
+      list.push({ value: slot.backend, title: slot.backend });
+    }
+    fillSelect(ui.backend, [{ value: '', title: '' }].concat(list), (b) => b.title);
+    ui.wantRestart = false;
+    if (slot && (slot.enabled || slot.state !== 'notRunning')) {
+      // 執行中／已結束的格：沿用目前的 CLI 與角色
+      ui.state = slot.state;
+      ui.origBackend = slot.backend;
+      ui.origRole = slot.role;
+      ui.backend.value = slot.backend;
+      ui.role.value = slot.role;
+      ui.enable.checked = true;
+    } else if (slot) {
+      // 從沒啟動過＝預設；之前開過又被關掉的格＝沿用它上次的 CLI／角色（舊版同款）
+      ui.state = 'notRunning';
+      ui.origBackend = '';
+      ui.origRole = '';
+      ui.backend.value = slot.backend || (opts.backends.length ? opts.backends[0].key : '');
+      ui.role.value = slot.backend ? slot.role : opts.defaultRoles[i] || '';
+      ui.enable.checked = false;
+    } else {
+      ui.state = 'notRunning';
+      ui.origBackend = '';
+      ui.origRole = '';
+      // 預設：每一格都用第一家找得到的 CLI（舊版也是拿第一個可用的）
+      ui.backend.value = opts.backends.length ? opts.backends[0].key : '';
+      ui.role.value = opts.defaultRoles[i] || '';
+      // 新開的組：格 1、2 預設啟用（PM ＋ SE 是最小可用團隊），3、4 使用者自己勾
+      ui.enable.checked = i < 2;
+    }
     refreshSlot(i);
   }
 
@@ -269,6 +361,120 @@ async function openDialog(dir) {
   return new Promise((resolve) => {
     resolveOpen = resolve;
   });
+}
+
+/**
+ * 分頁右鍵「代理團隊設定…」：對**已經開著的**團隊套用設定（舊版 `AgentSetup_Click`）。
+ *
+ * 順序很重要：`agent_team_apply`（後端算出要關哪些、開哪些，並把 `suspend_relink` 打開）
+ * → 前端由後往前關 → 逐格 `session_create` → `agent_team_apply_done`（重綁／拆組、通知 PM）。
+ */
+export async function openAgentSetup(key, createSession) {
+  const { showInfo, askYesNo } = await import('./tabbar.js');
+  let state;
+  try {
+    state = await invoke('agent_team_state', { key });
+  } catch (e) {
+    log(`[agentdlg] 讀團隊狀態失敗：${e}`);
+    return;
+  }
+  if (!state) return;
+  const setup = await openDialog(state.dir, state);
+  if (!setup) return;
+
+  // 會結束執行中 agent 的變更要先確認（舊版 `ma.applyAsk`）
+  const ends = [];
+  for (let i = 0; i < 4; i++) {
+    const act = actionOf(i);
+    const slot = state.slots.find((x) => x.index === i + 1);
+    if (!slot || slot.state !== 'running') continue;
+    if (act === 'close') ends.push(fmt('ma.applyClose', agentLabel(state, i)));
+    else if (act === 'restart') ends.push(fmt('ma.applyRestart', agentLabel(state, i)));
+  }
+  if (ends.length && !(await askYesNo(T['ma.title'], fmt('ma.applyAsk', ends.join('\n'))))) return;
+
+  let plan;
+  try {
+    plan = await invoke('agent_team_apply', { key, setup });
+  } catch (e) {
+    log(`[agentdlg] 套用設定失敗：${e}`);
+    await showInfo(T['ma.title'], String(e));
+    return;
+  }
+  if (!plan.changed) {
+    log('[agentdlg] 套用設定：沒有要變動的');
+    return;
+  }
+  log(
+    `[agentdlg] 套用設定：關 ${plan.closeTabs.join(',') || '-'}　開 ${
+      plan.launch.map((x) => x.agentId).join(',') || '-'
+    }`
+  );
+  // 由後往前關（前面的格還在時不會每關一個就重排——後端也擋著 suspend_relink）
+  for (const id of plan.closeTabs.slice().reverse()) {
+    await invoke('tab_close', { id }).catch((e) => log(`[agentdlg] 關閉分頁 ${id} 失敗：${e}`));
+  }
+  const failed = [];
+  for (const slot of plan.launch) {
+    try {
+      await createSession({ kind: 'agent', agent: { team: key, index: slot.index } });
+    } catch (e) {
+      log(`[agentdlg] ${slot.agentId} 啟動失敗：${e}`);
+      failed.push(String(e));
+      await invoke('agent_slot_failed', { key, index: slot.index }).catch(() => {});
+    }
+  }
+  await invoke('agent_team_apply_done', { key, rosterChanged: plan.rosterChanged }).catch((e) =>
+    log(`[agentdlg] 套用收尾失敗：${e}`)
+  );
+  if (failed.length) await showInfo(T['ma.title'], failed.join('\n'));
+}
+
+/** pane 標題上的全名（`Agent-12 · Software Engineer · Codex`），確認對話框用。 */
+function agentLabel(state, i) {
+  const slot = state.slots.find((x) => x.index === i + 1);
+  if (!slot) return `Agent-x${i + 1}`;
+  const b = opts && opts.backends.find((x) => x.key === slot.backend);
+  const role = opts && opts.roles.find((x) => x.key === slot.role);
+  return `Agent-${state.key.split('-')[0]}${slot.index} · ${role ? role.title : 'None'} · ${
+    b ? b.name : slot.backend
+  }`;
+}
+
+/**
+ * 恢復代理團隊分頁（舊版 `RestoreAgentGroup`）。`entries` ＝`restore_list()` 的
+ * `[{ index, tab }]`，同一個 `agentKey` 的那幾筆。
+ */
+export async function restoreAgentTeam(indices, createSession) {
+  let plan;
+  try {
+    plan = await invoke('agent_team_restore', { indices });
+  } catch (e) {
+    // 資料夾不見了之類 → 這一組不恢復，其餘分頁照開（同舊版的 log-and-skip）
+    log(`[agentdlg] 代理團隊不恢復：${e}`);
+    return 0;
+  }
+  let ok = 0;
+  for (const slot of plan.slots) {
+    try {
+      await createSession({
+        kind: 'agent',
+        agent: { team: plan.key, index: slot.index },
+        restore: slot.restore === null ? undefined : slot.restore,
+      });
+      ok++;
+    } catch (e) {
+      log(`[agentdlg] 恢復 ${slot.agentId} 失敗：${e}`);
+      await invoke('agent_slot_failed', { key: plan.key, index: slot.index }).catch(() => {});
+    }
+  }
+  try {
+    const n = await invoke('agent_team_ready', { key: plan.key });
+    log(`[agentdlg] 代理團隊 ${plan.number} 已恢復：${n} 個 agent（工作區 ${plan.workDir}）`);
+  } catch (e) {
+    log(`[agentdlg] 代理團隊恢復收尾失敗：${e}`);
+  }
+  return ok;
 }
 
 /**
@@ -285,7 +491,7 @@ export async function openAgentTeam(createSession) {
     return;
   }
   if (!dir) return; // 取消（同舊版：PickWorkDir 回 null 就不開）
-  const setup = await openDialog(dir);
+  const setup = await openDialog(dir, null);
   if (!setup) return;
 
   let plan;

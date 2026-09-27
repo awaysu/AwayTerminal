@@ -63,6 +63,33 @@ pub struct SavedTab {
     /// `adb`：當初用的 `adb.exe` 路徑。舊版 `SavedTab.Path`——
     /// **恢復時不再跑 `adb devices`**（同舊版 1.0.30），直接用這兩個值重開。
     pub adb_path: String,
+
+    // ---- 代理團隊（`kind = "agent"`；舊版 `SavedTab.Agent*`）----
+    /// 同一組的各格共用這個代號（恢復時靠它把各格重新綁回一組）。空＝不是代理團隊的格。
+    #[serde(default)]
+    pub agent_key: String,
+    /// 格號 1～4。
+    #[serde(default)]
+    pub agent_index: u32,
+    /// 上次的組號（沒被占用就沿用，Agent ID 才不會變）。
+    #[serde(default)]
+    pub agent_group_number: u32,
+    /// CLI 種類與角色檔名。
+    #[serde(default)]
+    pub agent_backend: String,
+    #[serde(default)]
+    pub agent_role: String,
+    /// 上下列比例。
+    #[serde(default)]
+    pub agent_ratio: f64,
+    /// 投遞上限與閒置檢查（整組一個值，存在每一格上，恢復時取第一格的）。
+    #[serde(default)]
+    pub agent_max_messages: u32,
+    #[serde(default)]
+    pub agent_idle_check: u32,
+    /// 那一組開了沙盒。
+    #[serde(default)]
+    pub agent_sandbox: bool,
 }
 
 /// scrollback 的暫存目錄（舊版 `%LOCALAPPDATA%\AwayTerminal\restore`）。
@@ -133,11 +160,16 @@ pub fn save(app: &AppHandle, restore: bool) -> usize {
     };
 
     // (分頁 id, 存下來的內容)：id 只用來對回 scrollback，不會寫進設定
-    let entries: Vec<(u32, SavedTab)> = if restore {
+    let mut entries: Vec<(u32, SavedTab)> = if restore {
         tabs.restorable()
     } else {
         Vec::new()
     };
+    // 代理團隊的格：改寫成 `kind = "agent"` 並補上組的資訊（組號、比例、上限…）。
+    // 分兩步是因為分頁清單與團隊清單是兩個鎖，同時拿會有死鎖風險。
+    if let Some(teams) = app.try_state::<Arc<crate::agent::TeamManager>>() {
+        crate::agent::annotate_saved(&teams, &mut entries);
+    }
     // `restoreBufferLines = 0` ＝不保留畫面（同舊版：只存分頁、不存 scrollback）
     let ids: Vec<u32> = if settings.get().restore_buffer_lines > 0 {
         entries.iter().map(|(id, _)| *id).collect()
@@ -198,6 +230,12 @@ pub fn restore_list(settings: State<'_, Arc<SettingsStore>>) -> Vec<SavedTab> {
         println!("[AwayTerminal] 恢復分頁：{} 個", list.len());
     }
     list
+}
+
+/// 第 `index` 筆存檔（`agent_team_restore` 要讀它）。
+pub fn saved_at(index: usize) -> Option<SavedTab> {
+    let g = pending().lock().unwrap_or_else(|e| e.into_inner());
+    g.get(index).cloned()
 }
 
 /// 把第 `index` 筆存下的畫面倒回分頁 `id`（`b{id}US{內容}US{分隔行}`）。

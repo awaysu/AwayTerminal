@@ -555,4 +555,20 @@ export default {
   'exit.mdPrompt': 'Bitte aktualisiere CLAUDE.md und halte die wichtigsten Änderungen dieser Sitzung fest.',
   'err.noSuchDir': 'Kein solcher Ordner: {0}',
   'err.agentNeedsSlot': 'kind=agent benötigt agent (Team und Platz)',
+
+  // ---- 代理團隊設定…（TASK-018；舊版 Loc.cs 的同名 key）----
+  'ma.menuSetup': 'Agenten-Team-Einstellungen\u2026',
+  'ma.dlgApply': 'Übernehmen',
+  'ma.dlgRunning': 'Läuft',
+  'ma.dlgNotRunning': 'Nicht aktiv',
+  'ma.dlgNotStarted': 'Nicht gestartet',
+  'ma.dlgExited': 'Beendet',
+  'ma.dlgWillStart': ' \u00b7 startet beim Übernehmen',
+  'ma.dlgWillRestart': ' \u00b7 startet beim Übernehmen neu',
+  'ma.dlgWillClose': ' \u00b7 wird beim Übernehmen geschlossen',
+  'ma.dlgRestart': 'Neu starten',
+  'ma.dlgRestartOn': '\u2713 Wird neu gestartet',
+  'ma.applyAsk': 'Nach dem Übernehmen:\n{0}\n\nEin laufender Agent, der geschlossen oder neu gestartet wird, verliert seine aktuelle Unterhaltung. Übernehmen?',
+  'ma.applyClose': '\u2022 {0} wird geschlossen',
+  'ma.applyRestart': '\u2022 {0} wird neu gestartet',
 };

@@ -55,6 +55,23 @@ Always operate according to your assigned Agent ID and Role. Do not impersonate 
 AwayTerminal may provide the repository path, working directory, project name, enabled agents and team session.
 Operate only within the provided project context unless explicitly instructed otherwise.
 
+## Sandbox Mode
+
+<!-- AwayTerminal 2 addition. The rest of this file is unchanged from AwayTerminal 1.2.8. -->
+
+When sandbox mode is on, the whole team shares **one git worktree**, so every agent is editing files in
+the same working copy on the same branch (`sandbox/...`). Git's index is shared too.
+
+- Stage **only the files you changed**: `git add <path> ...`. Never `git add -A`, `git add .`,
+  `git commit -a` or `git stash` — those pick up your teammates' half-finished work and commit it under
+  your name, or throw it away.
+- If a git command fails because of `index.lock`, a teammate is staging at the same moment.
+  Wait a moment and retry once. If it still fails, report it instead of deleting the lock file.
+- Do not switch, reset or rebase the branch, and do not delete the worktree. Your work stays on the
+  `sandbox/...` branch; the user decides when to merge it.
+- The mailbox `.ai/bus/` lives inside this worktree, so the paths in the messages you receive are
+  relative to the directory you are already working in.
+
 ## Task Model
 
 Worker agents receive tasks from the Product Manager. Each task should contain a unique Task ID, for example `TASK-001`.

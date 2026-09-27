@@ -89,6 +89,9 @@ pub struct SlotSetup {
     pub backend: String,
     /// 角色檔名（空＝None）。
     pub role: String,
+    /// 使用者按了「重新啟動」（設定沒變也要重開；舊版 `WantRestart`）。只有既有團隊用得到。
+    #[serde(default)]
+    pub restart: bool,
 }
 
 /// 建團隊視窗的全部欄位（舊版 `MultiAgentSetup`，多一個 `sandbox`）。
@@ -127,6 +130,8 @@ fn default_sandbox() -> bool {
 #[serde(rename_all = "camelCase")]
 pub struct SlotPlan {
     pub index: u32,
+    /// 恢復分頁時要倒回哪一筆的畫面（`restore_list` 的索引）。新開的團隊是 `None`。
+    pub restore: Option<usize>,
     pub agent_id: String,
     pub role_title: String,
     pub backend: String,
@@ -364,12 +369,29 @@ pub fn plan_slot(
         .ok_or_else(|| crate::i18n::t("ma.openFail"))?;
     let backend = adapters::Backend::by_key(&slot.backend)
         .ok_or_else(|| crate::i18n::tf("ma.dlgNeedBackend", &[&slot.agent_id()]))?;
-    let conn = adapters::resolve(settings, backend).ok_or_else(|| {
-        crate::i18n::tf(
-            "ma.backendMissing",
-            &[backend.display_name(), &slot.agent_id()],
-        )
-    })?;
+    // 恢復分頁：優先沿用上次那一格的執行檔／參數（舊版 `LaunchSlot` 的 `saved` 分支）。
+    // 舊版的條件照抄：**絕對路徑一律要存在**（npm 版的 .cmd 也一樣——CLI 移除了還開
+    // PowerShell 分頁跑不存在的 .cmd，那一格會顯示「執行中」、信打進 shell），
+    // 只有「靠 PATH 找」的裸名才交給 PowerShell 解析。
+    let saved = slot.saved_conn.as_ref().filter(|c| {
+        let p = std::path::Path::new(&c.path);
+        if c.path.trim().is_empty() {
+            false
+        } else if p.is_absolute() {
+            p.is_file()
+        } else {
+            c.via_powershell
+        }
+    });
+    let conn = match saved {
+        Some(c) => c.clone(),
+        None => adapters::resolve(settings, backend).ok_or_else(|| {
+            crate::i18n::tf(
+                "ma.backendMissing",
+                &[backend.display_name(), &slot.agent_id()],
+            )
+        })?,
+    };
     let role_text = std::fs::read_to_string(&slot.role_file).unwrap_or_default();
     let launch = adapters::build_launch(
         backend,
@@ -522,6 +544,18 @@ pub fn agent_bus_dir(key: String, teams: State<'_, Arc<TeamManager>>) -> Option<
     Some(dir.to_string_lossy().to_string())
 }
 
+/// [`create_team`] 的差異參數（新開的團隊全部用預設）。
+#[derive(Default)]
+pub struct CreateOpts {
+    /// 沿用上次的代號（恢復分頁用）。
+    pub key: Option<String>,
+    /// 優先用這個組號（沒被占用才會用到；0＝不指定）。
+    pub preferred_number: u32,
+    pub ratio: f64,
+    /// 標題已經被別的分頁用著也照用（恢復分頁時那個分頁就是自己）。
+    pub title_may_exist: bool,
+}
+
 /// 建一個團隊：組號 → 沙盒 → `.gitignore` → 組合每格角色檔 → 回啟動計畫。
 ///
 /// **這裡不啟動任何分頁**（PTY 的輸出 channel 只能由前端建）：前端拿到計畫後逐格呼叫
@@ -533,23 +567,48 @@ pub fn agent_team_create(
     teams: State<'_, Arc<TeamManager>>,
     tabs: State<'_, Arc<TabManager>>,
 ) -> Result<TeamPlan, String> {
+    create_team(
+        &settings,
+        &teams,
+        &tabs,
+        setup,
+        CreateOpts {
+            ratio: 0.5,
+            ..CreateOpts::default()
+        },
+    )
+}
+
+/// [`agent_team_create`] 與 [`agent_team_restore`] 的共同本體。
+pub fn create_team(
+    settings: &Arc<SettingsStore>,
+    teams: &Arc<TeamManager>,
+    tabs: &Arc<TabManager>,
+    setup: TeamSetup,
+    opts: CreateOpts,
+) -> Result<TeamPlan, String> {
     let dir = setup.dir.trim();
     if dir.is_empty() || !std::path::Path::new(dir).is_dir() {
         return Err(crate::i18n::tf("ma.dlgFolderMissing", &[dir]));
     }
     let open: Vec<u32> = teams.lock().iter().map(|t| t.number).collect();
-    let number = team::next_free_number(&open, 0);
+    let number = team::next_free_number(&open, opts.preferred_number);
     if number == 0 {
         return Err(crate::i18n::t("ma.tooMany"));
     }
     let data_dir = roles::data_dir_or_verify(settings.dir());
-    let key = format!("{number}-{}", crate::tabs::now_ms());
+    let key = opts
+        .key
+        .clone()
+        .unwrap_or_else(|| format!("{number}-{}", crate::tabs::now_ms()));
     let mut t = Team::new(key.clone(), number, dir);
     t.max_messages = setup.max_messages;
     t.idle_check_minutes = setup.idle_check_minutes;
     t.sandbox = setup.sandbox;
-    t.title = if !setup.title.trim().is_empty() && !tabs.title_taken(setup.title.trim()) {
-        setup.title.trim().to_string()
+    t.ratio = team::clamp_ratio(if opts.ratio > 0.0 { opts.ratio } else { 0.5 });
+    let want_title = setup.title.trim();
+    t.title = if !want_title.is_empty() && (opts.title_may_exist || !tabs.title_taken(want_title)) {
+        want_title.to_string()
     } else {
         tabs.dir_tab_name(dir, &crate::i18n::t("ma.title"))
     };
@@ -594,7 +653,7 @@ pub fn agent_team_create(
                 continue;
             }
             done.push(b.key().to_string());
-            if let Some(conn) = adapters::resolve(&settings, b) {
+            if let Some(conn) = adapters::resolve(settings, b) {
                 let files = crate::sandbox::write_guardrails(&work, &conn.path);
                 if !files.is_empty() {
                     println!(
@@ -637,6 +696,7 @@ pub fn agent_team_create(
             .filter(|s| s.enabled)
             .map(|s| SlotPlan {
                 index: s.index,
+                restore: None,
                 agent_id: s.agent_id(),
                 role_title: s.role_title.clone(),
                 backend: s.backend.clone(),
@@ -817,6 +877,18 @@ pub fn tab_removed(app: &AppHandle, teams: &Arc<TeamManager>, tab: u32) {
         let Some(t) = list.iter_mut().find(|x| x.slot_by_tab(tab).is_some()) else {
             return;
         };
+        // 套用設定中：這一輪會關好幾格再開好幾格，中途不重排也不拆組
+        //（舊版 `_suspendRelink`）。`agent_team_apply_done` 做完才一次處理。
+        if t.suspend_relink {
+            if let Some(s) = t.slots.iter_mut().find(|s| s.tab == Some(tab)) {
+                s.tab = None;
+                s.posted_state = None;
+            }
+            if t.last_focused == Some(tab) {
+                t.last_focused = None;
+            }
+            return;
+        }
         if let Some(s) = t.slots.iter_mut().find(|s| s.tab == Some(tab)) {
             s.tab = None;
             s.queue.clear();
@@ -903,6 +975,466 @@ pub fn agent_team_gone(app: AppHandle, key: String, teams: State<'_, Arc<TeamMan
     disband(&app, &arc, &key);
 }
 
+/// 對**既有團隊**套用設定的結果（舊版 `ApplyAgentSetup`）。
+///
+/// 這裡不啟動任何分頁（PTY 的 channel 只能由前端建），所以回傳一份「要做什麼」的清單：
+/// 前端先關 `close_tabs`、再依 `launch` 逐格 `session_create`、最後呼叫
+/// [`agent_team_apply_done`]。整個過程中 `suspend_relink` 是 true，`tab_close` 不會重排。
+#[derive(Clone, Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplyPlan {
+    /// 要關掉的分頁（由後往前關）。
+    pub close_tabs: Vec<u32>,
+    /// 要啟動的格。
+    pub launch: Vec<SlotPlan>,
+    /// 名單變了（做完要通知 PM 重讀角色檔）。
+    pub roster_changed: bool,
+    /// 有沒有任何實際變動（沒有＝前端可以什麼都不做）。
+    pub changed: bool,
+}
+
+/// 「代理團隊設定…」按了套用。
+///
+/// 逐項照舊版 `ApplyAgentSetup` 的順序與規則：
+///
+/// 1. **投遞上限**改了 → 換掉；如果目前是「因為到上限而暫停」而且新上限還沒到，
+///    就自動解除暫停（**計數照舊、不歸零**——歸零只發生在右鍵選次數那條路）。
+/// 2. **閒置檢查**改了 → 換掉並把「整組從什麼時候開始閒置」歸零。
+/// 3. **要關的格**：關掉分頁（執行中＝結束那個 CLI）、`enabled = false`、清佇列。
+/// 4. **要開／重開的格**：已經有分頁的先關掉（**角色是啟動時注入的，改角色也得重開**），
+///    再套用新的 CLI／角色、清佇列。
+/// 5. 名單可能變了 → **每一格**的角色檔都重組（隊友清單要對）。
+/// 6. （前端啟動各格之後）沒有任何格在跑＝拆組；否則重綁。
+/// 7. 名單變了 → 寄一封 INFO 給 PM，要它重讀 Runtime Context。
+#[tauri::command]
+pub fn agent_team_apply(
+    key: String,
+    setup: TeamSetup,
+    settings: State<'_, Arc<SettingsStore>>,
+    teams: State<'_, Arc<TeamManager>>,
+) -> Result<ApplyPlan, String> {
+    let data_dir = roles::data_dir_or_verify(settings.dir());
+    let mut list = teams.lock();
+    let Some(t) = list.iter_mut().find(|t| t.key == key) else {
+        return Err(crate::i18n::t("ma.openFail"));
+    };
+
+    let mut changed = false;
+
+    // 1. 投遞上限
+    let max = setup.max_messages;
+    if max != t.max_messages {
+        t.max_messages = max;
+        // 因為到上限而暫停、上限調高了＝接著送（計數照舊）
+        if t.paused && t.paused_by_limit && !t.limit_reached() {
+            t.paused = false;
+            t.paused_by_limit = false;
+        }
+        println!(
+            "[AwayTerminal] 代理團隊 {}：投遞上限={} 計數={} 暫停={}",
+            t.number,
+            t.limit_text(),
+            t.message_count,
+            t.paused
+        );
+        changed = true;
+    }
+
+    // 2. 閒置檢查
+    if setup.idle_check_minutes != t.idle_check_minutes {
+        t.idle_check_minutes = setup.idle_check_minutes;
+        t.all_idle_since_ms = 0;
+        println!(
+            "[AwayTerminal] 代理團隊 {}：閒置檢查={}",
+            t.number,
+            if t.idle_check_minutes > 0 {
+                format!("{} 分鐘", t.idle_check_minutes)
+            } else {
+                "不檢查".to_string()
+            }
+        );
+        changed = true;
+    }
+
+    // 3／4. 哪些要關、哪些要開（格 1 不能關，同舊版的勾選是停用的）
+    let mut close_tabs = Vec::new();
+    let mut launch_idx: Vec<u32> = Vec::new();
+    let mut roster_changed = false;
+    let mut closed: Vec<String> = Vec::new();
+    for i in 0..t.slots.len() {
+        let want = setup.slots.get(i).cloned().unwrap_or_default();
+        let idx = t.slots[i].index;
+        let running = t.slots[i].tab.is_some();
+        let enabled = t.slots[i].enabled;
+        let same_setup = t.slots[i].backend.eq_ignore_ascii_case(&want.backend)
+            && t.slots[i].role.eq_ignore_ascii_case(&want.role);
+        // 格 1 永遠啟用
+        let want_enabled = want.enabled || idx == 1;
+
+        if !want_enabled {
+            if running || enabled {
+                if let Some(tab) = t.slots[i].tab.take() {
+                    close_tabs.push(tab);
+                }
+                roster_changed |= enabled;
+                t.slots[i].enabled = false;
+                t.slots[i].queue.clear();
+                closed.push(t.slots[i].agent_id());
+                changed = true;
+            }
+            continue;
+        }
+
+        // 啟用中：沒在跑＝要啟動；在跑但設定變了（或使用者按了「重新啟動」）＝關掉重開
+        let restart = running && (!same_setup || want.restart);
+        if !running || restart {
+            if let Some(tab) = t.slots[i].tab.take() {
+                close_tabs.push(tab);
+                roster_changed |= !same_setup;
+            } else {
+                roster_changed = true;
+            }
+            if adapters::Backend::by_key(&want.backend).is_none() {
+                return Err(crate::i18n::tf("ma.dlgNeedBackend", &[&t.slots[i].agent_id()]));
+            }
+            t.slots[i].enabled = true;
+            t.slots[i].backend = want.backend.clone();
+            t.slots[i].role = want.role.clone();
+            t.slots[i].role_title = roles::title_of(&data_dir, &want.role);
+            t.slots[i].queue.clear();
+            launch_idx.push(idx);
+            changed = true;
+        }
+    }
+
+    if !changed {
+        return Ok(ApplyPlan {
+            close_tabs: Vec::new(),
+            launch: Vec::new(),
+            roster_changed: false,
+            changed: false,
+        });
+    }
+
+    // 5. 名單可能變了 → 每格的角色檔都重組（新開的格要用新檔啟動）
+    let indices: Vec<u32> = t.slots.iter().filter(|s| s.enabled).map(|s| s.index).collect();
+    for i in &indices {
+        match roles::compose(&data_dir, t, *i) {
+            Ok(p) => {
+                if let Some(s) = t.slots.iter_mut().find(|s| s.index == *i) {
+                    s.role_file = p.to_string_lossy().to_string();
+                }
+            }
+            Err(e) => {
+                let who = t
+                    .slots
+                    .iter()
+                    .find(|s| s.index == *i)
+                    .map(|s| s.agent_id())
+                    .unwrap_or_default();
+                return Err(crate::i18n::tf("ma.roleComposeFailed", &[&who, &e.to_string()]));
+            }
+        }
+    }
+
+    // 這一輪的關／開中途不要重排
+    t.suspend_relink = true;
+    t.fresh = launch_idx.clone();
+    let launch: Vec<SlotPlan> = launch_idx
+        .iter()
+        .filter_map(|idx| t.slots.iter().find(|s| s.index == *idx))
+        .map(|s| SlotPlan {
+            index: s.index,
+            restore: None,
+            agent_id: s.agent_id(),
+            role_title: s.role_title.clone(),
+            backend: s.backend.clone(),
+            backend_name: s.backend_name(),
+            label: s.label(),
+            color: s.color().to_string(),
+        })
+        .collect();
+    println!(
+        "[AwayTerminal] 代理團隊 {}：套用設定 → 啟動 {} 關閉 {}",
+        t.number,
+        launch.iter().map(|s| s.agent_id.clone()).collect::<Vec<_>>().join(","),
+        if closed.is_empty() { "-".to_string() } else { closed.join(",") }
+    );
+    Ok(ApplyPlan {
+        close_tabs,
+        launch,
+        roster_changed,
+        changed: true,
+    })
+}
+
+/// 套用設定的收尾：重綁（或拆組）、把作用中分頁拉回這一組、名單變了就通知 PM。
+#[tauri::command]
+pub fn agent_team_apply_done(
+    app: AppHandle,
+    key: String,
+    roster_changed: bool,
+    teams: State<'_, Arc<TeamManager>>,
+) -> Option<u32> {
+    let (running, fresh) = {
+        let mut list = teams.lock();
+        let t = list.iter_mut().find(|t| t.key == key)?;
+        t.suspend_relink = false;
+        let fresh = std::mem::take(&mut t.fresh);
+        (t.running().count(), fresh)
+    };
+    let arc = (*teams).clone();
+    if running == 0 {
+        disband(&app, &arc, &key);
+        return None;
+    }
+    link(&app, &arc, &key);
+
+    // 名單變了 → 通知 PM（沒有 PM 角色就是代表列那一格）：角色檔已重新產生，要它重讀
+    if roster_changed {
+        let msg = {
+            let list = teams.lock();
+            list.iter().find(|t| t.key == key).and_then(|t| {
+                let pm = t
+                    .running()
+                    .find(|s| s.role == "product-manager" && !fresh.contains(&s.index))
+                    .or_else(|| t.running().find(|s| !fresh.contains(&s.index)))?;
+                let roster = t
+                    .enabled()
+                    .map(|s| format!("{} {} ({})", s.agent_id(), s.role_title, s.backend_name()))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                Some((
+                    t.bus.clone()?,
+                    pm.agent_id(),
+                    pm.role_file.clone(),
+                    roster,
+                ))
+            })
+        };
+        if let Some((bus, pm_id, role_file, roster)) = msg {
+            bus.write_message(
+                "AwayTerminal",
+                &pm_id,
+                "INFO",
+                "",
+                &format!(
+                    "The team roster changed. Enabled agents now: {roster}.\n\n\
+Your role file {role_file} has been regenerated. Re-read its Runtime Context section before assigning more work."
+                ),
+            );
+        }
+    }
+    let row = {
+        let list = teams.lock();
+        list.iter().find(|t| t.key == key).and_then(|t| t.row_tab())
+    };
+    // 關掉的那格若是作用中分頁，tab_close 會跳到別的分頁 → 拉回這一組
+    if let Some(id) = row {
+        let target = teams.focus_target(id);
+        crate::host::emit_host(&app, format!("s{target}"));
+        return Some(target);
+    }
+    None
+}
+
+/// 「代理團隊設定…」要填進視窗的目前狀態（舊版 `ApplyInitial`）。
+#[derive(Clone, Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TeamSetupState {
+    pub key: String,
+    pub dir: String,
+    pub title: String,
+    pub max_messages: u32,
+    pub idle_check_minutes: u32,
+    pub sandbox: bool,
+    pub slots: Vec<SlotState>,
+}
+
+#[derive(Clone, Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SlotState {
+    pub index: u32,
+    pub enabled: bool,
+    pub backend: String,
+    pub role: String,
+    /// `running`（有連線）／`exited`（分頁在但連線結束）／`notRunning`（沒有分頁）。
+    pub state: String,
+}
+
+#[tauri::command]
+pub fn agent_team_state(
+    app: AppHandle,
+    key: String,
+    teams: State<'_, Arc<TeamManager>>,
+) -> Option<TeamSetupState> {
+    let sessions = app.try_state::<crate::session::SessionManager>();
+    let list = teams.lock();
+    let t = list.iter().find(|t| t.key == key)?;
+    Some(TeamSetupState {
+        key: t.key.clone(),
+        dir: t.dir.clone(),
+        title: t.title.clone(),
+        max_messages: t.max_messages,
+        idle_check_minutes: t.idle_check_minutes,
+        sandbox: t.sandbox_cfg.is_some(),
+        slots: t
+            .slots
+            .iter()
+            .map(|s| SlotState {
+                index: s.index,
+                enabled: s.enabled,
+                backend: s.backend.clone(),
+                role: s.role.clone(),
+                state: match s.tab {
+                    Some(id) => {
+                        let alive = sessions.as_ref().is_some_and(|m| m.get(id).is_some());
+                        if alive { "running" } else { "exited" }.to_string()
+                    }
+                    None => "notRunning".to_string(),
+                },
+            })
+            .collect(),
+    })
+}
+
+/// 存檔時把代理團隊的格改寫成 `kind = "agent"` 並補上組的資訊（`restore::save` 呼叫）。
+///
+/// 一組的每一格都存一份組的設定（上限／閒置檢查／比例／組號／沙盒），恢復時取第一格的——
+/// 和舊版 `SavedTab` 的做法一樣（那些欄位在舊版也是每一筆都有）。
+pub fn annotate_saved(teams: &Arc<TeamManager>, entries: &mut [(u32, crate::restore::SavedTab)]) {
+    let list = teams.lock();
+    for (tab, entry) in entries.iter_mut() {
+        let Some(team) = list.iter().find(|t| t.slot_by_tab(*tab).is_some()) else {
+            continue;
+        };
+        let Some(slot) = team.slot_by_tab(*tab) else { continue };
+        entry.kind = "agent".to_string();
+        entry.dir = team.dir.clone();
+        entry.agent_key = team.key.clone();
+        entry.agent_index = slot.index;
+        entry.agent_group_number = team.number;
+        entry.agent_backend = slot.backend.clone();
+        entry.agent_role = slot.role.clone();
+        entry.agent_ratio = team.ratio;
+        entry.agent_max_messages = team.max_messages;
+        entry.agent_idle_check = team.idle_check_minutes;
+        entry.agent_sandbox = team.sandbox_cfg.is_some();
+        // `conn_name`（上次跑的是哪一條連線）由 `restorable()` 填好了，恢復時照它查路徑
+    }
+}
+
+/// 恢復一組代理團隊（舊版 `RestoreAgentGroup`）。
+///
+/// `indices` ＝ `restore_list()` 裡屬於同一個 `agentKey` 的那幾筆（順序不重要，
+/// 這裡自己依格號排）。行為照舊版：
+///
+/// - 同資料夾；資料夾不見了就**不恢復**（log 一行）
+/// - **同組號**（沒被占用才沿用，否則取最小空號）→ Agent ID 盡量不變
+/// - 同比例、同投遞上限、同閒置檢查、同沙盒設定
+/// - 每格照上次的執行檔／參數（見 [`plan_slot`] 的 `saved_conn`）
+/// - **角色檔以目前的 `roles/` 重新組合**（CLI 是新 session；OpenCode／Gemini 會重打第一句）
+/// - 沙盒團隊：`prepare()` 看到 worktree 還在就沿用
+#[tauri::command]
+pub fn agent_team_restore(
+    indices: Vec<usize>,
+    settings: State<'_, Arc<SettingsStore>>,
+    teams: State<'_, Arc<TeamManager>>,
+    tabs: State<'_, Arc<TabManager>>,
+) -> Result<TeamPlan, String> {
+    let mut saved: Vec<(usize, crate::restore::SavedTab)> = indices
+        .into_iter()
+        .filter_map(|i| crate::restore::saved_at(i).map(|e| (i, e)))
+        .filter(|(_, e)| e.agent_index >= 1 && e.agent_index <= 4)
+        .collect();
+    saved.sort_by_key(|(_, e)| e.agent_index);
+    // 同一格存了兩筆（不該發生）→ 只留第一筆，同舊版 `bySlot.ContainsKey` 的判斷
+    saved.dedup_by_key(|(_, e)| e.agent_index);
+    let first = saved
+        .first()
+        .map(|(_, e)| e.clone())
+        .ok_or_else(|| crate::i18n::t("ma.openFail"))?;
+    if first.dir.trim().is_empty() || !std::path::Path::new(&first.dir).is_dir() {
+        let msg = crate::i18n::tf("ma.dlgFolderMissing", &[&first.dir]);
+        println!("[AwayTerminal] 代理團隊不恢復：{msg}");
+        return Err(msg);
+    }
+
+    let setup = TeamSetup {
+        dir: first.dir.clone(),
+        title: first.title.clone(),
+        slots: (1..=4)
+            .map(|i| match saved.iter().find(|(_, e)| e.agent_index == i) {
+                Some((_, e)) => SlotSetup {
+                    enabled: true,
+                    backend: e.agent_backend.clone(),
+                    role: e.agent_role.clone(),
+                    restart: false,
+                },
+                None => SlotSetup::default(),
+            })
+            .collect(),
+        max_messages: first.agent_max_messages,
+        idle_check_minutes: first.agent_idle_check,
+        sandbox: first.agent_sandbox,
+    };
+    let saved_conns: Vec<(u32, crate::settings::CustomConn, usize)> = saved
+        .iter()
+        .map(|(i, e)| {
+            (
+                e.agent_index,
+                crate::settings::CustomConn {
+                    name: e.conn_name.clone(),
+                    path: e.conn_name.clone(), // 佔位，下面用 settings 查真正的路徑
+                    ..crate::settings::CustomConn::default()
+                },
+                *i,
+            )
+        })
+        .collect();
+
+    let mut plan = create_team(
+        &settings,
+        &teams,
+        &tabs,
+        setup,
+        CreateOpts {
+            key: Some(first.agent_key.clone()).filter(|k| !k.is_empty()),
+            preferred_number: first.agent_group_number,
+            ratio: if first.agent_ratio > 0.0 { first.agent_ratio } else { 0.5 },
+            title_may_exist: true,
+        },
+    )?;
+    // 每格：上次的連線（依名稱從使用者的自訂連線清單查；查不到就讓 plan_slot 自動偵測）
+    // ＋ 要倒回哪一筆畫面
+    {
+        let mut list = teams.lock();
+        if let Some(t) = list.iter_mut().find(|t| t.key == plan.key) {
+            for (idx, placeholder, restore_index) in &saved_conns {
+                let _ = restore_index;
+                if let Some(s) = t.slots.iter_mut().find(|s| s.index == *idx) {
+                    s.saved_conn = crate::custom::find(&settings, &placeholder.name);
+                }
+            }
+        }
+    }
+    for p in plan.slots.iter_mut() {
+        p.restore = saved
+            .iter()
+            .find(|(_, e)| e.agent_index == p.index)
+            .map(|(i, _)| *i);
+    }
+    println!(
+        "[AwayTerminal] 代理團隊恢復：組號={}（上次 {}）目錄={} 格={} 比例={}",
+        plan.number,
+        first.agent_group_number,
+        plan.work_dir,
+        plan.slots.len(),
+        first.agent_ratio
+    );
+    Ok(plan)
+}
+
 // ---------------------------------------------------------------- --verify
 // i18n-audit:log-only-begin 這一段只在 `--verify` 跑（驗證輸出），使用者不會看到；不進八語表
 
@@ -973,6 +1505,29 @@ pub struct VerifyState {
     pub delivered: Vec<String>,
     pub tabs: Vec<u32>,
     pub ratio: f64,
+    /// 每一格**組好的角色檔**的摘要（依格號排序）。
+    ///
+    /// 為什麼要它：`--verify` 不能靠 pane 上的新輸出判斷角色檔——跑到後面 pane 是 0×0，
+    /// `b` 協定的 `held` 要等 pane fit 到最終寬度才把新輸出寫出來，所以 CLI 印的那一行
+    /// 可能還沒進 buffer（同一段第二次跑 true、第三次跑 false，實際踩到）。讀檔沒這個問題。
+    pub roles: Vec<RoleFileInfo>,
+}
+
+/// 一格角色檔的摘要（`--verify` 用）。
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RoleFileInfo {
+    /// 這一格是誰（程式裡的值，用來和檔案內容對照）。
+    pub slot_id: String,
+    /// 檔案裡的 `Agent ID:`。
+    pub agent_id: String,
+    /// 檔案裡的 `Role:`。
+    pub role: String,
+    /// 有 `# Runtime Context (generated by AwayTerminal)` 那一段。
+    pub has_runtime_context: bool,
+    /// 三層都在（common rules 的標題 ＋ 執行期脈絡）。
+    pub three_layers: bool,
+    pub bytes: u64,
 }
 
 #[tauri::command]
@@ -992,6 +1547,7 @@ pub fn agent_verify_state(key: String, teams: State<'_, Arc<TeamManager>>) -> Ve
             delivered: Vec::new(),
             tabs: Vec::new(),
             ratio: 0.0,
+            roles: Vec::new(),
         };
     };
     let bus_dir = std::path::Path::new(&t.work_dir).join(".ai").join("bus");
@@ -1021,6 +1577,27 @@ pub fn agent_verify_state(key: String, teams: State<'_, Arc<TeamManager>>) -> Ve
         delivered,
         tabs: t.running().filter_map(|s| s.tab).collect(),
         ratio: t.ratio,
+        roles: t
+            .running()
+            .map(|s| {
+                let text = std::fs::read_to_string(&s.role_file).unwrap_or_default();
+                let field = |k: &str| {
+                    text.lines()
+                        .find_map(|l| l.strip_prefix(k).map(|v| v.trim().to_string()))
+                        .unwrap_or_default()
+                };
+                RoleFileInfo {
+                    slot_id: s.agent_id(),
+                    agent_id: field("Agent ID:"),
+                    role: field("Role:"),
+                    has_runtime_context: text
+                        .contains("# Runtime Context (generated by AwayTerminal)"),
+                    three_layers: text.contains("# AwayTerminal Multi-Agent Common Rules")
+                        && text.contains("# Runtime Context (generated by AwayTerminal)"),
+                    bytes: text.len() as u64,
+                }
+            })
+            .collect(),
     }
 }
 
