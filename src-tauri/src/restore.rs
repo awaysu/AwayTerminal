@@ -303,7 +303,7 @@ fn file_time(path: &std::path::Path) -> String {
 /// 而同步 command 在 tauri 2 是跑在**主執行緒**上——擋住主執行緒的話 webview 的 IPC
 /// 根本進不來，答案永遠等不到（`--verify` 實際踩到：「存下 2 個分頁」卻一個畫面都沒存到）。
 #[tauri::command]
-pub async fn exit_confirm(app: AppHandle, restore: bool) {
+pub async fn exit_confirm(app: AppHandle, restore: bool, update_md: Option<bool>) {
     // 舊版 1.2.6：確認離開就先把視窗藏起來＝使用者看到的是「立刻關掉」，
     // 存畫面／設定都在看不見的狀態下做完。藏起來的 webview 照樣處理訊息（`q…save` 回得來）。
     if let Some(win) = app.get_webview_window("main") {
@@ -315,6 +315,13 @@ pub async fn exit_confirm(app: AppHandle, restore: bool) {
             .await
             .unwrap_or(0)
     };
+    // 「離開前更新 CLAUDE.md」的勾選狀態也記住（舊版 `AppSettings.ExitUpdateMd`）
+    if let Some(md) = update_md {
+        if let Some(store) = app.try_state::<Arc<crate::settings::SettingsStore>>() {
+            store.update(|s| s.exit_update_md = md);
+            store.flush();
+        }
+    }
     println!("[AwayTerminal] 離開：恢復分頁={restore}，存了 {n} 個分頁");
     app.exit(0);
 }

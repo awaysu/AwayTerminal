@@ -93,6 +93,14 @@
     <!-- 沙盒模式（新功能）：勾勾顯示的是**連線設定**的值，改了下次啟動生效 -->
     <div class="menu-item" data-act="sandbox">沙盒模式</div>
     <div class="menu-item" data-act="sandbox-clear">清除沙盒…</div>
+    <!-- 代理團隊那一列才顯示（舊版分頁右鍵的 ma.* 那幾項） -->
+    <div class="menu-sep" data-ma="1"></div>
+    <div class="menu-item has-sub" data-act="ma-delivery" data-ma="1">投遞
+      <span class="menu-arrow">&#9656;</span>
+      <div class="popup-menu submenu" id="ma-delivery-menu"></div>
+    </div>
+    <div class="menu-item" data-act="ma-stop" data-ma="1">停止任務</div>
+    <div class="menu-item" data-act="ma-bus" data-ma="1">開啟訊息資料夾</div>
     <div class="menu-sep"></div>
     <div class="menu-item" data-act="close">關閉</div>
   </div>
@@ -105,6 +113,7 @@
     <div class="menu-item" data-kind="ssh">SSH…</div>
     <div class="menu-item" data-kind="ssh-quick">快速連線（host[:port]）…</div>
     <div class="menu-item" data-kind="com">連接埠…</div>
+    <div class="menu-item" data-kind="multiagent">代理團隊…</div>
     <div class="menu-sep"></div>
     <div id="new-conns"></div>
     <div class="menu-item" data-kind="custom">自訂指令…</div>
@@ -339,6 +348,33 @@
   <!-- `statusbox`：不等回覆，顯示在右下角直到 `closesbox` -->
   <div id="macrostatus" hidden></div>
 
+  <!-- 代理團隊（舊版 Dialogs/MultiAgentDialog）：投遞限制次數／閒置檢查／沙盒（新增），
+       底下 2×2 四格，每格＝啟用勾選＋Agent ID（外框色）＋代理人類型＋代理人角色。
+       專案資料夾在開視窗前就選好了（同其他「啟動前選擇資料夾」的連線），所以沒有資料夾欄位，
+       標題顯示完整路徑——照舊版。 -->
+  <div id="madlg" hidden>
+    <form id="madlg-box">
+      <div id="madlg-title"></div>
+      <div id="ma-dir" class="sd-hint"></div>
+      <div class="sd-grid" id="ma-opts">
+        <label id="ma-l-limit"></label>
+        <span class="sd-row"><select id="ma-limit"></select><span id="ma-limit-hint" class="sd-hint"></span></span>
+        <label id="ma-l-idle"></label>
+        <span class="sd-row"><select id="ma-idle"></select><span id="ma-idle-hint" class="sd-hint"></span></span>
+      </div>
+      <label class="sd-check"><input id="ma-sandbox" type="checkbox" checked /><span id="ma-l-sandbox"></span></label>
+      <div id="ma-slots"></div>
+      <div id="ma-nobackend" hidden></div>
+      <div id="ma-hint" class="sd-hint"></div>
+      <div class="modal-buttons">
+        <button id="ma-restore-roles" type="button"></button>
+        <button id="ma-open-roles" type="button"></button>
+        <button id="ma-ok" type="submit"></button>
+        <button id="ma-cancel" type="button"></button>
+      </div>
+    </form>
+  </div>
+
   <!-- 連接埠（舊版 Dialogs/ComDialog）：Port / Baud rate / Data bits / Parity / Stop bits /
        Flow control / 斷線自動重連 + 「回到預設」。欄位、順序、預設值都照舊版。
        ⚠️ 選項清單由後端的 `com_ports()` 給——`serialport` 不支援的值（Mark/Space 同位、
@@ -386,14 +422,17 @@
     </form>
   </div>
 
-  <!-- 離開程式（舊版 Dialogs/ExitDialog）：勾「下次開啟恢復目前分頁（含畫面上的舊訊息）」。
-       勾選狀態記在 settings 的 exitRestoreTabs。舊版還有一個「更新 CLAUDE.md」的勾選，
-       那屬於代理團隊（階段 4），這裡先不放。 -->
+  <!-- 離開程式（舊版 Dialogs/ExitDialog）：兩個勾選——「下次開啟恢復目前分頁（含畫面上的舊訊息）」
+       與「Claude Code 離開前更新 CLAUDE.md」（記在 settings 的 exitRestoreTabs／exitUpdateMd）。
+       第二個只在有**一般的** Claude Code 分頁時能勾：代理團隊的格不算（好幾個 agent 同時改
+       同一份 CLAUDE.md 會互相覆蓋，舊版 1.2.0 的註解）。 -->
   <div id="exitdlg" hidden>
     <div id="exitdlg-box">
       <div id="exitdlg-title"></div>
       <div id="exitdlg-body"></div>
       <label class="sd-check"><input id="ex-restore" type="checkbox" /><span id="ex-l-restore"></span></label>
+      <label class="sd-check"><input id="ex-md" type="checkbox" /><span id="ex-l-md"></span></label>
+      <div id="ex-busy" class="sd-hint" hidden></div>
       <div class="modal-buttons">
         <button id="ex-go" type="button">離開</button>
         <button id="ex-cancel" type="button">取消</button>

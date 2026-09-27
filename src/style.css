@@ -720,3 +720,62 @@ body.col-resizing { cursor: col-resize; user-select: none; }
 #about-status {
   margin-right: auto;
 }
+
+/* ---------------------------------------------- 代理團隊（舊版 Dialogs/MultiAgentDialog） */
+#madlg {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 62;
+}
+#madlg[hidden] { display: none; }
+#madlg-box {
+  width: 640px;
+  max-width: 94vw;
+  max-height: 90vh;
+  overflow: auto;
+  background: #2D2D30;
+  border: 1px solid #3F3F46;
+  border-radius: 4px;
+  padding: 16px;
+  color: #E0E0E0;
+}
+#madlg-title { font-weight: bold; margin-bottom: 4px; }
+#ma-dir { margin-bottom: 10px; word-break: break-all; }
+#ma-opts { margin-bottom: 4px; }
+#ma-opts select { min-width: 110px; }
+/* 四格 2×2（舊版 UniformGrid Rows=2 Columns=2） */
+#ma-slots {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin: 10px 0 0;
+}
+.ma-slot {
+  border: 2px solid #555;
+  border-radius: 4px;
+  background: #252528;
+  padding: 10px 12px 8px;
+}
+.ma-slot-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.ma-slot-id { font-size: 15px; font-weight: bold; }
+.ma-slot label { color: #999; font-size: 12px; display: block; margin: 0 0 3px; }
+.ma-slot select { width: 100%; margin-bottom: 8px; }
+.ma-slot.off { opacity: 0.55; }
+#ma-nobackend { color: #EF9A9A; margin-top: 8px; }
+#ma-hint { margin-top: 8px; white-space: pre-line; }
+/* 代理團隊那一列的小標記：agent 數（有信待投遞時多一個 ✉n） */
+.tab-team-badge {
+  font-size: 10px;
+  color: #90CAF9;
+  border: 1px solid #3F3F46;
+  border-radius: 3px;
+  padding: 0 3px;
+  margin-right: 2px;
+  flex: 0 0 auto;
+}
+.tab-team-badge.paused { color: #E0C36A; border-color: #6a5a2a; }
+.tab-row.tab-team .tab-title { font-weight: bold; }

@@ -89,6 +89,15 @@ pub struct Tab {
     /// 用 `Arc<AtomicU64>` 而不是欄位直接存：輸出 callback 跑在 PTY 讀取執行緒上、
     /// 每個 chunk 都會更新一次，不能為了它去搶整個分頁清單的鎖。
     pub last_output: Arc<AtomicU64>,
+    /// 最後一次**使用者輸入**的時間（epoch ms；0＝還沒打過）。
+    ///
+    /// 只有 `i` 協定那條路（`session_write_text`）會更新它，所以程式自己貼進去的字
+    /// 也算——同舊版（`MainWindow.xaml.cs` 的 `case 'i'` 就是在那裡設 `LastInputUtc`）。
+    /// 代理團隊的「這格現在可以打字給它嗎」要看它（[`crate::agent::deliver::agent_ready`]）。
+    pub last_input: Arc<AtomicU64>,
+    /// 最後一次**送出**（輸入裡含 CR／或我們自己補的 Enter）的時間（epoch ms）。
+    /// 同舊版 `LastSubmitUtc`。
+    pub last_submit: Arc<AtomicU64>,
     /// 狀態燈：忙碌（紅）／閒置（綠）。由 `status.rs` 的輪詢更新。
     pub busy: bool,
     /// 這個分頁的 log 記錄器（`None`＝沒在記錄）。
@@ -139,6 +148,14 @@ pub struct SessionParts {
     pub tap: crate::tap::TapSlot,
     pub cols: u16,
     pub rows: u16,
+}
+
+/// 一格 agent 的閒／忙時間戳（epoch ms；0＝還沒發生過）。
+pub struct AgentSignals {
+    pub busy: bool,
+    pub last_output: u64,
+    pub last_input: u64,
+    pub last_submit: u64,
 }
 
 /// 傳給前端的一列（`tab-state` event 的內容）。
@@ -408,6 +425,39 @@ impl TabManager {
             if !self.title_taken(&dup) {
                 return dup;
             }
+        }
+    }
+
+    /// 代理團隊的閒／忙判斷要的所有時間戳（見 `agent/deliver.rs`）。
+    /// 分頁不在了＝`None`（那一格已經關掉）。
+    pub fn agent_signals(&self, id: u32) -> Option<AgentSignals> {
+        let inner = self.lock();
+        let t = inner.tabs.get(&id)?;
+        Some(AgentSignals {
+            busy: t.busy,
+            last_output: t.last_output.load(Ordering::Relaxed),
+            last_input: t.last_input.load(Ordering::Relaxed),
+            last_submit: t.last_submit.load(Ordering::Relaxed),
+        })
+    }
+
+    /// 記一次使用者輸入（`i` 協定）。含 CR 就同時算一次「送出」。
+    pub fn mark_input(&self, id: u32, submitted: bool) {
+        let inner = self.lock();
+        if let Some(t) = inner.tabs.get(&id) {
+            let now = now_ms();
+            t.last_input.store(now, Ordering::Relaxed);
+            if submitted {
+                t.last_submit.store(now, Ordering::Relaxed);
+            }
+        }
+    }
+
+    /// 記一次「我們自己送出了一行」（代理團隊投遞、遠端指令）。
+    pub fn mark_submit(&self, id: u32) {
+        let inner = self.lock();
+        if let Some(t) = inner.tabs.get(&id) {
+            t.last_submit.store(now_ms(), Ordering::Relaxed);
         }
     }
 
@@ -805,6 +855,8 @@ mod tests {
             pid: 0,
             started_at: 0,
             last_output: Default::default(),
+            last_input: Default::default(),
+            last_submit: Default::default(),
             busy: false,
             logger: Default::default(),
             fg: None,

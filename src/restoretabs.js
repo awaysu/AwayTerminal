@@ -26,6 +26,7 @@ function applyTexts() {
   $('exitdlg-title').textContent = T['exit.title'];
   $('exitdlg-body').textContent = T['exit.body'];
   $('ex-l-restore').textContent = T['exit.restore'];
+  $('ex-l-md').textContent = T['exit.updateMd'];
   el.go.textContent = T['exit.go'];
   el.cancel.textContent = T['dlg.cancel'];
 }
@@ -103,16 +104,37 @@ function $(id) {
 export async function initExitDialog() {
   el.root = $('exitdlg');
   el.restore = $('ex-restore');
+  el.md = $('ex-md');
+  el.mdLabel = $('ex-l-md');
+  el.busy = $('ex-busy');
   el.go = $('ex-go');
   el.cancel = $('ex-cancel');
 
   onLangChange(applyTexts);
 
-  const leave = () => {
+  // 勾了「離開前更新 CLAUDE.md」就先請 Claude Code 分頁寫完再真的離開（舊版 ExitDialog 的
+  // `UpdateAction`：對話框停在原地、顯示「正在請 Claude Code 更新 CLAUDE.md，請稍候…」、
+  // 按鈕停用）。代理團隊的格不算——好幾個 agent 同時改同一份會互相覆蓋。
+  let leaving = false;
+  const leave = async () => {
+    if (leaving) return;
+    leaving = true;
+    const updateMd = el.md.checked && !el.md.disabled;
+    if (updateMd) {
+      el.busy.hidden = false;
+      el.busy.textContent = T['exit.updating'];
+      el.go.disabled = el.cancel.disabled = el.md.disabled = true;
+      try {
+        await invoke('claude_md_update');
+      } catch (e) {
+        console.warn('[restore] 更新 CLAUDE.md 失敗', e);
+      }
+    }
     el.root.hidden = true;
-    invoke('exit_confirm', { restore: el.restore.checked }).catch(() => {});
+    invoke('exit_confirm', { restore: el.restore.checked, updateMd }).catch(() => {});
   };
   const stay = () => {
+    if (leaving) return; // 已經在等 CLAUDE.md 寫完，取消鈕是停用的
     el.root.hidden = true;
     invoke('exit_cancel').catch(() => {});
   };
@@ -125,8 +147,21 @@ export async function initExitDialog() {
     if (e.key === 'Enter') leave();
   });
 
-  await listen('exit-request', (e) => {
-    el.restore.checked = e.payload !== false;
+  await listen('exit-request', async (e) => {
+    // payload：`{ restore, updateMd }`（上次的勾選狀態）
+    const p = e.payload && typeof e.payload === 'object' ? e.payload : {};
+    el.restore.checked = p.restore !== false;
+    leaving = false;
+    el.busy.hidden = true;
+    el.go.disabled = el.cancel.disabled = false;
+    // 沒有**一般的** Claude Code 分頁就停用那個勾選（舊版 `SetClaudeAvailable`）
+    let available = false;
+    try {
+      available = await invoke('claude_md_available');
+    } catch (_) {}
+    el.md.disabled = !available;
+    el.md.checked = available && p.updateMd === true;
+    el.mdLabel.style.opacity = available ? '' : '0.5';
     el.root.hidden = false;
     el.go.focus();
   });

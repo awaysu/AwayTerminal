@@ -194,6 +194,7 @@ static TABLE: &[(&str, &str, &str)] = &[
     ("err.tabCreateFailed",    "分頁建立失敗", "Could not create the tab"),
     ("err.tabNotFound",        "找不到分頁 {0}", "Tab {0} not found"),
     ("err.adbNotFound",        "找不到 adb", "adb was not found"),
+    ("err.agentNeedsSlot",     "kind=agent 需要 agent（團隊與格號）", "kind=agent requires agent (the team and slot)"),
     ("err.tabNotFoundPlain",   "找不到分頁", "Tab not found"),
     ("err.tabsNotReady",       "分頁清單還沒準備好", "The tab list is not ready yet"),
     ("err.settingsNotReady",   "設定還沒準備好", "Settings are not ready yet"),
@@ -368,6 +369,7 @@ static TABLE: &[(&str, &str, &str)] = &[
     ("err.noFileLoader",     "這個直譯器沒有檔案載入器，include 不能用：{0}",
                              "This interpreter has no file loader, so include is unavailable: {0}"),
     ("err.noSuchFile",       "沒有這個檔：{0}", "No such file: {0}"),
+    ("err.noSuchDir",        "沒有這個資料夾：{0}", "No such folder: {0}"),
     ("term.macroInterrupted", "[巨集已中斷：{0}]", "[macro interrupted: {0}]"),
     ("term.macroDone",        "[巨集執行完畢：{0}]", "[macro finished: {0}]"),
     ("term.macroError",       "[巨集錯誤] {0} {1}:{2}", "[macro error] {0} {1}:{2}"),
@@ -378,6 +380,31 @@ static TABLE: &[(&str, &str, &str)] = &[
     ("update.checking",   "檢查中…", "Checking..."),
     ("update.latest",     "已是最新版本", "You are up to date"),
     ("update.failed",     "檢查失敗（請確認網路後再試）", "Check failed (check your connection and try again)"),
+    // ---------------- 代理團隊（agent/*；舊版 Loc 的 ma.*，中英文逐字照舊版）----------------
+    ("ma.title",          "代理團隊", "Multi-Agent"),
+    ("ma.menuStop",       "停止任務", "Stop tasks"),
+    ("ma.stopPrompt",     "先停一下然後記錄目前狀態", "Stop for now and record the current state."),
+    ("ma.tooMany",        "代理團隊最多同時開 9 組。", "At most 9 Multi-Agent teams can be open at the same time."),
+    ("ma.openFail",       "代理團隊沒有任何 agent 啟動成功。", "No agent of this Multi-Agent team could be started."),
+    ("ma.backendMissing", "找不到 {0}，{1} 沒有啟動。\n請先安裝，或到「新連接 → 自訂…」設定路徑。",
+                          "{0} was not found, so {1} was not started.\nInstall it, or set its path in New \u{2192} Custom\u{2026}."),
+    ("ma.dlgFolderMissing", "資料夾不存在：\n{0}", "Folder not found:\n{0}"),
+    ("ma.dlgNeedBackend",   "{0} 沒有選代理人類型。", "{0} has no Agent Type selected."),
+    // 新版才有的（舊版組角色檔失敗只記 log；我們讓建團隊直接失敗，否則 agent 會拿到空角色）
+    ("ma.roleComposeFailed", "{0} 的角色檔組合失敗：{1}", "Could not compose the role file for {0}: {1}"),
+    ("ma.idleCheckPrompt",
+     "[AwayTerminal] 團隊目前全部閒置。請逐一問每個 agent 現在是否還有任務在進行、卡在哪裡，需要的話重新指派或回報給我。",
+     "[AwayTerminal] The whole team is idle. Ask each agent whether it still has a task running and where it is stuck, then reassign or report back as needed."),
+    // 投遞時打進收件人終端機的那一行：{0}＝序號、{1}＝寄件人、{2}＝task、{3}＝type、{4}＝信件路徑
+    ("ma.deliverOne",
+     "[AwayTerminal] 訊息 #{0} from {1} ({2}, {3})：請讀 {4}，依你的角色處理，完成後回信給 {1}。",
+     "[AwayTerminal] Message #{0} from {1} ({2}, {3}): read {4}, handle it according to your role, then reply to {1}."),
+    ("ma.deliverMany",
+     "[AwayTerminal] 你有 {0} 則新訊息：請依序讀 {1}，各自依你的角色處理並回信給寄件人。",
+     "[AwayTerminal] You have {0} new messages: read {1} in order, handle each according to your role and reply to its sender."),
+    ("ma.deliverInfo",
+     "[AwayTerminal] 通知 #{0}：請讀 {1}（AwayTerminal 的系統通知，不需要回信）。",
+     "[AwayTerminal] Notice #{0}: read {1} (a system notice from AwayTerminal; no reply needed)."),
 ];
 
 /// 測試用：把前端推過來的字串清掉（各測試之間不要互相影響）。

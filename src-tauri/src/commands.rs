@@ -146,6 +146,20 @@ pub struct AdbArgs {
     pub serial: Option<String>,
 }
 
+/// 代理團隊的額外參數（`kind = "agent"` 時才看）。
+///
+/// 前端先呼叫 `agent_team_create` 拿到計畫，再照計畫逐格開這一種。Rust 這邊自己去
+/// 找這一格要跑哪一支 CLI、要加什麼參數（[`crate::agent::adapters`]），並沿用**團隊的**
+/// 沙盒（一個團隊一棵 worktree、一個 Job Object）。
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentArgs {
+    /// 團隊 key（`agent_team_create` 回傳的）。
+    pub team: String,
+    /// 格號 1～4。
+    pub index: u32,
+}
+
 /// COM（連接埠）的額外參數（`kind = "com"` 時才看）。
 ///
 /// 欄位與字串值照舊版 `ComDialog` 與 `settings.json`（見 [`crate::com::ComParams`]）。
@@ -197,12 +211,15 @@ pub fn session_create(
     adb: Option<AdbArgs>,
     // `kind = "conn"`：要開哪一條自訂連線（依名稱）。
     conn: Option<String>,
+    // `kind = "agent"`：代理團隊的哪一格。
+    agent: Option<AgentArgs>,
     // 恢復分頁：要倒回哪一筆的畫面（`restore_list` 的索引）。
     restore: Option<usize>,
     on_event: Channel<InvokeResponseBody>,
     manager: State<'_, SessionManager>,
     tabs_state: State<'_, Arc<TabManager>>,
     settings: State<'_, Arc<SettingsStore>>,
+    teams: State<'_, Arc<crate::agent::TeamManager>>,
 ) -> Result<SessionInfo, String> {
     if kind == "ssh" || kind == "telnet" || kind == "com" {
         let params = if kind == "com" {
@@ -261,6 +278,15 @@ pub fn session_create(
         );
     }
 
+    // `kind = "agent"` ＝代理團隊的一格：連線、參數、沙盒、角色注入全部由後端決定。
+    let mut agent_slot: Option<crate::agent::LaunchedSlot> = None;
+    if kind == "agent" {
+        let a = agent
+            .as_ref()
+            .ok_or_else(|| t("err.agentNeedsSlot").to_string())?;
+        agent_slot = Some(crate::agent::plan_slot(&settings, &teams, &a.team, a.index)?);
+    }
+
     // `kind = "conn"` ＝自訂連線（有名稱、有設定、可能有沙盒）。
     let conn_def = if kind == "conn" {
         let name = conn
@@ -273,7 +299,8 @@ pub fn session_create(
                 .ok_or_else(|| tf("err.connNotFound", &[name]))?,
         )
     } else {
-        None
+        // 代理團隊的一格：連線是後端查出來的（使用者的自訂連線優先）
+        agent_slot.as_ref().map(|a| a.conn.clone())
     };
 
     let mut sh = match kind.as_str() {
@@ -289,7 +316,7 @@ pub fn session_create(
                 .ok_or_else(|| t("err.customNeedsCommand").to_string())?;
             shell::custom(cmd).ok_or_else(|| tf("err.commandNotFound", &[cmd]))?
         }
-        "conn" => {
+        "conn" | "agent" => {
             let c = conn_def.as_ref().unwrap();
             let exe = std::path::PathBuf::from(&c.path);
             if !exe.is_file() {
@@ -325,12 +352,24 @@ pub fn session_create(
         other => return Err(tf("err.unsupportedKind", &[other])),
     };
 
-    // ---- 沙盒（只有自訂連線有這個選項；`CLAUDE.md`「新增功能 → 沙盒模式」）----
+    // ---- 沙盒（只有自訂連線與代理團隊有這個選項；`CLAUDE.md`「新增功能 → 沙盒模式」）----
+    // 代理團隊：工作目錄由團隊決定（前端傳來的 cwd 不看）
+    let cwd = match &agent_slot {
+        Some(a) => Some(a.dir.clone()),
+        None => cwd,
+    };
     let mut work_dir = cwd.clone().or_else(default_cwd);
     // 恢復分頁要存「沙盒之前」的工作目錄，否則下次會在 worktree 裡再開一層沙盒
     let base_dir = work_dir.clone().unwrap_or_default();
     let mut sandbox = None;
-    if let Some(c) = &conn_def {
+    if let Some(a) = &agent_slot {
+        // 沙盒是**團隊的**（`agent_team_create` 已經開好 worktree、寫好護欄）：
+        // 這裡只沿用它的工作目錄與環境變數。
+        if let Some(sb) = &a.sandbox {
+            work_dir = Some(sb.work_dir.clone());
+            sandbox = Some(sb.clone());
+        }
+    } else if let Some(c) = &conn_def {
         if c.sandbox {
             let base = std::path::PathBuf::from(work_dir.clone().unwrap_or_default());
             match crate::sandbox::prepare(&base, &c.name, &c.path) {
@@ -355,7 +394,12 @@ pub fn session_create(
 
     // ---- 自訂連線的命令列（要等沙盒決定完 extra_args 才組得出來）----
     if let Some(c) = &conn_def {
-        let extra = sandbox.as_ref().map(|s| s.extra_args.as_str()).unwrap_or("");
+        // 代理團隊的附加參數是 adapter 決定的（`--append-system-prompt-file` 之類），
+        // 已經把沙盒的 `--sandbox` 接在後面了
+        let extra = match &agent_slot {
+            Some(a) => a.extra_args.as_str(),
+            None => sandbox.as_ref().map(|s| s.extra_args.as_str()).unwrap_or(""),
+        };
         let mut args = String::new();
         if !c.args.trim().is_empty() {
             args.push(' ');
@@ -388,6 +432,12 @@ pub fn session_create(
     };
     // 分頁名稱（舊版）：PowerShell 走 NextName("PowerShell(1)")；
     // claude 這類「以資料夾命名」的連線走 DirTabName；其餘 NextName(執行檔名)。
+    // 代理團隊：分頁名稱＝Agent ID（舊版 `OpenCustom(conn, g.Dir, s.AgentId, …)`）；
+    // 綁組時代表列會被改成組名。
+    let title = match &agent_slot {
+        Some(a) => Some(a.agent_id.clone()),
+        None => title,
+    };
     let tab_title = match title.map(|t| t.trim().to_string()).filter(|t| !t.is_empty()) {
         Some(t) => t,
         None => match tab_kind {
@@ -522,6 +572,8 @@ pub fn session_create(
         pid: info.pid,
         started_at: tabs::now_ms(),
         last_output,
+        last_input: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+        last_submit: Arc::new(std::sync::atomic::AtomicU64::new(0)),
         busy: false,
         logger,
         fg: None,
@@ -541,6 +593,10 @@ pub fn session_create(
         backend: info.backend.clone(),
     });
     tabs_state.set_active(id);
+    // 代理團隊：把分頁綁回那一格（啟動時間、角色注入方式都在這裡記）
+    if let (Some(a), Some(plan)) = (&agent, &agent_slot) {
+        crate::agent::slot_started(&teams, &a.team, a.index, id, plan);
+    }
     // 恢復分頁：把最初的開啟時間填回去（tooltip 的執行時長接著算）
     crate::restore::apply_opened(&app, id, restore);
     manager.insert(id, session);
@@ -678,6 +734,8 @@ fn create_remote(
         pid: 0,
         started_at: tabs::now_ms(),
         last_output,
+        last_input: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+        last_submit: Arc::new(std::sync::atomic::AtomicU64::new(0)),
         busy: false,
         logger,
         fg: None,
@@ -760,6 +818,9 @@ pub fn session_write_text(
             return;
         }
     }
+    // 舊版是在 `case 'i'` 裡設 `LastInputUtc`／`LastSubmitUtc`：程式自己貼進去的字也算
+    //（代理團隊的投遞就是走貼上，投遞完那 3 秒本來就不該再投下一封）。
+    tabs_state.mark_input(id, text.contains(['\r', '\n']));
     if let Some(s) = manager.get(id) {
         s.write(text.as_bytes());
         return;
@@ -821,6 +882,13 @@ pub fn tab_close(
     if let Some(s) = manager.remove(id) {
         // close() 會 sleep（優雅結束鍵 60ms），別卡在 IPC 執行緒上
         std::thread::spawn(move || s.close());
+    }
+    // 代理團隊的一格被關：組裡還有別格＝重綁（`g` 協定重排），沒有＝拆組
+    //（舊版 `RemoveTabSilently` → `AfterAgentTabRemoved`）。前端不必知道這件事。
+    if let Some(teams) = app.try_state::<Arc<crate::agent::TeamManager>>() {
+        if teams.find_tab(id).is_some() {
+            crate::agent::tab_removed(&app, &teams, id);
+        }
     }
     if let Some(next) = next {
         emit_host(&app, format!("s{next}"));
@@ -913,6 +981,10 @@ pub fn tab_panel_set(
 /// `p{id}`：使用者在分割模式點了某個 pane。只改模型，**不回送 `s`**（避免迴圈）。
 #[tauri::command]
 pub fn pane_selected(app: AppHandle, id: u32, tabs_state: State<'_, Arc<TabManager>>) {
+    // 代理團隊：記住最後點過的那一格（點分頁列那一列時回到它，舊版 `MarkActiveRow`）
+    if let Some(teams) = app.try_state::<Arc<crate::agent::TeamManager>>() {
+        crate::agent::note_focus(&teams, id);
+    }
     if tabs_state.set_active(id) {
         tabs::emit_state(&app, &tabs_state);
     }

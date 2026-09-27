@@ -1,8 +1,10 @@
 // AwayTerminal2 — Rust 後端
 
 pub mod adb;
+pub mod agent;
 pub mod b64;
 pub mod bench;
+pub mod claudemd;
 pub mod cli;
 pub mod com;
 pub mod compose;
@@ -133,6 +135,7 @@ pub fn run() {
             toolbar::log_start,
             toolbar::log_stop,
             toolbar::reveal_path,
+            toolbar::open_dir,
             toolbar::temp_dir,
             toolbar::macro_pick_file,
             toolbar::save_text_to_file_at,
@@ -175,6 +178,26 @@ pub fn run() {
             bench::bench_vec,
             bench::bench_base64,
             bench::bench_channel,
+            agent::agent_setup_options,
+            agent::agent_roles_restore,
+            agent::agent_roles_dir,
+            agent::agent_bus_dir,
+            agent::agent_team_create,
+            agent::agent_slot_failed,
+            agent::agent_team_ready,
+            agent::agent_delivery_set,
+            agent::agent_stop,
+            agent::agent_ratio,
+            agent::agent_focused,
+            agent::agent_teams,
+            agent::agent_team_tabs,
+            agent::agent_tab_closed,
+            agent::agent_verify_begin,
+            agent::agent_verify_send,
+            agent::agent_verify_state,
+            agent::agent_verify_end,
+            claudemd::claude_md_available,
+            claudemd::claude_md_update,
         ])
         .setup(|app| {
             // 設定檔要在任何 command 跑起來之前備好（`host_ready` 的 T{json} 直接讀它）
@@ -201,9 +224,12 @@ pub fn run() {
 
             apply_window_bounds(app.handle(), &store);
             status::spawn(app.handle().clone(), tabs.clone());
+            // 代理團隊的投遞 tick（600ms，和狀態燈同一個節奏；沒有團隊時直接 return）
+            agent::deliver::spawn(app.handle().clone());
 
             app.manage(store);
             app.manage(tabs);
+            app.manage(Arc::new(agent::TeamManager::default()));
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -224,8 +250,13 @@ pub fn run() {
                     if !restore::asked().swap(true, Ordering::SeqCst) {
                         api.prevent_close();
                         let app = window.app_handle().clone();
-                        let restore_default = store.get().exit_restore_tabs;
-                        if let Err(e) = app.emit("exit-request", restore_default) {
+                        // payload 是兩個勾選的上次狀態（舊版 `ExitDialog` 開起來就是上次的值）
+                        let cur = store.get();
+                        let payload = serde_json::json!({
+                            "restore": cur.exit_restore_tabs,
+                            "updateMd": cur.exit_update_md,
+                        });
+                        if let Err(e) = app.emit("exit-request", payload) {
                             // 前端收不到就沒人會回答 → 別把視窗鎖死，直接讓它關
                             println!("[AwayTerminal] 離開對話框發不出去（{e}），直接關閉");
                             restore::asked().store(false, Ordering::SeqCst);

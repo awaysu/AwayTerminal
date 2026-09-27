@@ -101,6 +101,10 @@ pub struct AppSettings {
     pub saved_tabs: Vec<crate::restore::SavedTab>,
     /// 離開對話框「下次開啟恢復目前分頁」的勾選狀態（舊版 `ExitRestoreTabs`，預設開）。
     pub exit_restore_tabs: bool,
+    /// 離開對話框的「Claude Code 離開前更新 CLAUDE.md」勾選（舊版 `ExitUpdateMd`）。
+    /// 預設**不**勾（舊版的 `IsChecked="False"`）。
+    #[serde(default)]
+    pub exit_update_md: bool,
     /// Telegram 遠端（舊版 `RemoteEnabled`／`TelegramBotToken`／`TelegramChatId`／`RemoteNotify`）。
     ///
     /// **功能是階段 4**；這裡先存著，因為匯入舊版設定時不該把使用者的 token 弄丟
@@ -242,6 +246,7 @@ impl Default for AppSettings {
             favorites: Vec::new(),
             saved_tabs: Vec::new(),
             exit_restore_tabs: true,
+            exit_update_md: false,
             remote_enabled: false,
             telegram_bot_token: String::new(),
             telegram_chat_id: 0,

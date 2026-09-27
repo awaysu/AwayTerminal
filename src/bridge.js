@@ -163,8 +163,18 @@ function postMessage(raw) {
       // 診斷（terminal.js 的 dbgLog）→ 後端 log，等效舊版的 diag.log
       log(`[diag] ${rest}`);
       return;
+    case 'G': {
+      // G{下方id}US{上列比例}：代理團隊上下分隔線拖完的新比例（雙擊回 0.5 也走這裡）
+      const gi = rest.indexOf(US);
+      if (gi < 0) return;
+      invoke('agent_ratio', {
+        bottomTab: Number(rest.slice(0, gi)),
+        ratio: Number(rest.slice(gi + 1)),
+      }).catch(() => {});
+      return;
+    }
     default:
-      // G 等尚未接上的：交給 Rust 記 log（不靜靜丟掉）
+      // 尚未接上的：交給 Rust 記 log（不靜靜丟掉）
       invoke('host_message', { msg }).catch(() => {});
       return;
   }
@@ -274,6 +284,8 @@ export async function createSession(opts = {}) {
     telnet: opts.telnet || null,
     com: opts.com || null,
     conn: opts.conn || null,
+    // 代理團隊的一格（`kind: 'agent'`）：要開哪個團隊的第幾格
+    agent: opts.agent || null,
     // 恢復分頁：要倒回第幾筆的畫面（`restore_list` 的索引）
     restore: opts.restore === undefined ? null : opts.restore,
     onEvent,

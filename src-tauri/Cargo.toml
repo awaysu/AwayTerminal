@@ -41,6 +41,9 @@ ureq = "3.4.2"
 # 只讀，不改任何系統設定。
 sys-locale = "0.3.2"
 tauri-plugin-single-instance = "2.4.5"
+# 角色檔的「使用者沒改過就自動換新版」比對（舊版 RoleLibrary 的 .defaults.json 雜湊）。
+# russh 已經把同一個版本拉進依賴樹，所以不會多編一份。
+sha2 = "0.10"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = [

@@ -16,9 +16,14 @@
 
 | 方向 | 訊息總數 | 已接 | 未接 |
 |---|---|---|---|
-| JS → host | 12 | **11** | 1 |
-| host → JS | 19 | **16**（含 `o` 以二進位 channel 取代） | 3 |
-| 合計 | **31** | **27** | **4** |
+| JS → host | 12 | **12** | 0 |
+| host → JS | 19 | **19**（含 `o` 以二進位 channel 取代） | 0 |
+| 合計 | **31** | **31** | **0** |
+
+**TASK-017 把最後 4 條接完了**（代理團隊）：`g`／`u`／`E`（host→JS）與 `G`（JS→host）。
+這四條的 JS 端本來就在 `terminal.js` 裡（那個檔和舊版逐字一樣、從沒改過），缺的一直是
+**Rust 端的呼叫者**——現在 `agent/mod.rs` 的 `link()` 送 `g`、`post_state()` 送 `E`、
+拆組時送 `u`，而 `G` 由 `bridge.js` 轉成 `agent_ratio` command。
 
 （TASK-010 沒有讓數字變大：`b` 與 `a` 兩條**先前就算已接**，這次是把它們的「還沒用到的那半」
 用完——`b` 的兩段 base64、`a` 的 `save` kind。功能上是新的，數字上不是。）
@@ -36,16 +41,18 @@
   並把 `a…save`（JS→host 的最後一個 kind）接起來——關閉程式時向每個分頁要 scrollback。
   這兩條合起來就是舊版 1.0.45 的「恢復分頁（含畫面紀錄倒回）」。
 
-剩下的 4 條全部屬於代理團隊（Multi-Agent，階段 4），**都不是恢復分頁的一部分**：
+- TASK-017 接了最後 4 條（代理團隊）：
 
-| 訊息 | 歸誰 |
-|---|---|
-| `g`（外框排版）、`u`（拆掉外框）、`E`（pane 的代理狀態標籤） | **代理團隊**。舊版恢復「代理團隊分頁」時會用到它們（`RestoreAgentGroup` 重開整組要重建外框），但那是代理團隊的功能，階段 4 一起做 |
-| `G`（JS→host：上下分隔線拖完的比例） | 同上（目前落到 `host_message` 記 log） |
+| 訊息 | 誰送 | 什麼時候 |
+|---|---|---|
+| `g{下方id}US{比例}US{上列id,…}US{標籤\|…}US{顏色,…}` | `agent::link()` | 建團隊、某一格關掉後重排、`agent_team_ready` |
+| `E{id}US{0..4}` | `agent::post_state()` | 每 600ms 的 tick（**只在標籤變了才送**，同舊版 `PostedState`） |
+| `u{id}` | `agent::disband()` | 解散團隊時**還有分頁活著**（關閉流程中間出錯）→ 把外框拆掉、各格變回一般分頁。舊版 JS 有 `ungroupAll()` 但 C# 端沒有呼叫者（同 `A` 的情況） |
+| `G{下方id}US{比例}` | `terminal.js` 的分隔線拖曳 | → `bridge.js` → `agent_ratio` command |
 
 **未接的 JS→host 訊息不會靜靜消失**：`bridge.js` 一律轉給 Rust 的 `host_message`
 指令，後端印 `[AwayTerminal] [host_message 未接] {kind} = {說明}`，
-所以「還有哪些沒接」在 `npm run tauri dev` 的輸出裡看得見。
+所以「還有哪些沒接」在 `npm run tauri dev` 的輸出裡看得見。（現在應該一條都不會印。）
 
 ---
 
@@ -64,7 +71,7 @@
 | `a{id}US{kind}US{text}` | `q` 的回覆 | `invoke('pane_answer')`。處理 `cwd`（分頁改名）與 `save`（關閉程式時的 scrollback，交給等在信箱的 `restore::save`）（提示字元行 → shell 分頁自動改名成目前目錄名稱，舊版 1.1.2）；其餘 kind 記 log | 🟡 部分（`cwd` 已接；`sel`/`all`/`file`/`save`/`text` 未接） |
 | `U{url}` | 點了終端機裡的連結 | `host_message` 記 log | ⬜ 未接（需 opener + 選單） |
 | `m{id}` | 下一個空選取回覆是因為程式接管滑鼠（1.1.10） | `host_message` 記 log | ⬜ 未接（複製／選取尚未實作） |
-| `G{下方id}US{上列比例}` | Multi-Agent 上下分隔線拖完的新比例（1.2.0） | `host_message` 記 log | ⬜ 未接（代理團隊是階段 4） |
+| `G{下方id}US{上列比例}` | Multi-Agent 上下分隔線拖完的新比例（1.2.0） | `invoke('agent_ratio')` → `team.ratio`（clamp 0.15～0.85） | ✅ 已接（TASK-017） |
 
 ---
 
@@ -88,9 +95,9 @@
 | `A{id}` | 全選 | `toolbar_select_all`（終端機右鍵「全選」）。⚠️ **舊版 1.2.x 沒有呼叫端**——`Loc.cs` 留著 `ctx.selectAll` 字串，但整個 `MainWindow.xaml.cs` 沒有任何 `PostToWeb("A…")`，是死協定。TASK-006 由 PM 決定當**新功能**補上 | ✅ 已接（新增，非搬移） |
 | `F` | 開搜尋列 | `toolbar_search`（終端機右鍵「搜尋」）。**Ctrl+F 由 `terminal.js` 自己攔，不經這條** | ✅ 已接 |
 | `P{id}US{fg}US{bg}` | 單一分頁配色 | `tab_colors`（分頁右鍵「配色 ▸」，色票來自 `settings.palette`）。`fg`/`bg` 皆空＝回到設定預設 | ✅ 已接 |
-| `g{…}` | Multi-Agent 外框排版（1.2.0） | — | ⬜ 未接（階段 4） |
-| `u{id}` | 拆掉 Multi-Agent 外框（1.2.0） | — | ⬜ 未接（階段 4） |
-| `E{id}US{0..4}` | pane 標題的代理狀態標籤（1.2.0） | — | ⬜ 未接（階段 4） |
+| `g{…}` | Multi-Agent 外框排版（1.2.0） | `agent::link()`：綁組／重排時送 | ✅ 已接（TASK-017） |
+| `u{id}` | 拆掉 Multi-Agent 外框（1.2.0） | `agent::disband()`：解散時還有分頁活著才送（舊版沒有呼叫者） | ✅ 已接（TASK-017） |
+| `E{id}US{0..4}` | pane 標題的代理狀態標籤（1.2.0） | `agent::post_state()`，600ms tick、只在變了才送 | ✅ 已接（TASK-017） |
 
 ---
 

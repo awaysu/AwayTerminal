@@ -212,6 +212,22 @@ pub fn open_url(app: AppHandle, url: String) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
+/// 在檔案總管／Finder／檔案管理員裡開一個資料夾。
+///
+/// 舊版是 `Process.Start("explorer.exe", dir)`（代理團隊的「開啟訊息資料夾」與設定視窗的
+/// 「開啟角色檔資料夾」都用它）。這裡走 `tauri-plugin-opener`，mac／Linux 也通。
+/// **只放行真的存在的資料夾**（避免把任意字串交給系統的 open）。
+#[tauri::command]
+pub fn open_dir(app: AppHandle, path: String) -> Result<(), String> {
+    let p = std::path::PathBuf::from(path.trim());
+    if !p.is_dir() {
+        return Err(tf("err.noSuchDir", &[&p.display().to_string()]));
+    }
+    tauri_plugin_opener::OpenerExt::opener(&app)
+        .open_path(p.to_string_lossy().to_string(), None::<&str>)
+        .map_err(|e| e.to_string())
+}
+
 // ------------------------------------------------------------------- log
 
 /// log 對話框要用的預設值（舊版 `LogDialog` 的建構子）。

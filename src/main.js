@@ -244,8 +244,174 @@ async function awayVerify() {
   await verifyMigrate();
   await verifyRestore();
   await verifySandbox();
+  await verifyAgentTeam();
 }
 window.awayVerify = awayVerify;
+
+/**
+ * 代理團隊驗證（TASK-017 C）：**整條路**——建團隊 → 兩格啟動 → 角色檔送到 → PM 寫信 →
+ * 600ms tick 偵測 → worker 閒置時打進去 → worker 回信 → 打回 PM → 停止任務 → 關閉整組。
+ *
+ * ⚠️ 三件事絕不做：不啟動真的 claude／codex（用 `examples/fake_agent.rs`）、不動使用者的
+ * 自訂連線清單（`agent_verify_begin` 的覆寫只在記憶體裡）、不碰使用者的 `.ai/`
+ * （專案資料夾在 `%TEMP%`，驗完整個刪掉）。
+ */
+async function verifyAgentTeam() {
+  const term = window.AwayTerm;
+  const lines = ['[verify] 代理團隊（假 agent、全程在 %TEMP%）'];
+  let dir = null;
+  let key = null;
+  try {
+    dir = await invoke('agent_verify_begin');
+    lines.push(`[verify] 驗證用專案：${dir}`);
+
+    const setup = {
+      dir,
+      title: '',
+      slots: [
+        { enabled: true, backend: 'claude-code', role: 'product-manager' },
+        { enabled: true, backend: 'claude-code', role: 'software-engineer' },
+        { enabled: false, backend: '', role: '' },
+        { enabled: false, backend: '', role: '' },
+      ],
+      maxMessages: 30,
+      idleCheckMinutes: 0, // 驗證不要讓閒置檢查插話
+      sandbox: true,
+    };
+    const plan = await invoke('agent_team_create', { setup });
+    key = plan.key;
+    lines.push(
+      `[verify] 建團隊：組號=${plan.number}　工作區=${plan.workDir}　沙盒=${!!plan.sandbox}`
+    );
+    lines.push(
+      `[verify] 計畫：${plan.slots.map((x) => `${x.agentId}/${x.backendName}/${x.roleTitle}`).join('　')}`
+    );
+    // `g` 協定要的 pane 標籤與顏色
+    lines.push(`[verify] pane 標籤：${plan.slots.map((x) => x.label).join(' | ')}`);
+    lines.push(`[verify] 外框顏色：${plan.slots.map((x) => x.color).join(',')}`);
+
+    for (const slot of plan.slots) {
+      await createSession({ kind: 'agent', agent: { team: key, index: slot.index } });
+    }
+    const n = await invoke('agent_team_ready', { key });
+    lines.push(`[verify] 就緒：${n} 個 agent（要 2）`);
+
+    // 兩格的畫面：假 agent 印出「角色檔讀到了」＝`--append-system-prompt-file` 真的送到
+    let st = await invoke('agent_verify_state', { key });
+    lines.push(`[verify] 分頁 id：${st.tabs.join(',')}　比例=${st.ratio}`);
+    await waitUntil(15000, () =>
+      st.tabs.every((id) => term.tail(id, 40).join('\n').includes('runtime-context=true'))
+    );
+    for (const id of st.tabs) {
+      const tail = term.tail(id, 40).filter((l) => l.includes('role-file=') || l.includes('ready'));
+      for (const t of tail) lines.push(`[verify]   pane ${id} | ${t}`);
+    }
+    const roleOk = st.tabs.every((id) =>
+      term.tail(id, 40).join('\n').includes('runtime-context=true my-id=true')
+    );
+    lines.push(`[verify] 角色檔（含執行期脈絡）送到兩格：${roleOk}`);
+
+    // 分隔線比例（`G` 協定那條路）
+    await invoke('agent_ratio', { bottomTab: st.tabs[0], ratio: 0.35 });
+    st = await invoke('agent_verify_state', { key });
+    lines.push(`[verify] 拖分隔線後記住的比例：${st.ratio}（要 0.35）`);
+
+    // ---- 一封信來回（真的走 600ms tick）----
+    const sent = await invoke('agent_verify_send', {
+      key,
+      from: 'Agent-' + plan.number + '1',
+      to: 'Agent-' + plan.number + '2',
+    });
+    lines.push(`[verify] PM 寄出：${sent}`);
+    const worker = st.tabs[1];
+    const lead = st.tabs[0];
+    const delivered = await waitUntil(40000, () =>
+      term.tail(worker, 60).join('\n').includes(sent)
+    );
+    lines.push(`[verify] 投遞打進 worker：${delivered}`);
+    const wl = term.tail(worker, 60).find((l) => l.includes('[AwayTerminal]'));
+    if (wl) lines.push(`[verify]   worker 畫面 | ${wl.trim()}`);
+    const replied = await waitUntil(30000, () =>
+      term.tail(worker, 60).join('\n').includes('replied ')
+    );
+    lines.push(`[verify] worker 回了信：${replied}`);
+    const back = await waitUntil(40000, () =>
+      term.tail(lead, 60).join('\n').includes('[AwayTerminal]')
+    );
+    lines.push(`[verify] 回信投遞回 PM：${back}`);
+    const ll = term.tail(lead, 60).find((l) => l.includes('[AwayTerminal]'));
+    if (ll) lines.push(`[verify]   PM 畫面 | ${ll.trim()}`);
+
+    st = await invoke('agent_verify_state', { key });
+    lines.push(
+      `[verify] 投遞計數=${st.messageCount}　待投遞=${st.pending}　信箱=${st.busFiles.length} 封　已投遞記錄=${st.delivered.length} 筆`
+    );
+    lines.push(`[verify] 信箱內容：${st.busFiles.join(', ')}`);
+
+    // ---- 節流：上限調成 1 → 再寄一封就會停 ----
+    await invoke('agent_delivery_set', { key, limit: 1 });
+    st = await invoke('agent_verify_state', { key });
+    // v1：沒暫停時選次數**只改上限、計數照舊**（歸零只發生在「暫停中選次數＝恢復」）
+    lines.push(`[verify] 上限改 1（沒暫停 → 計數照舊）：計數=${st.messageCount}　暫停=${st.paused}`);
+    const extra = await invoke('agent_verify_send', {
+      key,
+      from: 'Agent-' + plan.number + '1',
+      to: 'Agent-' + plan.number + '2',
+    });
+    const paused = await waitUntil(40000, async () => {
+      st = await invoke('agent_verify_state', { key });
+      return st.paused;
+    });
+    lines.push(`[verify] 已到上限 → tick 自動暫停：${paused}（期間又寄了 ${extra}，會排隊不投遞）`);
+    await invoke('agent_delivery_set', { key, limit: null });
+    st = await invoke('agent_verify_state', { key });
+    lines.push(`[verify] 使用者按暫停也維持暫停：${st.paused}`);
+    await invoke('agent_delivery_set', { key, limit: 30 });
+    st = await invoke('agent_verify_state', { key });
+    lines.push(`[verify] 選次數＝恢復並歸零：暫停=${st.paused}　計數=${st.messageCount}`);
+
+    // ---- 停止任務（Esc → Ctrl+U → 停止句）----
+    const stopped = await invoke('agent_stop', { key });
+    lines.push(`[verify] 停止任務送到：${stopped.join(', ')}`);
+    const gotStop = await waitUntil(15000, () =>
+      st.tabs.every((id) => term.tail(id, 60).join('\n').includes('先停一下'))
+    );
+    lines.push(`[verify] 兩格都收到停止句：${gotStop}`);
+
+    // ---- 關閉整組 ----
+    const tabs = await invoke('agent_team_tabs', { key });
+    for (const id of tabs.slice().reverse()) await invoke('tab_close', { id });
+    await invoke('agent_team_gone', { key }).catch(() => {});
+    st = await invoke('agent_verify_state', { key });
+    lines.push(`[verify] 關閉整組後團隊還在嗎：${st.found}（要 false）`);
+    key = null;
+  } catch (e) {
+    lines.push(`[verify] 失敗：${e}`);
+  } finally {
+    if (key) {
+      const tabs = await invoke('agent_team_tabs', { key }).catch(() => []);
+      for (const id of tabs.slice().reverse()) await invoke('tab_close', { id }).catch(() => {});
+      await invoke('agent_team_gone', { key }).catch(() => {});
+    }
+    if (dir) {
+      await new Promise((r) => setTimeout(r, 800)); // 讓剛關掉的 PTY 收尾完再刪資料夾
+      const msg = await invoke('agent_verify_end', { dir }).catch((e) => String(e));
+      lines.push(`[verify] 收尾：${msg}`);
+    }
+    log(lines.join('\n'));
+  }
+}
+
+/** 等某個條件成立（支援 async 判斷式）。逾時就回 false。 */
+async function waitUntil(ms, f) {
+  const end = Date.now() + ms;
+  for (;;) {
+    if (await f()) return true;
+    if (Date.now() > end) return false;
+    await new Promise((r) => setTimeout(r, 250));
+  }
+}
+
 
 /**
  * 設定視窗驗證（TASK-015 A）：改字級 → Rust 重送 `T{json}` → **前端的字級真的變了**。

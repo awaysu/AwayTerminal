@@ -24,6 +24,7 @@ import { initCompose, openCompose } from './compose.js';
 import { initSettings } from './setdlg.js';
 import { initAbout } from './about.js';
 import { initAdb, openAdb, isAdbConn } from './adb.js';
+import { initAgentDialog, openAgentTeam } from './agentdlg.js';
 import { onLangChange } from './i18n.js';
 import { initFavs, addConnFavorite } from './favs.js';
 
@@ -335,11 +336,17 @@ function render() {
   }
 
   for (const tab of state.tabs) {
+    // 代理團隊：一組只出現一列（其餘格藏在組裡，同舊版 `_stripView` 的過濾）
+    if (!isStripRow(tab.id)) continue;
     const row = document.createElement('div');
-    row.className = 'tab-row' + (tab.id === state.activeId ? ' active' : '');
+    const team = teamOfTab(tab.id);
+    row.className =
+      'tab-row' +
+      (rowOf(state.activeId) === tab.id ? ' active' : '') +
+      (team ? ' tab-team' : '');
     row.dataset.id = String(tab.id);
     row.draggable = true;
-    row.title = tooltipFor(tab);
+    row.title = team ? `${tooltipFor(tab)}\n${teamTip(team)}` : tooltipFor(tab);
 
     const icon = document.createElement('span');
     // 閒置染綠 #A5D6A7、忙碌染紅 #EF9A9A（舊版 TerminalTab.ReadyColor / BusyColor）
@@ -358,6 +365,15 @@ function render() {
     close.title = T['tip.tabClose'];
 
     row.append(icon, title, close);
+    // 代理團隊那一列：agent 數量與投遞計數（舊版是 tooltip ＋分頁列小字）
+    if (team) {
+      const badge = document.createElement('span');
+      badge.className = 'tab-team-badge' + (team.paused ? ' paused' : '');
+      const n = team.agents.filter((a) => a.tab !== null).length;
+      badge.textContent = team.pending > 0 ? `${n}\u2709${team.pending}` : String(n);
+      badge.title = teamTip(team);
+      row.insertBefore(badge, close);
+    }
     // 記錄 log 中：舊版 1.1.2 起分頁列不再放 log 圖示、只在 tooltip 註明，
     // 但一個小紅點不占空間又看得出來，所以這裡多一個（刻意不同，見文件）
     if (tab.logging) {
@@ -506,6 +522,103 @@ async function clearSandbox(id) {
   }
 }
 
+// ------------------------------------------------- 代理團隊（一組一列）
+
+/** `agent-state` event 的最新內容（每個團隊一筆）。 */
+let teams = [];
+
+/** 這個分頁屬於哪個團隊（不是團隊的格＝null）。 */
+function teamOfTab(id) {
+  return teams.find((t) => t.agents.some((a) => a.tab === id)) || null;
+}
+
+/** 分頁列要不要列這個分頁：一般分頁都列；代理團隊只列代表列那一列（舊版 `IsStripRow`）。 */
+function isStripRow(id) {
+  const t = teamOfTab(id);
+  return !t || t.rowTab === id;
+}
+
+/** 代表這個分頁的那一列（代理團隊＝整組的代表列，舊版 `RowOf`）。 */
+function rowOf(id) {
+  const t = teamOfTab(id);
+  return t && t.rowTab !== null ? t.rowTab : id;
+}
+
+/** 分頁列那一列的 tooltip 要多的幾行（已投遞／暫停／待投遞，舊版 `ma.tip*`）。 */
+function teamTip(t) {
+  const lines = [fmt('ma.tipMessages', t.messageCount, t.maxMessages > 0 ? t.maxMessages : '\u221e')];
+  if (t.paused) lines.push(T['ma.tipPaused']);
+  if (t.pending > 0) lines.push(fmt('ma.tipPending', t.pending));
+  for (const a of t.agents) {
+    if (a.tab !== null) lines.push(`${a.agentId} ${a.roleTitle} (${a.backendName})`);
+  }
+  return lines.join('\n');
+}
+
+/** 右鍵選單的「投遞」子選單（10／30／50／100／不限／暫停）。 */
+function renderDeliveryMenu(t) {
+  const menu = $('ma-delivery-menu');
+  menu.textContent = '';
+  const add = (tag, text, checked) => {
+    const item = document.createElement('div');
+    item.className = 'menu-item';
+    item.dataset.act = 'ma-limit';
+    item.dataset.limit = tag;
+    item.textContent = `${checked ? '\u2713 ' : '\u3000'}${text}`;
+    menu.appendChild(item);
+  };
+  for (const n of [10, 30, 50, 100, 0]) {
+    add(String(n), n === 0 ? T['ma.limitUnlimited'] : String(n), !t.paused && t.maxMessages === n);
+  }
+  const sep = document.createElement('div');
+  sep.className = 'menu-sep';
+  menu.appendChild(sep);
+  add('pause', T['ma.menuPauseItem'], t.paused);
+}
+
+async function stopTeam(key) {
+  try {
+    const ids = await invoke('agent_stop', { key });
+    if (ids.length) toast(fmt('ma.stopSent', ids.join(', ')));
+  } catch (e) {
+    log(`[tabbar] 停止任務失敗：${e}`);
+  }
+}
+
+async function openTeamBus(key) {
+  try {
+    const dir = await invoke('agent_bus_dir', { key });
+    if (dir) await invoke('open_dir', { path: dir });
+  } catch (e) {
+    log(`[tabbar] 開啟訊息資料夾失敗：${e}`);
+  }
+}
+
+async function setTeamLimit(key, tag) {
+  const limit = tag === 'pause' ? null : Number(tag);
+  await invoke('agent_delivery_set', { key, limit }).catch((e) =>
+    log(`[tabbar] 投遞設定失敗：${e}`)
+  );
+}
+
+/** 關閉整組（分頁列只有一列＝一起關，舊版 `CloseAgentGroup`：先確認）。 */
+async function closeTeam(t) {
+  const n = t.agents.filter((a) => a.tab !== null).length;
+  if (!(await askYesNo(T['msg.closeTabTitle'], fmt('ma.closeConfirm', t.title, n)))) return;
+  let ids = [];
+  try {
+    ids = await invoke('agent_team_tabs', { key: t.key });
+  } catch (e) {
+    log(`[tabbar] 取得團隊分頁失敗：${e}`);
+    return;
+  }
+  // 由後往前關（前面的格還在時不會每關一個就重排一次）
+  for (const id of ids.slice().reverse()) {
+    await invoke('tab_close', { id }).catch((e) => log(`[tabbar] 關閉分頁 ${id} 失敗：${e}`));
+  }
+  await invoke('agent_team_gone', { key: t.key }).catch(() => {});
+}
+
 function idOfRow(target) {
   const row = target.closest ? target.closest('.tab-row') : null;
   return row ? Number(row.dataset.id) : null;
@@ -515,12 +628,17 @@ function installStripEvents() {
   el.strip.addEventListener('click', (e) => {
     const id = idOfRow(e.target);
     if (id === null) return;
+    const team = teamOfTab(id);
     if (e.target.closest('.tab-close')) {
       e.stopPropagation();
-      closeTab(id);
+      // 代理團隊：分頁列只有一列＝整組一起關（舊版 `CloseAgentGroup`）
+      if (team) closeTeam(team);
+      else closeTab(id);
       return;
     }
-    invoke('tab_select', { id }).catch((err) => log(`[tabbar] 選取失敗：${err}`));
+    // 代理團隊：切到最後點過的那一格（舊版 `FocusTargetOf`）
+    const target = team && team.lastFocused ? team.lastFocused : id;
+    invoke('tab_select', { id: target }).catch((err) => log(`[tabbar] 選取失敗：${err}`));
   });
 
   el.strip.addEventListener('dblclick', (e) => {
@@ -533,8 +651,13 @@ function installStripEvents() {
     if (id === null) return;
     e.preventDefault();
     const tab = state.tabs.find((t) => t.id === id);
+    const team = teamOfTab(id);
+    // 代理團隊那幾項只在團隊那一列出現
+    for (const node of el.tabMenu.querySelectorAll('[data-ma]')) node.hidden = !team;
+    if (team) renderDeliveryMenu(team);
     // 沙盒那兩項只對「自訂連線開的分頁」有意義（PowerShell／SSH 分頁沒有連線設定）
-    const hasConn = !!(tab && tab.connName);
+    // 代理團隊的沙盒是整組的、在建團隊時決定 → 不給逐分頁切換
+    const hasConn = !!(tab && tab.connName) && !team;
     el.menuSandbox.hidden = !hasConn;
     el.menuSandboxClear.hidden = !(tab && tab.sandbox && tab.sandbox.hasWorktree);
     if (hasConn) {
@@ -683,8 +806,25 @@ function installMenus() {
     }
     const item = e.target.closest('[data-act]');
     if (!item) return;
-    if (item.dataset.act === 'color') return; // 有子選單，點父項不動作
+    if (item.dataset.act === 'color' || item.dataset.act === 'ma-delivery') return; // 有子選單，點父項不動作
+    const team = teamOfTab(id);
     hideMenus();
+    if (item.dataset.act === 'ma-limit') {
+      if (team) setTeamLimit(team.key, item.dataset.limit || '30');
+      return;
+    }
+    if (item.dataset.act === 'ma-stop') {
+      if (team) stopTeam(team.key);
+      return;
+    }
+    if (item.dataset.act === 'ma-bus') {
+      if (team) openTeamBus(team.key);
+      return;
+    }
+    if (item.dataset.act === 'close' && team) {
+      closeTeam(team);
+      return;
+    }
     if (item.dataset.act === 'rename') renameTab(id);
     else if (item.dataset.act === 'log') logAction(id);
     else if (item.dataset.act === 'macro') runMacroForTab(id, state);
@@ -869,6 +1009,11 @@ async function newSession(kind) {
         return;
       }
       await createSession({ kind: 'com', com: r.params });
+      return;
+    }
+
+    if (kind === 'multiagent') {
+      await openAgentTeam(createSession);
       return;
     }
 
@@ -1086,12 +1231,18 @@ function applyTexts() {
     setText(el.newMenu, '[data-kind="ssh"]', T['tb.ssh']);
     setText(el.newMenu, '[data-kind="ssh-quick"]', T['sd.quick']);
     setText(el.newMenu, '[data-kind="com"]', T['tb.com'] + '…');
+    setText(el.newMenu, '[data-kind="multiagent"]', T['ma.title'] + '\u2026');
     setText(el.newMenu, '[data-kind="custom"]', T['tb.customCmd']);
     setText(el.tabMenu, '[data-act="rename"]', T['menu.rename']);
     setText(el.tabMenu, '[data-act="log"]', T['menu.log']);
     setText(el.tabMenu, '[data-act="macro"]', T['menu.macro']);
     setText(el.tabMenu, '[data-act="close"]', T['menu.close']);
     setText(el.tabMenu, '[data-act="sandbox-clear"]', T['sb.clear']);
+    // 代理團隊那幾項（「投遞」有子選單，只換前面那段文字）
+    const dev = el.tabMenu.querySelector('[data-act="ma-delivery"]');
+    if (dev && dev.firstChild) dev.firstChild.nodeValue = T['ma.menuDelivery'];
+    setText(el.tabMenu, '[data-act="ma-stop"]', T['ma.menuStop']);
+    setText(el.tabMenu, '[data-act="ma-bus"]', T['ma.menuOpenBus']);
     setText(el.newMenu, '[data-kind="manage"]', T['tb.manageConns']);
     setText(el.tabMenu, '[data-color=""]', T['menu.colorDefault']);
     for (const [sel, key] of [
@@ -1209,6 +1360,7 @@ export async function initTabBar() {
   initSettings({ showInfo, hideMenus });
   initAbout({ showInfo, hideMenus });
   initAdb({ showInfo, askYesNo: (body) => askYesNo(T['tb.adb'], body), pickFromList: askFromList, createSession });
+  initAgentDialog();
   await initFavs({
     createSession,
     askText,
@@ -1226,6 +1378,16 @@ export async function initTabBar() {
     state = e.payload;
     render();
   });
+  // 代理團隊的狀態（每個團隊一筆）：分頁列那一列、tooltip、右鍵選單都看它
+  await listen('agent-state', (e) => {
+    teams = Array.isArray(e.payload) ? e.payload : [];
+    render();
+  });
+  try {
+    teams = await invoke('agent_teams');
+  } catch (err) {
+    log(`[tabbar] 讀代理團隊狀態失敗：${err}`);
+  }
 
   try {
     const s = await invoke('settings_get');
