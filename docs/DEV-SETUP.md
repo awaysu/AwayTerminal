@@ -280,6 +280,56 @@ awayDump(6)           // 把 xterm buffer 尾端印到後端 log，驗證輸出�
 > 注意：`tauri.conf.json` 要設 `mainBinaryName: "AwayTerminal"`，否則執行檔會叫
 > `awayterminal.exe`（Cargo package 名），與產品名不一致。
 
+## 行尾規則（`.gitattributes`）
+
+**結論：不用管。** 用你習慣的編輯器、用腳本改檔案都可以，git 會處理。
+
+### 規則
+
+`repo 裡一律存 LF，簽出時照平台`（Windows 拿到 CRLF）。`.gitattributes` 定的，
+所以不依賴每個人的 `core.autocrlf` 設定。
+
+固定行尾的例外：
+
+| 型態 | 行尾 | 為什麼 |
+|---|---|---|
+| `.ps1`／`.bat`／`.cmd`／`.nsh`／`.nsi` | **CRLF** | Windows 工具鏈的地盤；makensis 對 CRLF 最沒有意外 |
+| `.sh`／`.desktop` | **LF** | CRLF 會讓 `#!/usr/bin/env bash` 變成 `bash\r`，Linux 直接報 `bad interpreter` |
+| 測試 fixture（`claude-screen.txt`、`runtime-context.txt`、`resources/multiagent/**`、`resources/chatroom/**`、`tests/ttl/*.ttl`） | **LF** | 要**逐字比對**的固定資料，在每個平台都必須完全一樣。角色範本還被 `include_str!` 嵌進 exe、`roles.rs` 有雜湊檢查 |
+| 二進位（png／ico／icns／exe／dll／msi／字型／**`.ppk`**） | 不處理 | 當成文字去「正規化」會**直接損壞檔案**。`.ppk` 雖然是文字，但那是測試向量，一個 byte 都不准動 |
+
+### 為什麼要特別立這條規則（TASK-024 的教訓）
+
+沒有 `.gitattributes` 的時候，`core.autocrlf=true` 只管「簽出時轉 CRLF」，
+**不保證 blob 是 LF**。當時 `docs/REGRESSION-CHECKLIST.md` 的 blob 是 CRLF，
+而我用 python 腳本重寫它時寫進 LF ——那個 commit 就顯示 **2264 行變動，真正的內容
+只差 36 行**。
+
+後果不是「檔案壞了」，是**沒辦法 review**：PM 打開 diff 看到整份檔案都紅綠相間，
+沒辦法判斷我到底改了什麼。真正的變更藏在雜訊裡，比沒有變更更危險。
+
+要看一份被行尾雜訊淹掉的 diff：
+
+```powershell
+git diff --ignore-cr-at-eol <ref1> <ref2> -- <檔案>
+```
+
+### 用腳本改檔案時
+
+Python 的 `io.open(path, encoding='utf-8')` 讀的時候會把 `\r\n` 變成 `\n`
+（universal newlines），寫的時候預設又轉回 `os.linesep`——所以**在 Windows 上
+來回一趟會保持 CRLF**。有了 `.gitattributes` 之後這件事已經不重要了
+（blob 一律是 LF），但如果你想讓工作目錄乾淨一致，寫檔時明確指定：
+
+```python
+io.open(path, "w", encoding="utf-8", newline="\n")   # 一律寫 LF
+```
+
+⚠️ 含中文的 `.ps1` **另外**還要 UTF-8 **BOM**（編碼，和行尾是兩件事）——
+見上面那一節，`scripts/audit-pitfalls.mjs` 會檢查。
+
+---
+
 ## ⚠️ 不要對這個 repo 跑 prettier 或任何格式化工具
 
 這個 repo **刻意沒有** `.prettierrc`，也**不要加**（PM 決定，2026-09-27）：

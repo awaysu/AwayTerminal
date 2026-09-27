@@ -134,7 +134,7 @@ npm run verify:release                     # 同上，但用 release 的 exe
 | 文件 | 內容 |
 |---|---|
 | [CLAUDE.md](CLAUDE.md) | **這個專案的規格書**：目標、技術選型、平台差異、風險、階段計畫 |
-| [docs/DEV-SETUP.md](docs/DEV-SETUP.md) | 開發環境、建置、目錄結構、踩過的環境雷 |
+| [docs/DEV-SETUP.md](docs/DEV-SETUP.md) | 開發環境、建置、目錄結構、踩過的環境雷、**行尾規則** |
 | [docs/PROTOCOL.md](docs/PROTOCOL.md) | `terminal.js` ↔ host 的 31 個舊協定字串（31/31 都接上了） |
 | [docs/TERMINAL-JS-DIFF.md](docs/TERMINAL-JS-DIFF.md) | `terminal.js` 與舊版的**四處**差異，以及沿用的 IME／貼上踩雷修正 |
 | [docs/SETTINGS.md](docs/SETTINGS.md) | `settings.json` 每個欄位、哪些是舊版就有的 |
