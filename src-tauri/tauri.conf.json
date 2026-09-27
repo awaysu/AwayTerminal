@@ -24,9 +24,27 @@
       "csp": null
     }
   },
+  "plugins": {
+    "updater": {
+      "pubkey": "",
+      "endpoints": [
+        "https://github.com/awaysu/AwayTerminal2/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  },
   "bundle": {
     "active": true,
     "targets": "all",
+    "publisher": "Chih-Wei Su (Awaysu)",
+    "homepage": "https://github.com/awaysu/AwayTerminal2",
+    "category": "DeveloperTool",
+    "shortDescription": "Terminal for Windows, macOS and Linux",
+    "longDescription": "AwayTerminal is a terminal with tabs, SSH, Telnet, serial ports, TTL macros, AI agent teams and a Telegram remote. Cross-platform rewrite of AwayTerminal 1.x.",
+    "license": "MIT",
+    "licenseFile": "../LICENSE",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -36,7 +54,30 @@
     ],
     "resources": {
       "resources/conpty/*": "conpty/",
-        "../THIRD-PARTY-NOTICES.md": "THIRD-PARTY-NOTICES.md"
+      "../THIRD-PARTY-NOTICES.md": "THIRD-PARTY-NOTICES.md"
+    },
+    "windows": {
+      "webviewInstallMode": {
+        "type": "embedBootstrapper"
+      },
+      "nsis": {
+        "installMode": "perMachine",
+        "displayLanguageSelector": true,
+        "languages": [
+          "TradChinese",
+          "English",
+          "SimpChinese",
+          "Japanese",
+          "Korean",
+          "Spanish",
+          "German",
+          "French"
+        ],
+        "installerHooks": "installer/hooks.nsh"
+      },
+      "wix": {
+        "language": ["en-US", "zh-TW"]
+      }
     }
   }
 }

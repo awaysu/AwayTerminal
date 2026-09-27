@@ -613,7 +613,7 @@ export default {
   'err.nameEmpty': 'Der Name darf nicht leer sein.',
 
   // ---------------- Telegram 遠端（telegram/*；舊版沒有翻譯，v2 補齊八語）----------------
-  'tg.help': 'AwayTerminal-Fernsteuerung – Befehle\n/goto [n]  Tab n betreten; ohne Nummer werden die Tabs zum Antippen aufgelistet (🟢 frei 🟠 beschäftigt)\n/shot  Screenshot des Terminalbilds\n(einfacher Text)  sendet diese Zeile + Enter; bei einer Auswahl mit der Zahl antworten oder Knopf antippen\n/key <Name>  Steuertaste senden: ctrl-c/ctrl-d/esc/tab/enter/up/down/left/right\n/stop  Ctrl+C senden\n/last [n]  die letzten n Ausgabezeilen (Standard 20)\n/more  in der vorigen Ausgabe eine Seite weiter zurück\n/close [n]  Tab wirklich schließen (ohne Argument der betretene; /goto zeigt die Nummern)\n/where  in welchem Tab bin ich\n/follow on|off  Ausgabe automatisch senden, wenn der Tab fertig ist (Standard ein)\n/notify on|off  auch melden, wenn andere (nicht betretene) Tabs fertig sind (Standard aus)\n/plain on|off  die KI um reinen Text ohne Tabellen bitten (Standard aus; Tabellen werden ohnehin geglättet)\n/exit  Tab-Ansicht verlassen (der Tab läuft weiter; nach 10 Minuten ohne Aktivität wird sie still verlassen)',
+  'tg.help': 'AwayTerminal-Fernsteuerung – Befehle\n/goto [n]  Tab n betreten; ohne Nummer werden die Tabs zum Antippen aufgelistet (🟢 frei 🟠 beschäftigt)\n/new  neue Verbindung öffnen (eine pro Art; mit einer Zahl antworten; nach dem Öffnen von SSH Konto und dann Passwort antworten)\n/ssh [benutzer@]host[:port]  SSH öffnen (ohne Argument der erste SSH-Favorit; mit benutzer@ direkt verbinden)\n/telnet [host[:port]]  Telnet öffnen (ohne Argument der erste Telnet-Favorit)\n/history [n]  letzte Verbindungen; mit einer Zahl wird diese geöffnet\n/shot  Screenshot des Terminalbilds\n(einfacher Text)  sendet diese Zeile + Enter; bei einer Auswahl mit der Zahl antworten oder Knopf antippen\n/key <Name>  Steuertaste senden: ctrl-c/ctrl-d/esc/tab/enter/up/down/left/right\n/stop  Ctrl+C senden\n/last [n]  die letzten n Ausgabezeilen (Standard 20)\n/more  in der vorigen Ausgabe eine Seite weiter zurück\n/close [n]  Tab wirklich schließen (ohne Argument der betretene; /goto zeigt die Nummern)\n/where  in welchem Tab bin ich\n/follow on|off  Ausgabe automatisch senden, wenn der Tab fertig ist (Standard ein)\n/notify on|off  auch melden, wenn andere (nicht betretene) Tabs fertig sind (Standard aus)\n/plain on|off  die KI um reinen Text ohne Tabellen bitten (Standard aus; Tabellen werden ohnehin geglättet)\n/exit  Tab-Ansicht verlassen (der Tab läuft weiter; nach 10 Minuten ohne Aktivität wird sie still verlassen)',
   'tg.cmdGoto': 'Tab betreten / Tabs auflisten',
   'tg.cmdLast': 'Die letzten Ausgabezeilen',
   'tg.cmdMore': 'Eine Seite weiter zurück',
@@ -675,4 +675,21 @@ export default {
   'settings.tgStopped': 'Die Fernsteuerung läuft nicht.',
   'menu.tgNotify': 'An Telegram senden',
   'menu.tgNotifySet': 'An Telegram senden: {0}',
+
+  // TASK-021：/new /ssh /telnet /history
+  'tg.cmdNew': 'Neue Verbindung öffnen (eine pro Art, mit einer Zahl antworten)',
+  'tg.cmdHistory': 'Letzte Verbindungen (/history n öffnet eine)',
+  'tg.cmdSsh': 'SSH öffnen (optional benutzer@host:port)',
+  'tg.cmdTelnet': 'Telnet öffnen (optional host:port)',
+  'tg.connShell': 'PowerShell (Desktop)',
+  'tg.noConns': 'Es sind keine Verbindungen verfügbar.',
+  'tg.pickConn': 'Wähle die Verbindung, die geöffnet werden soll (Knopf antippen oder mit der Zahl antworten):',
+  'tg.recentConns': 'Letzte Verbindungen (Knopf antippen oder /history <Nummer> zum Öffnen):',
+  'tg.noHistory': 'Es sind noch keine Verbindungen aufgezeichnet.',
+  'tg.rangeIs': 'Die Nummer muss zwischen 1 und {0} liegen. /goto zeigt sie.',
+  'tg.openFailed': 'Konnte nicht geöffnet werden.',
+  'tg.opened': '[{0}] geöffnet und betreten. Einfach tippen, um einen Befehl zu senden, /last für die Ausgabe.',
+  'tg.openedSsh': '[{0}] geöffnet und betreten. Bei login as: mit dem Kontonamen antworten, dann laut Bildschirm das Passwort.',
+  'tg.sshUsage': 'Verwendung: /ssh [benutzer@]host[:port] (ohne Argumente wird der erste SSH-Favorit genutzt)',
+  'tg.telnetUsage': 'Verwendung: /telnet host[:port] (ohne Argumente wird der erste Telnet-Favorit genutzt)',
 };

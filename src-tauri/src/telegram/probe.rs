@@ -118,10 +118,19 @@ impl FakeBot {
         self.lock().queue.push(json.to_string());
     }
 
-    /// 等到有一次呼叫符合條件（回傳它），或逾時回 `None`。
-    fn wait<F: Fn(&Call) -> bool>(&self, secs: u64, pred: F) -> Option<Call> {
+    /// 現在記錄了幾次呼叫。**每個檢查前都先拿一次**，當成 [`Self::wait`] 的起點。
+    fn mark(&self) -> usize {
+        self.lock().calls.len()
+    }
+
+    /// 等到**第 `from` 次之後**有一次呼叫符合條件（回傳它），或逾時回 `None`。
+    ///
+    /// ⚠️ `from` 不可以省。第一版從 0 開始掃，於是會match到**很久以前**的訊息：
+    /// `/new 1` 那條檢查等的是含 `/last` 的回覆，結果立刻match到前面 `goto:1` 送的
+    /// 「已進入 …/last 看輸出」，當場回傳、分頁還沒建好 → 假失敗（而換個順序就會是**假通過**）。
+    fn wait<F: Fn(&Call) -> bool>(&self, from: usize, secs: u64, pred: F) -> Option<Call> {
         let until = Instant::now() + Duration::from_secs(secs);
-        let mut from = 0usize;
+        let mut from = from;
         loop {
             {
                 let g = self.lock();
@@ -286,6 +295,23 @@ impl Report {
     }
 }
 
+/// 目前分頁列有幾列（`/new` 開完／關掉之後比對用）。
+fn tab_rows_len(app: &AppHandle) -> usize {
+    app.try_state::<Arc<crate::tabs::TabManager>>()
+        .map(|t| t.ids().len())
+        .unwrap_or(0)
+}
+
+/// 從最後一則帶 `close:` 按鈕的訊息裡挖出分頁 id。
+fn last_close_id(bot: &FakeBot) -> Option<u32> {
+    let g = bot.lock();
+    let c = g.calls.iter().rev().find(|c| c.body.contains("close:"))?;
+    let at = c.body.rfind("close:")? + "close:".len();
+    let rest = &c.body[at..];
+    let end = rest.find(|ch: char| !ch.is_ascii_digit())?;
+    rest[..end].parse().ok()
+}
+
 /// 從 `sendMessage` 的 JSON 裡挖出 `text`。
 fn text_of(c: &Call) -> String {
     serde_json::from_str::<serde_json::Value>(&c.body)
@@ -321,7 +347,8 @@ fn run(app: &AppHandle, tab: Option<u32>) -> Result<Vec<String>, String> {
     r.check("啟動", started && remote::is_running(), "");
 
     // 1) 啟動三件事：prime offset（offset=-1）、註冊指令選單、上線通知
-    let online = bot.wait(10, |c| c.method == "sendMessage");
+    // 起點 0 是對的：`bot` 是這一段剛建的，前面沒有任何呼叫可以誤 match。
+    let online = bot.wait(0, 10, |c| c.method == "sendMessage");
     let primes = bot.primes();
     r.check(
         "啟動先 prime offset（offset=-1，不重播關機期間的舊訊息）",
@@ -330,7 +357,7 @@ fn run(app: &AppHandle, tab: Option<u32>) -> Result<Vec<String>, String> {
     );
     r.check(
         "註冊指令選單 setMyCommands",
-        bot.wait(5, |c| c.method == "setMyCommands").is_some(),
+        bot.wait(0, 5, |c| c.method == "setMyCommands").is_some(),
         "",
     );
     r.check(
@@ -350,39 +377,156 @@ fn run(app: &AppHandle, tab: Option<u32>) -> Result<Vec<String>, String> {
     );
 
     // 3) /help
+    let m2 = bot.mark();
     bot.say(CHAT, "/help");
-    let help = bot.wait(5, |c| c.method == "sendMessage" && text_of(c).contains("/goto"));
+    let help = bot.wait(m2, 5, |c| c.method == "sendMessage" && text_of(c).contains("/goto"));
     r.check("/help 回指令一覽", help.is_some(), "");
 
     // 4) 沒選分頁就 /last
+    let m3 = bot.mark();
     bot.say(CHAT, "/last");
-    let na = bot.wait(5, |c| c.method == "sendMessage" && text_of(c).contains("/goto"));
+    let na = bot.wait(m3, 5, |c| c.method == "sendMessage" && text_of(c).contains("/goto"));
     r.check("沒附著分頁時 /last 提示先 /goto", na.is_some(), "");
 
     // 5) /goto（不帶編號）列分頁，附 inline 按鈕
+    let m4 = bot.mark();
     bot.say(CHAT, "/goto");
-    let list = bot.wait(5, |c| c.method == "sendMessage" && c.body.contains("goto:"));
+    let list = bot.wait(m4, 5, |c| c.method == "sendMessage" && c.body.contains("goto:"));
     r.check("/goto 列分頁並附按鈕", list.is_some(), "");
 
     // 6) 開關類指令
+    let m5 = bot.mark();
     bot.say(CHAT, "/notify on");
     r.check(
         "/notify on 有回覆",
-        bot.wait(5, |c| c.method == "sendMessage" && !text_of(c).is_empty())
+        bot.wait(m5, 5, |c| c.method == "sendMessage" && !text_of(c).is_empty())
             .is_some(),
         "",
     );
 
     // 7) 未知指令
+    let m6 = bot.mark();
     bot.say(CHAT, "/nosuchthing");
     r.check(
         "未知指令回提示",
-        bot.wait(5, |c| c.method == "sendMessage" && text_of(c).contains("/help"))
+        bot.wait(m6, 5, |c| c.method == "sendMessage" && text_of(c).contains("/help"))
             .is_some(),
         "",
     );
 
-    // 8) 輪詢錯誤 → 退避 3 秒後恢復（不會就此停掉，舊版 1.1.9 的教訓）
+    // 8) /new：列可開的連線（至少有 PowerShell（桌面）與 ADB）
+    let m7 = bot.mark();
+    bot.say(CHAT, "/new");
+    let newlist = bot.wait(m7, 6, |c| c.method == "sendMessage" && c.body.contains("new:"));
+    r.check("/new 列可開的連線並附按鈕", newlist.is_some(), "");
+    r.check(
+        "/new 的清單含 PowerShell（桌面）",
+        newlist
+            .as_ref()
+            .map(|c| text_of(c).contains("PowerShell"))
+            .unwrap_or(false),
+        "",
+    );
+
+    // 9) /history：列最近連線（v2 ＝我的最愛，見 remote::do_history 的註解）
+    let m8 = bot.mark();
+    bot.say(CHAT, "/history");
+    r.check(
+        "/history 列清單並附按鈕",
+        bot.wait(m8, 6, |c| c.method == "sendMessage" && c.body.contains("hist:"))
+            .is_some(),
+        "",
+    );
+
+    // 10) 編號超出範圍要回「1~n」，不可以真的去開東西
+    let opens_before = bot.count("sendMessage");
+    let m9 = bot.mark();
+    bot.say(CHAT, "/new 999");
+    let ranged = bot.wait(m9, 6, |c| c.method == "sendMessage" && text_of(c).contains('~'));
+    r.check(
+        "/new 編號超出範圍只回提示（不開分頁）",
+        ranged.is_some() && bot.count("sendMessage") > opens_before,
+        "",
+    );
+
+    // 11) `/ssh`／`/telnet` 不帶參數：**只有在使用者沒有那一型的我的最愛時才敢測**。
+    //
+    // ⚠️ 有最愛的話這兩個指令會真的去連那台主機——`--verify` 絕不可以連外（PM 的規則）。
+    // 解析層的行為（含 `[user@]主機[:埠]`、IPv6 被切壞）已經有單元測試，這裡只測
+    // 「沒有最愛時回用法」這一條，其餘跳過並印出原因。
+    let favs = app
+        .try_state::<Arc<crate::settings::SettingsStore>>()
+        .map(|st| {
+            let s = st.get();
+            (
+                s.favorites.iter().any(|f| f.kind == "ssh"),
+                s.favorites.iter().any(|f| f.kind == "telnet"),
+            )
+        })
+        .unwrap_or((true, true));
+    if !favs.0 {
+        let m10 = bot.mark();
+        bot.say(CHAT, "/ssh");
+        r.check(
+            "/ssh 不帶參數、沒有 SSH 最愛 → 回用法（不連外）",
+            bot.wait(m10, 6, |c| c.method == "sendMessage" && text_of(c).contains("/ssh"))
+                .is_some(),
+            "",
+        );
+    } else {
+        r.lines.push(
+            "[verify] SKIP /ssh 不帶參數（使用者有 SSH 最愛，測它會真的連外）".to_string(),
+        );
+    }
+    if !favs.1 {
+        let m11 = bot.mark();
+        bot.say(CHAT, "/telnet");
+        r.check(
+            "/telnet 不帶參數、沒有 Telnet 最愛 → 回用法（不連外）",
+            bot.wait(m11, 6, |c| c.method == "sendMessage" && text_of(c).contains("/telnet"))
+                .is_some(),
+            "",
+        );
+    } else {
+        r.lines.push(
+            "[verify] SKIP /telnet 不帶參數（使用者有 Telnet 最愛，測它會真的連外）".to_string(),
+        );
+    }
+
+    // 11b) 真的開一個分頁：走 `/new 1` ＝清單第一項「PowerShell（桌面）」。
+    // **只開本機 shell**，不碰任何網路；開完自己關掉，不留東西給使用者。
+    let tabs_before = tab_rows_len(app);
+    let m12 = bot.mark();
+    bot.say(CHAT, "/new 1");
+    let opened = bot.wait(m12, 12, |c| c.method == "sendMessage" && text_of(c).contains("/last"));
+    let tabs_after = tab_rows_len(app);
+    r.check(
+        "/new 1 真的開了分頁並自動附著（telegram-open → telegram_opened）",
+        opened.is_some() && tabs_after == tabs_before + 1,
+        &format!("分頁 {tabs_before} → {tabs_after}"),
+    );
+    if tabs_after > tabs_before {
+        // 收乾淨：用遠端自己的 `/close` ＋確認按鈕，順便驗確認流程真的會關
+        let m13 = bot.mark();
+        bot.say(CHAT, "/close");
+        if bot
+            .wait(m13, 6, |c| c.method == "sendMessage" && c.body.contains("close:"))
+            .is_some()
+        {
+            // 從那則訊息挖出 `close:{id}` 再按下去
+            if let Some(id) = last_close_id(&bot) {
+                bot.tap(CHAT, &format!("close:{id}"));
+                std::thread::sleep(Duration::from_millis(1200));
+            }
+        }
+        r.check(
+            "按「確定關閉」之後那個分頁收掉了",
+            tab_rows_len(app) == tabs_before,
+            &format!("分頁回到 {tabs_before}"),
+        );
+    }
+
+    // 12) 輪詢錯誤 → 退避 3 秒後恢復（不會就此停掉，舊版 1.1.9 的教訓）
     let polls_before = bot.polls();
     bot.lock().fail_updates = 2;
     let until = Instant::now() + Duration::from_secs(12);
@@ -408,8 +552,9 @@ fn run(app: &AppHandle, tab: Option<u32>) -> Result<Vec<String>, String> {
     match tab {
         Some(id) => {
             // /goto <n>：用按鈕回呼，編號從 /goto 的清單來——這裡直接用 1（驗證環境第一個分頁）
+            let m15 = bot.mark();
             bot.tap(CHAT, "goto:1");
-            let entered = bot.wait(6, |c| c.method == "sendMessage" && text_of(c).contains("/exit"));
+            let entered = bot.wait(m15, 6, |c| c.method == "sendMessage" && text_of(c).contains("/exit"));
             r.check("按按鈕進分頁（callback goto:1）", entered.is_some(), "");
 
             // 打字進分頁：看得到就算成功（前端的 `q…text` 回得來）
@@ -434,8 +579,9 @@ fn run(app: &AppHandle, tab: Option<u32>) -> Result<Vec<String>, String> {
             );
 
             // /last：要拿到畫面文字
+            let m17 = bot.mark();
             bot.say(CHAT, "/last 10");
-            let last = bot.wait(6, |c| c.method == "sendMessage" && c.body.contains("<pre>"));
+            let last = bot.wait(m17, 6, |c| c.method == "sendMessage" && c.body.contains("<pre>"));
             r.check("/last 回畫面文字（HTML <pre>）", last.is_some(), "");
 
             // /shot：要是有效的 PNG
@@ -446,10 +592,11 @@ fn run(app: &AppHandle, tab: Option<u32>) -> Result<Vec<String>, String> {
                 good == Some(true),
                 &format!("{} 位元組", png.as_ref().map(|p| p.len()).unwrap_or(0)),
             );
+            let m18 = bot.mark();
             bot.say(CHAT, "/shot");
             r.check(
                 "/shot 走 sendPhoto",
-                bot.wait(8, |c| c.method == "sendPhoto").is_some(),
+                bot.wait(m18, 8, |c| c.method == "sendPhoto").is_some(),
                 "",
             );
 
@@ -481,8 +628,9 @@ fn run(app: &AppHandle, tab: Option<u32>) -> Result<Vec<String>, String> {
             );
 
             // /close 要先問過才關（誤觸保險）——只驗「有問」，不真的按確定
+            let m19 = bot.mark();
             bot.say(CHAT, "/close");
-            let ask = bot.wait(6, |c| c.method == "sendMessage" && c.body.contains("close:"));
+            let ask = bot.wait(m19, 6, |c| c.method == "sendMessage" && c.body.contains("close:"));
             r.check("/close 先出確認按鈕（不直接關）", ask.is_some(), "");
             bot.tap(CHAT, "noop");
             std::thread::sleep(Duration::from_millis(700));

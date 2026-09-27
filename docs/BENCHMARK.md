@@ -14,6 +14,31 @@ CLAUDE.md：「**動工前先量舊版基準**：啟動時間、`cat` 大檔時�
 兩邊都要：關掉其他吃 CPU 的程式、接電源（筆電不要省電模式）、同一個顯示器與解析度、
 同樣的視窗大小（欄×列會影響 xterm 的成本）。每項量 3 次取中位數。
 
+## 怎麼量新版（release，不是 dev）
+
+⚠️ **一定要用 release 的 exe**，不可以用 `npm run tauri dev`：dev 的前端走 vite
+（localhost:1420，每個檔案分開送、沒有 minify），Rust 是 debug profile（沒有最佳化），
+量出來的數字和使用者拿到的東西沒有關係。
+
+```powershell
+npm run tauri build
+$exe = ".\src-tauri\target\release\AwayTerminal.exe"
+```
+
+| 要量什麼 | 怎麼下 |
+|---|---|
+| 啟動時間 | 見下面第 1 節（碼表為主） |
+| IPC 吞吐（不含渲染） | `& $exe --bench`，數字印在 stdout（見 `docs/IPC-BENCH.md`） |
+| `cat` 大檔 | 在分頁裡 `Measure-Command { type big.txt }`（PowerShell 的 `type` ＝ `Get-Content`；**不要**用 `cat` 這個 alias 以外的東西，兩邊要一致） |
+| 記憶體 | `Get-Process AwayTerminal, msedgewebview2 \| Measure-Object WorkingSet64 -Sum`——**WebView2 是另一個行程，一定要一起算**，只看主程式會嚴重低估 |
+| 安裝檔大小 | 見第 4 節 |
+
+量之前先確認渲染器真的是 WebGL（不是退回 DOM／canvas，不然吞吐測的是另一條路）：
+啟動時的 stdout 會有一行 `renderer = WebGL`。
+
+`--verify` **不適合拿來量**：它會開額外的分頁、跑巨集與假的 agent，而且分頁到後期
+方框是 0×0（見清單的「隱含契約」）。
+
 ## 0. 準備測試檔
 
 ```powershell
@@ -114,12 +139,17 @@ Get-TreeWS <主行程PID>
 
 已經有數字，列在這裡當對照：
 
-| | 舊版 | 新版 v2.0.0 |
+| | 舊版 1.2.8 | 新版 v2.0.0（2026-09-27 實測） |
 |---|---|---|
-| 安裝檔 | （待填，舊版 installer） | NSIS 1,666,444 bytes / MSI 2,318,336 bytes |
-| 主執行檔 | （待填） | 3,154,944 bytes |
-| 需要 .NET runtime | 是 | 否 |
-| 需要 WebView2 Runtime | 是 | 是 |
+| 安裝檔 | （待填，舊版 `AwayTerminal-Setup-1.2.8.exe`） | NSIS **5,848,860 bytes**／MSI 7,290,880 bytes |
+| 主執行檔 | （待填） | **9,617,920 bytes** |
+| 需要 .NET runtime | 是（安裝檔另外帶 .NET 9 Desktop Runtime 安裝程式） | **否** |
+| 需要 WebView2 Runtime | 是 | 是（安裝檔內含 1.8 MB 的 bootstrapper，缺少時才靜默安裝） |
+
+> 數字為什麼比早期的紀錄大：①功能做完了（SSH／Telnet／COM／TTL／代理團隊／聊天室／
+> Telegram 全都進去了，早期只有一個分頁）；②安裝檔開始內含 WebView2 bootstrapper
+> （＋約 1.8 MB，換到「沒網路也裝得起來」，和舊版一樣的取捨）。
+> `CLAUDE.md` 當初寫「安裝檔約 10MB」——目前 5.8 MB，還在預期之內。
 
 ## 5. 已知的預期差異（解讀數字時要記得）
 
@@ -128,9 +158,12 @@ Get-TreeWS <主行程PID>
 - **`cat` 大檔的改善應該最明顯**：舊版是 DOM 渲染 + base64 字串 IPC，
   新版是 WebGL + 二進位 channel（IPC 層實測快 3.4 倍，見 `IPC-BENCH.md`）。
 - **記憶體**：少了 .NET runtime，但多了 Rust 端的執行緒與緩衝；實際差多少要量。
-- 新版目前**只有一個分頁、沒有分頁列 / 狀態燈輪詢**，舊版有。
-  舊版的狀態燈每 0.6 秒查子行程樹，本身就有成本——這對舊版不公平，
-  所以正式對比時要註明「新版功能還不完整」，不要當成最終結論。
+- **功能差距已經補平了**（2026-09-27，階段 4 結束）：新版也有分頁列、每 0.6 秒的狀態燈
+  輪詢（同樣查子行程樹）、SSH／Telnet／COM／TTL／代理團隊／聊天室／Telegram。
+  所以現在的對比是公平的——早期紀錄裡「新版功能還不完整」那個注意事項可以不管了。
+- 新版多了幾個舊版沒有的背景成本：Telegram 遠端開著時有一條 long polling 執行緒
+  （閒置時幾乎不吃 CPU，但會佔一條執行緒與一個連線）、沙盒模式會多開 git worktree
+  （磁碟）。量記憶體時請註明這兩個有沒有開。
 
 ## 填完之後
 

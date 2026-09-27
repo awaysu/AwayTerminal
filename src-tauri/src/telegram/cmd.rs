@@ -38,6 +38,14 @@ pub enum Action {
     Send(String),
     /// 純數字、而且畫面上是選單 → 換算成 ↑／↓＋Enter（呼叫端再確認是不是選單）
     MenuAnswer(u32),
+    /// `/new [n]`（`None`＝列出可開的連線）
+    New(Option<usize>),
+    /// `/ssh [user@]主機[:埠]`（空字串＝用我的最愛裡第一條 SSH）
+    Ssh(String),
+    /// `/telnet [主機[:埠]]`（空字串＝用我的最愛裡第一條 Telnet）
+    Telnet(String),
+    /// `/history [n]`（`None`＝列出清單）
+    History(Option<usize>),
     /// 認不出來的 `/指令`
     Unknown,
 }
@@ -95,6 +103,10 @@ pub fn parse(text: &str) -> Action {
         "notify" => Action::Notify(on_off(&arg, false)),
         "follow" => Action::Follow(on_off(&arg, true)),
         "plain" => Action::Plain(on_off(&arg, false)),
+        "new" => Action::New(arg.parse::<usize>().ok().filter(|n| *n >= 1)),
+        "ssh" => Action::Ssh(arg.clone()),
+        "telnet" => Action::Telnet(arg.clone()),
+        "history" => Action::History(arg.parse::<usize>().ok().filter(|n| *n >= 1)),
         _ => Action::Unknown,
     }
 }
@@ -115,29 +127,50 @@ pub fn key_bytes(name: &str) -> Option<&'static [u8]> {
     })
 }
 
-/// `/help` 的內容。**逐字照舊版**，只拿掉這一版還沒做的那幾條（`/new`／`/ssh`／`/telnet`／
-/// `/history`，見 `docs/TELEGRAM.md` 的「還沒做」）。
+/// `/help` 的內容。**逐字照舊版**（19 條全在）。
 pub fn help_text() -> String {
     crate::i18n::t("tg.help")
 }
 
 /// 註冊給 Telegram 的原生指令選單（`setMyCommands`）。
 pub fn command_menu() -> Vec<(&'static str, String)> {
+    // 順序照舊版 `RegisterCommandsAsync`（goto、new、history、ssh、telnet 在前）
     vec![
         ("goto", crate::i18n::t("tg.cmdGoto")),
+        ("new", crate::i18n::t("tg.cmdNew")),
+        ("history", crate::i18n::t("tg.cmdHistory")),
+        ("ssh", crate::i18n::t("tg.cmdSsh")),
+        ("telnet", crate::i18n::t("tg.cmdTelnet")),
         ("last", crate::i18n::t("tg.cmdLast")),
         ("more", crate::i18n::t("tg.cmdMore")),
-        ("shot", crate::i18n::t("tg.cmdShot")),
+        ("close", crate::i18n::t("tg.cmdClose")),
         ("key", crate::i18n::t("tg.cmdKey")),
         ("stop", crate::i18n::t("tg.cmdStop")),
+        ("shot", crate::i18n::t("tg.cmdShot")),
         ("where", crate::i18n::t("tg.cmdWhere")),
-        ("close", crate::i18n::t("tg.cmdClose")),
         ("follow", crate::i18n::t("tg.cmdFollow")),
         ("notify", crate::i18n::t("tg.cmdNotify")),
         ("plain", crate::i18n::t("tg.cmdPlain")),
         ("exit", crate::i18n::t("tg.cmdExit")),
         ("help", crate::i18n::t("tg.cmdHelp")),
     ]
+}
+
+/// 解析「[user@]主機[:埠]」。照舊版 `ParseHostPort`：沒寫 `:埠` 就不動埠，**不支援 IPv6**。
+///
+/// 回 `(主機, 埠)`；`埠 = 0` ＝沒指定，由呼叫端填預設（SSH 22／Telnet 23）。
+pub fn parse_host_port(arg: &str) -> (String, u16) {
+    let host = arg.trim();
+    if let Some(i) = host.rfind(':') {
+        if i > 0 {
+            if let Ok(p) = host[i + 1..].parse::<u16>() {
+                if p > 0 {
+                    return (host[..i].to_string(), p);
+                }
+            }
+        }
+    }
+    (host.to_string(), 0)
 }
 
 /// `/plain` 開啟時附加在提問後面的提示（舊版 `PlainSuffix`）。
@@ -148,9 +181,16 @@ pub fn plain_suffix() -> String {
 }
 
 /// 這一句要不要加 `/plain` 的提示。
-pub fn wants_plain_suffix(text: &str) -> bool {
+///
+/// 舊版只看長度（≥8 字、非純數字）。這一版**多一個條件 `talks_to_ai`：分頁要是會跟 AI
+/// 對話的那種**（`TabKind::Claude`／`Custom`——自訂連線與代理團隊的格子都是這兩種）。
+///
+/// 為什麼：`/plain` 是「請 AI 不要用表格」，加在 shell／SSH／Telnet／COM 分頁上只會
+/// 把那一行弄壞。最糟的情況是**從手機打 SSH 密碼**——8 個字以上的密碼會被接上一整句
+/// 中文提示，登入失敗而且看不出原因（密碼不回顯，畫面上只會出現 `Access denied`）。
+pub fn wants_plain_suffix(text: &str, talks_to_ai: bool) -> bool {
     let t = text.trim();
-    t.chars().count() >= 8 && t.parse::<i64>().is_err()
+    talks_to_ai && t.chars().count() >= 8 && t.parse::<i64>().is_err()
 }
 
 /// 從畫面文字找出選單選項（`❯ N. 文字` / `  N. 文字`）。
@@ -286,13 +326,78 @@ mod tests {
         assert_eq!(key_bytes("f13"), None);
     }
 
-    /// `/plain` 的提示只加在較長的提問上。
+    /// `/plain` 的提示只加在會跟 AI 對話的分頁上、而且是較長的提問。
     #[test]
     fn plain_suffix_only_for_real_questions() {
-        assert!(wants_plain_suffix("這個專案的架構是什麼？"));
-        assert!(!wants_plain_suffix("好"), "短答不加");
-        assert!(!wants_plain_suffix("2"), "選單數字不加");
-        assert!(!wants_plain_suffix("12345678"), "純數字不加");
+        assert!(wants_plain_suffix("這個專案的架構是什麼？", true));
+        assert!(!wants_plain_suffix("好", true), "短答不加");
+        assert!(!wants_plain_suffix("2", true), "選單數字不加");
+        assert!(!wants_plain_suffix("12345678", true), "純數字不加");
+    }
+
+    /// **不是 AI 分頁就一律不加**——最要緊的是從手機打進 SSH 的密碼：
+    /// 8 個字以上的密碼被接上一句中文提示會登入失敗，而且密碼不回顯、看不出原因。
+    #[test]
+    fn plain_suffix_never_touches_a_password() {
+        assert!(!wants_plain_suffix("hunter2hunter2", false));
+        assert!(!wants_plain_suffix("這個專案的架構是什麼？", false));
+        assert!(!wants_plain_suffix("ls -la /var/log", false), "shell 指令也不加");
+    }
+
+    /// `/new`／`/ssh`／`/telnet`／`/history` 的解析。
+    #[test]
+    fn parses_the_open_connection_commands() {
+        assert_eq!(parse("/new"), Action::New(None));
+        assert_eq!(parse("/new 3"), Action::New(Some(3)));
+        assert_eq!(parse("/new 0"), Action::New(None), "0 當成沒帶編號");
+        assert_eq!(parse("/history"), Action::History(None));
+        assert_eq!(parse("/history 2"), Action::History(Some(2)));
+        assert_eq!(parse("/ssh"), Action::Ssh(String::new()));
+        assert_eq!(parse("/ssh me@10.0.0.1:2222"), Action::Ssh("me@10.0.0.1:2222".to_string()));
+        assert_eq!(parse("/telnet"), Action::Telnet(String::new()));
+        assert_eq!(parse("/telnet 10.0.0.9"), Action::Telnet("10.0.0.9".to_string()));
+    }
+
+    /// `[user@]主機[:埠]`，照舊版 `ParseHostPort`：沒寫埠就回 0（呼叫端填預設）。
+    #[test]
+    fn parses_host_and_port() {
+        assert_eq!(parse_host_port("10.0.0.1"), ("10.0.0.1".to_string(), 0));
+        assert_eq!(parse_host_port("10.0.0.1:2222"), ("10.0.0.1".to_string(), 2222));
+        assert_eq!(parse_host_port("me@host:23"), ("me@host".to_string(), 23));
+        assert_eq!(parse_host_port(" host "), ("host".to_string(), 0));
+        // 埠不是數字＝整段都當主機名（同舊版的 TryParse 失敗路徑）
+        assert_eq!(parse_host_port("host:ssh"), ("host:ssh".to_string(), 0));
+        // **IPv6 真的會被切壞**，而且舊版一模一樣（`LastIndexOf(':')` ＋ `TryParse`）：
+        // `::1` → 主機 `:`、埠 1。舊版註解就寫明「IPv6 不支援」，這裡把這個限制釘住，
+        // 之後誰要支援 IPv6 就會看到這條測試失敗、知道連舊版一起改。
+        assert_eq!(parse_host_port("::1"), (":".to_string(), 1));
+    }
+
+    /// `/help` 的清單要含舊版全部 19 條（TASK-020 漏了四條，TASK-021 補回）。
+    #[test]
+    fn help_lists_every_command() {
+        let h = help_text();
+        for c in [
+            "/goto", "/new", "/ssh", "/telnet", "/history", "/shot", "/key", "/stop", "/last",
+            "/more", "/close", "/where", "/follow", "/notify", "/plain", "/exit",
+        ] {
+            assert!(h.contains(c), "/help 少了 {c}");
+        }
+    }
+
+    /// 指令選單的順序照舊版 `RegisterCommandsAsync`，而且每一條都有說明。
+    #[test]
+    fn command_menu_matches_v1_order() {
+        let m = command_menu();
+        let names: Vec<&str> = m.iter().map(|(n, _)| *n).collect();
+        assert_eq!(
+            names,
+            vec![
+                "goto", "new", "history", "ssh", "telnet", "last", "more", "close", "key", "stop",
+                "shot", "where", "follow", "notify", "plain", "exit", "help"
+            ]
+        );
+        assert!(m.iter().all(|(_, d)| !d.is_empty()), "有指令沒有說明");
     }
 
     /// 選單偵測：**要有導航列**才算選單（瘦身會把它濾掉，所以看原始畫面）。

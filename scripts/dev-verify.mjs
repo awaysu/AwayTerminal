@@ -11,16 +11,25 @@
 // 另外把 `%TEMP%` 底下自己留下的驗證資料夾清掉。
 //
 // 用法：
-//   node scripts/dev-verify.mjs [分頁數=2] [逾時秒=600]
+//   node scripts/dev-verify.mjs [分頁數=2] [逾時秒=600] [--release]
+//
+// `--release` ＝**不跑 dev，直接跑已經 build 好的 release exe**
+// （`src-tauri/target/release/AwayTerminal.exe --verify N`）。用途是確認 release 與 dev
+// 行為一致：前端是內嵌的（不經 vite／localhost:1420）、conpty 走安裝後的相對路徑、
+// 資源檔要真的在。發佈前一定要跑這一種（`docs/RELEASE.md` 的檢查清單）。
+//
 // 輸出直接透傳，結束時印一行收尾記錄。
 
 import { spawn, execFileSync } from 'node:child_process';
-import { readdirSync, rmSync } from 'node:fs';
+import { existsSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-const tabs = process.argv[2] || '2';
-const timeoutSec = Number(process.argv[3] || 600);
+const args = process.argv.slice(2);
+const release = args.includes('--release');
+const positional = args.filter((a) => !a.startsWith('--'));
+const tabs = positional[0] || '2';
+const timeoutSec = Number(positional[1] || 600);
 const isWindows = process.platform === 'win32';
 
 /** `%TEMP%` 底下由 `--verify` 產生的資料夾（名字固定前綴，只刪這些）。 */
@@ -68,18 +77,32 @@ function killTree(pid) {
   }
 }
 
+const what = release ? 'release exe' : 'dev';
 console.log(
-  `[AwayTerminal] 開始跑 dev（--verify ${tabs}）：視窗會開起來、跑完自己關掉，最多 ${timeoutSec} 秒`
+  `[AwayTerminal] 開始跑 ${what}（--verify ${tabs}）：視窗會開起來、跑完自己關掉，最多 ${timeoutSec} 秒`
 );
 
 // 直接用 node 跑本地的 tauri CLI，**不經過 `npx.cmd`**：
 // Node 20.12 起（CVE-2024-27980 的修正）在 Windows 上 spawn `.cmd` 會直接 `EINVAL`，
 // 除非開 `shell: true`——而開了 shell 就多一層 cmd.exe，PID 也變成那層的，樹反而更難收。
 const cli = join(process.cwd(), 'node_modules', '@tauri-apps', 'cli', 'tauri.js');
-const child = spawn(process.execPath, [cli, 'dev', '--', '--', '--verify', tabs], {
-  stdio: 'inherit',
-  detached: !isWindows,
-});
+const exe = join(
+  process.cwd(),
+  'src-tauri',
+  'target',
+  'release',
+  isWindows ? 'AwayTerminal.exe' : 'AwayTerminal'
+);
+if (release && !existsSync(exe)) {
+  console.log(`[dev-verify] 找不到 ${exe}——先跑 \`npm run tauri build\``);
+  process.exit(1);
+}
+const child = release
+  ? spawn(exe, ['--verify', tabs], { stdio: 'inherit', detached: !isWindows })
+  : spawn(process.execPath, [cli, 'dev', '--', '--', '--verify', tabs], {
+      stdio: 'inherit',
+      detached: !isWindows,
+    });
 
 let timedOut = false;
 const timer = setTimeout(() => {
@@ -105,7 +128,7 @@ child.on('exit', (code) => {
   killTree(child.pid);
   const removed = cleanTemp();
   console.log(
-    `[AwayTerminal] dev 結束（exit ${timedOut ? 'timeout' : code}）` +
+    `[AwayTerminal] ${what} 結束（exit ${timedOut ? 'timeout' : code}）` +
       `；清掉 %TEMP% 驗證資料夾 ${removed.length} 個${removed.length ? '：' + removed.join(', ') : ''}`
   );
   process.exit(timedOut ? 124 : (code ?? 1));

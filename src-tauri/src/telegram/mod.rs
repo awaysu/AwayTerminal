@@ -91,6 +91,15 @@ pub fn telegram_apply(
     remote::status(&settings)
 }
 
+/// 前端開完 `telegram-open` 要的分頁之後回報（`None`＝開失敗）。
+///
+/// **隱含契約**：`telegram-open` 一定要回這一個，否則遠端的執行緒等到逾時
+/// （同 `ssh_hostkey_answer`／`macro_answer`）。
+#[tauri::command]
+pub fn telegram_opened(id: Option<u32>) {
+    remote::opened(id);
+}
+
 /// 逐分頁「推播到 Telegram」（分頁右鍵選單）。
 ///
 /// **舊版沒有這個**：舊版只有全域的 `/notify`（未附著的分頁完成要不要通知）。

@@ -358,6 +358,9 @@ export async function createSession(opts = {}) {
     telnet: opts.telnet || null,
     com: opts.com || null,
     conn: opts.conn || null,
+    // ADB：`adb_devices` 選好的 adb.exe 路徑與裝置序號。**漏了這個就等於沒選裝置**
+    // （TASK-021 找到：原本沒傳，多台裝置時 `adb shell` 會失敗；同 TASK-011 的 `com`）
+    adb: opts.adb || null,
     // 代理團隊的一格（`kind: 'agent'`）：要開哪個團隊的第幾格
     agent: opts.agent || null,
     // 恢復分頁：要倒回第幾筆的畫面（`restore_list` 的索引）
@@ -412,6 +415,37 @@ async function installHostListener() {
   await listen('host-msg', (e) => {
     if (typeof e.payload === 'string') deliver(e.payload);
   });
+  await listen('telegram-open', onTelegramOpen);
+}
+
+/**
+ * Telegram 遠端的 `/new`／`/ssh`／`/telnet`／`/history` 要開一個分頁。
+ *
+ * ⚠️ **隱含契約**：收到 `telegram-open` 一定要回 `telegram_opened`（成功給 id、失敗給
+ * `null`）。Rust 那邊的輪詢執行緒停在那裡等，不回就等到 8 秒逾時，使用者在手機上看到
+ * 「開啟失敗」。同 `ssh-hostkey` → `ssh_hostkey_answer`、`macro-dialog` → `macro_answer`。
+ *
+ * 為什麼要繞前端：`session_create` 需要一個輸出用的 `Channel`，那是前端 invoke 才有的
+ * 東西，Rust 生不出來。
+ */
+async function onTelegramOpen(e) {
+  let id = null;
+  try {
+    const spec = e.payload || {};
+    const info = await createSession({
+      kind: spec.kind || 'shell',
+      cwd: spec.cwd || null,
+      ssh: spec.ssh || null,
+      telnet: spec.telnet || null,
+      com: spec.com || null,
+      adb: spec.adb || null,
+      conn: spec.conn || null,
+    });
+    id = info.id;
+  } catch (err) {
+    log(`[bridge] Telegram 開分頁失敗：${err}`);
+  }
+  invoke('telegram_opened', { id }).catch(() => {});
 }
 
 // ------------------------------------------------------------- 對外介面

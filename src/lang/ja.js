@@ -613,7 +613,7 @@ export default {
   'err.nameEmpty': '名前は空にできません。',
 
   // ---------------- Telegram 遠端（telegram/*；舊版沒有翻譯，v2 補齊八語）----------------
-  'tg.help': 'AwayTerminal リモートコマンド\n/goto [n]  n 番目のタブに入る。番号なし＝タブ一覧を出してタップで入る（🟢待機 🟠実行中）\n/shot  ターミナル画面のスクリーンショット\n(そのまま入力)  その行 + Enter を送る。選択肢の画面では数字かボタンで選択\n/key <名前>  制御キーを送る ctrl-c/ctrl-d/esc/tab/enter/up/down/left/right\n/stop  Ctrl+C を送る\n/last [n]  出力の最後 n 行（既定 20）\n/more  直前の出力をさらに前へ 1 ページ\n/close [n]  タブを本当に閉じる（引数なし＝入っているタブ。/goto で番号を確認）\n/where  今どのタブにいるか\n/follow on|off  タブに入ったあと、完了時に出力を自動で返す（既定オン）\n/notify on|off  入っていない他のタブの完了も通知する（既定オフ）\n/plain on|off  AI に表を使わず平文で答えてもらう（既定オフ。表は元から平坦化されます）\n/exit  タブ表示から出る（タブはそのまま動きます。10 分操作がないと自動で出ます）',
+  'tg.help': 'AwayTerminal リモートコマンド\n/goto [n]  n 番目のタブに入る。番号なし＝タブ一覧を出してタップで入る（🟢待機 🟠実行中）\n/new  新しい接続を開く（種類ごとに 1 つ、数字で選択。SSH は開いたあとアカウント→パスワードを返信）\n/ssh [user@]ホスト[:ポート]  SSH を開く（引数なしはお気に入りの最初の SSH。user@ 付きは直接接続）\n/telnet [ホスト[:ポート]]  Telnet を開く（引数なしはお気に入りの最初の Telnet）\n/history [番号]  最近の接続。番号を付けるとそれで開く\n/shot  ターミナル画面のスクリーンショット\n(そのまま入力)  その行 + Enter を送る。選択肢の画面では数字かボタンで選択\n/key <名前>  制御キーを送る ctrl-c/ctrl-d/esc/tab/enter/up/down/left/right\n/stop  Ctrl+C を送る\n/last [n]  出力の最後 n 行（既定 20）\n/more  直前の出力をさらに前へ 1 ページ\n/close [n]  タブを本当に閉じる（引数なし＝入っているタブ。/goto で番号を確認）\n/where  今どのタブにいるか\n/follow on|off  タブに入ったあと、完了時に出力を自動で返す（既定オン）\n/notify on|off  入っていない他のタブの完了も通知する（既定オフ）\n/plain on|off  AI に表を使わず平文で答えてもらう（既定オフ。表は元から平坦化されます）\n/exit  タブ表示から出る（タブはそのまま動きます。10 分操作がないと自動で出ます）',
   'tg.cmdGoto': 'タブに入る／タブ一覧',
   'tg.cmdLast': '出力の最後の数行',
   'tg.cmdMore': 'さらに前へ 1 ページ',
@@ -675,4 +675,21 @@ export default {
   'settings.tgStopped': 'リモートは動作していません。',
   'menu.tgNotify': 'Telegram に通知する',
   'menu.tgNotifySet': 'Telegram への通知：{0}',
+
+  // TASK-021：/new /ssh /telnet /history
+  'tg.cmdNew': '新しい接続を開く（種類ごとに 1 つ、数字で選択）',
+  'tg.cmdHistory': '最近の接続（/history n で開く）',
+  'tg.cmdSsh': 'SSH を開く（user@ホスト:ポート も可）',
+  'tg.cmdTelnet': 'Telnet を開く（ホスト:ポート も可）',
+  'tg.connShell': 'PowerShell（デスクトップ）',
+  'tg.noConns': '利用できる接続がありません。',
+  'tg.pickConn': '開く接続を選んでください（ボタンをタップ、または数字で返信）：',
+  'tg.recentConns': '最近の接続（ボタンをタップ、または /history <番号> で開く）：',
+  'tg.noHistory': 'まだ接続の記録がありません。',
+  'tg.rangeIs': '番号は 1～{0} の範囲です。/goto で確認できます。',
+  'tg.openFailed': '開けませんでした。',
+  'tg.opened': '[{0}] を開いて入りました。そのまま入力すればコマンドを送れます。/last で出力。',
+  'tg.openedSsh': '[{0}] を開いて入りました。login as: にはアカウント名を返信し、続いて画面の指示に従ってパスワードを返信してください。',
+  'tg.sshUsage': '使い方：/ssh [user@]ホスト[:ポート]（引数なしならお気に入りの最初の SSH を使います）',
+  'tg.telnetUsage': '使い方：/telnet ホスト[:ポート]（引数なしならお気に入りの最初の Telnet を使います）',
 };

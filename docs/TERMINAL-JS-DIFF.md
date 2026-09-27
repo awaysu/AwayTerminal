@@ -1,8 +1,11 @@
 # `src/terminal.js` 與舊版的差異
 
 `src/terminal.js` 是舊版 `reference/AwayTerminal/web/terminal.js` 的**複製檔**，
-原則是「能不改就不改」。目前總 diff 只有 54 行、三處修改，每處都用
-`// AT2-n:` 註解標在原地。
+原則是「能不改就不改」。目前 **+61／−5 行、四處**修改（下面那條 `--numstat` 就是量法），
+每處都用 `// AT2-n:` 註解標在原地。
+
+> **規則**：這個檔案的每一處修改都必須①在原地標 `// AT2-n:`、②在下面的清單登記。
+> 沒登記的差異會讓回歸比對失去依據（TASK-020 的 `screen()` 漏登記，TASK-021 補上）。
 
 隨時可以重跑這個比對：
 
@@ -12,7 +15,7 @@ git -C . diff --no-index reference/AwayTerminal/web/terminal.js src/terminal.js
 
 ---
 
-## 第一節：`AT2-` 修改清單（共 3 處）
+## 第一節：`AT2-` 修改清單（共 4 處）
 
 ### AT2-1 — `window.chrome.webview` → `window.AwayBridge`（第 24 行）
 
@@ -39,7 +42,17 @@ git -C . diff --no-index reference/AwayTerminal/web/terminal.js src/terminal.js
 | **改了什麼** | ① 新增 `function writeOutput(id, bytes)`（第 913 行），內容就是原本寫在 `o` 分支裡的那三行；② `o` 分支改叫 `writeOutput(id, bytes)`（少了一個區域變數 `rec`）；③ 檔尾加 `window.AwayTerm = { writeOutput, doPaste, hasTerm, tail }`。 |
 | **為什麼** | 新版輸出走 Tauri 的二進位 channel（bytes 直達，不經 `o{id}US{base64}` 字串也不經 `atob`），bridge 收到 `Uint8Array` 要能直接呼叫同一段寫入邏輯。 |
 | **影響範圍** | **`pendingRestore` / `held` / `lastOutMs` 三者的邏輯一字未改**，只是換了位置：<br>• `pendingRestore !== null` → 推進 `held`，等 `applyRestore()` 補寫（1.0.45 恢復分頁）<br>• `lastOutMs = performance.now()` → 靜止閘門用（1.0.43）<br>`o` 字串分支保留可用（`atob` 那段還在），只是這個專案不會再送它。 |
-| **`tail()` / `ids()` / `size()` 是新增的** | 純讀取的驗證出口，給 `main.js` 的 `awayDump()` / `awayVerify()` 用（共用桌面、不能搶焦點，所以不靠看視窗）：`tail()` 回 buffer 尾端純文字、`ids()` 回目前有哪些 pane、`size()` 回某個 pane 的欄列數（確認多分頁各自 fit 正確）。三個都不改任何狀態。 |
+| **`tail()` / `ids()` / `size()` 是新增的（`screen()` 見 AT2-4）** | 純讀取的驗證出口，給 `main.js` 的 `awayDump()` / `awayVerify()` 用（共用桌面、不能搶焦點，所以不靠看視窗）：`tail()` 回 buffer 尾端純文字、`ids()` 回目前有哪些 pane、`size()` 回某個 pane 的欄列數（確認多分頁各自 fit 正確）。三個都不改任何狀態。 |
+
+### AT2-4 — `window.AwayTerm.screen()`（第 1093 行，TASK-020 加、TASK-021 登記）
+
+| | |
+|---|---|
+| **改了什麼** | 在 AT2-3 那個出口物件裡多一個唯讀函式 `screen(id)`，回傳目前**可見畫面**（viewport）每一列的純文字（含空白列）、欄列數，以及這個分頁的前景／背景色與字型。 |
+| **為什麼** | Telegram 遠端的 `/shot` 要把畫面變成 PNG。不能走既有的 `q…text`：`terminal.js` 的 `q` 分派對不認識的種類會回傳**選取文字**，要加一種就得改那個 `switch`；而且 `q…text` 給的是 scrollback 的邏輯行（`lastPlainText`），截圖要的是 viewport 的實際列。所以改成加一個唯讀存取器，`bridge.js` 拿文字自己畫 canvas。 |
+| **影響範圍** | 17 行，全部在檔尾的出口物件裡。**不碰輸入路徑、不碰渲染**：只讀 `term.buffer.active` 與 `themeFor(rec)`，沒有任何 `write`／`paste`／事件註冊。`window.AwayTerm.screen` 不存在時 `bridge.js` 的 `shotPng()` 回空字串、`/shot` 回一句「畫面尚未就緒」（等於這個功能沒有）。 |
+| **為什麼不抓 xterm 的 canvas** | WebGL renderer 的 drawing buffer 畫完就可以被丟掉（`preserveDrawingBuffer` 預設 false，`toDataURL` 多半全黑）；打開它會讓每一格都多留一份 buffer、拖慢渲染——而渲染速度正是 AT2-2 的目的。詳見 `docs/TELEGRAM.md` 的 A5。 |
+| **風險** | 低。唯讀、無副作用；代價是截圖**單色**（前景／背景），舊版 WPF 是整塊 render、每個字有顏色。 |
 
 ### 沒有改的地方（刻意）
 

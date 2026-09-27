@@ -613,7 +613,7 @@ export default {
   'err.nameEmpty': '名称不能是空的。',
 
   // ---------------- Telegram 遠端（telegram/*；舊版沒有翻譯，v2 補齊八語）----------------
-  'tg.help': 'AwayTerminal 远程指令\n/goto [n]  进入第 n 个标签页；不带编号＝列出标签页点按进入（🟢闲 🟠忙）\n/shot  终端画面截图\n(直接输入)  发送该行 + 回车；画面是选择题时回数字或点消息附带的按钮＝选该选项\n/key <名称>  发送控制键 ctrl-c/ctrl-d/esc/tab/enter/up/down/left/right\n/stop  发送 Ctrl+C\n/last [n]  最后 n 行输出（默认 20）\n/more  上一条输出再往前翻一页\n/close [n]  真正关闭标签页（无参数＝关当前进入的；/goto 看编号）\n/where  我在哪个标签页\n/follow on|off  进入标签页后、完成时自动回传输出（默认开）\n/notify on|off  其他（未进入的）标签页完成也推送通知（默认关）\n/plain on|off  提问时请 AI 用纯文本回答、不要表格（默认关；表格本来就会自动摊平）\n/exit  离开标签页查看（不关标签页；进入后闲置 10 分钟会静默自动离开）',
+  'tg.help': 'AwayTerminal 远程指令\n/goto [n]  进入第 n 个标签页；不带编号＝列出标签页点按进入（🟢闲 🟠忙）\n/new  开新连接（每种连接列一个，回数字开启；SSH 开启后回账号、密码登录）\n/ssh [user@]主机[:端口]  开 SSH（不带参数用收藏第一条；带 user@ 直接连、免回账号）\n/telnet [主机[:端口]]  开 Telnet（不带参数用收藏第一条）\n/history [编号]  最近连接；带编号＝用该条开新连接\n/shot  终端画面截图\n(直接输入)  发送该行 + 回车；画面是选择题时回数字或点消息附带的按钮＝选该选项\n/key <名称>  发送控制键 ctrl-c/ctrl-d/esc/tab/enter/up/down/left/right\n/stop  发送 Ctrl+C\n/last [n]  最后 n 行输出（默认 20）\n/more  上一条输出再往前翻一页\n/close [n]  真正关闭标签页（无参数＝关当前进入的；/goto 看编号）\n/where  我在哪个标签页\n/follow on|off  进入标签页后、完成时自动回传输出（默认开）\n/notify on|off  其他（未进入的）标签页完成也推送通知（默认关）\n/plain on|off  提问时请 AI 用纯文本回答、不要表格（默认关；表格本来就会自动摊平）\n/exit  离开标签页查看（不关标签页；进入后闲置 10 分钟会静默自动离开）',
   'tg.cmdGoto': '进入标签页／列出标签页',
   'tg.cmdLast': '最后几行输出',
   'tg.cmdMore': '再往前翻一页',
@@ -675,4 +675,21 @@ export default {
   'settings.tgStopped': '远程未执行。',
   'menu.tgNotify': '推送到 Telegram',
   'menu.tgNotifySet': '推送到 Telegram：{0}',
+
+  // TASK-021：/new /ssh /telnet /history
+  'tg.cmdNew': '开新连接（每种列一个，选数字）',
+  'tg.cmdHistory': '最近连接记录（/history n 开新连接）',
+  'tg.cmdSsh': '开 SSH（可带 user@主机:端口）',
+  'tg.cmdTelnet': '开 Telnet（可带 主机:端口）',
+  'tg.connShell': 'PowerShell（桌面）',
+  'tg.noConns': '没有可用的连接。',
+  'tg.pickConn': '选择要开启的连接（点按钮，或回数字）：',
+  'tg.recentConns': '最近连接（点按钮或 /history <编号> 用该条开新连接）：',
+  'tg.noHistory': '还没有连接记录。',
+  'tg.rangeIs': '编号要在 1~{0} 之间。/goto 看编号。',
+  'tg.openFailed': '开启失败。',
+  'tg.opened': '已开启并进入 [{0}]。直接输入发送指令，/last 看输出。',
+  'tg.openedSsh': '已开启并进入 [{0}]。login as: → 直接回账号，接着照画面提示回密码。',
+  'tg.sshUsage': '用法：/ssh [user@]主机[:端口]（不带参数时用收藏里第一条 SSH）',
+  'tg.telnetUsage': '用法：/telnet 主机[:端口]（不带参数时用收藏里第一条 Telnet）',
 };

@@ -613,7 +613,7 @@ export default {
   'err.nameEmpty': '이름은 비워 둘 수 없습니다.',
 
   // ---------------- Telegram 遠端（telegram/*；舊版沒有翻譯，v2 補齊八語）----------------
-  'tg.help': 'AwayTerminal 원격 명령\n/goto [n]  n 번째 탭으로 들어가기. 번호 없이＝탭 목록을 눌러 들어가기（🟢대기 🟠작업 중）\n/shot  터미널 화면 스크린샷\n(그냥 입력)  그 줄 + Enter 전송. 선택 화면에서는 숫자나 버튼으로 선택\n/key <이름>  제어 키 전송 ctrl-c/ctrl-d/esc/tab/enter/up/down/left/right\n/stop  Ctrl+C 전송\n/last [n]  마지막 n 줄 출력（기본 20）\n/more  이전 출력을 한 페이지 더 뒤로\n/close [n]  탭을 실제로 닫기（인수 없이＝들어가 있는 탭. /goto 로 번호 확인）\n/where  지금 어느 탭에 있는지\n/follow on|off  탭에 들어간 뒤 작업이 끝나면 출력을 자동으로 보냄（기본 켜짐）\n/notify on|off  들어가지 않은 다른 탭의 완료도 알림（기본 꺼짐）\n/plain on|off  AI 에게 표 없이 일반 텍스트로 답하도록 요청（기본 꺼짐. 표는 원래 펼쳐집니다）\n/exit  탭 보기에서 나가기（탭은 계속 실행. 10 분 동안 조작이 없으면 자동으로 나감）',
+  'tg.help': 'AwayTerminal 원격 명령\n/goto [n]  n 번째 탭으로 들어가기. 번호 없이＝탭 목록을 눌러 들어가기（🟢대기 🟠작업 중）\n/new  새 연결 열기（종류별 하나, 숫자로 선택. SSH 는 열린 뒤 계정 → 비밀번호를 답장）\n/ssh [user@]호스트[:포트]  SSH 열기（인수가 없으면 즐겨찾기의 첫 SSH. user@ 를 붙이면 바로 연결）\n/telnet [호스트[:포트]]  Telnet 열기（인수가 없으면 즐겨찾기의 첫 Telnet）\n/history [번호]  최근 연결. 번호를 붙이면 그것으로 열기\n/shot  터미널 화면 스크린샷\n(그냥 입력)  그 줄 + Enter 전송. 선택 화면에서는 숫자나 버튼으로 선택\n/key <이름>  제어 키 전송 ctrl-c/ctrl-d/esc/tab/enter/up/down/left/right\n/stop  Ctrl+C 전송\n/last [n]  마지막 n 줄 출력（기본 20）\n/more  이전 출력을 한 페이지 더 뒤로\n/close [n]  탭을 실제로 닫기（인수 없이＝들어가 있는 탭. /goto 로 번호 확인）\n/where  지금 어느 탭에 있는지\n/follow on|off  탭에 들어간 뒤 작업이 끝나면 출력을 자동으로 보냄（기본 켜짐）\n/notify on|off  들어가지 않은 다른 탭의 완료도 알림（기본 꺼짐）\n/plain on|off  AI 에게 표 없이 일반 텍스트로 답하도록 요청（기본 꺼짐. 표는 원래 펼쳐집니다）\n/exit  탭 보기에서 나가기（탭은 계속 실행. 10 분 동안 조작이 없으면 자동으로 나감）',
   'tg.cmdGoto': '탭 들어가기 / 탭 목록',
   'tg.cmdLast': '마지막 출력 몇 줄',
   'tg.cmdMore': '한 페이지 더 뒤로',
@@ -675,4 +675,21 @@ export default {
   'settings.tgStopped': '원격이 실행 중이 아닙니다.',
   'menu.tgNotify': 'Telegram 으로 알림',
   'menu.tgNotifySet': 'Telegram 알림: {0}',
+
+  // TASK-021：/new /ssh /telnet /history
+  'tg.cmdNew': '새 연결 열기（종류별 하나, 숫자로 선택）',
+  'tg.cmdHistory': '최근 연결（/history n 으로 열기）',
+  'tg.cmdSsh': 'SSH 열기（user@호스트:포트 가능）',
+  'tg.cmdTelnet': 'Telnet 열기（호스트:포트 가능）',
+  'tg.connShell': 'PowerShell（바탕 화면）',
+  'tg.noConns': '사용할 수 있는 연결이 없습니다.',
+  'tg.pickConn': '열 연결을 선택하세요（버튼을 누르거나 숫자로 답장）:',
+  'tg.recentConns': '최근 연결（버튼을 누르거나 /history <번호> 로 열기）:',
+  'tg.noHistory': '아직 연결 기록이 없습니다.',
+  'tg.rangeIs': '번호는 1~{0} 사이여야 합니다. /goto 로 확인하세요.',
+  'tg.openFailed': '열지 못했습니다.',
+  'tg.opened': '[{0}] 을 열고 들어갔습니다. 그냥 입력하면 명령이 전송됩니다. /last 로 출력.',
+  'tg.openedSsh': '[{0}] 을 열고 들어갔습니다. login as: 에는 계정 이름을, 이어서 화면 안내에 따라 비밀번호를 답장하세요.',
+  'tg.sshUsage': '사용법: /ssh [user@]호스트[:포트]（인수가 없으면 즐겨찾기의 첫 SSH 를 사용）',
+  'tg.telnetUsage': '사용법: /telnet 호스트[:포트]（인수가 없으면 즐겨찾기의 첫 Telnet 을 사용）',
 };

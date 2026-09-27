@@ -9,7 +9,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "verify": "node scripts/dev-verify.mjs"
+    "verify": "node scripts/dev-verify.mjs",
+    "verify:release": "node scripts/dev-verify.mjs 1 300 --release"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.12.0",

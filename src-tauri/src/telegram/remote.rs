@@ -19,7 +19,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
-use tauri::{AppHandle, Manager};
+use std::sync::mpsc::{self, Sender};
+
+use tauri::{AppHandle, Emitter, Manager};
 
 use super::api::{Api, Incoming};
 use super::cmd::{self, Action};
@@ -280,6 +282,14 @@ fn handle(app: &AppHandle, api: &Api, chat_id: i64, state: &Arc<Mutex<State>>, m
             if let Ok(n) = rest.parse::<usize>() {
                 do_goto(app, api, chat_id, state, Some(n));
             }
+        } else if let Some(rest) = data.strip_prefix("new:") {
+            if let Ok(n) = rest.parse::<usize>() {
+                do_new(app, api, chat_id, state, Some(n));
+            }
+        } else if let Some(rest) = data.strip_prefix("hist:") {
+            if let Ok(n) = rest.parse::<usize>() {
+                do_history(app, api, chat_id, state, Some(n));
+            }
         } else if let Some(rest) = data.strip_prefix("close:") {
             if let Ok(id) = rest.parse::<u32>() {
                 confirmed_close(app, api, chat_id, state, id);
@@ -342,6 +352,10 @@ fn handle(app: &AppHandle, api: &Api, chat_id: i64, state: &Arc<Mutex<State>>, m
             }
         }
         Action::Send(t) => do_send(app, api, chat_id, state, &t),
+        Action::New(n) => do_new(app, api, chat_id, state, n),
+        Action::Ssh(arg) => do_open_remote(app, api, chat_id, state, &arg, true),
+        Action::Telnet(arg) => do_open_remote(app, api, chat_id, state, &arg, false),
+        Action::History(n) => do_history(app, api, chat_id, state, n),
         Action::Unknown => send(api, chat_id, &crate::i18n::t("tg.unknown")),
     }
 }
@@ -497,7 +511,14 @@ fn do_send(app: &AppHandle, api: &Api, chat_id: i64, state: &Arc<Mutex<State>>, 
         return;
     };
     let mut to_send = text.to_string();
-    if plain && cmd::wants_plain_suffix(text) {
+    // `/plain` 的提示只加在會跟 AI 對話的分頁上（見 `cmd::wants_plain_suffix`：
+    // 加在 SSH 的密碼上會讓登入失敗而且看不出原因）
+    let talks_to_ai = app
+        .try_state::<Arc<crate::tabs::TabManager>>()
+        .and_then(|t| t.kind_of(tab))
+        .map(|k| matches!(k, crate::tabs::TabKind::Claude | crate::tabs::TabKind::Custom))
+        .unwrap_or(false);
+    if plain && cmd::wants_plain_suffix(text, talks_to_ai) {
         to_send.push_str(&cmd::plain_suffix());
     }
     let Some(tabs) = app.try_state::<Arc<crate::tabs::TabManager>>() else {
@@ -818,6 +839,363 @@ pub fn on_tab_idle(app: &AppHandle, tab: u32, title: &str) {
     if tab_notify(tab).unwrap_or(notify) {
         let msg = crate::i18n::tf("tg.doneOther", &[title]);
         std::thread::spawn(move || send(&api, chat_id, &msg));
+    }
+}
+
+// ---------------------------------------------------------------- 開新連線
+
+/// 要請前端開哪一種分頁。序列化成 JSON 給 `telegram-open` event，欄位名對齊
+/// `session_create`（前端只是把它交給 `createSession`）。
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenSpec {
+    pub kind: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cwd: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub conn: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ssh: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub telnet: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub com: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub adb: Option<serde_json::Value>,
+}
+
+impl OpenSpec {
+    fn of(kind: &str) -> Self {
+        Self {
+            kind: kind.to_string(),
+            cwd: None,
+            conn: None,
+            ssh: None,
+            telnet: None,
+            com: None,
+            adb: None,
+        }
+    }
+}
+
+/// 等前端回「開好的分頁 id」的信箱（只有一個遠端，所以單格就夠）。
+type OpenBox = Mutex<Option<Sender<Option<u32>>>>;
+
+fn open_box() -> &'static OpenBox {
+    static M: OnceLock<OpenBox> = OnceLock::new();
+    M.get_or_init(|| Mutex::new(None))
+}
+
+/// 前端開完分頁（或開失敗）之後呼叫。
+pub fn opened(id: Option<u32>) {
+    if let Some(tx) = open_box().lock().unwrap_or_else(|e| e.into_inner()).take() {
+        let _ = tx.send(id);
+    }
+}
+
+/// 請前端開一個分頁，回傳 `(分頁 id, 標題)`。
+///
+/// ## 為什麼要繞前端
+/// `session_create` 需要一個輸出用的 `Channel`，那是前端 invoke 才有的東西——Rust 這邊
+/// 生不出來。所以照 `ssh-hostkey`／`macha-dialog` 的既有作法：emit 一個事件、等一個
+/// 回覆 command（[`opened`]）。**隱含契約**：前端收到 `telegram-open` 一定要回
+/// `telegram_opened`（成功給 id、失敗給 null），不回就等到逾時。
+///
+/// **不要在 tauri 的 IPC 執行緒上呼叫**（會等前端）。
+fn open_tab(app: &AppHandle, spec: &OpenSpec) -> Option<(u32, String)> {
+    let (tx, rx) = mpsc::channel();
+    *open_box().lock().unwrap_or_else(|e| e.into_inner()) = Some(tx);
+    if app.emit("telegram-open", spec).is_err() {
+        open_box().lock().unwrap_or_else(|e| e.into_inner()).take();
+        return None;
+    }
+    // SSH／Telnet 的 `session_create` 在**連上之前**就回來（交握在背景），所以 8 秒很夠
+    let id = match rx.recv_timeout(Duration::from_secs(8)) {
+        Ok(Some(id)) => id,
+        Ok(None) => return None,
+        Err(_) => {
+            open_box().lock().unwrap_or_else(|e| e.into_inner()).take();
+            println!("[AwayTerminal] Telegram：開分頁等不到前端回覆（telegram_opened）");
+            return None;
+        }
+    };
+    let title = app
+        .try_state::<Arc<crate::tabs::TabManager>>()
+        .and_then(|t| t.title_of(id))
+        .unwrap_or_default();
+    Some((id, title))
+}
+
+/// 開完連線的共同收尾（舊版 `AttachAndReport`）：附著、SSH 提示回帳號、其餘推開場畫面。
+fn attach_and_report(
+    app: &AppHandle,
+    api: &Api,
+    chat_id: i64,
+    state: &Arc<Mutex<State>>,
+    id: u32,
+    title: &str,
+    ssh: bool,
+) {
+    {
+        let mut st = state.lock().unwrap_or_else(|e| e.into_inner());
+        st.current = Some(id);
+        st.baseline.remove(&id); // 新分頁：沒有基準，第一次推整個畫面
+    }
+    if ssh {
+        // `login as:` 階段：提示直接回覆帳號（之後照畫面提示回覆密碼）
+        send(api, chat_id, &crate::i18n::tf("tg.openedSsh", &[title]));
+        return;
+    }
+    send(api, chat_id, &crate::i18n::tf("tg.opened", &[title]));
+    let follow = state.lock().unwrap_or_else(|e| e.into_inner()).follow;
+    if follow {
+        // 推開場畫面（telnet／COM 的登入提示、shell 的提示列）
+        std::thread::sleep(Duration::from_millis(1500));
+        send_last(app, api, chat_id, state, 12, None, true, false);
+    }
+}
+
+/// `/new` 的可開清單（舊版 `ListConnections`）。
+///
+/// 舊版的 SSH／Telnet 兩項來自 `LastHost`；**v2 沒有 `LastHost`**（TASK-009 決定用我的最愛
+/// 取代主機歷史，`docs/MIGRATION.md` 有記），所以這裡改成列我的最愛裡的連線。
+/// 其餘照舊版：PowerShell（桌面）、連接埠、ADB、自訂連線（不含隱藏的）。
+fn conn_list(app: &AppHandle) -> Vec<(String, OpenSpec)> {
+    let Some(store) = app.try_state::<Arc<crate::settings::SettingsStore>>() else {
+        return Vec::new();
+    };
+    let s = store.get();
+    let desk = dirs_desktop();
+    let mut out: Vec<(String, OpenSpec)> = Vec::new();
+
+    let mut ps = OpenSpec::of("shell");
+    ps.cwd = desk.clone();
+    out.push((crate::i18n::t("tg.connShell"), ps));
+
+    // 我的最愛（v2 的「主機紀錄」）
+    for f in &s.favorites {
+        let mut spec = OpenSpec::of(&f.kind);
+        let label = match f.kind.as_str() {
+            "ssh" => {
+                spec.ssh = serde_json::to_value(&f.ssh).ok();
+                format!("SSH {}", f.name)
+            }
+            "telnet" => {
+                spec.telnet = serde_json::to_value(&f.telnet).ok();
+                format!("Telnet {}", f.name)
+            }
+            "com" => {
+                spec.com = serde_json::to_value(&f.com).ok();
+                f.name.clone()
+            }
+            "conn" => {
+                spec.kind = "conn".to_string();
+                spec.conn = Some(f.conn_name.clone());
+                // 需要選資料夾的自訂連線：遠端不能跳資料夾框 → 以桌面開啟（同舊版）
+                spec.cwd = if f.dir.is_empty() { desk.clone() } else { Some(f.dir.clone()) };
+                f.name.clone()
+            }
+            _ => {
+                spec.kind = "shell".to_string();
+                spec.cwd = if f.dir.is_empty() { desk.clone() } else { Some(f.dir.clone()) };
+                f.name.clone()
+            }
+        };
+        out.push((label, spec));
+    }
+
+    // 連接埠（設定裡上次用的那個）
+    if !s.com_port.trim().is_empty() {
+        let mut spec = OpenSpec::of("com");
+        // 省略欄位時 `session_create` 會用設定裡上次的值（同舊版 ComDialog）
+        spec.com = Some(serde_json::json!({ "port": s.com_port }));
+        out.push((format!("{} {}", s.com_port, s.com_baud), spec));
+    }
+
+    out.push(("ADB".to_string(), OpenSpec::of("adb")));
+
+    for c in s.custom_conns.iter().filter(|c| !c.hidden && !c.name.trim().is_empty()) {
+        let mut spec = OpenSpec::of("conn");
+        spec.conn = Some(c.name.clone());
+        if c.pick_dir {
+            spec.cwd = desk.clone(); // 遠端不能跳資料夾框
+        }
+        out.push((c.name.clone(), spec));
+    }
+    out
+}
+
+fn dirs_desktop() -> Option<String> {
+    std::env::var("USERPROFILE")
+        .ok()
+        .map(|h| format!("{h}\\Desktop"))
+        .filter(|p| std::path::Path::new(p).is_dir())
+        .or_else(|| std::env::var("HOME").ok().map(|h| format!("{h}/Desktop")))
+        .filter(|p| std::path::Path::new(p).is_dir())
+}
+
+/// `/new [n]`：不帶編號＝列清單＋按鈕；帶編號＝開那一條並附著。
+fn do_new(
+    app: &AppHandle,
+    api: &Api,
+    chat_id: i64,
+    state: &Arc<Mutex<State>>,
+    n: Option<usize>,
+) {
+    let list = conn_list(app);
+    if list.is_empty() {
+        send(api, chat_id, &crate::i18n::t("tg.noConns"));
+        return;
+    }
+    let Some(n) = n else {
+        let mut body = format!("{}\n", crate::i18n::t("tg.pickConn"));
+        let mut btns = Vec::new();
+        for (i, (label, _)) in list.iter().enumerate() {
+            body.push_str(&format!("{}: {label}\n", i + 1));
+            btns.push((format!("{} {}", i + 1, trunc(label, 14)), format!("new:{}", i + 1)));
+        }
+        let rows: Vec<Vec<(String, String)>> = btns.chunks(2).map(|c| c.to_vec()).collect();
+        let _ = api.send_message(chat_id, body.trim_end(), false, &rows);
+        return;
+    };
+    if n < 1 || n > list.len() {
+        send(
+            api,
+            chat_id,
+            &crate::i18n::tf("tg.rangeIs", &[&list.len().to_string()]),
+        );
+        return;
+    }
+    let (_, spec) = &list[n - 1];
+    match open_tab(app, spec) {
+        Some((id, title)) => {
+            attach_and_report(app, api, chat_id, state, id, &title, spec.kind == "ssh")
+        }
+        None => send(api, chat_id, &crate::i18n::t("tg.openFailed")),
+    }
+}
+
+/// `/ssh [user@]主機[:埠]` 與 `/telnet [主機[:埠]]`。
+///
+/// 不帶參數時舊版用 `LastHost`；v2 沒有那個欄位 → 用**我的最愛裡第一條同型態的**
+/// （TASK-009 用我的最愛取代主機歷史）。都沒有就回用法。
+fn do_open_remote(
+    app: &AppHandle,
+    api: &Api,
+    chat_id: i64,
+    state: &Arc<Mutex<State>>,
+    arg: &str,
+    ssh: bool,
+) {
+    let (mut host, mut port) = cmd::parse_host_port(arg);
+    let fav = first_favorite(app, if ssh { "ssh" } else { "telnet" });
+    if host.trim().is_empty() {
+        // 我的最愛那一條整條拿來用（帳號、金鑰、演算法都在裡面），不只是主機名
+        if let Some(spec) = fav.clone() {
+            match open_tab(app, &spec) {
+                Some((id, title)) => {
+                    attach_and_report(app, api, chat_id, state, id, &title, ssh);
+                    return;
+                }
+                None => {
+                    send(api, chat_id, &crate::i18n::t("tg.openFailed"));
+                    return;
+                }
+            }
+        }
+        send(
+            api,
+            chat_id,
+            &crate::i18n::t(if ssh { "tg.sshUsage" } else { "tg.telnetUsage" }),
+        );
+        return;
+    }
+    if port == 0 {
+        port = if ssh { 22 } else { 23 };
+    }
+    // `user@主機` ＝帳號已知，不必在畫面上問（舊版 OpenSshUserAtHost）
+    let mut user = String::new();
+    if let Some((u, h)) = host.split_once('@') {
+        user = u.to_string();
+        host = h.to_string();
+    }
+    let mut spec = OpenSpec::of(if ssh { "ssh" } else { "telnet" });
+    if ssh {
+        spec.ssh = Some(serde_json::json!({ "host": host, "port": port, "user": user }));
+    } else {
+        spec.telnet = Some(serde_json::json!({ "host": host, "port": port }));
+    }
+    match open_tab(app, &spec) {
+        // 帶了 `user@` 就不必提示回帳號，直接照畫面提示回密碼
+        Some((id, title)) => {
+            attach_and_report(app, api, chat_id, state, id, &title, ssh && user.is_empty())
+        }
+        None => send(api, chat_id, &crate::i18n::t("tg.openFailed")),
+    }
+}
+
+/// 我的最愛裡第一條指定型態的，整條變成 `OpenSpec`。
+fn first_favorite(app: &AppHandle, kind: &str) -> Option<OpenSpec> {
+    let store = app.try_state::<Arc<crate::settings::SettingsStore>>()?;
+    let s = store.get();
+    let f = s.favorites.iter().find(|f| f.kind == kind)?;
+    let mut spec = OpenSpec::of(kind);
+    match kind {
+        "ssh" => spec.ssh = serde_json::to_value(&f.ssh).ok(),
+        "telnet" => spec.telnet = serde_json::to_value(&f.telnet).ok(),
+        _ => return None,
+    }
+    Some(spec)
+}
+
+/// `/history [n]`：列最近可重開的連線；帶編號才開。
+///
+/// ⚠️ **刻意不做「回覆數字選取」**（舊版註解）：純數字要留給終端機輸入與選單應答。
+///
+/// 舊版列的是 `AppSettings.History`（最多 10 筆）。**v2 沒有 History 清單**
+/// （TASK-009 用我的最愛取代，`docs/MIGRATION.md` 的跳過表有記），所以這裡列我的最愛。
+/// 代理團隊／AI 聊天室一律不列——重開要跳設定視窗，從手機觸發沒人按。
+fn do_history(
+    app: &AppHandle,
+    api: &Api,
+    chat_id: i64,
+    state: &Arc<Mutex<State>>,
+    n: Option<usize>,
+) {
+    let list: Vec<(String, OpenSpec)> = conn_list(app)
+        .into_iter()
+        .filter(|(_, spec)| spec.kind != "agent")
+        .take(10)
+        .collect();
+    if list.is_empty() {
+        send(api, chat_id, &crate::i18n::t("tg.noHistory"));
+        return;
+    }
+    let Some(n) = n else {
+        let mut body = format!("{}\n", crate::i18n::t("tg.recentConns"));
+        let mut btns = Vec::new();
+        for (i, (label, _)) in list.iter().enumerate() {
+            body.push_str(&format!("{}: {label}\n", i + 1));
+            btns.push((format!("{} {}", i + 1, trunc(label, 14)), format!("hist:{}", i + 1)));
+        }
+        let rows: Vec<Vec<(String, String)>> = btns.chunks(2).map(|c| c.to_vec()).collect();
+        let _ = api.send_message(chat_id, body.trim_end(), false, &rows);
+        return;
+    };
+    if n < 1 || n > list.len() {
+        send(
+            api,
+            chat_id,
+            &crate::i18n::tf("tg.rangeIs", &[&list.len().to_string()]),
+        );
+        return;
+    }
+    let (_, spec) = &list[n - 1];
+    match open_tab(app, spec) {
+        Some((id, title)) => {
+            attach_and_report(app, api, chat_id, state, id, &title, spec.kind == "ssh")
+        }
+        None => send(api, chat_id, &crate::i18n::t("tg.openFailed")),
     }
 }
 

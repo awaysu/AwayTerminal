@@ -629,7 +629,7 @@ export default {
   'err.nameEmpty': '名稱不能是空的。',
 
   // ---------------- Telegram 遠端（telegram/*；舊版沒有翻譯，v2 補齊八語）----------------
-  'tg.help': 'AwayTerminal 遠端指令\n/goto [n]  進入第 n 個分頁；不帶編號＝列出分頁點按進入（🟢閒 🟠忙）\n/shot  終端機畫面截圖\n(直接打字)  送出該行 + Enter；畫面是選擇題時回數字或點訊息附的按鈕＝選該選項\n/key <名稱>  送控制鍵 ctrl-c/ctrl-d/esc/tab/enter/up/down/left/right\n/stop  送 Ctrl+C\n/last [n]  最後 n 行輸出（預設 20）\n/more  上一則輸出再往前翻一頁\n/close [n]  真正關閉分頁（無參數＝關目前附著的；/goto 看編號）\n/where  我在哪個分頁\n/follow on|off  進入分頁後、完成時自動回傳輸出（預設開）\n/notify on|off  其他（未進入的）分頁完成也推播通知（預設關）\n/plain on|off  提問時請 AI 用純文字回答、不要表格（預設關；表格本來就會自動攤平）\n/exit  離開分頁檢視（不關分頁；附著後閒置 10 分鐘會靜默自動離開）',
+  'tg.help': 'AwayTerminal 遠端指令\n/goto [n]  進入第 n 個分頁；不帶編號＝列出分頁點按進入（🟢閒 🟠忙）\n/new  開新連線（每種連線列一個，回覆數字開啟；SSH 開啟後回覆帳號、密碼登入）\n/ssh [user@]主機[:埠]  開 SSH（不帶參數用我的最愛第一條；帶 user@ 直接連、免回帳號）\n/telnet [主機[:埠]]  開 Telnet（不帶參數用我的最愛第一條）\n/history [編號]  最近連線；帶編號＝用該筆開新連線\n/shot  終端機畫面截圖\n(直接打字)  送出該行 + Enter；畫面是選擇題時回數字或點訊息附的按鈕＝選該選項\n/key <名稱>  送控制鍵 ctrl-c/ctrl-d/esc/tab/enter/up/down/left/right\n/stop  送 Ctrl+C\n/last [n]  最後 n 行輸出（預設 20）\n/more  上一則輸出再往前翻一頁\n/close [n]  真正關閉分頁（無參數＝關目前附著的；/goto 看編號）\n/where  我在哪個分頁\n/follow on|off  進入分頁後、完成時自動回傳輸出（預設開）\n/notify on|off  其他（未進入的）分頁完成也推播通知（預設關）\n/plain on|off  提問時請 AI 用純文字回答、不要表格（預設關；表格本來就會自動攤平）\n/exit  離開分頁檢視（不關分頁；附著後閒置 10 分鐘會靜默自動離開）',
   'tg.cmdGoto': '進入分頁／列出分頁',
   'tg.cmdLast': '最後幾行輸出',
   'tg.cmdMore': '再往前翻一頁',
@@ -691,4 +691,21 @@ export default {
   'settings.tgStopped': '遠端未執行。',
   'menu.tgNotify': '推播到 Telegram',
   'menu.tgNotifySet': '推播到 Telegram：{0}',
+
+  // TASK-021：/new /ssh /telnet /history
+  'tg.cmdNew': '開新連線（每種列一個，選數字）',
+  'tg.cmdHistory': '最近連線紀錄（/history n 開新連線）',
+  'tg.cmdSsh': '開 SSH（可帶 user@主機:埠）',
+  'tg.cmdTelnet': '開 Telnet（可帶 主機:埠）',
+  'tg.connShell': 'PowerShell（桌面）',
+  'tg.noConns': '沒有可用的連線。',
+  'tg.pickConn': '選擇要開啟的連線（點按鈕，或回覆數字）：',
+  'tg.recentConns': '最近連線（點按鈕或 /history <編號> 用該筆開新連線）：',
+  'tg.noHistory': '還沒有連線紀錄。',
+  'tg.rangeIs': '編號要在 1~{0} 之間。/goto 看編號。',
+  'tg.openFailed': '開啟失敗。',
+  'tg.opened': '已開啟並進入 [{0}]。直接打字送指令，/last 看輸出。',
+  'tg.openedSsh': '已開啟並進入 [{0}]。login as: → 直接回覆帳號，接著照畫面提示回覆密碼。',
+  'tg.sshUsage': '用法：/ssh [user@]主機[:埠]（不帶參數時用我的最愛裡第一條 SSH）',
+  'tg.telnetUsage': '用法：/telnet 主機[:埠]（不帶參數時用我的最愛裡第一條 Telnet）',
 };

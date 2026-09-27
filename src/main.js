@@ -230,24 +230,44 @@ async function awayVerify() {
   const first = st.tabs[0];
   if (first) await verifyToolbar(first.id);
 
-  await verifySshPath();
-  await verifyTelnetPath();
-  await verifyComPath();
-  await verifyMacro();
-  await verifyCompose();
-  await verifySettings();
-  await verifyLanguage();
-  await verifyAllLanguages();
-  await verifyUpdate();
-  await verifyAdb();
-  await verifyShellMenu();
-  await verifyMigrate();
-  await verifyRestore();
-  await verifySandbox();
-  await verifyAgentTeam();
-  await verifyAgentRestore();
-  await verifyChatRoom();
-  await verifyTelegram(first ? first.id : null);
+  // 每一段各自包起來：**一段丟例外不可以讓後面整批不跑**。
+  // TASK-021 踩到：release exe 上 `verifySandbox` 靜靜結束，代理團隊／聊天室／Telegram
+  // 三段就完全沒跑，而且**畫面上看不出來**（那三段的 [verify] 行根本不存在），
+  // 看起來像「跑完了、都沒問題」。
+  const sections = [
+    ['SSH', verifySshPath],
+    ['Telnet', verifyTelnetPath],
+    ['COM', verifyComPath],
+    ['巨集', verifyMacro],
+    ['輸入文字', verifyCompose],
+    ['設定', verifySettings],
+    ['語言', verifyLanguage],
+    ['八語', verifyAllLanguages],
+    ['更新檢查', verifyUpdate],
+    ['ADB', verifyAdb],
+    ['檔案總管選單', verifyShellMenu],
+    ['匯入舊設定', verifyMigrate],
+    ['恢復分頁', verifyRestore],
+    ['沙盒', verifySandbox],
+    ['代理團隊', verifyAgentTeam],
+    ['代理團隊恢復', verifyAgentRestore],
+    ['AI 聊天室', verifyChatRoom],
+    ['Telegram 遠端', () => verifyTelegram(first ? first.id : null)],
+  ];
+  const broken = [];
+  for (const [name, fn] of sections) {
+    try {
+      await fn();
+    } catch (e) {
+      broken.push(name);
+      log(`[verify] FAIL 「${name}」這一段丟出例外：${e && e.stack ? e.stack : e}`);
+    }
+  }
+  log(
+    broken.length
+      ? `[verify] 收尾：${sections.length} 段裡有 ${broken.length} 段丟例外：${broken.join('、')}`
+      : `[verify] 收尾：${sections.length} 段全部跑完（沒有丟例外）`
+  );
 }
 window.awayVerify = awayVerify;
 

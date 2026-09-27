@@ -887,6 +887,17 @@ TEMP 路徑印出完整結果，Documents 路徑印完 `path = …` 就停住。
 | TG28 | 👤 分頁右鍵「推播到 Telegram」 | 取消勾選之後那個分頁不再推（**v2 新增**；遠端沒開時整項隱藏） | 新增 | ⬜ | — | — |
 | TG29 | 👤 八語 | 切每一種語言，`/help` 與所有回覆都跟著換（舊版這些是寫死的繁中） | 新增 | ⬜ | — | — |
 | TG30 | 👤 代理團隊那一列 | 分頁清單顯示「組名（代理團隊 Agent-11）」，只有代表列會推播 | `RemoteTitle`／`RemoteVisible` | ⬜ | — | — |
+| TG31 | probe：`/new` | 列可開的連線＋按鈕，清單含「PowerShell（桌面）」 | `ListConnections` | PASS | — | — |
+| TG32 | probe：`/history` | 列清單＋按鈕（v2 ＝我的最愛，舊版是 `History`） | `ListHistory` | PASS | — | — |
+| TG33 | probe：`/new 999` | 只回「1~n」提示，**不開任何分頁** | `OpenFromList` | PASS | — | — |
+| TG34 | probe：`/new 1` | 真的開了分頁（PowerShell 桌面）並自動附著 | `AttachAndReport` | PASS | — | — |
+| TG35 | probe：`/ssh`／`/telnet` 不帶參數且沒有對應的我的最愛 | 回用法說明，**不連任何主機** | `DoSsh`／`DoTelnet` | PASS | — | — |
+| TG36 | `cargo test telegram::cmd` | `[user@]主機[:埠]` 解析（含「IPv6 會被切壞」這個舊版限制） | `ParseHostPort` | PASS | — | — |
+| TG37 | `cargo test telegram::cmd::tests::help_lists_every_command` | `/help` 有舊版全部 19 條 | `HelpText` | PASS | — | — |
+| TG38 | `cargo test ...command_menu_matches_v1_order` | 指令選單順序照舊版（goto/new/history/ssh/telnet 在前） | `RegisterCommandsAsync` | PASS | — | — |
+| TG39 | `cargo test ...plain_suffix_never_touches_a_password` | `/plain` 的後綴**不會**加到 SSH 密碼或 shell 指令上 | **v2 新增的防護** | PASS | — | — |
+| TG40 | 👤 真的 bot：`/ssh` 開一台真的設備 | 手機上回帳號 → 回密碼 → 進到 shell；**密碼不出現在任何推播裡** | `DoSsh` | ⬜ | — | — |
+| TG41 | 👤 真的 bot：`/new` 開一條自訂連線 | 開起來、自動附著、`/follow` 開著時 1.5 秒後推開場畫面 | `AttachAndReport` | ⬜ | — | — |
 
 ## O. 安裝 / 更新 / 簽章（待填，階段 5）
 
@@ -914,7 +925,7 @@ TEMP 路徑印出完整結果，Documents 路徑印完 `path = …` 就停住。
 | Telegram 的介面語言 | 訊息**寫死繁體中文**（沒走 `Loc.T`） | 八語（`tg.*` 共 49 條） | v2 的八語規則對所有使用者看得到的字都成立 |
 | Telegram 逐分頁推播 | 沒有（只有全域的 `/notify`） | 分頁右鍵「推播到 Telegram」可單獨關掉 | **新增功能**；只留在記憶體、不進 `settings.json`（分頁 id 跨重啟沒有意義，同逐分頁配色） |
 | Telegram 超長訊息 | 直接送（>4096 會被 Telegram 退掉） | 自動切段連送（`split_message`） | 舊版的漏洞，不是刻意行為 |
-| Telegram `/new`、`/ssh`、`/telnet`、`/history` | 有 | **還沒做** | 都是「從手機開一條新連線」，要有 SSH／Telnet 後端才有意義（階段 2）。`/help` 的清單裡先不列 |
+| Telegram `/new`／`/history` 列出來的東西 | `LastHost` 的 SSH／Telnet ＋ `AppSettings.History`（最多 10 筆） | **我的最愛** | v2 沒有 `LastHost`／`History`——TASK-009 就決定用我的最愛取代主機歷史（`docs/MIGRATION.md` 的跳過表）。指令本身、提示文字、`/history` 不吃純數字都照舊版 |
 | SSH 主機金鑰存放 | （舊版沒有，`ssh.exe` 用 `~/.ssh/known_hosts`） | `{app config dir}/known_hosts`，**不碰** `~/.ssh/known_hosts` | 程式不該偷偷寫 OpenSSH 的檔。代價：用 `ssh` 連過的主機這裡仍會問一次 |
 | **沙盒模式** | 沒有 | 自訂連線多一個選項，**預設開啟** | **新增功能**，規格＝`CLAUDE.md`「新增功能」一節。說明見 `docs/AGENT-SANDBOX.md` |
 | 分頁列的沙盒標記 ⬚ | — | 綠色＝有 worktree、灰色＝只有環境變數與 Job Object | 新增；一個字不占空間又看得出來 |
@@ -1013,3 +1024,7 @@ TEMP 路徑印出完整結果，Documents 路徑印完 `path = …` 就停住。
 | **遠端要畫面上的文字只能走 `q…text`，不可以拿位元組流去 ANSI** | 位元組流裡是 claude／codex 逐格重繪的控制序列，去掉 ANSI 得到一團重複的垃圾（同一行十幾個不同寬度的版本）＝選單偵測對不到、手機看到亂碼。舊版 `CLAUDE.md` 明文寫過這條雷，而它的來源正是舊版自己的「UI 執行緒卡住就退回位元組流」備援 → v2 **不做那個備援**，逾時就回一句「畫面尚未就緒」 | TG8、TG10 |
 | **含 token 的 URL 絕不可以進錯誤訊息** | `ureq::Error` 的 `to_string()` 在某些變體會帶上完整 URL，而 Bot API 的 URL 就是 `…/bot<token>/method` → 一次輪詢失敗就把 token 印進 log。`api.rs` 的 `describe()` 只留錯誤型別與 HTTP 狀態，有單元測試守著 | TG17、TG19 |
 | **`std::sync::Mutex` 的 `lock()` 在同一個運算式裡只能出現一次** | Rust 的臨時值活到**整條敘述結束**，所以 `f(g.lock().a, g.lock().b)`、`g.lock().x == 0 && g.lock().y > 0` 都是拿著鎖再去搶同一個鎖＝當場鎖死，而且**編譯器不會警告**。實際案例：`telegram_probe` 的兩行檢查這樣寫 → probe 抓著假 Bot API 的狀態鎖不放 → 每個連線都卡在 `lock()` → 每次 `getUpdates` 都逾時、整段 `--verify` 卡到逾時才收工（看起來像「假伺服器壞了」，其實是呼叫端）。要先把值綁進區域變數，或加只鎖一次的小 getter | TG2、TG16 |
+| **`telegram-open` 事件一定要回 `telegram_opened`** | 遠端的輪詢執行緒停在那裡等分頁 id（`session_create` 需要前端才有的 `Channel`，Rust 生不出來）。不回就等到 8 秒逾時，使用者在手機上看到「開啟失敗」。和 `ssh-hostkey` → `ssh_hostkey_answer`、`macro-dialog` → `macro_answer` 同一類 | TG34 |
+| **`session_create` 加了參數，`bridge.js` 的 `createSession` 也要傳** | Rust 收到 `None` 會安靜地走預設值，**不會報錯**，所以型別與編譯器都抓不到。已經發生兩次：TASK-011 漏 `com`（選了別的埠沒有作用）、TASK-021 漏 `adb`（多台裝置時選好的序號被丟掉、`adb shell` 失敗）。`scripts/test-bridge-args.mjs` 現在會比對兩邊 | AD3、CM1 |
+| **`--verify` 的每一段要各自包 try/catch** | 一段丟例外會讓**後面整批不跑**，而且畫面上看不出來（那幾段的 `[verify]` 行根本不存在），看起來像「跑完了、都沒問題」。TASK-021 在 release exe 上踩到：代理團隊／聊天室／Telegram 三段完全沒跑。現在每段各自包起來、最後印一行「幾段丟例外」 | 全部 |
+| **假伺服器的「等某個呼叫出現」一定要有起點** | 從第 0 筆開始掃會match到**很久以前**的訊息。`telegram_probe` 的 `/new 1` 檢查等含 `/last` 的回覆，結果立刻match到前面 `goto:1` 送的「已進入 …/last 看輸出」→ 分頁還沒建好就回傳（換個順序就會變成**假通過**）。`FakeBot::wait` 現在強制要傳 `from` | TG34 |

@@ -632,7 +632,7 @@ export default {
   'err.nameEmpty': 'The name cannot be empty.',
 
   // ---------------- Telegram 遠端（telegram/*；舊版沒有翻譯，v2 補齊八語）----------------
-  'tg.help': 'AwayTerminal remote commands\n/goto [n]  attach to tab n; without a number it lists the tabs to tap (🟢 idle 🟠 busy)\n/shot  screenshot of the terminal\n(plain text)  sends that line + Enter; on a menu screen reply with the number or tap a button\n/key <name>  send a control key: ctrl-c/ctrl-d/esc/tab/enter/up/down/left/right\n/stop  send Ctrl+C\n/last [n]  the last n lines of output (default 20)\n/more  page further back through the previous output\n/close [n]  really close a tab (no argument = the attached one; /goto shows the numbers)\n/where  which tab am I in\n/follow on|off  send output back automatically once the tab finishes (default on)\n/notify on|off  also notify when other (not attached) tabs finish (default off)\n/plain on|off  ask the AI to answer in plain text, no tables (default off; tables are flattened anyway)\n/exit  leave the tab view (the tab keeps running; 10 minutes idle leaves it silently)',
+  'tg.help': 'AwayTerminal remote commands\n/goto [n]  attach to tab n; without a number it lists the tabs to tap (🟢 idle 🟠 busy)\n/new  open a new connection (one per kind; reply with a number; after SSH opens, reply with the account then the password)\n/ssh [user@]host[:port]  open SSH (no argument uses the first SSH favourite; with user@ it connects directly)\n/telnet [host[:port]]  open Telnet (no argument uses the first Telnet favourite)\n/history [n]  recent connections; with a number it opens that one\n/shot  screenshot of the terminal\n(plain text)  sends that line + Enter; on a menu screen reply with the number or tap a button\n/key <name>  send a control key: ctrl-c/ctrl-d/esc/tab/enter/up/down/left/right\n/stop  send Ctrl+C\n/last [n]  the last n lines of output (default 20)\n/more  page further back through the previous output\n/close [n]  really close a tab (no argument = the attached one; /goto shows the numbers)\n/where  which tab am I in\n/follow on|off  send output back automatically once the tab finishes (default on)\n/notify on|off  also notify when other (not attached) tabs finish (default off)\n/plain on|off  ask the AI to answer in plain text, no tables (default off; tables are flattened anyway)\n/exit  leave the tab view (the tab keeps running; 10 minutes idle leaves it silently)',
   'tg.cmdGoto': 'Attach to a tab / list tabs',
   'tg.cmdLast': 'The last lines of output',
   'tg.cmdMore': 'Page further back',
@@ -694,4 +694,21 @@ export default {
   'settings.tgStopped': 'The remote is not running.',
   'menu.tgNotify': 'Push to Telegram',
   'menu.tgNotifySet': 'Push to Telegram: {0}',
+
+  // TASK-021：/new /ssh /telnet /history
+  'tg.cmdNew': 'Open a new connection (one per kind, reply with a number)',
+  'tg.cmdHistory': 'Recent connections (/history n opens one)',
+  'tg.cmdSsh': 'Open SSH (optionally user@host:port)',
+  'tg.cmdTelnet': 'Open Telnet (optionally host:port)',
+  'tg.connShell': 'PowerShell (Desktop)',
+  'tg.noConns': 'There are no connections available.',
+  'tg.pickConn': 'Pick the connection to open (tap a button or reply with the number):',
+  'tg.recentConns': 'Recent connections (tap a button, or /history <number> to open one):',
+  'tg.noHistory': 'There are no connections recorded yet.',
+  'tg.rangeIs': 'The number must be between 1 and {0}. /goto shows them.',
+  'tg.openFailed': 'Could not open it.',
+  'tg.opened': 'Opened and attached to [{0}]. Just type to send a command, /last to see the output.',
+  'tg.openedSsh': 'Opened and attached to [{0}]. At login as: reply with the account name, then follow the screen for the password.',
+  'tg.sshUsage': 'Usage: /ssh [user@]host[:port] (without arguments the first SSH favourite is used)',
+  'tg.telnetUsage': 'Usage: /telnet host[:port] (without arguments the first Telnet favourite is used)',
 };

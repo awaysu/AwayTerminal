@@ -56,7 +56,18 @@ pub fn run() {
         println!("[AwayTerminal] 啟動參數：{args:?}");
     }
 
-    tauri::Builder::default()
+    let mut builder = tauri::Builder::default();
+    // Tauri updater（階段 5）：**只有設了公鑰才掛**。
+    //
+    // 沒設公鑰時這個功能整個不存在，「關於 → 檢查更新」照 TASK-015 那條路
+    // （`update.rs`，問 awaysu.cc 的 api.php，只告知有新版、不自動下載）。
+    // 掛了 plugin 卻沒有公鑰＝任何人都能餵一包假的更新給使用者，所以寧可不掛。
+    // 產生金鑰的步驟與發佈流程在 `docs/RELEASE.md`；**私鑰絕不進 repo**。
+    if updater_pubkey_configured() {
+        builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
+        println!("[AwayTerminal] updater：已設公鑰，自動更新可用");
+    }
+    builder
         // 單一執行個體（TASK-016 C）：檔案總管右鍵會再啟動一個 exe，
         // 它把 `--open-dir <路徑>` 交給**已經在跑的**那個視窗，然後自己結束
         //（同舊版 `IpcPipe`，只是底層從 Named Pipe 換成 plugin 的 mutex + 訊息）。
@@ -209,6 +220,7 @@ pub fn run() {
             agent::chat_verify_transcript,
             telegram::telegram_state,
             telegram::telegram_apply,
+            telegram::telegram_opened,
             telegram::telegram_tab_notify,
             telegram::telegram_tab_state,
             telegram::probe::telegram_probe,
@@ -339,4 +351,124 @@ fn remember_window_bounds(window: &tauri::Window, store: &SettingsStore) {
             s.window.y = Some(pos.y.round() as i32);
         }
     });
+}
+
+/// `tauri.conf.json` 的 `plugins.updater.pubkey` 有沒有填。
+///
+/// 讀的是**編譯時嵌進來的那份設定**（`include_str!`），不是執行時的檔案——設定檔就在
+/// exe 裡，不會被使用者改掉，也不必等 `app.config()`（這個判斷要在 Builder 建起來之前）。
+fn updater_pubkey_configured() -> bool {
+    let conf = include_str!("../tauri.conf.json");
+    serde_json::from_str::<serde_json::Value>(conf)
+        .ok()
+        .and_then(|v| {
+            v.get("plugins")?
+                .get("updater")?
+                .get("pubkey")?
+                .as_str()
+                .map(|k| !k.trim().is_empty())
+        })
+        .unwrap_or(false)
+}
+
+#[cfg(test)]
+mod version_tests {
+    /// 版本號有三份來源，必須一致。
+    ///
+    /// * `Cargo.toml` 的 `version`（＝`CARGO_PKG_VERSION`，關於頁與更新檢查用）
+    /// * `tauri.conf.json` 的 `version`（安裝檔檔名、MSI ProductVersion、updater 比對用）
+    /// * `package.json` 的 `version`
+    ///
+    /// 漏改一處的後果是安靜的：`npm run tauri build` 照樣過，但安裝檔的版本與程式自己
+    /// 報的版本不一樣 → 更新檢查會一直說有新版（或一直說已是最新）。
+    #[test]
+    fn the_three_version_sources_agree() {
+        let cargo = env!("CARGO_PKG_VERSION");
+
+        let conf = include_str!("../tauri.conf.json");
+        let conf: serde_json::Value = serde_json::from_str(conf).expect("tauri.conf.json 不是合法 JSON");
+        let conf_ver = conf["version"].as_str().expect("tauri.conf.json 沒有 version");
+
+        let pkg = include_str!("../../package.json");
+        let pkg: serde_json::Value = serde_json::from_str(pkg).expect("package.json 不是合法 JSON");
+        let pkg_ver = pkg["version"].as_str().expect("package.json 沒有 version");
+
+        assert_eq!(cargo, conf_ver, "Cargo.toml 與 tauri.conf.json 的版本不一致");
+        assert_eq!(cargo, pkg_ver, "Cargo.toml 與 package.json 的版本不一致");
+    }
+
+    /// 安裝檔要帶的東西不可以被改掉（授權宣告與 conpty 都是執行時真的需要的檔案）。
+    ///
+    /// 角色範本／護欄腳本是 `include_str!` 嵌在 exe 裡，不在這份清單——只有真的要
+    /// 「以檔案形式存在」的才列進 `resources`。
+    #[test]
+    fn the_bundle_still_ships_the_notices_and_conpty() {
+        let conf: serde_json::Value =
+            serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        let res = &conf["bundle"]["resources"];
+        assert!(
+            res.get("../THIRD-PARTY-NOTICES.md").is_some(),
+            "安裝檔沒帶 THIRD-PARTY-NOTICES.md（russh 是 Apache-2.0、serialport 是 MPL-2.0、\
+             TeraTerm 是 BSD-3，散布時必須附授權全文）"
+        );
+        assert!(res.get("resources/conpty/*").is_some(), "安裝檔沒帶 conpty");
+        assert_eq!(
+            conf["bundle"]["licenseFile"].as_str(),
+            Some("../LICENSE"),
+            "安裝檔的授權頁沒有指到 MIT 全文"
+        );
+    }
+
+    /// updater 的設定骨架在、但**公鑰還沒填**（填了就代表要發自動更新了，
+    /// 那時候這條測試要改成檢查格式，並確認 `docs/RELEASE.md` 的流程跑過一次）。
+    #[test]
+    fn the_updater_is_configured_but_disabled_until_a_key_exists() {
+        let conf: serde_json::Value =
+            serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        let up = &conf["plugins"]["updater"];
+        assert!(up.is_object(), "updater 的設定骨架不見了");
+        assert!(
+            up["endpoints"]
+                .as_array()
+                .map(|a| !a.is_empty())
+                .unwrap_or(false),
+            "updater 沒有 endpoint"
+        );
+        assert_eq!(
+            up["pubkey"].as_str(),
+            Some(""),
+            "公鑰被填進 repo 了？金鑰對由使用者自己產生與保管（docs/RELEASE.md），             而且**私鑰絕不進 repo**。真的要發自動更新時請改這條測試。"
+        );
+        assert!(
+            !super::updater_pubkey_configured(),
+            "沒有公鑰的時候不可以掛 updater plugin"
+        );
+    }
+
+    /// 介面有八語，安裝檔的語言清單也要八種（`scripts/test-i18n.mjs` 管介面那一邊）。
+    #[test]
+    fn the_installer_offers_all_eight_languages() {
+        let conf: serde_json::Value =
+            serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        let langs = conf["bundle"]["windows"]["nsis"]["languages"]
+            .as_array()
+            .expect("nsis.languages 不見了");
+        // NSIS 自己的語言檔名稱（不是我們的語言代碼）
+        for want in [
+            "TradChinese",
+            "English",
+            "SimpChinese",
+            "Japanese",
+            "Korean",
+            "Spanish",
+            "German",
+            "French",
+        ] {
+            assert!(
+                langs.iter().any(|l| l.as_str() == Some(want)),
+                "安裝檔少了 {want}"
+            );
+        }
+        assert_eq!(langs.len(), 8);
+    }
 }

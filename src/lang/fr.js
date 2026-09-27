@@ -613,7 +613,7 @@ export default {
   'err.nameEmpty': 'Le nom ne peut pas être vide.',
 
   // ---------------- Telegram 遠端（telegram/*；舊版沒有翻譯，v2 補齊八語）----------------
-  'tg.help': 'Commandes à distance d’AwayTerminal\n/goto [n]  entrer dans l’onglet n ; sans numéro, la liste des onglets s’affiche (🟢 libre 🟠 occupé)\n/shot  capture de l’écran du terminal\n(texte simple)  envoie cette ligne + Entrée ; sur un menu, répondez par le numéro ou touchez un bouton\n/key <nom>  envoyer une touche de contrôle : ctrl-c/ctrl-d/esc/tab/enter/up/down/left/right\n/stop  envoyer Ctrl+C\n/last [n]  les n dernières lignes de sortie (20 par défaut)\n/more  reculer d’une page de plus dans la sortie précédente\n/close [n]  fermer vraiment un onglet (sans argument, celui où vous êtes ; /goto donne les numéros)\n/where  dans quel onglet suis-je\n/follow on|off  renvoyer la sortie automatiquement quand l’onglet a fini (activé par défaut)\n/notify on|off  signaler aussi la fin des autres onglets (désactivé par défaut)\n/plain on|off  demander à l’IA de répondre en texte simple, sans tableau (désactivé ; les tableaux sont aplatis de toute façon)\n/exit  quitter la vue de l’onglet (l’onglet continue ; après 10 minutes sans activité, on en sort en silence)',
+  'tg.help': 'Commandes à distance d’AwayTerminal\n/goto [n]  entrer dans l’onglet n ; sans numéro, la liste des onglets s’affiche (🟢 libre 🟠 occupé)\n/new  ouvrir une nouvelle connexion (une par type ; répondre par un numéro ; après l’ouverture SSH, répondez le compte puis le mot de passe)\n/ssh [user@]hôte[:port]  ouvrir SSH (sans argument, le premier favori SSH ; avec user@, connexion directe)\n/telnet [hôte[:port]]  ouvrir Telnet (sans argument, le premier favori Telnet)\n/history [n]  connexions récentes ; avec un numéro, ouvre celle-là\n/shot  capture de l’écran du terminal\n(texte simple)  envoie cette ligne + Entrée ; sur un menu, répondez par le numéro ou touchez un bouton\n/key <nom>  envoyer une touche de contrôle : ctrl-c/ctrl-d/esc/tab/enter/up/down/left/right\n/stop  envoyer Ctrl+C\n/last [n]  les n dernières lignes de sortie (20 par défaut)\n/more  reculer d’une page de plus dans la sortie précédente\n/close [n]  fermer vraiment un onglet (sans argument, celui où vous êtes ; /goto donne les numéros)\n/where  dans quel onglet suis-je\n/follow on|off  renvoyer la sortie automatiquement quand l’onglet a fini (activé par défaut)\n/notify on|off  signaler aussi la fin des autres onglets (désactivé par défaut)\n/plain on|off  demander à l’IA de répondre en texte simple, sans tableau (désactivé ; les tableaux sont aplatis de toute façon)\n/exit  quitter la vue de l’onglet (l’onglet continue ; après 10 minutes sans activité, on en sort en silence)',
   'tg.cmdGoto': 'Entrer dans un onglet / lister',
   'tg.cmdLast': 'Dernières lignes de sortie',
   'tg.cmdMore': 'Reculer d’une page',
@@ -675,4 +675,21 @@ export default {
   'settings.tgStopped': 'La commande à distance ne fonctionne pas.',
   'menu.tgNotify': 'Envoyer vers Telegram',
   'menu.tgNotifySet': 'Envoyer vers Telegram : {0}',
+
+  // TASK-021：/new /ssh /telnet /history
+  'tg.cmdNew': 'Ouvrir une nouvelle connexion (une par type, répondre par un numéro)',
+  'tg.cmdHistory': 'Connexions récentes (/history n en ouvre une)',
+  'tg.cmdSsh': 'Ouvrir SSH (éventuellement user@hôte:port)',
+  'tg.cmdTelnet': 'Ouvrir Telnet (éventuellement hôte:port)',
+  'tg.connShell': 'PowerShell (Bureau)',
+  'tg.noConns': 'Aucune connexion disponible.',
+  'tg.pickConn': 'Choisissez la connexion à ouvrir (touchez un bouton ou répondez par le numéro) :',
+  'tg.recentConns': 'Connexions récentes (touchez un bouton, ou /history <numéro> pour en ouvrir une) :',
+  'tg.noHistory': 'Aucune connexion enregistrée pour le moment.',
+  'tg.rangeIs': 'Le numéro doit être entre 1 et {0}. /goto les affiche.',
+  'tg.openFailed': 'Impossible d’ouvrir.',
+  'tg.opened': '[{0}] ouvert et actif. Tapez pour envoyer une commande, /last pour la sortie.',
+  'tg.openedSsh': '[{0}] ouvert et actif. À login as:, répondez par le compte, puis le mot de passe selon l’écran.',
+  'tg.sshUsage': 'Utilisation : /ssh [user@]hôte[:port] (sans argument, le premier favori SSH est utilisé)',
+  'tg.telnetUsage': 'Utilisation : /telnet hôte[:port] (sans argument, le premier favori Telnet est utilisé)',
 };
