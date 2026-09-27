@@ -1,0 +1,88 @@
+# 行尾規則。
+#
+# 為什麼需要這個檔案（TASK-024 踩到的）：repo 裡沒有它的時候，`core.autocrlf=true`
+# 只管「簽出時轉成 CRLF」，**不會**把已經是 CRLF 的 blob 正規化成 LF。於是任何用
+# 腳本（python／node）重寫一個 CRLF 檔案的動作都會讓 git 認為**整份都改了**——
+# `docs/REGRESSION-CHECKLIST.md` 曾經顯示 2264 行變動，真正的內容只差 36 行。
+# diff 沒辦法 review 就等於沒有 review。
+#
+# 規則：**repo 裡一律存 LF**，簽出時照平台（Windows 拿到 CRLF）。
+# 這樣腳本寫 LF、編輯器寫 CRLF 都不會產生雜訊，mac／Linux 的編輯器（預設 LF）也一樣。
+#
+# 說明在 docs/DEV-SETUP.md 的「行尾規則」。
+
+# 預設：git 自己判斷是不是文字檔，是的話 repo 存 LF
+* text=auto
+
+# ---------------------------------------------------------------- 明確的文字檔
+# 列出來不是因為 `text=auto` 猜不到，而是讓「這是文字」變成**明示**：
+# 有人加了奇怪的內容導致 git 猜成二進位時，會在這裡看到矛盾而不是靜悄悄地不正規化。
+*.rs      text
+*.toml    text
+*.md      text
+*.js      text
+*.mjs     text
+*.json    text
+*.html    text
+*.css     text
+*.ttl     text
+*.txt     text
+*.yml     text
+*.yaml    text
+LICENSE   text
+
+# ---------------------------------------------------------------- 要固定行尾的
+# `.ps1`：**Windows PowerShell 5.1 的地盤**，照 Windows 的習慣用 CRLF。
+# ⚠️ 這和「含中文的 .ps1 必須有 UTF-8 BOM」是**兩件不同的事**
+#（BOM 是編碼、eol 是行尾），BOM 那條檢查在 `scripts/audit-pitfalls.mjs`，不受影響。
+*.ps1     text eol=crlf
+*.bat     text eol=crlf
+*.cmd     text eol=crlf
+# NSIS 的腳本：makensis 對 CRLF 最沒有意外（安裝檔的建置不能出問題）
+*.nsh     text eol=crlf
+*.nsi     text eol=crlf
+
+# shell 腳本一律 LF——CRLF 會讓 `#!/usr/bin/env bash` 變成 `bash\r`，
+# Linux 直接報 "bad interpreter"。
+*.sh      text eol=lf
+# Linux 的桌面項目檔同理（freedesktop 規格是 LF）
+*.desktop text eol=lf
+
+# ---------------------------------------------------------------- 測試 fixture
+# 這些是**要逐字比對的固定資料**，在每個平台上都必須完全一樣。
+# 用 `eol=lf` 而不是 `-text`：內容本來就是 LF，鎖住它比「完全不管」更明確，
+# 而且之後有人用 Windows 編輯器存檔也不會悄悄變成 CRLF。
+#
+#   claude-screen.txt    真的 claude 畫面，`tidy.rs` 的雜訊規則拿它當 fixture
+#   runtime-context.txt  從舊版 v1.2.8 真的產生出來的執行期脈絡，逐字比對
+src-tauri/resources/telegram/claude-screen.txt      text eol=lf
+src-tauri/resources/multiagent/runtime-context.txt  text eol=lf
+
+# 角色檔範本（代理團隊 5 份 ＋ 聊天室 21 份）：`include_str!` 嵌進 exe，
+# 而且 `roles.rs` 有雜湊檢查（`PREVIOUS_DEFAULTS`）——行尾一變雜湊就變。
+src-tauri/resources/multiagent/**  text eol=lf
+src-tauri/resources/chatroom/**    text eol=lf
+
+# TTL 測試腳本：`ttl_probe` 逐個變數比對結果，固定 LF 最保險
+src-tauri/tests/ttl/*.ttl  text eol=lf
+
+# ---------------------------------------------------------------- 二進位
+# 一定要明列：被當成文字去「正規化」會**直接損壞檔案**。
+*.png     binary
+*.jpg     binary
+*.jpeg    binary
+*.gif     binary
+*.ico     binary
+*.icns    binary
+*.bmp     binary
+*.exe     binary
+*.dll     binary
+*.pdb     binary
+*.msi     binary
+*.zip     binary
+*.7z      binary
+*.ttf     binary
+*.woff    binary
+*.woff2   binary
+# `.ppk` 是 PuTTY 的私鑰格式（文字，但是**測試向量**）：當成二進位＝一個 byte 都不准動
+*.ppk     binary
