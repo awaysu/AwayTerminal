@@ -72,7 +72,7 @@ AwayTerminal（https://github.com/awaysu/AwayTerminal ，C# WPF + WebView2 + xte
 ## 新增功能（舊版沒有，使用者已定案）
 - **沙盒模式**（2026-09-26 定案）：自訂連線（Claude Code、Codex、Gemini CLI、OpenCode…）與代理團隊的設定各多一個「沙盒」選項，**預設開啟**；分頁右鍵選單可對該分頁關掉（改變在下次啟動該分頁時生效，需提示）。目的：AI agent 測試時不影響使用者正在用的電腦。分三層，前兩層做進程式，第三層先寫文件：
   1. **工作區隔離**：專案是 git repo 就自動為該分頁開 `git worktree`（`.ai/sandbox/<tab>/`），並把 `TEMP`／`CARGO_TARGET_DIR` 等可隔離的環境變數導到沙盒目錄。**不隔離 `HOME`／`APPDATA`／`USERPROFILE`**——那會讓 Claude Code、Codex 掉登入。
-  2. **行程與指令護欄**：整棵 agent 行程樹放進 Windows Job Object（kill-on-close，分頁關掉就收乾淨；mac/Linux 用 process group）；啟動時自動在沙盒工作區產生各工具的護欄設定——Claude Code `.claude/settings.local.json` 的 `PreToolUse` hook 拒絕 `taskkill /IM`、`Stop-Process -Name`、砍 repo 外路徑、`git push --force` 等；Codex 用 `--sandbox workspace-write`；Gemini CLI 用 `--sandbox`。
+  2. **行程與指令護欄**：每個分頁一個 Windows Job Object（kill-on-close，關一格收一格、整組關掉全收；代理團隊也是每格一個，2026-09-27 TASK-017 定案；mac/Linux 用 process group）；啟動時自動在沙盒工作區產生各工具的護欄設定——Claude Code `.claude/settings.local.json` 的 `PreToolUse` hook 拒絕 `taskkill /IM`、`Stop-Process -Name`、砍 repo 外路徑、`git push --force` 等；Codex 用 `--sandbox workspace-write`；Gemini CLI 用 `--sandbox`。
   3. **桌面隔離**（Windows Sandbox／Hyper-V VM／WSL2）：唯一真正保護桌面（焦點、視窗、行程）的做法，先寫成 `docs/AGENT-SANDBOX.md` 的選項，階段 4 再評估做成「在 VM 中開團隊」。
   - 前兩層是防呆不是防壞：agent 與使用者同一個 Windows 登入工作階段，繞路仍碰得到桌面；文件要明講。
 - **介面語言八種**（2026-09-27 定案，取代舊版的中／英）：繁體中文（主）、English、简体中文（術語照大陸慣用）、日本語、한국어、Español、Deutsch、Français。缺字串退回 en 再退回 zh-TW；首次啟動依系統語言，對不到用 en；日期／log 時間戳格式不隨語言變。每個任務新增的字串都要補齊八語（`scripts/test-i18n.mjs`）。
