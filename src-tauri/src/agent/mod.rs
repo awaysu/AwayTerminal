@@ -23,6 +23,7 @@
 
 pub mod adapters;
 pub mod bus;
+pub mod chat;
 pub mod deliver;
 pub mod message;
 pub mod roles;
@@ -113,6 +114,16 @@ pub struct TeamSetup {
     /// **沙盒模式**（新增；預設開，`CLAUDE.md`「新增功能」一節）。
     #[serde(default = "default_sandbox")]
     pub sandbox: bool,
+    /// 這一組是代理團隊還是 AI 聊天室（省略＝代理團隊）。
+    #[serde(default)]
+    pub kind: team::GroupKind,
+    /// 聊天室的討論回合（只有 `kind = "chat"` 看它）。
+    #[serde(default = "default_rounds")]
+    pub rounds: u32,
+}
+
+fn default_rounds() -> u32 {
+    team::DEFAULT_ROUNDS
 }
 
 fn default_max() -> u32 {
@@ -173,6 +184,16 @@ pub struct TeamView {
     pub sandbox: bool,
     /// 最後點過的那一格（分頁列點這一列時回到它）。
     pub last_focused: Option<u32>,
+    /// 這一組是代理團隊還是 AI 聊天室。
+    pub kind: team::GroupKind,
+    // ---- 只有聊天室看得到的欄位 ----
+    pub rounds: u32,
+    pub round: u32,
+    pub phase: team::ChatPhase,
+    pub topic: String,
+    pub chat_folder: String,
+    /// 分頁列那一列的狀態文字（等主題／討論中第 n/N 回合／寫結論／已結束）。
+    pub chat_status: String,
     pub agents: Vec<AgentView>,
 }
 
@@ -205,6 +226,17 @@ fn view_of(t: &Team) -> TeamView {
         pending: t.pending_count() as u32,
         sandbox: t.sandbox_cfg.is_some(),
         last_focused: t.last_focused.filter(|id| t.slot_by_tab(*id).is_some()),
+        kind: t.kind,
+        rounds: t.rounds,
+        round: t.round,
+        phase: t.phase,
+        topic: t.topic.clone(),
+        chat_folder: t.chat_folder.clone(),
+        chat_status: if t.is_chat() {
+            chat::status_text(t)
+        } else {
+            String::new()
+        },
         agents: t
             .slots
             .iter()
@@ -309,10 +341,18 @@ fn link(app: &AppHandle, teams: &Arc<TeamManager>, key: &str) {
         );
         (msgs, g)
     };
+    let renamed = !msgs.is_empty();
     for m in msgs {
         crate::host::emit_host(app, m);
     }
     crate::host::emit_host(app, g);
+    // 標題變了要讓**分頁列**也重畫：`t{id}` 只更新 terminal.js 的 pane 標題，
+    // 我們的分頁列讀的是 `tab-state` event（改名之後沒送＝那一列還是舊名字，--verify 抓到）
+    if renamed {
+        if let Some(tabs) = app.try_state::<Arc<TabManager>>() {
+            crate::tabs::emit_state(app, &tabs);
+        }
+    }
     // 重排後 pane 的狀態標籤要重送
     {
         let mut list = teams.lock();
@@ -457,6 +497,14 @@ pub fn slot_started(
 
 // ---------------------------------------------------------------- command
 
+/// 這一組用哪一套角色庫（代理團隊／AI 聊天室）。
+fn library_for(kind: team::GroupKind) -> &'static roles::Library {
+    match kind {
+        team::GroupKind::Chat => &roles::CHAT,
+        team::GroupKind::Team => &roles::TEAM,
+    }
+}
+
 /// 設定視窗要的清單：有裝哪幾家 CLI、有哪些角色。
 #[derive(Clone, Debug, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -469,6 +517,11 @@ pub struct SetupOptions {
     pub idle_choices: Vec<u32>,
     pub default_max_messages: u32,
     pub default_idle_check: u32,
+    /// 聊天室的討論回合選項與預設值。
+    pub round_choices: Vec<u32>,
+    pub default_rounds: u32,
+    /// 聊天室第 1 位固定的角色（設定視窗要把那一格的角色下拉停用）。
+    pub host_role: String,
     /// 已經開了幾組（9 組滿了前端要擋）。
     pub open_teams: u32,
 }
@@ -485,9 +538,12 @@ pub struct BackendOption {
 
 #[tauri::command]
 pub fn agent_setup_options(
+    kind: Option<team::GroupKind>,
     settings: State<'_, Arc<SettingsStore>>,
     teams: State<'_, Arc<TeamManager>>,
 ) -> SetupOptions {
+    let kind = kind.unwrap_or_default();
+    let lib = library_for(kind);
     let data_dir = roles::data_dir_or_verify(settings.dir());
     let backends = adapters::ALL_KEYS
         .iter()
@@ -504,11 +560,11 @@ pub fn agent_setup_options(
         .collect();
     SetupOptions {
         backends,
-        roles: roles::list_roles(&data_dir),
-        default_roles: roles::DEFAULT_SLOT_ROLES
-            .iter()
-            .map(|s| s.to_string())
-            .collect(),
+        roles: roles::list_roles(lib, &data_dir),
+        default_roles: lib.default_slots.iter().map(|s| s.to_string()).collect(),
+        round_choices: team::ROUND_CHOICES.to_vec(),
+        default_rounds: team::DEFAULT_ROUNDS,
+        host_role: roles::CHAT_HOST_ROLE.to_string(),
         limit_choices: team::LIMIT_CHOICES.to_vec(),
         idle_choices: team::IDLE_CHECK_CHOICES.to_vec(),
         default_max_messages: team::DEFAULT_MAX_MESSAGES,
@@ -519,19 +575,27 @@ pub fn agent_setup_options(
 
 /// 「還原角色檔預設」。
 #[tauri::command]
-pub fn agent_roles_restore(settings: State<'_, Arc<SettingsStore>>) -> Vec<roles::RoleInfo> {
+pub fn agent_roles_restore(
+    kind: Option<team::GroupKind>,
+    settings: State<'_, Arc<SettingsStore>>,
+) -> Vec<roles::RoleInfo> {
+    let lib = library_for(kind.unwrap_or_default());
     let dir = roles::data_dir_or_verify(settings.dir());
-    roles::restore_defaults(&dir);
-    println!("[AwayTerminal] 代理團隊：角色檔已還原成預設");
-    roles::list_roles(&dir)
+    roles::restore_defaults(lib, &dir);
+    println!("[AwayTerminal] {}：角色檔已還原成預設", lib.dir_name);
+    roles::list_roles(lib, &dir)
 }
 
 /// 「開啟角色檔資料夾」要開哪裡。
 #[tauri::command]
-pub fn agent_roles_dir(settings: State<'_, Arc<SettingsStore>>) -> String {
+pub fn agent_roles_dir(
+    kind: Option<team::GroupKind>,
+    settings: State<'_, Arc<SettingsStore>>,
+) -> String {
+    let lib = library_for(kind.unwrap_or_default());
     let dir = roles::data_dir_or_verify(settings.dir());
-    roles::ensure_defaults(&dir);
-    roles::roles_dir(&dir).to_string_lossy().to_string()
+    roles::ensure_defaults(lib, &dir);
+    roles::roles_dir(lib, &dir).to_string_lossy().to_string()
 }
 
 /// 「開啟訊息資料夾」要開哪裡（有沙盒就是 worktree 裡那一個）。
@@ -597,11 +661,14 @@ pub fn create_team(
         return Err(crate::i18n::t("ma.tooMany"));
     }
     let data_dir = roles::data_dir_or_verify(settings.dir());
+    let lib = library_for(setup.kind);
     let key = opts
         .key
         .clone()
         .unwrap_or_else(|| format!("{number}-{}", crate::tabs::now_ms()));
     let mut t = Team::new(key.clone(), number, dir);
+    t.kind = setup.kind;
+    t.rounds = setup.rounds.max(1);
     t.max_messages = setup.max_messages;
     t.idle_check_minutes = setup.idle_check_minutes;
     t.sandbox = setup.sandbox;
@@ -610,15 +677,28 @@ pub fn create_team(
     t.title = if !want_title.is_empty() && (opts.title_may_exist || !tabs.title_taken(want_title)) {
         want_title.to_string()
     } else {
-        tabs.dir_tab_name(dir, &crate::i18n::t("ma.title"))
+        tabs.dir_tab_name(
+            dir,
+            &crate::i18n::t(if t.is_chat() { "chat.title" } else { "ma.title" }),
+        )
     };
+    let is_chat = t.is_chat();
     for (i, s) in t.slots.iter_mut().enumerate() {
         let ss = setup.slots.get(i).cloned().unwrap_or_default();
-        // 新開的組格 1 一定啟用（使用者就是要跟它說話）
+        // 新開的組格 1 一定啟用（使用者就是要跟它說話；聊天室＝主持人）
         s.enabled = ss.enabled || i == 0;
         s.backend = ss.backend;
-        s.role = ss.role;
-        s.role_title = roles::title_of(&data_dir, &s.role);
+        // 聊天室的第 1 位固定主持人（舊版設定視窗的角色下拉是停用的）
+        s.role = if is_chat && i == 0 {
+            roles::CHAT_HOST_ROLE.to_string()
+        } else {
+            ss.role
+        };
+        s.role_title = roles::title_of(lib, &data_dir, &s.role);
+    }
+    // 聊天室至少要兩位參加者才討論得起來（舊版 `chat.dlgNeedTwo`）
+    if is_chat && t.slots.iter().filter(|s| s.enabled).count() < 2 {
+        return Err(crate::i18n::t("chat.dlgNeedTwo"));
     }
     for s in t.slots.iter().filter(|s| s.enabled) {
         if adapters::Backend::by_key(&s.backend).is_none() {
@@ -666,15 +746,15 @@ pub fn create_team(
         }
     }
 
-    // 信箱在 agent 真正工作的資料夾裡（有沙盒＝worktree）
+    // `.ai/` 底下同時放信箱與討論紀錄，所以兩種都要加進 .gitignore
     bus::ensure_gitignore(std::path::Path::new(&t.work_dir));
-    roles::clear_session(&data_dir, number);
+    roles::clear_session(lib, &data_dir, number);
     // 名單要完整才組得對（隊友清單是「已啟用」的格）→ 先全部填好再一次組
     for i in 0..t.slots.len() {
         if !t.slots[i].enabled {
             continue;
         }
-        match roles::compose(&data_dir, &t, t.slots[i].index) {
+        match roles::compose(lib, &data_dir, &t, t.slots[i].index) {
             Ok(p) => t.slots[i].role_file = p.to_string_lossy().to_string(),
             Err(e) => {
                 return Err(crate::i18n::tf(
@@ -708,7 +788,8 @@ pub fn create_team(
         sandbox: t.sandbox_cfg.clone(),
     };
     println!(
-        "[AwayTerminal] 代理團隊 {number} 建立：目錄={} 工作區={} agents={}",
+        "[AwayTerminal] {} {number} 建立：目錄={} 工作區={} agents={}",
+        if t.is_chat() { "聊天室" } else { "代理團隊" },
         t.dir,
         t.work_dir,
         plan.slots
@@ -743,7 +824,7 @@ pub fn agent_slot_failed(
     // 隊友名單重組（打字注入的還沒讀、旗標注入的下次重啟會讀到）
     let indices: Vec<u32> = t.slots.iter().filter(|s| s.enabled).map(|s| s.index).collect();
     for i in indices {
-        let _ = roles::compose(&data_dir, t, i);
+        let _ = roles::compose(library_for(t.kind), &data_dir, t, i);
     }
 }
 
@@ -1100,7 +1181,7 @@ pub fn agent_team_apply(
             t.slots[i].enabled = true;
             t.slots[i].backend = want.backend.clone();
             t.slots[i].role = want.role.clone();
-            t.slots[i].role_title = roles::title_of(&data_dir, &want.role);
+            t.slots[i].role_title = roles::title_of(library_for(t.kind), &data_dir, &want.role);
             t.slots[i].queue.clear();
             launch_idx.push(idx);
             changed = true;
@@ -1119,7 +1200,7 @@ pub fn agent_team_apply(
     // 5. 名單可能變了 → 每格的角色檔都重組（新開的格要用新檔啟動）
     let indices: Vec<u32> = t.slots.iter().filter(|s| s.enabled).map(|s| s.index).collect();
     for i in &indices {
-        match roles::compose(&data_dir, t, *i) {
+        match roles::compose(library_for(t.kind), &data_dir, t, *i) {
             Ok(p) => {
                 if let Some(s) = t.slots.iter_mut().find(|s| s.index == *i) {
                     s.role_file = p.to_string_lossy().to_string();
@@ -1320,6 +1401,9 @@ pub fn annotate_saved(teams: &Arc<TeamManager>, entries: &mut [(u32, crate::rest
         entry.agent_max_messages = team.max_messages;
         entry.agent_idle_check = team.idle_check_minutes;
         entry.agent_sandbox = team.sandbox_cfg.is_some();
+        entry.agent_kind = team.kind;
+        entry.agent_rounds = team.rounds;
+        entry.agent_chat_folder = team.chat_folder.clone();
         // `conn_name`（上次跑的是哪一條連線）由 `restorable()` 填好了，恢復時照它查路徑
     }
 }
@@ -1377,6 +1461,12 @@ pub fn agent_team_restore(
         max_messages: first.agent_max_messages,
         idle_check_minutes: first.agent_idle_check,
         sandbox: first.agent_sandbox,
+        kind: first.agent_kind,
+        rounds: if first.agent_rounds > 0 {
+            first.agent_rounds
+        } else {
+            team::DEFAULT_ROUNDS
+        },
     };
     let saved_conns: Vec<(u32, crate::settings::CustomConn, usize)> = saved
         .iter()
@@ -1410,6 +1500,9 @@ pub fn agent_team_restore(
     {
         let mut list = teams.lock();
         if let Some(t) = list.iter_mut().find(|t| t.key == plan.key) {
+            // 聊天室：沿用上次那場的紀錄資料夾指標（右鍵「開啟討論紀錄資料夾」開得到上一場），
+            // 但**進度不回來**——停在「等主題」，下次開始討論會開新的資料夾（舊版行為）
+            t.chat_folder = first.agent_chat_folder.clone();
             for (idx, placeholder, restore_index) in &saved_conns {
                 let _ = restore_index;
                 if let Some(s) = t.slots.iter_mut().find(|s| s.index == *idx) {
@@ -1435,6 +1528,153 @@ pub fn agent_team_restore(
     Ok(plan)
 }
 
+// ---------------------------------------------------------------- AI 聊天室
+
+/// 「開始討論／換主題…」：給主題並開始第 1 回合（舊版 `AskChatTopic` → `StartChatDiscussion`）。
+///
+/// 換主題時如果這個資料夾已經有一場討論，會**開新的討論紀錄資料夾**（舊的發言檔／結論
+/// 不會被當成這一場的），所以角色檔要重組——裡面寫著資料夾路徑。
+#[tauri::command]
+pub fn chat_start(
+    app: AppHandle,
+    key: String,
+    topic: String,
+    settings: State<'_, Arc<SettingsStore>>,
+    teams: State<'_, Arc<TeamManager>>,
+) -> Result<String, String> {
+    let topic = topic.trim().to_string();
+    if topic.is_empty() {
+        return Err(crate::i18n::t("chat.topicEmpty"));
+    }
+    let data_dir = roles::data_dir_or_verify(settings.dir());
+    let header = {
+        let mut list = teams.lock();
+        let t = list
+            .iter_mut()
+            .find(|t| t.key == key && t.is_chat())
+            .ok_or_else(|| crate::i18n::t("ma.openFail"))?;
+        chat::start_discussion(t, &topic);
+        // 角色檔重組（新的資料夾路徑 ＋ 這次的主題都寫在執行期脈絡裡）
+        let indices: Vec<u32> = t.slots.iter().filter(|s| s.enabled).map(|s| s.index).collect();
+        for i in &indices {
+            match roles::compose(&roles::CHAT, &data_dir, t, *i) {
+                Ok(pth) => {
+                    if let Some(sl) = t.slots.iter_mut().find(|s| s.index == *i) {
+                        sl.role_file = pth.to_string_lossy().to_string();
+                    }
+                }
+                Err(e) => println!("[AwayTerminal] 聊天室角色檔組合失敗：{e}"),
+            }
+        }
+        let header = chat::transcript_header(t);
+        chat::write_transcript(t, &header);
+        println!(
+            "[AwayTerminal] 聊天室 CHAT-{}：開始討論，{} 回合，紀錄 {}",
+            t.number, t.rounds, t.chat_folder
+        );
+        t.chat_folder.clone()
+    };
+    let arc = (*teams).clone();
+    post_state(&app, &arc);
+    Ok(header)
+}
+
+/// 「插話…」：把使用者的一段話接進討論紀錄，下一位發言的人就看得到。
+///
+/// 只有**討論中或寫結論中**才能插話（舊版註解：還沒有主題時插話會先建出 `transcript.md`，
+/// 之後「開始討論」看到檔案就換新資料夾＝那句話誰也看不到；結束後插話也沒人會讀）。
+#[tauri::command]
+pub fn chat_say(key: String, text: String, teams: State<'_, Arc<TeamManager>>) -> Result<(), String> {
+    let text = text.trim().to_string();
+    if text.is_empty() {
+        return Ok(());
+    }
+    let list = teams.lock();
+    let t = list
+        .iter()
+        .find(|t| t.key == key && t.is_chat())
+        .ok_or_else(|| crate::i18n::t("ma.openFail"))?;
+    if !matches!(
+        t.phase,
+        team::ChatPhase::Discussing | team::ChatPhase::Concluding
+    ) {
+        return Err(crate::i18n::t("chat.sayNotNow"));
+    }
+    chat::user_said(t, &text);
+    Ok(())
+}
+
+/// 「結束討論」：這一輪結束後就請主持人寫結論（舊版 `ChatEnd_Click`）。
+#[tauri::command]
+pub fn chat_end(app: AppHandle, key: String, teams: State<'_, Arc<TeamManager>>) -> bool {
+    let ok = {
+        let mut list = teams.lock();
+        match list.iter_mut().find(|t| t.key == key && t.is_chat()) {
+            Some(t) if t.phase == team::ChatPhase::Discussing => {
+                t.end_requested = true;
+                let text = crate::i18n::t("chat.trUserEnd");
+                chat::write_transcript(t, &text);
+                println!(
+                    "[AwayTerminal] 聊天室 CHAT-{}：使用者要求在第 {} 回合結束",
+                    t.number, t.round
+                );
+                true
+            }
+            _ => false,
+        }
+    };
+    if ok {
+        let arc = (*teams).clone();
+        post_state(&app, &arc);
+    }
+    ok
+}
+
+/// 「開啟討論紀錄資料夾」要開哪裡。
+#[tauri::command]
+pub fn chat_folder(key: String, teams: State<'_, Arc<TeamManager>>) -> Option<String> {
+    let list = teams.lock();
+    let t = list.iter().find(|t| t.key == key && t.is_chat())?;
+    let dir = chat::chat_dir(t);
+    let _ = std::fs::create_dir_all(&dir);
+    Some(dir.to_string_lossy().to_string())
+}
+
+/// 改這一組的名稱（分頁列那一列的標題）。
+///
+/// 為什麼要專門一個 command：分頁右鍵「更改名稱」改的是**分頁**的標題，而代表列的標題
+/// 每次重綁（`link`）都會被組名蓋回去——所以要改的是 `Team::title`。代理團隊與聊天室共用。
+#[tauri::command]
+pub fn agent_team_rename(
+    app: AppHandle,
+    key: String,
+    title: String,
+    teams: State<'_, Arc<TeamManager>>,
+) -> Result<String, String> {
+    let title = title.trim().to_string();
+    if title.is_empty() {
+        return Err(crate::i18n::t("err.nameEmpty"));
+    }
+    {
+        let mut list = teams.lock();
+        let t = list
+            .iter_mut()
+            .find(|t| t.key == key)
+            .ok_or_else(|| crate::i18n::t("ma.openFail"))?;
+        println!(
+            "[AwayTerminal] {} {}：改名「{}」→「{title}」",
+            if t.is_chat() { "聊天室" } else { "代理團隊" },
+            t.number,
+            t.title
+        );
+        t.title = title.clone();
+    }
+    // 重綁就會把代表列的標題換成新組名（`link` 會送 `t{id}` 與 `g`）
+    let arc = (*teams).clone();
+    link(&app, &arc, &key);
+    Ok(title)
+}
+
 // ---------------------------------------------------------------- --verify
 // i18n-audit:log-only-begin 這一段只在 `--verify` 跑（驗證輸出），使用者不會看到；不進八語表
 
@@ -1445,7 +1685,7 @@ pub fn agent_team_restore(
 /// ⚠️ 這條路**不動使用者的任何東西**：不寫 settings.json、不碰使用者的 `.ai/`、
 /// 不啟動真的 claude／codex。覆寫只活在記憶體裡，[`agent_verify_end`] 會清掉。
 #[tauri::command]
-pub fn agent_verify_begin() -> Result<String, String> {
+pub fn agent_verify_begin(section: Option<String>) -> Result<String, String> {
     let exe = std::env::current_exe()
         .map_err(|e| e.to_string())?
         .with_file_name(if cfg!(windows) { "fake_agent.exe" } else { "fake_agent" });
@@ -1460,13 +1700,24 @@ pub fn agent_verify_begin() -> Result<String, String> {
                 "找不到 fake_agent（先跑 `cargo build --example fake_agent`）".to_string()
             })?
     };
-    let dir = std::env::temp_dir().join(format!("awayterm-verify-team-{}", std::process::id()));
+    // **每一段一個子資料夾**（TASK-018 Issue 2）：本來是照行程 id 取名，所以同一次 `--verify`
+    // 的幾段共用同一個資料夾——前一段結束時刪掉、後一段再建回來。目前的順序安全，但多加一段
+    // 或改成交錯執行就會互相踩。
+    let section = section
+        .as_deref()
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '-'))
+        .unwrap_or("team")
+        .to_string();
+    let dir = std::env::temp_dir()
+        .join(format!("awayterm-verify-team-{}", std::process::id()))
+        .join(&section);
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     adapters::set_verify_exe(Some(exe.to_string_lossy().to_string()));
     // 角色檔也寫在 %TEMP%，不碰使用者真的 multiagent 資料夾
     roles::set_verify_data_dir(Some(dir.join("appdata")));
     println!(
-        "[AwayTerminal] --verify 代理團隊：假 agent={} 專案={}",
+        "[AwayTerminal] --verify {section}：假 agent={} 專案={}",
         exe.display(),
         dir.display()
     );
@@ -1581,23 +1832,94 @@ pub fn agent_verify_state(key: String, teams: State<'_, Arc<TeamManager>>) -> Ve
             .running()
             .map(|s| {
                 let text = std::fs::read_to_string(&s.role_file).unwrap_or_default();
-                let field = |k: &str| {
+                // 代理團隊的角色檔是 `Agent ID:`／`Role:`，聊天室是 `你的代號：`／`你的角色：`
+                //（執行期脈絡兩邊完全不同）→ 兩種都要認得
+                let field = |keys: &[&str]| {
                     text.lines()
-                        .find_map(|l| l.strip_prefix(k).map(|v| v.trim().to_string()))
+                        .find_map(|l| {
+                            keys.iter()
+                                .find_map(|k| l.strip_prefix(*k).map(|v| v.trim().to_string()))
+                        })
                         .unwrap_or_default()
                 };
                 RoleFileInfo {
                     slot_id: s.agent_id(),
-                    agent_id: field("Agent ID:"),
-                    role: field("Role:"),
-                    has_runtime_context: text
-                        .contains("# Runtime Context (generated by AwayTerminal)"),
-                    three_layers: text.contains("# AwayTerminal Multi-Agent Common Rules")
-                        && text.contains("# Runtime Context (generated by AwayTerminal)"),
+                    agent_id: field(&["Agent ID:", "你的代號："]),
+                    role: field(&["Role:", "你的角色："]),
+                    // 兩種角色檔的標題不一樣：代理團隊是英文
+                    //（`# AwayTerminal Multi-Agent Common Rules`／`# Runtime Context (generated…)`），
+                    // 聊天室是中文（`# AwayTerminal AI 聊天室 共同規則`／`# Runtime Context（AwayTerminal 產生）`）
+                    has_runtime_context: text.contains("# Runtime Context"),
+                    three_layers: (text.contains("# AwayTerminal Multi-Agent Common Rules")
+                        || text.contains("# AwayTerminal AI 聊天室 共同規則"))
+                        && text.contains("# Runtime Context"),
                     bytes: text.len() as u64,
                 }
             })
             .collect(),
+    }
+}
+
+/// `--verify`：討論紀錄的統計（聊天室那一段用）。
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatVerify {
+    pub bytes: u64,
+    /// `## 第 N 回合 · Agent-xx` 有幾則。
+    pub turns: u32,
+    /// 使用者插話幾則。
+    pub user_said: u32,
+    /// 結論幾則。
+    pub conclusions: u32,
+    /// 這場討論資料夾裡的檔名（排序過）。
+    pub files: Vec<String>,
+}
+
+#[tauri::command]
+pub fn chat_verify_transcript(key: String, teams: State<'_, Arc<TeamManager>>) -> ChatVerify {
+    let list = teams.lock();
+    let Some(t) = list.iter().find(|t| t.key == key) else {
+        return ChatVerify {
+            bytes: 0,
+            turns: 0,
+            user_said: 0,
+            conclusions: 0,
+            files: Vec::new(),
+        };
+    };
+    let text = std::fs::read_to_string(chat::chat_path(t, "transcript.md")).unwrap_or_default();
+    // 標題行的樣子隨語言，所以數的是「## 」開頭那幾種前綴
+    let turn_head = crate::i18n::tf("chat.trTurn", &["", "", ""]);
+    let turn_key = turn_head.split_whitespace().next().unwrap_or("").to_string();
+    let user_key = crate::i18n::t("chat.trUserSaid");
+    let concl_key = crate::i18n::t("chat.trConclusion");
+    let mut turns = 0;
+    let mut user_said = 0;
+    let mut conclusions = 0;
+    for line in text.lines().filter(|l| l.starts_with("## ")) {
+        let h = &line[3..];
+        if !concl_key.is_empty() && h.starts_with(&concl_key) {
+            conclusions += 1;
+        } else if !user_key.is_empty() && h.starts_with(&user_key) {
+            user_said += 1;
+        } else if turn_key.is_empty() || h.starts_with(&turn_key) {
+            turns += 1;
+        }
+    }
+    let mut files: Vec<String> = std::fs::read_dir(chat::chat_dir(t))
+        .map(|rd| {
+            rd.flatten()
+                .map(|e| e.file_name().to_string_lossy().to_string())
+                .collect()
+        })
+        .unwrap_or_default();
+    files.sort();
+    ChatVerify {
+        bytes: text.len() as u64,
+        turns,
+        user_said,
+        conclusions,
+        files,
     }
 }
 
@@ -1608,10 +1930,16 @@ pub fn agent_verify_end(dir: String) -> String {
     roles::set_verify_data_dir(None);
     let p = std::path::PathBuf::from(&dir);
     // 只刪自己在 %TEMP% 底下建的那一個（名字要對得上，免得刪錯東西）
-    let name_ok = p
-        .file_name()
-        .map(|n| n.to_string_lossy().starts_with("awayterm-verify-team-"))
-        .unwrap_or(false);
+    // 路徑長相：`%TEMP%wayterm-verify-team-<pid>\<段名>`（每一段一個子資料夾）；
+    // 也接受沒有子資料夾的舊寫法。
+    let name_ok = {
+        let is_root = |q: &std::path::Path| {
+            q.file_name()
+                .map(|n| n.to_string_lossy().starts_with("awayterm-verify-team-"))
+                .unwrap_or(false)
+        };
+        is_root(&p) || p.parent().map(is_root).unwrap_or(false)
+    };
     if !name_ok || !p.starts_with(std::env::temp_dir()) {
         return format!("拒絕刪除（不是 %TEMP% 底下的驗證資料夾）：{dir}");
     }

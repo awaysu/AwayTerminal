@@ -45,10 +45,13 @@
 
 | 訊息 | 誰送 | 什麼時候 |
 |---|---|---|
-| `g{下方id}US{比例}US{上列id,…}US{標籤\|…}US{顏色,…}` | `agent::link()` | 建團隊、某一格關掉後重排、`agent_team_ready` |
+| `g{下方id}US{比例}US{上列id,…}US{標籤\|…}US{顏色,…}` | `agent::link()` | 建團隊／建聊天室、某一格關掉後重排、`agent_team_ready`、改名 |
 | `E{id}US{0..4}` | `agent::post_state()` | 每 600ms 的 tick（**只在標籤變了才送**，同舊版 `PostedState`） |
 | `u{id}` | `agent::disband()` | 解散團隊時**還有分頁活著**（關閉流程中間出錯）→ 把外框拆掉、各格變回一般分頁。舊版 JS 有 `ungroupAll()` 但 C# 端沒有呼叫者（同 `A` 的情況） |
 | `G{下方id}US{比例}` | `terminal.js` 的分隔線拖曳 | → `bridge.js` → `agent_ratio` command |
+
+TASK-019 的 AI 聊天室**沒有用到新的協定**：它和代理團隊共用同一套 pane 排版
+（`g`／`u`／`E`／`G`），只是 group 的 kind 不同。31/31 不變。
 
 **未接的 JS→host 訊息不會靜靜消失**：`bridge.js` 一律轉給 Rust 的 `host_message`
 指令，後端印 `[AwayTerminal] [host_message 未接] {kind} = {說明}`，

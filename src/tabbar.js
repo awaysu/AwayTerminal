@@ -24,7 +24,12 @@ import { initCompose, openCompose } from './compose.js';
 import { initSettings } from './setdlg.js';
 import { initAbout } from './about.js';
 import { initAdb, openAdb, isAdbConn } from './adb.js';
-import { initAgentDialog, openAgentTeam, openAgentSetup } from './agentdlg.js';
+import {
+  initAgentDialog,
+  openAgentTeam,
+  openAgentSetup,
+  openChatRoom,
+} from './agentdlg.js';
 import { onLangChange } from './i18n.js';
 import { initFavs, addConnFavorite } from './favs.js';
 
@@ -107,6 +112,8 @@ export function toast(text) {
 
 function resetModal() {
   el.modalInput.hidden = true;
+  el.modalArea.hidden = true;
+  el.modalArea.onkeydown = null;
   el.modalList.hidden = true;
   el.modalExtra.hidden = true;
   el.modalCheck1.checked = false;
@@ -167,6 +174,40 @@ function askFromList(title, items, extra) {
 }
 
 /** 文字輸入對話框。回傳 Promise<string|null>（取消＝null）。 */
+/**
+ * 多行輸入（AI 聊天室的主題與插話；舊版 `InputDialog(multiline: true)`）。
+ * 回傳 Promise<string|null>（取消＝null）。Enter 是換行，**Ctrl+Enter 才是確定**。
+ */
+export function askMultiline(title, prompt, initial) {
+  return new Promise((resolve) => {
+    resetModal();
+    el.modalTitle.textContent = title;
+    el.modalPrompt.textContent = prompt;
+    el.modalArea.hidden = false;
+    el.modalArea.value = initial || '';
+    el.modalOk.textContent = T['dlg.ok'];
+    el.modalCancel.textContent = T['dlg.cancel'];
+    el.modal.hidden = false;
+    el.modalArea.focus();
+    const done = (value) => {
+      closeModal();
+      resolve(value);
+    };
+    el.modalForm.onsubmit = (e) => {
+      e.preventDefault();
+      done(el.modalArea.value);
+    };
+    el.modalCancel.onclick = () => done(null);
+    // textarea 裡的 Enter 要換行，所以用 Ctrl+Enter 送出（Esc 取消照舊）
+    el.modalArea.onkeydown = (e) => {
+      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        done(el.modalArea.value);
+      }
+    };
+  });
+}
+
 function askText(title, prompt, initial) {
   return new Promise((resolve) => {
     resetModal();
@@ -368,9 +409,15 @@ function render() {
     // 代理團隊那一列：agent 數量與投遞計數（舊版是 tooltip ＋分頁列小字）
     if (team) {
       const badge = document.createElement('span');
-      badge.className = 'tab-team-badge' + (team.paused ? ' paused' : '');
+      badge.className = 'tab-team-badge' + (team.paused && team.kind !== 'chat' ? ' paused' : '');
       const n = team.agents.filter((a) => a.tab !== null).length;
-      badge.textContent = team.pending > 0 ? `${n}\u2709${team.pending}` : String(n);
+      if (team.kind === 'chat') {
+        // 聊天室：人數 ＋ 第幾回合（等主題時只有人數）
+        badge.textContent =
+          team.phase === 'discussing' ? `${n}\u00b7${team.round}/${team.rounds}` : String(n);
+      } else {
+        badge.textContent = team.pending > 0 ? `${n}\u2709${team.pending}` : String(n);
+      }
       badge.title = teamTip(team);
       row.insertBefore(badge, close);
     }
@@ -546,9 +593,13 @@ function rowOf(id) {
 
 /** 分頁列那一列的 tooltip 要多的幾行（已投遞／暫停／待投遞，舊版 `ma.tip*`）。 */
 function teamTip(t) {
-  const lines = [fmt('ma.tipMessages', t.messageCount, t.maxMessages > 0 ? t.maxMessages : '\u221e')];
-  if (t.paused) lines.push(T['ma.tipPaused']);
-  if (t.pending > 0) lines.push(fmt('ma.tipPending', t.pending));
+  // 聊天室：顯示進行到哪（等主題／第 n/N 回合／寫結論／已結束），不是投遞計數
+  const lines =
+    t.kind === 'chat'
+      ? [t.chatStatus || T['chat.title']]
+      : [fmt('ma.tipMessages', t.messageCount, t.maxMessages > 0 ? t.maxMessages : '\u221e')];
+  if (t.kind !== 'chat' && t.paused) lines.push(T['ma.tipPaused']);
+  if (t.kind !== 'chat' && t.pending > 0) lines.push(fmt('ma.tipPending', t.pending));
   for (const a of t.agents) {
     if (a.tab !== null) lines.push(`${a.agentId} ${a.roleTitle} (${a.backendName})`);
   }
@@ -574,6 +625,65 @@ function renderDeliveryMenu(t) {
   sep.className = 'menu-sep';
   menu.appendChild(sep);
   add('pause', T['ma.menuPauseItem'], t.paused);
+}
+
+// ---- AI 聊天室 ----
+
+async function chatTopic(team) {
+  // 討論中換主題會從第 1 回合重新開始 → 先確認（舊版 `chat.newTopicAsk`）
+  if (
+    (team.phase === 'discussing' || team.phase === 'concluding') &&
+    !(await askYesNo(T['chat.title'], T['chat.newTopicAsk']))
+  ) {
+    return;
+  }
+  const topic = await askMultiline(T['chat.title'], T['chat.topicPrompt'], team.topic || '');
+  if (topic === null || !topic.trim()) return;
+  try {
+    const folder = await invoke('chat_start', { key: team.key, topic });
+    log(`[tabbar] 聊天室 ${team.number}：開始討論，紀錄資料夾 ${folder}`);
+  } catch (e) {
+    await showInfo(T['chat.title'], String(e));
+  }
+}
+
+async function chatSay(team) {
+  const text = await askMultiline(T['chat.title'], T['chat.sayPrompt'], '');
+  if (text === null || !text.trim()) return;
+  try {
+    await invoke('chat_say', { key: team.key, text });
+    toast(T['chat.saidToast']);
+  } catch (e) {
+    await showInfo(T['chat.title'], String(e));
+  }
+}
+
+async function chatEnd(team) {
+  const ok = await invoke('chat_end', { key: team.key }).catch((e) => {
+    log(`[tabbar] 結束討論失敗：${e}`);
+    return false;
+  });
+  if (ok) toast(T['chat.endToast']);
+}
+
+async function chatFolder(team) {
+  try {
+    const dir = await invoke('chat_folder', { key: team.key });
+    if (dir) await invoke('open_dir', { path: dir });
+  } catch (e) {
+    log(`[tabbar] 開啟討論紀錄資料夾失敗：${e}`);
+  }
+}
+
+/** 改組名／聊天室名（代表列的標題每次重綁都會被組名蓋回去，所以要改 `Team::title`）。 */
+async function renameTeam(team) {
+  const name = await askText(T['dlg.renameTitle'], T['dlg.renamePrompt'], team.title);
+  if (name === null || !name.trim()) return;
+  try {
+    await invoke('agent_team_rename', { key: team.key, title: name.trim() });
+  } catch (e) {
+    await showInfo(T['ma.title'], String(e));
+  }
 }
 
 async function stopTeam(key) {
@@ -652,9 +762,21 @@ function installStripEvents() {
     e.preventDefault();
     const tab = state.tabs.find((t) => t.id === id);
     const team = teamOfTab(id);
-    // 代理團隊那幾項只在團隊那一列出現
-    for (const node of el.tabMenu.querySelectorAll('[data-ma]')) node.hidden = !team;
-    if (team) renderDeliveryMenu(team);
+    const isChat = !!team && team.kind === 'chat';
+    // 代理團隊那幾項只在**代理團隊**那一列出現；聊天室那幾項只在聊天室那一列出現
+    for (const node of el.tabMenu.querySelectorAll('[data-ma]')) {
+      node.hidden = !team || isChat;
+    }
+    for (const node of el.tabMenu.querySelectorAll('[data-chat]')) node.hidden = !isChat;
+    if (isChat) {
+      // 「插話」只有討論中／寫結論中才有用；「結束討論」只有討論中才有用（舊版同款）
+      const say = el.tabMenu.querySelector('[data-act="chat-say"]');
+      const end = el.tabMenu.querySelector('[data-act="chat-end"]');
+      const live = team.phase === 'discussing' || team.phase === 'concluding';
+      if (say) say.classList.toggle('disabled', !live);
+      if (end) end.classList.toggle('disabled', team.phase !== 'discussing');
+    }
+    if (team && !isChat) renderDeliveryMenu(team);
     // 沙盒那兩項只對「自訂連線開的分頁」有意義（PowerShell／SSH 分頁沒有連線設定）
     // 代理團隊的沙盒是整組的、在建團隊時決定 → 不給逐分頁切換
     const hasConn = !!(tab && tab.connName) && !team;
@@ -809,6 +931,32 @@ function installMenus() {
     if (item.dataset.act === 'color' || item.dataset.act === 'ma-delivery') return; // 有子選單，點父項不動作
     const team = teamOfTab(id);
     hideMenus();
+    if (item.dataset.act === 'chat-topic') {
+      if (team) chatTopic(team);
+      return;
+    }
+    if (item.dataset.act === 'chat-say') {
+      if (team && !item.classList.contains('disabled')) chatSay(team);
+      else if (team) showInfo(T['chat.title'], T['chat.sayNotNow']);
+      return;
+    }
+    if (item.dataset.act === 'chat-end') {
+      if (team && !item.classList.contains('disabled')) chatEnd(team);
+      return;
+    }
+    if (item.dataset.act === 'chat-folder') {
+      if (team) chatFolder(team);
+      return;
+    }
+    if (item.dataset.act === 'chat-setup') {
+      if (team) openAgentSetup(team.key, createSession);
+      return;
+    }
+    if (item.dataset.act === 'rename' && team) {
+      // 代表列的標題＝組名，要改 `Team::title`（改分頁標題會被重綁蓋回去）
+      renameTeam(team);
+      return;
+    }
     if (item.dataset.act === 'ma-setup') {
       if (team) openAgentSetup(team.key, createSession);
       return;
@@ -1018,6 +1166,10 @@ async function newSession(kind) {
 
     if (kind === 'multiagent') {
       await openAgentTeam(createSession);
+      return;
+    }
+    if (kind === 'chatroom') {
+      await openChatRoom(createSession);
       return;
     }
 
@@ -1246,6 +1398,12 @@ function applyTexts() {
     const dev = el.tabMenu.querySelector('[data-act="ma-delivery"]');
     if (dev && dev.firstChild) dev.firstChild.nodeValue = T['ma.menuDelivery'];
     setText(el.tabMenu, '[data-act="ma-setup"]', T['ma.menuSetup']);
+    setText(el.newMenu, '[data-kind="chatroom"]', T['chat.title'] + '\u2026');
+    setText(el.tabMenu, '[data-act="chat-setup"]', T['chat.menuSetup']);
+    setText(el.tabMenu, '[data-act="chat-topic"]', T['chat.menuTopic']);
+    setText(el.tabMenu, '[data-act="chat-say"]', T['chat.menuSay']);
+    setText(el.tabMenu, '[data-act="chat-end"]', T['chat.menuEnd']);
+    setText(el.tabMenu, '[data-act="chat-folder"]', T['chat.menuOpenFolder']);
     setText(el.tabMenu, '[data-act="ma-stop"]', T['ma.menuStop']);
     setText(el.tabMenu, '[data-act="ma-bus"]', T['ma.menuOpenBus']);
     setText(el.newMenu, '[data-kind="manage"]', T['tb.manageConns']);
@@ -1340,6 +1498,7 @@ export async function initTabBar() {
   el.modalTitle = $('modal-title');
   el.modalPrompt = $('modal-prompt');
   el.modalInput = $('modal-input');
+  el.modalArea = $('modal-area');
   el.modalExtra = $('modal-extra');
   el.modalBrowse = $('modal-browse');
   el.modalCheck1 = $('modal-check1');

@@ -405,6 +405,40 @@ static TABLE: &[(&str, &str, &str)] = &[
     ("ma.deliverInfo",
      "[AwayTerminal] 通知 #{0}：請讀 {1}（AwayTerminal 的系統通知，不需要回信）。",
      "[AwayTerminal] Notice #{0}: read {1} (a system notice from AwayTerminal; no reply needed)."),
+    // ---------------- AI 聊天室（agent/chat.rs；舊版 Loc 的 chat.*，中英文逐字照舊版）----------------
+    ("chat.title",        "AI聊天室", "AI Chat Room"),
+    ("chat.dlgNeedTwo",   "AI 聊天室至少要兩位參加者。", "An AI Chat Room needs at least two participants."),
+    ("chat.sayNotNow",    "討論還沒開始（或已經結束）。先右鍵「開始討論／換主題…」給主題，討論中再插話。",
+                          "The discussion hasn't started (or has already finished). Start a topic first, then add your comment during the discussion."),
+    // 新版才有：主題不能是空的（舊版的輸入框按確定時就擋掉了）
+    ("chat.topicEmpty",   "請先給討論主題。", "Please give a topic first."),
+    // 打進參加者畫面的話（{0}…＝回合數／檔案路徑）
+    ("chat.turnPrompt",
+     "[AwayTerminal] 第 {0}/{1} 回合，輪到你（{2}）發言：請先讀 {3} 看大家說了什麼，再把你的發言寫進 {4}（300 字以內，UTF-8），寫完就好，不用等別人。",
+     "[AwayTerminal] Round {0}/{1}, your turn ({2}): read {3} to see what everyone said, then write your reply into {4} (300 characters max, UTF-8). Just write the file; don't wait for the others."),
+    ("chat.conclusionPrompt",
+     "[AwayTerminal] 討論結束（共 {0} 回合）。請讀 {1}，整理成結論寫進 {2}（600 字以內，UTF-8），並在你的畫面上把結論顯示給使用者看。",
+     "[AwayTerminal] The discussion is over ({0} rounds). Read {1}, write the conclusion into {2} (600 characters max, UTF-8), and also show it on your own screen for the user."),
+    // 討論紀錄 transcript.md 裡的標題行
+    ("chat.trTopic",      "主題：{0}", "Topic: {0}"),
+    ("chat.trRounds",     "討論回合：{0}", "Rounds: {0}"),
+    ("chat.trTurn",       "第 {0} 回合 · {1}（{2}）", "Round {0} · {1} ({2})"),
+    ("chat.trSkipped",    "## 第 {0} 回合 · {1}\n\n（超過 {2} 分鐘沒有回應，跳過）\n",
+                          "## Round {0} · {1}\n\n(No reply after {2} minutes — skipped.)\n"),
+    ("chat.trEnded",      "## 第 {0} 回合 · {1}\n\n（這一格已結束，跳過）\n",
+                          "## Round {0} · {1}\n\n(This participant has exited — skipped.)\n"),
+    ("chat.trHostGone",   "## 結論\n\n（主持人 {0} 已結束，沒有結論）\n",
+                          "## Conclusion\n\n(The host {0} has exited — no conclusion.)\n"),
+    ("chat.trConclusion", "結論", "Conclusion"),
+    ("chat.trUserEnd",    "## 使用者\n\n（要求結束討論）\n", "## User\n\n(Asked to end the discussion.)\n"),
+    ("chat.trUserSaid",   "使用者", "User"),
+    // pane 狀態標籤與分頁 tooltip
+    ("chat.tipNeedTopic", "等你給討論主題（右鍵「開始討論…」）", "Waiting for a topic (right-click \u{2192} Start discussion\u{2026})"),
+    ("chat.tipRound",     "討論中 第 {0}/{1} 回合", "Discussing — round {0}/{1}"),
+    ("chat.tipConcluding", "主持人正在寫結論", "The host is writing the conclusion"),
+    ("chat.tipDone",      "討論已結束（右鍵可開啟討論紀錄資料夾）", "Discussion finished (right-click to open the transcript folder)"),
+    // 改團隊／聊天室名稱
+    ("err.nameEmpty",     "名稱不能是空的。", "The name cannot be empty."),
 ];
 
 /// 測試用：把前端推過來的字串清掉（各測試之間不要互相影響）。

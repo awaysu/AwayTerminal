@@ -16,6 +16,12 @@
 //!
 //! ⚠️ 角色檔與 `common.md` 的**語言不套八語**（TASK-017 A10）：那是給 agent 讀的，
 //! 不是 UI。原樣照舊版。
+//!
+//! ## 兩套角色庫（TASK-019）
+//! 舊版的 `RoleLibrary`（代理團隊）與 `ChatRoleLibrary`（AI 聊天室）是兩個幾乎一樣的類別——
+//! 雜湊自動更新、三層組合、標題取法全部重複一遍。這裡只有**一份實作**，差異放進
+//! [`Library`]：資料夾名、內嵌範本、內建角色順序、預設角色、沒有角色時的標題、
+//! 執行期脈絡產生器。[`TEAM`] 與 [`CHAT`] 兩個常數就是舊版那兩個類別。
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -25,8 +31,55 @@ use sha2::{Digest, Sha256};
 use super::message::BUS_REL_DIR;
 use super::team::{Slot, Team};
 
+/// 一套角色庫（舊版的 `RoleLibrary` ／ `ChatRoleLibrary`）。
+///
+/// 兩套共用同一份實作，差別只有這幾個欄位。
+pub struct Library {
+    /// 資料目錄底下的資料夾名（`multiagent` ／ `chatroom`）。
+    pub dir_name: &'static str,
+    /// 內嵌的範本（第一次用到時複製出去讓使用者改）。
+    pub templates: &'static [(&'static str, &'static str)],
+    /// 下拉選單的固定順序（其餘依檔名排在後面）。
+    pub built_in: &'static [&'static str],
+    /// 設定視窗格 1～4 的預設角色。
+    pub default_slots: &'static [&'static str],
+    /// 以前出過的範本雜湊（`.defaults.json` 不見時的後備判斷）。
+    pub previous: &'static [(&'static str, &'static [&'static str])],
+    /// 沒有選角色時顯示什麼（代理團隊＝`None`；聊天室＝`-`，照舊版）。
+    pub title_none: &'static str,
+    /// 這是聊天室那一套嗎。
+    ///
+    /// ⚠️ **不要用 `std::ptr::eq(lib, &CHAT)` 判斷**：`const` 在 Rust 是**每個使用點各自
+    /// inline 一份**，`&CHAT` 在不同地方可能是不同位址，比對會隨機失敗（實際踩到：
+    /// 聊天室的角色檔被組成代理團隊的執行期脈絡）。所以用一個明確的旗標。
+    pub chat: bool,
+}
+
+/// 代理團隊（舊版 `RoleLibrary`）。
+pub const TEAM: Library = Library {
+    dir_name: "multiagent",
+    templates: TEAM_TEMPLATES,
+    built_in: BUILT_IN_ROLES,
+    default_slots: DEFAULT_SLOT_ROLES,
+    previous: PREVIOUS_DEFAULTS,
+    title_none: "None",
+    chat: false,
+};
+
+/// AI 聊天室（舊版 `ChatRoleLibrary`）。
+pub const CHAT: Library = Library {
+    dir_name: "chatroom",
+    templates: CHAT_TEMPLATES,
+    built_in: CHAT_ROLES,
+    default_slots: CHAT_DEFAULT_SLOT_ROLES,
+    // 聊天室的範本這一版才第一次出現，所以還沒有「以前那一版」
+    previous: &[],
+    title_none: "-",
+    chat: true,
+};
+
 /// 內嵌的範本：(相對路徑, 內容)。路徑一律用 `/`（寫檔時才換成平台分隔符）。
-pub const TEMPLATES: &[(&str, &str)] = &[
+pub const TEAM_TEMPLATES: &[(&str, &str)] = &[
     ("common.md", include_str!("../../resources/multiagent/common.md")),
     (
         "roles/product-manager.md",
@@ -49,6 +102,128 @@ pub const TEMPLATES: &[(&str, &str)] = &[
         include_str!("../../resources/multiagent/roles/qa-engineer.md"),
     ),
 ];
+
+/// 聊天室的 21 個角色（原樣照舊版 `Resources/ChatRoom/`）。
+pub const CHAT_TEMPLATES: &[(&str, &str)] = &[
+    ("common.md", include_str!("../../resources/chatroom/common.md")),
+    (
+        "roles/career-advisor.md",
+        include_str!("../../resources/chatroom/roles/career-advisor.md"),
+    ),
+    (
+        "roles/cloud-engineer.md",
+        include_str!("../../resources/chatroom/roles/cloud-engineer.md"),
+    ),
+    (
+        "roles/creative-designer.md",
+        include_str!("../../resources/chatroom/roles/creative-designer.md"),
+    ),
+    (
+        "roles/devils-advocate.md",
+        include_str!("../../resources/chatroom/roles/devils-advocate.md"),
+    ),
+    (
+        "roles/education-advisor.md",
+        include_str!("../../resources/chatroom/roles/education-advisor.md"),
+    ),
+    (
+        "roles/embedded-engineer.md",
+        include_str!("../../resources/chatroom/roles/embedded-engineer.md"),
+    ),
+    (
+        "roles/hardware-engineer.md",
+        include_str!("../../resources/chatroom/roles/hardware-engineer.md"),
+    ),
+    (
+        "roles/health-advisor.md",
+        include_str!("../../resources/chatroom/roles/health-advisor.md"),
+    ),
+    (
+        "roles/host.md",
+        include_str!("../../resources/chatroom/roles/host.md"),
+    ),
+    (
+        "roles/investment-analyst.md",
+        include_str!("../../resources/chatroom/roles/investment-analyst.md"),
+    ),
+    (
+        "roles/legal-advisor.md",
+        include_str!("../../resources/chatroom/roles/legal-advisor.md"),
+    ),
+    (
+        "roles/marketing-expert.md",
+        include_str!("../../resources/chatroom/roles/marketing-expert.md"),
+    ),
+    (
+        "roles/network-engineer.md",
+        include_str!("../../resources/chatroom/roles/network-engineer.md"),
+    ),
+    (
+        "roles/psychology-advisor.md",
+        include_str!("../../resources/chatroom/roles/psychology-advisor.md"),
+    ),
+    (
+        "roles/relationship-advisor.md",
+        include_str!("../../resources/chatroom/roles/relationship-advisor.md"),
+    ),
+    (
+        "roles/researcher.md",
+        include_str!("../../resources/chatroom/roles/researcher.md"),
+    ),
+    (
+        "roles/rf-engineer.md",
+        include_str!("../../resources/chatroom/roles/rf-engineer.md"),
+    ),
+    (
+        "roles/security-expert.md",
+        include_str!("../../resources/chatroom/roles/security-expert.md"),
+    ),
+    (
+        "roles/software-engineer.md",
+        include_str!("../../resources/chatroom/roles/software-engineer.md"),
+    ),
+    (
+        "roles/travel-planner.md",
+        include_str!("../../resources/chatroom/roles/travel-planner.md"),
+    ),
+    (
+        "roles/wireless-expert.md",
+        include_str!("../../resources/chatroom/roles/wireless-expert.md"),
+    ),
+];
+
+/// 聊天室角色的下拉順序（照舊版 `ChatRoleLibrary.BuiltInRoles`：
+/// 主持人、反方辯論者、情報研究員在前，其餘依使用者給的清單）。
+pub const CHAT_ROLES: &[&str] = &[
+    "host",
+    "devils-advocate",
+    "researcher",
+    "software-engineer",
+    "embedded-engineer",
+    "rf-engineer",
+    "wireless-expert",
+    "hardware-engineer",
+    "network-engineer",
+    "cloud-engineer",
+    "security-expert",
+    "legal-advisor",
+    "investment-analyst",
+    "marketing-expert",
+    "health-advisor",
+    "education-advisor",
+    "career-advisor",
+    "psychology-advisor",
+    "travel-planner",
+    "creative-designer",
+    "relationship-advisor",
+];
+
+/// 聊天室第 1～4 位的預設角色（**第 1 位固定主持人**）。
+pub const CHAT_DEFAULT_SLOT_ROLES: &[&str] =
+    &["host", "devils-advocate", "researcher", "software-engineer"];
+
+/// 聊天室的主持人角色檔名（第 1 位固定它，設定視窗的角色下拉會停用）。
+pub const CHAT_HOST_ROLE: &str = "host";
 
 /// 內建角色在下拉裡的固定順序（其餘使用者自訂的依檔名排在後面）。
 /// 舊版使用者指定 UI/UX Designer 排在 QA Engineer 上面。
@@ -105,22 +280,24 @@ pub fn data_dir_or_verify(settings_dir: PathBuf) -> PathBuf {
         .unwrap_or(settings_dir)
 }
 
-/// `multiagent/` 的根（範本、角色檔、`sessions/`）。
-pub fn root(data_dir: &Path) -> PathBuf {
-    data_dir.join("multiagent")
+/// 這套角色庫的根（範本、角色檔、`sessions/`）。
+pub fn root(lib: &Library, data_dir: &Path) -> PathBuf {
+    data_dir.join(lib.dir_name)
 }
 
-pub fn roles_dir(data_dir: &Path) -> PathBuf {
-    root(data_dir).join("roles")
+pub fn roles_dir(lib: &Library, data_dir: &Path) -> PathBuf {
+    root(lib, data_dir).join("roles")
 }
 
-pub fn common_path(data_dir: &Path) -> PathBuf {
-    root(data_dir).join("common.md")
+pub fn common_path(lib: &Library, data_dir: &Path) -> PathBuf {
+    root(lib, data_dir).join("common.md")
 }
 
 /// 一個組號的成品資料夾（組好的角色檔放這裡）。
-pub fn session_dir(data_dir: &Path, team_number: u32) -> PathBuf {
-    root(data_dir).join("sessions").join(team_number.to_string())
+pub fn session_dir(lib: &Library, data_dir: &Path, team_number: u32) -> PathBuf {
+    root(lib, data_dir)
+        .join("sessions")
+        .join(team_number.to_string())
 }
 
 /// 去 UTF-8 BOM、CRLF→LF 之後的 SHA-256（小寫十六進位）。
@@ -138,8 +315,8 @@ fn normalized_hash(bytes: &[u8]) -> String {
 
 /// 讀 `.defaults.json`；沒有＝空（沒記錄的檔改用 [`PREVIOUS_DEFAULTS`] 判斷）；
 /// 壞掉＝`None`（同樣用 `PREVIOUS_DEFAULTS`，而且不覆寫壞檔）。
-fn load_manifest(data_dir: &Path) -> Option<HashMap<String, String>> {
-    let path = root(data_dir).join(MANIFEST_FILE);
+fn load_manifest(lib: &Library, data_dir: &Path) -> Option<HashMap<String, String>> {
+    let path = root(lib, data_dir).join(MANIFEST_FILE);
     match std::fs::read_to_string(&path) {
         Ok(text) => serde_json::from_str(&text).ok(),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Some(HashMap::new()),
@@ -147,8 +324,8 @@ fn load_manifest(data_dir: &Path) -> Option<HashMap<String, String>> {
     }
 }
 
-fn save_manifest(data_dir: &Path, manifest: &HashMap<String, String>) {
-    let dir = root(data_dir);
+fn save_manifest(lib: &Library, data_dir: &Path, manifest: &HashMap<String, String>) {
+    let dir = root(lib, data_dir);
     let _ = std::fs::create_dir_all(&dir);
     if let Ok(json) = serde_json::to_string_pretty(manifest) {
         if let Err(e) = std::fs::write(dir.join(MANIFEST_FILE), json) {
@@ -158,13 +335,13 @@ fn save_manifest(data_dir: &Path, manifest: &HashMap<String, String>) {
 }
 
 /// 缺檔就從內嵌範本補；使用者沒改過的舊版範本換成新版（改過的不動）。
-pub fn ensure_defaults(data_dir: &Path) {
-    write_defaults(data_dir, false);
+pub fn ensure_defaults(lib: &Library, data_dir: &Path) {
+    write_defaults(lib, data_dir, false);
 }
 
 /// 內建範本全部覆寫回預設（使用者自己新增的角色檔不受影響）。
-pub fn restore_defaults(data_dir: &Path) {
-    write_defaults(data_dir, true);
+pub fn restore_defaults(lib: &Library, data_dir: &Path) {
+    write_defaults(lib, data_dir, true);
 }
 
 /// 舊版 `WriteDefaults`。
@@ -172,11 +349,11 @@ pub fn restore_defaults(data_dir: &Path) {
 /// 為什麼不是「檔案存在就不動」：舊版實錄——加 UI/UX Designer 時改了內嵌的
 /// `product-manager.md`，但使用者資料目錄裡複製出來的舊版（從沒改過）一直沒換，
 /// PM 不知道有設計師。所以要分得出「使用者改過」和「只是舊版」。
-fn write_defaults(data_dir: &Path, overwrite: bool) {
-    let mut manifest = load_manifest(data_dir);
+fn write_defaults(lib: &Library, data_dir: &Path, overwrite: bool) {
+    let mut manifest = load_manifest(lib, data_dir);
     let mut changed = false;
-    for (rel, body) in TEMPLATES {
-        let target = root(data_dir).join(rel.replace('/', std::path::MAIN_SEPARATOR_STR));
+    for (rel, body) in lib.templates {
+        let target = root(lib, data_dir).join(rel.replace('/', std::path::MAIN_SEPARATOR_STR));
         let new_hash = normalized_hash(body.as_bytes());
         let existing = std::fs::read(&target).ok();
         match (&existing, overwrite) {
@@ -187,7 +364,8 @@ fn write_defaults(data_dir: &Path, overwrite: bool) {
                 } else {
                     let untouched = match manifest.as_ref().and_then(|m| m.get(*rel)) {
                         Some(written) => *written == cur,
-                        None => PREVIOUS_DEFAULTS
+                        None => lib
+                            .previous
                             .iter()
                             .find(|(k, _)| k == rel)
                             .is_some_and(|(_, olds)| olds.contains(&cur.as_str())),
@@ -221,7 +399,7 @@ fn write_defaults(data_dir: &Path, overwrite: bool) {
     }
     if changed {
         if let Some(m) = &manifest {
-            save_manifest(data_dir, m);
+            save_manifest(lib, data_dir, m);
         }
     }
 }
@@ -234,9 +412,9 @@ pub struct RoleInfo {
 }
 
 /// `roles/*.md` → (key, 標題)。內建的在前、其餘依檔名。
-pub fn list_roles(data_dir: &Path) -> Vec<RoleInfo> {
-    ensure_defaults(data_dir);
-    let mut keys: Vec<String> = match std::fs::read_dir(roles_dir(data_dir)) {
+pub fn list_roles(lib: &Library, data_dir: &Path) -> Vec<RoleInfo> {
+    ensure_defaults(lib, data_dir);
+    let mut keys: Vec<String> = match std::fs::read_dir(roles_dir(lib, data_dir)) {
         Ok(rd) => rd
             .filter_map(|e| e.ok())
             .map(|e| e.path())
@@ -249,19 +427,14 @@ pub fn list_roles(data_dir: &Path) -> Vec<RoleInfo> {
         }
     };
     keys.sort_by(|a, b| {
-        let rank = |k: &str| {
-            BUILT_IN_ROLES
-                .iter()
-                .position(|b| *b == k)
-                .unwrap_or(100)
-        };
+        let rank = |k: &str| lib.built_in.iter().position(|b| *b == k).unwrap_or(100);
         rank(a)
             .cmp(&rank(b))
             .then_with(|| a.to_lowercase().cmp(&b.to_lowercase()))
     });
     keys.into_iter()
         .map(|k| RoleInfo {
-            title: title_of(data_dir, &k),
+            title: title_of(lib, data_dir, &k),
             key: k,
         })
         .collect()
@@ -269,13 +442,13 @@ pub fn list_roles(data_dir: &Path) -> Vec<RoleInfo> {
 
 /// 角色標題＝角色檔第一個「# 」標題；沒有就把檔名轉成 Title Case
 /// （`software-engineer` → `Software Engineer`）。空 key＝`None`。
-pub fn title_of(data_dir: &Path, key: &str) -> String {
+pub fn title_of(lib: &Library, data_dir: &Path, key: &str) -> String {
     if key.trim().is_empty() {
-        return "None".to_string();
+        return lib.title_none.to_string();
     }
     // 第一次用（範本還沒複製出來）時不能退回檔名轉換——「qa-engineer」會變「Qa Engineer」
-    ensure_defaults(data_dir);
-    let path = roles_dir(data_dir).join(format!("{key}.md"));
+    ensure_defaults(lib, data_dir);
+    let path = roles_dir(lib, data_dir).join(format!("{key}.md"));
     if let Ok(text) = std::fs::read_to_string(&path) {
         for line in text.lines() {
             let t = line.trim();
@@ -287,7 +460,12 @@ pub fn title_of(data_dir: &Path, key: &str) -> String {
             }
         }
     }
-    title_case(key)
+    // 找不到角色檔：代理團隊把檔名轉成 Title Case，聊天室照舊版回檔名本身
+    if lib.chat {
+        key.to_string()
+    } else {
+        title_case(key)
+    }
 }
 
 /// `software-engineer` → `Software Engineer`。
@@ -306,8 +484,8 @@ fn title_case(key: &str) -> String {
 }
 
 /// 開組時清空這個組號的成品資料夾（上次同組號留下的舊檔）。
-pub fn clear_session(data_dir: &Path, team_number: u32) {
-    let dir = session_dir(data_dir, team_number);
+pub fn clear_session(lib: &Library, data_dir: &Path, team_number: u32) {
+    let dir = session_dir(lib, data_dir, team_number);
     if let Ok(rd) = std::fs::read_dir(&dir) {
         for e in rd.filter_map(|e| e.ok()) {
             let _ = std::fs::remove_file(e.path());
@@ -321,8 +499,13 @@ fn read_or_empty(path: &Path) -> String {
 
 /// 組合一個 agent 的角色檔（UTF-8 無 BOM）→ 回傳絕對路徑。
 /// 隊友名單＝組內「已啟用」的格，所以呼叫端要先把名單填好再一次全部組。
-pub fn compose(data_dir: &Path, team: &Team, slot_index: u32) -> std::io::Result<PathBuf> {
-    ensure_defaults(data_dir);
+pub fn compose(
+    lib: &Library,
+    data_dir: &Path,
+    team: &Team,
+    slot_index: u32,
+) -> std::io::Result<PathBuf> {
+    ensure_defaults(lib, data_dir);
     let me = team
         .slots
         .iter()
@@ -330,10 +513,10 @@ pub fn compose(data_dir: &Path, team: &Team, slot_index: u32) -> std::io::Result
         .ok_or_else(|| std::io::Error::other("slot not found"))?;
 
     let mut out = String::new();
-    out.push_str(read_or_empty(&common_path(data_dir)).trim_end());
+    out.push_str(read_or_empty(&common_path(lib, data_dir)).trim_end());
     out.push_str("\n\n");
     if !me.role.trim().is_empty() {
-        let role_text = read_or_empty(&roles_dir(data_dir).join(format!("{}.md", me.role)));
+        let role_text = read_or_empty(&roles_dir(lib, data_dir).join(format!("{}.md", me.role)));
         let role_text = role_text.trim_end();
         if !role_text.is_empty() {
             out.push_str("---\n\n");
@@ -342,9 +525,14 @@ pub fn compose(data_dir: &Path, team: &Team, slot_index: u32) -> std::io::Result
         }
     }
     out.push_str("---\n\n");
-    out.push_str(&runtime_context(team, me));
+    // 第三層：代理團隊與聊天室各有自己的執行期脈絡（內容完全不同）
+    out.push_str(&if lib.chat {
+        super::chat::runtime_context(team, me)
+    } else {
+        runtime_context(team, me)
+    });
 
-    let dir = session_dir(data_dir, team.number);
+    let dir = session_dir(lib, data_dir, team.number);
     std::fs::create_dir_all(&dir)?;
     let path = dir.join(format!("{}.md", me.agent_id()));
     std::fs::write(&path, out)?;
@@ -654,32 +842,32 @@ mod tests {
     #[test]
     fn writes_the_built_in_templates() {
         let dir = temp_dir("ensure");
-        ensure_defaults(&dir);
-        assert!(common_path(&dir).is_file());
+        ensure_defaults(&TEAM, &dir);
+        assert!(common_path(&TEAM, &dir).is_file());
         for r in BUILT_IN_ROLES {
             assert!(
-                roles_dir(&dir).join(format!("{r}.md")).is_file(),
+                roles_dir(&TEAM, &dir).join(format!("{r}.md")).is_file(),
                 "缺 {r}.md"
             );
         }
-        let manifest = load_manifest(&dir).unwrap();
-        assert_eq!(manifest.len(), TEMPLATES.len());
+        let manifest = load_manifest(&TEAM, &dir).unwrap();
+        assert_eq!(manifest.len(), TEAM_TEMPLATES.len());
     }
 
     /// 使用者改過的檔不動；`restore_defaults` 才覆寫回去。
     #[test]
     fn keeps_user_edits_until_restore() {
         let dir = temp_dir("edits");
-        ensure_defaults(&dir);
-        let mine = roles_dir(&dir).join("qa-engineer.md");
+        ensure_defaults(&TEAM, &dir);
+        let mine = roles_dir(&TEAM, &dir).join("qa-engineer.md");
         std::fs::write(&mine, "# My QA\n\n我自己改的\n").unwrap();
-        ensure_defaults(&dir);
+        ensure_defaults(&TEAM, &dir);
         assert!(
             std::fs::read_to_string(&mine).unwrap().contains("我自己改的"),
             "使用者改過的角色檔被蓋掉了"
         );
-        assert_eq!(title_of(&dir, "qa-engineer"), "My QA");
-        restore_defaults(&dir);
+        assert_eq!(title_of(&TEAM, &dir, "qa-engineer"), "My QA");
+        restore_defaults(&TEAM, &dir);
         assert!(!std::fs::read_to_string(&mine).unwrap().contains("我自己改的"));
     }
 
@@ -687,19 +875,19 @@ mod tests {
     #[test]
     fn updates_untouched_old_templates() {
         let dir = temp_dir("stale");
-        ensure_defaults(&dir);
+        ensure_defaults(&TEAM, &dir);
         // 假裝上一版的內容：檔案改掉，同時把記錄也改成「AwayTerminal 寫的就是這一份」
-        let target = roles_dir(&dir).join("qa-engineer.md");
+        let target = roles_dir(&TEAM, &dir).join("qa-engineer.md");
         let old_body = "# QA Engineer\n\n上一版\n";
         std::fs::write(&target, old_body).unwrap();
-        let mut m = load_manifest(&dir).unwrap();
+        let mut m = load_manifest(&TEAM, &dir).unwrap();
         m.insert(
             "roles/qa-engineer.md".to_string(),
             normalized_hash(old_body.as_bytes()),
         );
-        save_manifest(&dir, &m);
+        save_manifest(&TEAM, &dir, &m);
 
-        ensure_defaults(&dir);
+        ensure_defaults(&TEAM, &dir);
         assert!(
             !std::fs::read_to_string(&target).unwrap().contains("上一版"),
             "沒改過的舊版範本應該被換成新版"
@@ -725,21 +913,21 @@ mod tests {
     #[test]
     fn reads_role_titles() {
         let dir = temp_dir("titles");
-        assert_eq!(title_of(&dir, "software-engineer"), "Software Engineer");
-        assert_eq!(title_of(&dir, "qa-engineer"), "QA Engineer");
-        assert_eq!(title_of(&dir, "ui-ux-designer"), "UI/UX Designer");
-        assert_eq!(title_of(&dir, ""), "None");
+        assert_eq!(title_of(&TEAM, &dir, "software-engineer"), "Software Engineer");
+        assert_eq!(title_of(&TEAM, &dir, "qa-engineer"), "QA Engineer");
+        assert_eq!(title_of(&TEAM, &dir, "ui-ux-designer"), "UI/UX Designer");
+        assert_eq!(title_of(&TEAM, &dir, ""), "None");
         // 沒有這個檔＝檔名轉 Title Case
-        assert_eq!(title_of(&dir, "my-own-role"), "My Own Role");
+        assert_eq!(title_of(&TEAM, &dir, "my-own-role"), "My Own Role");
     }
 
     /// 下拉順序：內建五個照舊版順序（設計師在 QA 前），自訂的排後面。
     #[test]
     fn lists_built_in_roles_first() {
         let dir = temp_dir("list");
-        ensure_defaults(&dir);
-        std::fs::write(roles_dir(&dir).join("aaa-custom.md"), "# Custom\n").unwrap();
-        let keys: Vec<String> = list_roles(&dir).into_iter().map(|r| r.key).collect();
+        ensure_defaults(&TEAM, &dir);
+        std::fs::write(roles_dir(&TEAM, &dir).join("aaa-custom.md"), "# Custom\n").unwrap();
+        let keys: Vec<String> = list_roles(&TEAM, &dir).into_iter().map(|r| r.key).collect();
         assert_eq!(
             keys,
             vec![
@@ -758,7 +946,7 @@ mod tests {
     fn composes_three_layers() {
         let dir = temp_dir("compose");
         let team = team_of(3, "C:\\proj");
-        let path = compose(&dir, &team, 2).unwrap();
+        let path = compose(&TEAM, &dir, &team, 2).unwrap();
         assert!(path.ends_with("Agent-32.md"));
         // 範本檔本身是 CRLF（照舊版原樣寫出去，不動它）→ 比對前統一換行
         let text = std::fs::read_to_string(&path).unwrap().replace("\r\n", "\n");
@@ -780,10 +968,10 @@ mod tests {
         for s in t4.slots.iter_mut() {
             s.team_number = 4;
         }
-        compose(&dir, &t3, 1).unwrap();
-        let keep = compose(&dir, &t4, 1).unwrap();
-        clear_session(&dir, 3);
-        assert!(!session_dir(&dir, 3).join("Agent-31.md").exists());
+        compose(&TEAM, &dir, &t3, 1).unwrap();
+        let keep = compose(&TEAM, &dir, &t4, 1).unwrap();
+        clear_session(&TEAM, &dir, 3);
+        assert!(!session_dir(&TEAM, &dir, 3).join("Agent-31.md").exists());
         assert!(keep.is_file(), "別組的成品不能被清掉");
     }
 

@@ -90,6 +90,18 @@ pub struct SavedTab {
     /// 那一組開了沙盒。
     #[serde(default)]
     pub agent_sandbox: bool,
+    /// 代理團隊還是 AI 聊天室（TASK-019）。
+    #[serde(default)]
+    pub agent_kind: crate::agent::team::GroupKind,
+    /// 聊天室：討論回合。
+    #[serde(default)]
+    pub agent_rounds: u32,
+    /// 聊天室：上一場的討論紀錄資料夾（恢復後右鍵「開啟討論紀錄資料夾」開得到上一場）。
+    ///
+    /// **討論進度不回來**——CLI 都是新 session，所以恢復後停在「等主題」；下一次「開始討論」
+    /// 看到裡面已有 `transcript.md` 就會開新的資料夾＝新的一場，舊紀錄原封不動（舊版註解）。
+    #[serde(default)]
+    pub agent_chat_folder: String,
 }
 
 /// scrollback 的暫存目錄（舊版 `%LOCALAPPDATA%\AwayTerminal\restore`）。

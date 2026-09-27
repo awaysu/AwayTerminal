@@ -288,7 +288,8 @@ fn tick(app: &AppHandle) {
     };
     let now = crate::tabs::now_ms();
 
-    // 1. 信箱：有新信就排進收件人的佇列（`poll` 只回穩定超過 1.5 秒的檔）
+    // 1. 信箱：有新信就排進收件人的佇列（`poll` 只回穩定超過 1.5 秒的檔）。
+    //    聊天室沒有 `bus`（它不走信箱，見 `agent/chat.rs`），所以這一圈自動跳過它。
     let keys: Vec<String> = teams.lock().iter().map(|t| t.key.clone()).collect();
     for key in &keys {
         let (bus, new_msgs) = {
@@ -321,6 +322,80 @@ fn tick(app: &AppHandle) {
                     }
                 }
             }
+            // ---- AI 聊天室：不投遞信，改由 AwayTerminal 主持輪流發言 ----
+            //（角色注入那一段照樣要跑：OpenCode／Gemini 的角色是第一次閒置時打進去的）
+            if team.is_chat() {
+                for i in 0..team.slots.len() {
+                    let Some(id) = team.slots[i].tab else { continue };
+                    let Some(sig) = tabs.agent_signals(id) else { continue };
+                    if sessions.get(id).is_none() {
+                        continue;
+                    }
+                    let s = &mut team.slots[i];
+                    // 發言提示那一行的 Enter 被吞＝等 5 分鐘才跳過，補送比較划算（舊版註解）
+                    if !s.delivery_checked {
+                        if let Some(swallowed) =
+                            enter_swallowed(now, s.last_delivered_ms as u64, sig.last_output)
+                        {
+                            s.delivery_checked = true;
+                            if swallowed {
+                                enter_only.push(id);
+                                println!("[AwayTerminal] 聊天室 {}：補送 Enter", s.agent_id());
+                            }
+                        }
+                    }
+                    let is_ready = agent_ready(&Signals {
+                        now_ms: now,
+                        launched_ms: s.launched_ms as u64,
+                        last_output_ms: sig.last_output,
+                        last_input_ms: sig.last_input,
+                        last_submit_ms: sig.last_submit,
+                        last_delivered_ms: s.last_delivered_ms as u64,
+                        via_ps: s.via_ps,
+                    });
+                    if let Some(msg) = s.pending_first_message.clone() {
+                        if is_ready {
+                            s.pending_first_message = None;
+                            s.role_injected = true;
+                            mark_typed(s, now);
+                            s.delivery_checked = true;
+                            let who = s.agent_id();
+                            to_type.push((id, msg, true));
+                            println!("[AwayTerminal] 聊天室 {who}：角色以打字注入");
+                        }
+                    }
+                }
+                // 還有人的角色還沒注入就先不開始輪流（它會把提示打成 CLI 的第一句）
+                let injecting = team
+                    .slots
+                    .iter()
+                    .any(|s| s.tab.is_some() && s.pending_first_message.is_some());
+                if !injecting {
+                    let alive = |id: u32| sessions.get(id).is_some();
+                    let ready = |s: &super::team::Slot| {
+                        let Some(id) = s.tab else { return false };
+                        let Some(sig) = tabs.agent_signals(id) else {
+                            return false;
+                        };
+                        agent_ready(&Signals {
+                            now_ms: now,
+                            launched_ms: s.launched_ms as u64,
+                            last_output_ms: sig.last_output,
+                            last_input_ms: sig.last_input,
+                            last_submit_ms: sig.last_submit,
+                            last_delivered_ms: s.last_delivered_ms as u64,
+                            via_ps: s.via_ps,
+                        })
+                    };
+                    if let super::chat::ChatAction::Type { tab, text } =
+                        super::chat::tick(team, now as u128, &alive, &ready)
+                    {
+                        to_type.push((tab, text, true));
+                    }
+                }
+                continue;
+            }
+
             let (max, count, paused) = (team.max_messages, team.message_count, team.paused);
             let mut delivered_files: Vec<(String, bool)> = Vec::new();
             let mut new_count = count;

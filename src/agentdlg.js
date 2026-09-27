@@ -24,6 +24,8 @@ const el = {};
 let opts = null;
 /** 既有團隊的目前狀態（`agent_team_state()`）；`null`＝正在建新團隊。 */
 let existing = null;
+/** 這次開的是 `team`（代理團隊）還是 `chat`（AI 聊天室）。 */
+let kind = 'team';
 let resolveOpen = null;
 
 function $(id) {
@@ -149,7 +151,9 @@ function refreshSlot(i) {
     ui.enable.disabled = true;
   }
   const on = ui.enable.checked;
-  ui.backend.disabled = ui.role.disabled = !on;
+  ui.backend.disabled = !on;
+  // 聊天室第 1 位的角色固定主持人 → 永遠停用
+  ui.role.disabled = !on || (kind === 'chat' && i === 0);
   ui.box.classList.toggle('off', !on);
 
   ui.foot.hidden = !existing;
@@ -171,13 +175,15 @@ function refreshSlot(i) {
 
 /** 把介面文字重設一次（切語言時會被叫；註冊在 `i18n.js`）。 */
 function applyTexts() {
-  $('madlg-title').textContent = T['ma.title'];
-  $('ma-l-limit').textContent = T['ma.dlgLimit'];
-  $('ma-limit-hint').textContent = T['ma.dlgLimitHint'];
+  const chat = kind === 'chat';
+  $('madlg-title').textContent = T[chat ? 'chat.title' : 'ma.title'];
+  // 聊天室：第一列放「討論回合」，第二列（閒置檢查）整列隱藏——照舊版
+  $('ma-l-limit').textContent = T[chat ? 'chat.dlgRounds' : 'ma.dlgLimit'];
+  $('ma-limit-hint').textContent = T[chat ? 'chat.dlgRoundsHint' : 'ma.dlgLimitHint'];
   $('ma-l-idle').textContent = T['ma.dlgIdleCheck'];
   $('ma-idle-hint').textContent = T['ma.dlgIdleHint'];
   $('ma-l-sandbox').textContent = T['ma.dlgSandbox'];
-  el.hint.textContent = T['ma.dlgHint'];
+  el.hint.textContent = T[chat ? 'chat.dlgHint' : 'ma.dlgHint'];
   el.restoreRoles.textContent = T['ma.dlgRestoreRoles'];
   el.openRoles.textContent = T['ma.dlgOpenRoles'];
   el.ok.textContent = T['ma.dlgOpen'];
@@ -185,11 +191,15 @@ function applyTexts() {
   if (!el.slotUi) return;
   for (let i = 0; i < el.slotUi.length; i++) {
     el.slotUi[i].enableText.textContent = T['ma.dlgEnable'];
-    el.slotUi[i].cliLabel.textContent = T['ma.dlgAgentType'];
-    el.slotUi[i].roleLabel.textContent = T['ma.dlgAgentRole'];
+    el.slotUi[i].cliLabel.textContent = T[chat ? 'chat.dlgAiType' : 'ma.dlgAgentType'];
+    el.slotUi[i].roleLabel.textContent = T[chat ? 'chat.dlgRole' : 'ma.dlgAgentRole'];
   }
   if (opts) {
-    fillSelect(el.limit, opts.limitChoices, limitLabel);
+    if (chat) {
+      fillSelect(el.limit, opts.roundChoices, (n) => fmt('chat.rounds', n));
+    } else {
+      fillSelect(el.limit, opts.limitChoices, limitLabel);
+    }
     fillSelect(el.idle, opts.idleChoices, idleLabel);
     fillRoles();
   }
@@ -213,6 +223,8 @@ export function initAgentDialog() {
   el.dir = $('ma-dir');
   el.limit = $('ma-limit');
   el.idle = $('ma-idle');
+  // 閒置檢查那一列有兩個元素（label ＋ 欄位），聊天室要整列隱藏
+  el.idleRow = Array.from(document.querySelectorAll('#ma-opts [data-row="idle"]'));
   el.sandbox = $('ma-sandbox');
   el.slots = $('ma-slots');
   el.noBackend = $('ma-nobackend');
@@ -278,13 +290,21 @@ function read() {
       return null;
     }
   }
+  if (kind === 'chat' && slots.filter((s) => s.enabled).length < 2) {
+    el.noBackend.hidden = false;
+    el.noBackend.textContent = T['chat.dlgNeedTwo'];
+    return null;
+  }
   return {
     dir: el.dirPath,
     title: '',
     slots,
-    maxMessages: Number(el.limit.value) || 0,
-    idleCheckMinutes: Number(el.idle.value) || 0,
+    // 聊天室的第一個下拉是「討論回合」，不是投遞上限
+    maxMessages: kind === 'chat' ? 30 : Number(el.limit.value) || 0,
+    idleCheckMinutes: kind === 'chat' ? 0 : Number(el.idle.value) || 0,
     sandbox: el.sandbox.checked,
+    kind,
+    rounds: kind === 'chat' ? Number(el.limit.value) || 3 : 3,
   };
 }
 
@@ -292,17 +312,23 @@ function read() {
  * 開對話框，回傳 `TeamSetup`（取消＝null）。
  * `state` 給了＝既有團隊的「代理團隊設定…」（舊版 `MultiAgentDialog(dir, group)`）。
  */
-async function openDialog(dir, state) {
+async function openDialog(dir, state, wantKind) {
+  kind = wantKind || (state && state.kind) || 'team';
   try {
-    opts = await invoke('agent_setup_options');
+    opts = await invoke('agent_setup_options', { kind });
   } catch (e) {
     log(`[agentdlg] 讀取設定選項失敗：${e}`);
     return null;
   }
   existing = state || null;
+  // 聊天室沒有「閒置檢查」那一列（它不投遞信）
+  for (const n of el.idleRow) n.hidden = kind === 'chat';
   el.dirPath = dir;
   el.dir.textContent = dir;
-  el.limit.value = String(existing ? existing.maxMessages : opts.defaultMaxMessages);
+  el.limit.value =
+    kind === 'chat'
+      ? String(existing ? existing.rounds : opts.defaultRounds)
+      : String(existing ? existing.maxMessages : opts.defaultMaxMessages);
   el.idle.value = String(existing ? existing.idleCheckMinutes : opts.defaultIdleCheck);
   // 沙盒是建團隊時決定的（worktree 已經開好），既有團隊不能改 → 顯示目前狀態並停用
   el.sandbox.checked = existing ? existing.sandbox : true;
@@ -354,6 +380,14 @@ async function openDialog(dir, state) {
       // 新開的組：格 1、2 預設啟用（PM ＋ SE 是最小可用團隊），3、4 使用者自己勾
       ui.enable.checked = i < 2;
     }
+    // 聊天室的第 1 位固定主持人（角色下拉停用，同舊版 `chat.hostFixed`）
+    if (kind === 'chat' && i === 0) {
+      ui.role.value = opts.hostRole;
+      ui.role.disabled = true;
+      ui.role.title = T['chat.hostFixed'];
+    } else {
+      ui.role.title = '';
+    }
     refreshSlot(i);
   }
 
@@ -379,7 +413,7 @@ export async function openAgentSetup(key, createSession) {
     return;
   }
   if (!state) return;
-  const setup = await openDialog(state.dir, state);
+  const setup = await openDialog(state.dir, state, state.kind);
   if (!setup) return;
 
   // 會結束執行中 agent 的變更要先確認（舊版 `ma.applyAsk`）
@@ -478,6 +512,66 @@ export async function restoreAgentTeam(indices, createSession) {
 }
 
 /**
+ * 「新分頁 ▾ → AI聊天室…」：選資料夾 → 設定視窗 → 開好之後**問主題**（舊版
+ * `OpenChatRoom` → `AskChatTopic`）。取消主題也沒關係，之後右鍵「開始討論…」再給。
+ */
+export async function openChatRoom(createSession) {
+  const { showInfo, askMultiline } = await import('./tabbar.js');
+  let dir;
+  try {
+    dir = await invoke('pick_work_dir', { title: T['chat.pickDir'] });
+  } catch (e) {
+    log(`[agentdlg] 選資料夾失敗：${e}`);
+    return;
+  }
+  if (!dir) return;
+  const setup = await openDialog(dir, null, 'chat');
+  if (!setup) return;
+
+  let plan;
+  try {
+    plan = await invoke('agent_team_create', { setup });
+  } catch (e) {
+    log(`[agentdlg] 建聊天室失敗：${e}`);
+    await showInfo(T['chat.title'], String(e));
+    return;
+  }
+  log(
+    `[agentdlg] 聊天室 ${plan.number} 計畫：${plan.slots
+      .map((s) => `${s.agentId}/${s.backendName}/${s.roleTitle}`)
+      .join(' ')}（工作區 ${plan.workDir}）`
+  );
+  const failed = [];
+  for (const slot of plan.slots) {
+    try {
+      await createSession({ kind: 'agent', agent: { team: plan.key, index: slot.index } });
+    } catch (e) {
+      log(`[agentdlg] ${slot.agentId} 啟動失敗：${e}`);
+      failed.push(String(e));
+      await invoke('agent_slot_failed', { key: plan.key, index: slot.index }).catch(() => {});
+    }
+  }
+  try {
+    const n = await invoke('agent_team_ready', { key: plan.key });
+    log(`[agentdlg] 聊天室 ${plan.number} 就緒：${n} 位參加者`);
+  } catch (e) {
+    await showInfo(T['chat.title'], String(e));
+    return;
+  }
+  if (failed.length) await showInfo(T['chat.title'], failed.join('\n'));
+
+  // 開好就問主題（舊版 `AskChatTopic`）。按取消也行，之後右鍵「開始討論…」再給。
+  const topic = await askMultiline(T['chat.title'], T['chat.topicPrompt'], '');
+  if (topic === null || !topic.trim()) return;
+  try {
+    const folder = await invoke('chat_start', { key: plan.key, topic });
+    log(`[agentdlg] 聊天室 ${plan.number}：開始討論，紀錄資料夾 ${folder}`);
+  } catch (e) {
+    await showInfo(T['chat.title'], String(e));
+  }
+}
+
+/**
  * 「新分頁 ▾ → 代理團隊…」：先選專案資料夾（同其他「啟動前選擇資料夾」的連線）→ 設定視窗
  * → 建團隊 → 逐格啟動 → 綁組。
  */
@@ -491,7 +585,7 @@ export async function openAgentTeam(createSession) {
     return;
   }
   if (!dir) return; // 取消（同舊版：PickWorkDir 回 null 就不開）
-  const setup = await openDialog(dir, null);
+  const setup = await openDialog(dir, null, 'team');
   if (!setup) return;
 
   let plan;

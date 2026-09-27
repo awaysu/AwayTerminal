@@ -805,7 +805,51 @@ TEMP 路徑印出完整結果，Documents 路徑印完 `path = …` 就停住。
 | MA67 | 恢復：不重投上次的信 | `.delivered` 在工作區裡，重開後不會再投一次 | `.delivered` | PASS（`--verify` 印出筆數） | — | — |
 | MA68 | 👤 恢復後的排版 | `g` 重綁、比例和上次一樣、外框顏色照格號 | 同上 | ⬜ | — | — |
 
-## N. AI 聊天室 / Telegram 遠端（待填，階段 4）
+## CH. AI 聊天室（TASK-019）
+
+行為對照與「為什麼」在 **`docs/CHATROOM.md`**。畫面／分頁／沙盒／停止／恢復和代理團隊共用，
+所以那些條目看 MA 章節；這裡只列聊天室自己的。👤＝要人看畫面的。
+
+| # | 怎麼測 | 預期結果 | 舊版出處 | Win | mac | Linux |
+|---|---|---|---|---|---|---|
+| CH1 | `cargo test agent::chat` | 全過（檔名／輪替／結論時機／`read_finished`／資料夾不撞名／執行期脈絡） | `ChatRoleLibrary`／`ChatRoomTick` | PASS | — | — |
+| CH2 | `cargo run --example chat_probe` | 15/15 PASS，結束時把 `%TEMP%` 的專案刪掉 | — | PASS | — | — |
+| CH3 | `--verify` 的聊天室那一段 | 建聊天室→三格啟動→給主題→2 回合×3 人→插話→結論→改名→關閉，全部 true | — | PASS | — | — |
+| CH4 | 21 個角色 | `chatroom/roles/` 有 21 個，下拉順序＝主持人、反方辯論者、情報研究員、…、感情顧問 | `ChatRoleLibrary.BuiltInRoles` | PASS | — | — |
+| CH5 | 角色標題 | 取角色檔第一個 `# ` 標題（主持人／反方辯論者／情報研究員…）；沒有角色＝`-`（**不是** `None`） | `ChatRoleLibrary.TitleOf` | PASS | — | — |
+| CH6 | 三層角色檔 | `AI 聊天室 共同規則` ＋ `roles/<角色>.md` ＋ `# Runtime Context（AwayTerminal 產生）` | `ChatRoleLibrary.Compose` | PASS | — | — |
+| CH7 | 執行期脈絡是**中文**、和代理團隊完全不同 | 代號／角色／用的 AI／聊天室編號／回合數／參加者／主持人／發言檔路徑／「路徑以那一行為準」 | 同上 | PASS | — | — |
+| CH8 | 「你是主持人」那一段 | **只有第 1 位**有（要寫 `conclusion.md`、使用者只跟他說話） | 同上 | PASS | — | — |
+| CH9 | 主題寫在脈絡最後 | 有主題才有 `## 這次的主題` | 同上 | PASS | — | — |
+| CH10 | 第 1 位固定主持人 | 設定視窗那一格的角色下拉停用、tooltip 是 `chat.hostFixed`；後端也會強制 | `_chat && i == 0` | PASS（後端）／⬜（👤 看畫面） | — | — |
+| CH11 | 少於兩位 | 擋下來並顯示「AI 聊天室至少要兩位參加者。」 | `chat.dlgNeedTwo` | PASS | — | — |
+| CH12 | 討論紀錄資料夾 | `.ai/chat/<yyyyMMdd-HHmm>/`；同一分鐘再開一場補 `-2` | `NewChatFolder` | PASS | — | — |
+| CH13 | 換主題 | 這個資料夾已經有 `transcript.md` → **開新資料夾**，舊的原封不動 | `StartChatDiscussion` | PASS | — | — |
+| CH14 | 討論紀錄開頭 | 標題、主題、回合數、參加者名單 | 同上 | PASS | — | — |
+| CH15 | 輪流順序 | **依格號**，一回合每人各一次；`r{回合}-Agent-xx.md` | `ChatRoomTick` | PASS | — | — |
+| CH16 | 什麼時候打字 | 和代理團隊同一個 `agent_ready`（6 個閘門） | `AgentReady` | PASS | — | — |
+| CH17 | 發言接進紀錄 | `## 第 n 回合 · Agent-xx（角色）` ＋ 內容，順序正確 | `WriteTranscript` | PASS | — | — |
+| CH18 | 舊檔不算 | mtime 早於「我們開口問 −2 秒」的檔**不採用**（上一場留下的） | `ReadFinished` | PASS | — | — |
+| CH19 | 還在寫不算 | mtime 不到 1 秒前的檔不讀（避免讀一半） | 同上 | PASS | — | — |
+| CH20 | 逾時跳過 | 5 分鐘沒回應 → 跳過並在紀錄註明；「連問都問不到」從輪到他就開始算 | `TurnTimeoutMinutes` | PASS（程式碼對照） | — | — |
+| CH21 | 某格已結束 | **不等 5 分鐘**直接跳過並註明 | 同上 | PASS（程式碼對照） | — | — |
+| CH22 | 等發言期間名單變了 | 用 **Agent ID** 找回他，不是索引 | `AskedAgentId` | PASS（程式碼對照） | — | — |
+| CH23 | 使用者插話 | 接進紀錄（`## 使用者`），**下一位看得到**；只有討論中／寫結論中能插 | `ChatSay_Click` | PASS | — | — |
+| CH24 | 結束條件 | 回合數跑完，或「結束討論」（這一輪結束後就去寫結論，不多問一個人） | `AdvanceChatTurn` | PASS | — | — |
+| CH25 | 結論 | 只問主持人；寫 `conclusion.md` → 接進紀錄 → 狀態已結束；逾時 10 分鐘 | `ConcludeChat`／`FinishChat` | PASS | — | — |
+| CH26 | 主持人已結束 | 在紀錄註明「沒有結論」並收場 | `chat.trHostGone` | PASS（程式碼對照） | — | — |
+| CH27 | 沙盒 | **一間聊天室一棵 worktree**，討論紀錄在裡面 | `CLAUDE.md` | PASS | — | — |
+| CH28 | 恢復聊天室分頁 | 同資料夾、同編號、同回合數；**進度不回來**（停在等主題），沿用上次的紀錄資料夾指標 | `RestoreAgentGroup` ＋ 聊天室註解 | PASS（欄位＋程式碼對照） | — | — |
+| CH29 | 改名（團隊與聊天室共用） | 組名換掉、代表列分頁標題跟著換、**重綁不會被蓋回去** | `AgentGroup.Title` | PASS（`--verify`） | — | — |
+| CH30 | 👤 建聊天室視窗 | 第一列是「討論回合」、**沒有**閒置檢查那一列、欄位名是「使用的 AI／角色」 | `MultiAgentDialog(GroupMode.Chat)` | ⬜ | — | — |
+| CH31 | 👤 開好之後問主題 | 多行輸入框（Ctrl+Enter 確定）；按取消也能開，之後右鍵「開始討論…」再給 | `AskChatTopic` | ⬜ | — | — |
+| CH32 | 👤 分頁列那一列 | 小標記顯示「人數·第 n/N 回合」；tooltip 顯示進度 | 新增 | ⬜ | — | — |
+| CH33 | 👤 pane 排版 | 下方全寬＝主持人，上列是其他人；外框顏色照格號 | `applyGroup` | ⬜ | — | — |
+| CH34 | 👤 右鍵選單 | 設定…／開始討論／換主題…／插話…／結束討論／開啟討論紀錄資料夾；插話與結束會依階段變灰 | `chat.menu*` | ⬜ | — | — |
+| CH35 | 👤 **真的** AI 聊天室 | 三個真的 CLI 讀完角色檔後真的輪流發言、互相回應、主持人寫出像樣的結論 | — | ⬜ | — | — |
+| CH36 | 👤 八語 | 切每一種語言，建聊天室視窗、右鍵選單、打進畫面那一行都跟著換 | — | ⬜ | — | — |
+
+## N. Telegram 遠端（待填，階段 4）
 
 ## O. 安裝 / 更新 / 簽章（待填，階段 5）
 
@@ -843,6 +887,9 @@ TEMP 路徑印出完整結果，Documents 路徑印完 `path = …` 就停住。
 | 執行期脈絡的「共用桌面」那句 | 寫死 `one Windows desktop` | 依平台換字 | 跨平台 |
 | `common.md` 的沙盒段 | 沒有（舊版沒有沙盒） | 多一段 `## Sandbox Mode`（只 `git add` 自己的檔、禁止 `-A`／`-a`／`stash`、`index.lock` 重試一次） | 團隊共用一棵 worktree 是新版才有的狀況。**規則檔其餘一字不動**，那一段有註解標明是新版加的 |
 | 既有團隊的沙盒勾選 | （舊版沒有沙盒） | 顯示目前狀態但**不能改** | worktree 是建團隊時開的；中途換掉會讓已經在跑的 agent 的工作目錄和團隊對不上 |
+| 聊天室的主題／插話輸入框 | WPF `InputDialog(multiline: true)`，按「確定」送出 | 頁內 `<textarea>`，**Ctrl+Enter 送出** | 頁內對話框沒有「預設按鈕」的概念，而多行輸入不能把 Enter 當送出 |
+| 兩套角色庫 | `RoleLibrary` 與 `ChatRoleLibrary` 兩個類別，雜湊機制／三層組合／標題取法各寫一遍 | 一份實作 ＋ `roles::Library` 的 `TEAM`／`CHAT` 兩個常數 | 那兩個類別除了資料夾名、範本、角色順序、沒有角色時的標題之外一模一樣 |
+| 聊天室那一列的資訊 | 只有 tooltip | 多一個小標記（人數·第 n/N 回合） | 同代理團隊的作法 |
 | 沙盒的 git 忽略 | — | 寫 `.git/info/exclude`，**不動使用者的 `.gitignore`** | `.gitignore` 是會進 commit 的檔，程式不該改它 |
 | 重連退避「歸零」的觸發點 | **一收到輸出**就歸零（`OnSessionOutput` 第一行） | **shell channel 開成功**才歸零（`OnConnected`） | 舊版的輸出全來自 `ssh.exe`＝一定是遠端的。新版內建 SSH，自己的狀態訊息（「連線到 …」、`login as:`、錯誤訊息）走同一條輸出 callback，照舊版寫會被誤判成「連上了」→ 退避永遠停在 3 秒（`--verify` 抓到）。目的一樣，判斷更精確 |
 | SSH 連線對話框的欄位 | 類型／主機／埠／保持連線／自動重連 | 多了帳號、金鑰檔、Pageant、進階（演算法四組 + 環境變數） | 舊版這些只能靠 `ssh.exe` 命令列參數；內建 SSH 之後沒有命令列可下，只能做進對話框。**密碼欄兩邊都沒有**（當場問、不存檔） |
@@ -913,6 +960,10 @@ TEMP 路徑印出完整結果，Documents 路徑印完 `path = …` 就停住。
 | **投遞只能在收件人閒置時做**，而且「閒置」是 6 個條件同時成立 | 少一條就會把字打進正在工作的 CLI：被當成它自己訊息的一部分、或整段被吃掉。舊版實測抓到的兩個極端：①Codex 的星星閃爍動畫讓畫面永遠不靜止（→ `tui.whimsy=false`）②經 PowerShell 啟動時提示行出來後 node 還在載入（→ 多等一點） | MA19、MA20 |
 | **代理團隊的測試一律用假 agent，而且不碰使用者的資料目錄** | ①啟動真的 claude／codex 會花掉使用者的額度、還會碰到真的登入狀態；②角色檔寫在 `<設定資料夾>/multiagent/sessions/<組號>/`，`--verify` 建團隊時會 `clear_session()`——**使用者此刻正開著同組號的團隊就會被刪掉**（第一次跑 `--verify` 實際寫進了真的資料目錄，之後改成 `%TEMP%` 覆寫）。`agent_verify_begin` 同時覆寫「要跑哪支 exe」與「資料目錄」，`agent_verify_end` 兩個都清掉 | MA2、MA3 |
 | **假 agent 要從角色檔知道自己是誰** | 給它寫死的預設 ID，兩格都會以為自己是 `Agent-11` → 回信寄錯人（`0002-Agent-11-to-Agent-11.md`）。真的 agent 也是從角色檔的 `Agent ID:` 那一行知道的，測試替身要照做（第一次 `--verify` 抓到） | MA3 |
+| **判斷「這是哪一套」不能用 `std::ptr::eq` 比對 `const` 的位址** | Rust 的 `const` 是**每個使用點各自 inline 一份**，`&CHAT` 在不同地方可能是不同位址 → 比對隨機失敗。實際案例：`roles::compose` 用 `ptr::eq(lib, &CHAT)` 決定要組哪一種執行期脈絡，結果聊天室的角色檔被組成代理團隊的英文脈絡（`chat_probe` 抓到）。改成 `Library` 上的明確旗標 `chat: bool` | CH6、CH7 |
+| **兩種角色檔的欄位名不一樣，凡是「讀角色檔」的程式都要認兩種** | 代理團隊是英文（`Agent ID:`／`Role:`／`# Runtime Context (generated by AwayTerminal)`），聊天室是中文（`你的代號：`／`你的角色：`／`# Runtime Context（AwayTerminal 產生）`）。只認一種的後果：①假 agent 三格都以為自己是 `Agent-11`（回信／發言寄錯人）②`--verify` 的角色檔檢查全部空白。`fake_agent.rs` 與 `agent_verify_state` 都已改成兩種都認 | CH3、MA3 |
+| **改了分頁標題要送 `tab-state`，不只是 `t{id}`** | `t{id}` 只更新 `terminal.js` 的 pane 標題；我們的分頁列讀的是 `tab-state` event。改名之後沒送＝那一列還是舊名字（`--verify` 抓到：組名已經是「verify 聊天室」，分頁列還寫著資料夾名） | CH29 |
+| **`--verify` 每一段要有自己的 `%TEMP%` 子資料夾** | 本來照行程 id 取名，所以幾段共用同一個資料夾：前一段結束時刪掉、後一段再建回來。順序一改（或多加一段）就會互相踩。TASK-019 起是 `awayterm-verify-team-<pid>\<段名>` | MA3、CH3 |
 | **`--verify` 一定要走 `npm run verify`（`scripts/dev-verify.mjs`）** | 直接用 `timeout` 包 `npx tauri dev`，逾時只砍最外層，留下 `npx → cli → vite（佔著 1420）` 與 `target\debug\awayterminal.exe → OpenConsole.exe` 一整串孤兒；那個 `awayterminal.exe` 抓著 `target\debug`，**下一次 `cargo build` 就 `os error 32`**（TASK-017 留了一隻，PM 的建置直接跑不動）。包裝收尾時用 `taskkill /PID <pid> /T /F` 依 PID 收整棵樹——**絕不依名稱**，依名稱會把使用者的 AwayTerminal 和正在跑的代理團隊一起砍掉 | MA2、MA3 |
 | **測試的 `%TEMP%` 資料夾要用 Drop 守衛刪，不是在最後一行刪** | assert 失敗時那一行跑不到，資料夾就留著（TASK-017 留下兩個 `awayterm-roles-compose-*`）。`roles.rs` 的測試改用 `struct TempDir` + `impl Drop` | MA1 |
 | **剛關掉的 PTY 還占著資料夾** | 優雅結束鍵 60ms ＋ 收行程的執行緒還在跑 → 馬上刪 `%TEMP%` 會拿到 `os error 32`。要等一下並重試（`agent_verify_end` 重試 10 次 × 400ms） | MA3 |

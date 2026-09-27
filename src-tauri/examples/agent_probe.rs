@@ -183,7 +183,7 @@ fn main() {
     }
     let mut role_files = Vec::new();
     for i in 0..2u32 {
-        let p = roles::compose(&data, &team, i + 1).expect("角色檔組不出來");
+        let p = roles::compose(&roles::TEAM, &data, &team, i + 1).expect("角色檔組不出來");
         role_files.push(p.to_string_lossy().to_string());
     }
     let pm_text = std::fs::read_to_string(&role_files[0]).unwrap_or_default();

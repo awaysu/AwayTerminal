@@ -30,6 +30,40 @@ pub const MAX_SLOTS: usize = 4;
 /// 最多同時開幾組。
 pub const MAX_TEAMS: u32 = 9;
 
+/// 這一組的用途：代理團隊（信箱分工）或 AI 聊天室（輪流討論）。
+/// 舊版 `Models/AgentGroup.cs` 的 `GroupMode`。
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum GroupKind {
+    #[default]
+    Team,
+    Chat,
+}
+
+/// AI 聊天室的進行階段（舊版 `ChatPhase`）。
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ChatPhase {
+    /// 等使用者給主題。
+    #[default]
+    NeedTopic,
+    /// 輪流發言中。
+    Discussing,
+    /// 已請主持人寫結論。
+    Concluding,
+    /// 結論寫完了。
+    Done,
+}
+
+/// 聊天室的預設回合數（舊版 1.2.8 從 5 改成 3，使用者要求）。
+pub const DEFAULT_ROUNDS: u32 = 3;
+/// 設定視窗可選的回合數。
+pub const ROUND_CHOICES: &[u32] = &[3, 5, 8, 10];
+/// 某一位超過這麼多分鐘沒發言就跳過他這一回合（在紀錄註明）。
+pub const TURN_TIMEOUT_MINUTES: u128 = 5;
+/// 討論紀錄資料夾（相對專案資料夾）。
+pub const CHAT_REL_DIR: &str = ".ai/chat";
+
 /// 一格（一個 agent）。
 #[derive(Clone, Debug, Default)]
 pub struct Slot {
@@ -204,6 +238,30 @@ pub struct Team {
     pub suspend_relink: bool,
     /// 這一輪套用設定「剛啟動」的格號（通知 PM 時要排除它們——它們的角色檔是新讀的）。
     pub fresh: Vec<u32>,
+
+    // ---- AI 聊天室（TASK-019；沿用同一個 Team／pane 排版，只是不走信箱投遞，
+    //      改由 AwayTerminal 主持輪流發言，見 `super::chat`）----
+    /// 這一組是代理團隊還是聊天室。
+    pub kind: GroupKind,
+    /// 討論回合（一回合＝每個人各發言一次）。
+    pub rounds: u32,
+    /// 這場討論的資料夾名（例 `20260927-1152`）。
+    pub chat_folder: String,
+    /// 使用者給的主題（還沒給＝空）。
+    pub topic: String,
+    /// 目前第幾回合（1 起）。
+    pub round: u32,
+    /// 這一回合輪到參加者清單裡的第幾位（0 起）。
+    pub speaker: usize,
+    pub phase: ChatPhase,
+    /// 目前這一輪是什麼時候請他發言的（epoch ms；0＝還沒請）。
+    pub turn_asked_ms: u128,
+    /// 目前這一輪請的是哪一位（Agent ID）：等他發言期間名單若變了，靠這個找回他而不是靠索引。
+    pub asked_agent_id: String,
+    /// 這一輪什麼時候輪到他的（還沒開口問就開始算）：一直忙碌問不到也要逾時跳過。
+    pub turn_started_ms: u128,
+    /// 使用者按了「結束討論」：這一輪結束後就去寫結論。
+    pub end_requested: bool,
 }
 
 impl Team {
@@ -230,7 +288,27 @@ impl Team {
             last_focused: None,
             suspend_relink: false,
             fresh: Vec::new(),
+            kind: GroupKind::Team,
+            rounds: DEFAULT_ROUNDS,
+            chat_folder: String::new(),
+            topic: String::new(),
+            round: 1,
+            speaker: 0,
+            phase: ChatPhase::NeedTopic,
+            turn_asked_ms: 0,
+            asked_agent_id: String::new(),
+            turn_started_ms: 0,
+            end_requested: false,
         }
+    }
+
+    pub fn is_chat(&self) -> bool {
+        self.kind == GroupKind::Chat
+    }
+
+    /// 聊天室的主持人（第 1 位）。
+    pub fn host(&self) -> Option<&Slot> {
+        self.running().next()
     }
 
     /// 已啟動（有分頁）的格，依格號排序。

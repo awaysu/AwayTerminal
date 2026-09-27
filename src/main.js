@@ -246,6 +246,7 @@ async function awayVerify() {
   await verifySandbox();
   await verifyAgentTeam();
   await verifyAgentRestore();
+  await verifyChatRoom();
 }
 window.awayVerify = awayVerify;
 
@@ -263,7 +264,7 @@ async function verifyAgentTeam() {
   let dir = null;
   let key = null;
   try {
-    dir = await invoke('agent_verify_begin');
+    dir = await invoke('agent_verify_begin', { section: 'team' });
     lines.push(`[verify] 驗證用專案：${dir}`);
 
     const setup = {
@@ -484,7 +485,7 @@ async function verifyAgentRestore() {
   let key = null;
   const before = await invoke('settings_get');
   try {
-    dir = await invoke('agent_verify_begin');
+    dir = await invoke('agent_verify_begin', { section: 'restore' });
     const setup = {
       dir,
       title: '',
@@ -586,6 +587,139 @@ async function verifyAgentRestore() {
         (before.savedTabs || []).length
       } 筆；關程式時會依當下的分頁重新存）`,
     );
+    if (dir) {
+      await new Promise((r) => setTimeout(r, 800));
+      const msg = await invoke('agent_verify_end', { dir }).catch((e) => String(e));
+      lines.push(`[verify] 收尾：${msg}`);
+    }
+    log(lines.join('\n'));
+  }
+}
+
+
+/**
+ * AI 聊天室驗證（TASK-019 C）：建一間三人聊天室（假 agent）→ 給主題 → 三個人**輪流**
+ * 各說一輪 → 使用者插話 → 回合數跑完 → 主持人寫結論 → 改名 → 關閉。
+ *
+ * ⚠️ 同代理團隊那兩段：假 agent、`%TEMP%`（**這一段自己的子資料夾**）、資料目錄覆寫。
+ */
+async function verifyChatRoom() {
+  const term = window.AwayTerm;
+  const lines = ['[verify] AI 聊天室（假 agent、全程在 %TEMP%）'];
+  let dir = null;
+  let key = null;
+  try {
+    dir = await invoke('agent_verify_begin', { section: 'chat' });
+    lines.push(`[verify] 驗證用專案：${dir}`);
+    const setup = {
+      dir,
+      title: '',
+      slots: [
+        { enabled: true, backend: 'claude-code', role: 'host', restart: false },
+        { enabled: true, backend: 'claude-code', role: 'devils-advocate', restart: false },
+        { enabled: true, backend: 'claude-code', role: 'researcher', restart: false },
+        { enabled: false, backend: '', role: '', restart: false },
+      ],
+      maxMessages: 30,
+      idleCheckMinutes: 0,
+      sandbox: false,
+      kind: 'chat',
+      rounds: 2,
+    };
+    const plan = await invoke('agent_team_create', { setup });
+    key = plan.key;
+    lines.push(
+      `[verify] 建聊天室：編號=CHAT-${plan.number}　參加者=${plan.slots
+        .map((x) => `${x.agentId}/${x.roleTitle}`)
+        .join('　')}`
+    );
+    for (const slot of plan.slots) {
+      await createSession({ kind: 'agent', agent: { team: key, index: slot.index } });
+    }
+    const n = await invoke('agent_team_ready', { key });
+    lines.push(`[verify] 就緒：${n} 位（要 3）`);
+
+    // 角色檔：三層 ＋ 主持人那一段只有第 1 位（讀檔，不看畫面）
+    let st = await invoke('agent_verify_state', { key });
+    for (const r of st.roles) {
+      lines.push(`[verify]   ${r.slotId} 角色檔：代號=${r.agentId}　角色=${r.role}　${r.bytes} bytes`);
+    }
+    const roleOk =
+      st.roles.length === 3 && st.roles.every((r) => r.threeLayers && r.agentId === r.slotId);
+    lines.push(`[verify] 三份角色檔都組好、代號正確：${roleOk}`);
+
+    // ---- 給主題 → 開始討論 ----
+    const folder = await invoke('chat_start', {
+      key,
+      topic: 'verify：要不要自己寫 SSH？請各自表態。',
+    });
+    lines.push(`[verify] 開始討論：紀錄資料夾 ${folder}`);
+    let teams = await invoke('agent_teams');
+    let me = teams.find((t) => t.key === key);
+    lines.push(
+      `[verify] 狀態：${me.phase}　第 ${me.round}/${me.rounds} 回合　「${me.chatStatus}」`
+    );
+
+    // ---- 等它跑完（2 回合 × 3 人 ＋ 結論）----
+    // 第 1 回合第 1 位講完之後插一句話
+    let saidDone = false;
+    const done = await waitUntil(180000, async () => {
+      const list = await invoke('agent_teams');
+      const t = list.find((x) => x.key === key);
+      if (!t) return true;
+      if (!saidDone && (t.round > 1 || t.phase === 'concluding')) {
+        await invoke('chat_say', { key, text: 'verify：補充一句，相容性比效能重要。' }).catch(
+          () => {}
+        );
+        saidDone = true;
+      }
+      return t.phase === 'done';
+    });
+    lines.push(`[verify] 跑到討論結束：${done}`);
+    teams = await invoke('agent_teams');
+    me = teams.find((t) => t.key === key);
+    lines.push(`[verify] 最後狀態：${me.phase}　「${me.chatStatus}」`);
+
+    // ---- 檢查討論紀錄 ----
+    const tr = await invoke('chat_verify_transcript', { key });
+    lines.push(
+      `[verify] transcript.md ${tr.bytes} bytes　發言 ${tr.turns} 則　插話 ${tr.userSaid} 則　結論 ${tr.conclusions} 則`
+    );
+    lines.push(`[verify] 發言檔：${tr.files.join(', ')}`);
+    lines.push(
+      `[verify] 兩回合 × 三人都發言了：${tr.turns === 6}　插話進了紀錄：${tr.userSaid >= 1}　有結論：${tr.conclusions === 1}`
+    );
+
+    // ---- 改名（TASK-019 B 的「改團隊名稱」）----
+    const renamed = await invoke('agent_team_rename', { key, title: 'verify 聊天室' });
+    teams = await invoke('agent_teams');
+    me = teams.find((t) => t.key === key);
+    // `tab-state` 是 event（非同步）→ 等分頁列那一列真的換成新名字
+    const rowOk = await waitUntil(5000, () => {
+      const row = currentTabState().tabs.find((t) => t.id === me.rowTab);
+      return !!row && row.title === renamed;
+    });
+    const rowTitle = (currentTabState().tabs.find((t) => t.id === me.rowTab) || {}).title;
+    lines.push(
+      `[verify] 改名：「${renamed}」　組名=${me.title}　代表列分頁標題=${rowTitle}　一致=${rowOk}`
+    );
+
+    // ---- 關閉 ----
+    const tabs = await invoke('agent_team_tabs', { key });
+    for (const id of tabs.slice().reverse()) await invoke('tab_close', { id });
+    await invoke('agent_team_gone', { key }).catch(() => {});
+    const after = await invoke('agent_verify_state', { key });
+    lines.push(`[verify] 關閉整間後還在嗎：${after.found}（要 false）`);
+    key = null;
+    void term;
+  } catch (e) {
+    lines.push(`[verify] 失敗：${e}`);
+  } finally {
+    if (key) {
+      const tabs = await invoke('agent_team_tabs', { key }).catch(() => []);
+      for (const id of tabs.slice().reverse()) await invoke('tab_close', { id }).catch(() => {});
+      await invoke('agent_team_gone', { key }).catch(() => {});
+    }
     if (dir) {
       await new Promise((r) => setTimeout(r, 800));
       const msg = await invoke('agent_verify_end', { dir }).catch((e) => String(e));

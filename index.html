@@ -94,6 +94,13 @@
     <div class="menu-item" data-act="sandbox">沙盒模式</div>
     <div class="menu-item" data-act="sandbox-clear">清除沙盒…</div>
     <!-- 代理團隊那一列才顯示（舊版分頁右鍵的 ma.* 那幾項） -->
+    <!-- AI 聊天室那一列才顯示（舊版分頁右鍵的 chat.* 那幾項） -->
+    <div class="menu-sep" data-chat="1"></div>
+    <div class="menu-item" data-act="chat-setup" data-chat="1">AI聊天室設定…</div>
+    <div class="menu-item" data-act="chat-topic" data-chat="1">開始討論／換主題…</div>
+    <div class="menu-item" data-act="chat-say" data-chat="1">插話…</div>
+    <div class="menu-item" data-act="chat-end" data-chat="1">結束討論</div>
+    <div class="menu-item" data-act="chat-folder" data-chat="1">開啟討論紀錄資料夾</div>
     <div class="menu-sep" data-ma="1"></div>
     <div class="menu-item" data-act="ma-setup" data-ma="1">代理團隊設定…</div>
     <div class="menu-item has-sub" data-act="ma-delivery" data-ma="1">投遞
@@ -115,6 +122,7 @@
     <div class="menu-item" data-kind="ssh-quick">快速連線（host[:port]）…</div>
     <div class="menu-item" data-kind="com">連接埠…</div>
     <div class="menu-item" data-kind="multiagent">代理團隊…</div>
+    <div class="menu-item" data-kind="chatroom">AI聊天室…</div>
     <div class="menu-sep"></div>
     <div id="new-conns"></div>
     <div class="menu-item" data-kind="custom">自訂指令…</div>
@@ -360,8 +368,8 @@
       <div class="sd-grid" id="ma-opts">
         <label id="ma-l-limit"></label>
         <span class="sd-row"><select id="ma-limit"></select><span id="ma-limit-hint" class="sd-hint"></span></span>
-        <label id="ma-l-idle"></label>
-        <span class="sd-row"><select id="ma-idle"></select><span id="ma-idle-hint" class="sd-hint"></span></span>
+        <label id="ma-l-idle" data-row="idle"></label>
+        <span class="sd-row" data-row="idle"><select id="ma-idle"></select><span id="ma-idle-hint" class="sd-hint"></span></span>
       </div>
       <label class="sd-check"><input id="ma-sandbox" type="checkbox" checked /><span id="ma-l-sandbox"></span></label>
       <div id="ma-slots"></div>
@@ -462,6 +470,9 @@
       <div id="modal-title"></div>
       <div id="modal-prompt"></div>
       <input id="modal-input" type="text" autocomplete="off" spellcheck="false" />
+      <!-- 多行版（AI 聊天室的主題與插話；舊版 InputDialog(multiline: true)）。
+           主題常常是一整段（背景、限制、想要的結論），單行輸入框不夠用。 -->
+      <textarea id="modal-area" rows="6" spellcheck="false" hidden></textarea>
       <!-- 從清單挑一個（ADB 選裝置用；舊版是「新分頁」按鈕下的選單） -->
       <select id="modal-list" size="6" hidden></select>
       <div id="modal-extra" hidden>
