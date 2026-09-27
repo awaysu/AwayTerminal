@@ -60,6 +60,31 @@ npm run tauri build    # 產生 release 執行檔與安裝檔
 - 執行檔：`src-tauri/target/release/AwayTerminal.exe`
 - 安裝檔：`src-tauri/target/release/bundle/nsis/`、`src-tauri/target/release/bundle/msi/`
 
+## `.ps1` 含中文一定要存成 UTF-8 **with BOM**
+
+（舊版踩雷紀錄第 8、47 條，舊版踩過**兩次**。TASK-024 發現我們也踩了。）
+
+**Windows PowerShell 5.1**（不是 PowerShell 7）讀 `.ps1` 時，**沒有 BOM 就用系統 ANSI
+代碼頁解碼**——這台機器是 Big5，所以 UTF-8 的中文會變成亂碼：
+
+- 中文只在**註解**裡 → 註解變亂碼（難看但還能跑）
+- 中文在**字串或參數**裡 → **行為錯誤**（檔名／訊息全錯），而且錯在資料不在語法，
+  所以不會有語法錯誤幫你抓
+
+```powershell
+# 檢查 repo 裡所有含非 ASCII 的 .ps1 有沒有 BOM
+node scripts/audit-pitfalls.mjs        # 它的第二節就在做這件事
+```
+
+修法：用 UTF-8 **with BOM** 存檔（`utf-8-sig`）。PowerShell 7 兩種都讀得對，
+但我們不能假設使用者的機器上跑的是 7。
+
+⚠️ **相關但不同的一條**（舊版第 51 條）：不要用
+`Get-Content | ConvertFrom-Json … | ConvertTo-Json | Out-File` 去改 `settings.json`
+——PowerShell 5.1 的 `ConvertTo-Json` 預設深度只有 2，巢狀結構會被截成字串。
+
+---
+
 ## 目錄結構
 
 ```

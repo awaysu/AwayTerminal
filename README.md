@@ -170,6 +170,7 @@ npm run verify:release                     # 同上，但用 release 的 exe
 
 | 文件 | 內容 |
 |---|---|
+| [docs/SECURITY.md](docs/SECURITY.md) | **安全說明**（給使用者）：token 明文存放、沙盒是防呆不是防壞、SSH 的 Ed25519 建議、回報漏洞的方式 |
 | [docs/REGRESSION-CHECKLIST.md](docs/REGRESSION-CHECKLIST.md) | **逐項回歸清單**（自動與 👤 手動），含「刻意與舊版不同」與「隱含契約」兩張表 |
 | [docs/MANUAL-TEST-PLAN.md](docs/MANUAL-TEST-PLAN.md) | 上面那份的 👤 條目排成 P0／P1／P2，每節 20～30 分鐘（**從清單產生**） |
 | [docs/RELEASE.md](docs/RELEASE.md) | 發佈流程、簽章、updater、檢查清單 |

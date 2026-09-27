@@ -1,4 +1,4 @@
-# 產生基準測試用的大檔（舊版 vs 新版「cat 大檔」對比用）。
+﻿# 產生基準測試用的大檔（舊版 vs 新版「cat 大檔」對比用）。
 #
 #   pwsh -File scripts\gen-bigfile.ps1
 #

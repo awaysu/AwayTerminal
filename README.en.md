@@ -160,6 +160,7 @@ Quick pointers:
 | Regression checklist (automated + 👤 manual), deliberate differences, implicit contracts | [docs/REGRESSION-CHECKLIST.md](docs/REGRESSION-CHECKLIST.md) |
 | Manual test plan, grouped P0/P1/P2 into 20–30 minute sessions | [docs/MANUAL-TEST-PLAN.md](docs/MANUAL-TEST-PLAN.md) |
 | Release process, signing, updater | [docs/RELEASE.md](docs/RELEASE.md) |
+| **Security notes for users** (token storage, sandbox limits, SSH keys, reporting) | [docs/SECURITY.md](docs/SECURITY.md) |
 
 ---
 

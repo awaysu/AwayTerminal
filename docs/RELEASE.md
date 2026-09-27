@@ -250,6 +250,7 @@ signtool verify /pa /v <檔案>
 [ ] node scripts/test-i18n.mjs      PASS（八語沒有缺漏）
 [ ] node scripts/i18n-audit.mjs     PASS（沒有沒歸類的中文字串）
 [ ] node scripts/test-bridge-args.mjs  PASS
+[ ] node scripts/audit-pitfalls.mjs   PASS（舊版 CLAUDE.md 更新過就要重新稽核）
 [ ] node scripts/test-sandbox-guard.mjs PASS
 [ ] cd src-tauri && cargo deny check      advisories/bans/licenses/sources 全 ok
 [ ] npm audit --omit=dev                  0 vulnerabilities

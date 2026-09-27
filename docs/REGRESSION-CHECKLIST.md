@@ -86,7 +86,8 @@
 | C3 | 👤 Ctrl+滾輪一路快速縮放，同時看 settings.json 的修改時間 | **不是每滾一格寫一次**（寫檔有 600ms 防抖） | 新增（舊版每次都寫） | | | |
 | C4 | 切到分欄模式，關掉程式再開 | 還是分欄模式 | 新增（舊版 `_viewMode` 只在記憶體） | | | |
 | C5 | 👤 拖曳分頁列左緣改寬度，關掉程式再開 | 寬度記住了；最小 120px | `TabSplitter_DragCompleted` / `TabPanelWidth` | | | |
-| C6 | `cargo test --lib settings` | ①**不認識的欄位原樣保留**（降版或安裝版／開發版共用設定檔時不會洗掉 Telegram token——舊版踩雷第 52 條）②解析失敗時**整個不寫回**，原檔不動 | 舊版踩雷第 52 條 | PASS | — | — |
+| C6 | `cargo test --lib settings` | ①**不認識的欄位原樣保留**（降版或安裝版／開發版共用設定檔時不會洗掉 Telegram token——舊版踩雷第 52 條）②解析失敗時**整個不寫回**，原檔不動 | 舊版踩雷第 52 條 | PASS | — | — |
+
 | C6 | 👤 按工具列右端的 ▲ 隱藏分頁列，關掉程式再開 | 還是隱藏的，按鈕顯示 ▼ | `TabPanelToggle_Click` / `TabPanelVisible` | | | |
 | C7 | 👤 改視窗大小／位置，關掉程式再開 | 回到上次的大小與位置；上次是最大化就開成最大化（不會把最大化後的尺寸記成還原尺寸） | 新增（舊版固定 `WindowState="Maximized"`） | | | |
 | C8 | 把 settings.json 故意改成壞掉的 JSON 再啟動 | 用預設值開起來，而且**不會覆寫**那個檔（`_suppressSave` 同款行為），dev log 有一行解析失敗 | `AppSettings.Load` 的 `_suppressSave` | | | |
@@ -331,7 +332,8 @@ TEMP 路徑印出完整結果，Documents 路徑印完 `path = …` 就停住。
 | CM14 | 👤 流量控制擋住時打字 | **不會凍住**（寫入在專用執行緒上，逾時 2 秒後丟掉那一筆） | 舊版同款 | ⬜ 需真設備 | | |
 | CM15 | 👤 拔線 | 結束事件正好一次 → 勾了自動重連就退避重連；沒勾就提示按 Enter | `ReadLoop` 的 finally | PASS（probe 的拔線那條） | | |
 | CM16 | 重連的「連上了」判斷 | **開埠成功**就算（不能等輸出——序列裝置可能永遠不說話） | 見「隱含契約」總則 | PASS（probe） | | |
-| CM17 | `cargo test com` ＋ 讀 `com/mod.rs` | 輸出走**專屬執行緒的 blocking read**（同 ConPTY 的讀取迴圈），**不可改回事件式**——舊版 `SerialPort.DataReceived` 有延遲，資料要一到就送畫面（舊版踩雷第 29 條） | `SerialSession.cs` | PASS | — | — |
+| CM17 | `cargo test com` ＋ 讀 `com/mod.rs` | 輸出走**專屬執行緒的 blocking read**（同 ConPTY 的讀取迴圈），**不可改回事件式**——舊版 `SerialPort.DataReceived` 有延遲，資料要一到就送畫面（舊版踩雷第 29 條） | `SerialSession.cs` | PASS | — | — |
+
 | CM17 | 👤 關分頁 | **不送任何優雅結束鍵**，埠馬上釋放（別的程式開得起來） | `Dispose` 只關 port | PASS（probe 驗過不送鍵） | | |
 | CM18 | 關分頁的結束事件 | 正好一次，而且**立刻**（不等讀取逾時） | `Dispose` 自己發 `Exited` | PASS（probe；第一版偷懶等逾時被抓到） | | |
 | CM19 | 👤 清畫面 | 走 `term.clear()`（沒有 shell 可下 `cls`），先問確認 | 舊版同 | | | |
@@ -537,7 +539,8 @@ TEMP 路徑印出完整結果，Documents 路徑印完 `path = …` 就停住。
 | ST13 | 👤 改 imeQuiet 之後在 Claude 分頁打注音 | 行為跟著改（0＝立刻送） | `terminal.js` 的 `QUIET_MS` | | | |
 | ST14 | 👤 改 log 預設資料夾 → 開 log | 新位置生效 | `AppSettings.LogDir` | | | |
 | ST15 | 👤 按「清除已接受的弱演算法記錄」 | 旁邊的筆數變 0；下次連那台舊設備會**再問一次** | ⬜ 新增 | PASS（`--verify`） | | |
-| ST16 | 👤 深色的設定視窗裡點開任一個下拉（語言、渲染器） | 選項**看得清楚**（不是白底灰字）。舊版踩雷第 45 條是 WPF 的隱式樣式滲進 ComboBox；新版是 CSS，症狀可能一樣 | 舊版踩雷第 45 條 | ⬜ | — | — |
+| ST16 | 👤 深色的設定視窗裡點開任一個下拉（語言、渲染器） | 選項**看得清楚**（不是白底灰字）。舊版踩雷第 45 條是 WPF 的隱式樣式滲進 ComboBox；新版是 CSS，症狀可能一樣 | 舊版踩雷第 45 條 | ⬜ | — | — |
+
 | ST16 | 👤 關掉「新增的自訂連線預設開啟沙盒」→ 自訂連線「自動偵測」 | 新加進來的連線沙盒是**關**的；**已存在的不受影響** | ⬜ 新增 | PASS（單元測試） | | |
 | ST17 | 👤 檔案總管那一組 | 勾選框是**灰的**，旁邊寫「（這項還沒搬過來）」 | — | | | |
 | ST18 | 改設定後重開程式 | 值還在（`settings.json`） | `Save()` | | | |
@@ -911,10 +914,28 @@ TEMP 路徑印出完整結果，Documents 路徑印完 `path = …` 就停住。
 | TG40 | 👤 真的 bot：`/ssh` 開一台真的設備 | 手機上回帳號 → 回密碼 → 進到 shell；**密碼不出現在任何推播裡** | `DoSsh` | ⬜ | — | — |
 
 | TG41 | 👤 真的 bot：`/new` 開一條自訂連線 | 開起來、自動附著、`/follow` 開著時 1.5 秒後推開場畫面 | `AttachAndReport` | ⬜ | — | — |
-| TG42 | 👤 真的 bot：看 claude 開場畫面的推播 | 歡迎框的邊線與 spinner 片段都被濾掉。**已知缺口**：歡迎框上緣「邊線＋標題」合併成一行時舊版會漏，新版沿用同一組規則所以可能一樣（舊版踩雷第 54 條標為待辦） | 舊版踩雷第 54 條 | ⬜ | — | — |
+| TG42 | 👤 真的 bot：看 claude 開場畫面的推播 | 歡迎框的邊線與 spinner 片段都被濾掉。**已知缺口**：歡迎框上緣「邊線＋標題」合併成一行時舊版會漏，新版沿用同一組規則所以可能一樣（舊版踩雷第 54 條標為待辦） | 舊版踩雷第 54 條 | ⬜ | — | — |
+
 
 
 ## O. 安裝 / 更新 / 簽章（待填，階段 5）
+
+---
+
+## DV. 開發環境與 repo 衛生（自動）
+
+不是產品功能，但**壞了會讓別的驗證變得不可信**，所以列進清單。
+
+| # | 怎麼測 | 預期結果 | 舊版出處 | Win | mac | Linux |
+|---|---|---|---|---|---|---|
+| DV1 | `node scripts/audit-pitfalls.mjs` | ①舊版踩雷條數還是 55（變了＝舊版更新過，要重新稽核）②每一條都有人工判斷 ③**活體檢查**：含非 ASCII 的 `.ps1` 都有 UTF-8 BOM | 舊版踩雷第 8、47 條 | PASS | — | — |
+| DV2 | `node scripts/test-bridge-args.mjs` | `session_create` 的每個資料參數，`bridge.js` 的 `createSession` 都有傳出去 | TASK-011（`com`）、TASK-021（`adb`） | PASS | — | — |
+| DV3 | `node scripts/make-manual-plan.mjs --check` | `docs/MANUAL-TEST-PLAN.md` 是最新的（清單改了就要重新產生） | 新增 | PASS | — | — |
+| DV4 | `cd src-tauri && cargo deny check` | advisories／bans／licenses／sources 全 ok | 階段 5 的授權義務 | PASS | — | — |
+| DV5 | `npm audit --omit=dev` | 0 vulnerabilities | 新增 | PASS | — | — |
+| DV6 | `node scripts/test-i18n.mjs` | 八語都沒有缺漏／空字串／參數不符 | 新增（舊版只有中英） | PASS | — | — |
+| DV7 | `node scripts/i18n-audit.mjs` | Rust 裡沒有「使用者看得到但沒進字串表」的中文字面 | 新增 | PASS | — | — |
+| DV8 | `cargo test --lib version_tests` | 三處版本一致、NOTICES 與 conpty 有進 bundle、八種安裝語言、updater 公鑰仍是空的 | 新增 | PASS | — | — |
 
 ---
 
@@ -925,9 +946,19 @@ TEMP 路徑印出完整結果，Documents 路徑印完 `path = …` 就停住。
 
 | 結果 | 條數 |
 |---|---|
-| ✅ 已覆蓋（清單、`docs/TERMINAL-JS-DIFF.md` 第二節、或「隱含契約」表裡有） | **33** |
+| ✅ 已覆蓋（清單、`docs/TERMINAL-JS-DIFF.md` 第二節、或「隱含契約」表裡有） | **31** |
 | ➖ 不適用於新版（技術不同就不存在了） | **17** |
-| ➕ **漏掉 → 這次補上** | **5** |
+| ➕ **漏掉 → 補上** | **7** |
+
+> **TASK-024 修正**：原本報 33／17／5。第 8 與第 47 條（`.ps1` 含中文要 UTF-8 BOM）
+> 我當時判成「已覆蓋在 `docs/DEV-SETUP.md`」，但那份文件其實**只在 log 格式的段落提到
+> BOM**，沒有這條踩雷。而且 `scripts/gen-bigfile.ps1` 有 263 個中文字、**沒有 BOM**
+> ——我們自己正踩著它。已補文件、加 BOM，並在 `scripts/audit-pitfalls.mjs` 加一節
+> 「活體檢查」自動掃所有含非 ASCII 的 `.ps1`。
+>
+> 這次誤判的原因是**粗篩命中就當覆蓋**：DEV-SETUP 裡的 `BOM` 是 log 格式那一句，
+> 關鍵字對上了但講的是別的事。稽核腳本現在把「標成覆蓋但關鍵字找不到」列成警告，
+> 而關鍵字也改成更具體的句子（不再是 `BOM` 這種會誤中的字）。
 
 ### ➕ 漏掉、這次補上的五條
 
@@ -938,6 +969,7 @@ TEMP 路徑印出完整結果，Documents 路徑印完 `path = …` 就停住。
 | 48 | `Get-AuthenticodeSignature` 回 `UnknownError` 且訊息是「root certificate which is not trusted」**是預期結果**，不是簽章失敗 | `docs/RELEASE.md` 第 3 節 |
 | 52 | **舊 exe 會把不認識的設定欄位整組洗掉**（舊版 2026-07-27 中招，Telegram token 被洗掉、遠端靜默 3 小時） | **程式已修**（`AppSettings.extra` ＋ 四條單元測試）＋ 新增 C6 |
 | 54 | claude 的 inline 渲染器會在 scrollback 留孤兒行；**歡迎框上緣「邊線＋標題」合併行舊版仍會漏掉**（舊版標為待辦） | 新增 TG42（已知缺口） |
+| 8、47 | **`.ps1` 含中文要存成 UTF-8 with BOM**（PowerShell 5.1 沒有 BOM 就用系統 ANSI＝Big5 解碼）。舊版記了兩次，我們**自己正踩著**：`scripts/gen-bigfile.ps1` 263 個中文字、沒有 BOM | `docs/DEV-SETUP.md` 新增一節 ＋ 加上 BOM ＋ `audit-pitfalls.mjs` 的活體檢查 ＋ 新增 DV1 |
 
 第 52 條是這次稽核最有價值的發現——**它對新版一樣成立而且會掉資料**：
 使用者降版、或安裝版與開發版共用同一個 `settings.json` 時，舊的 exe 存檔就會把新欄位
@@ -972,7 +1004,7 @@ TEMP 路徑印出完整結果，Documents 路徑印完 `path = …` 就停住。
 | 3、4、5 | claude／Codex 的輸入時序與 `tui.whimsy` → MA19、MA20 |
 | 6 | 「Codex 少一行」未重現、舊版也沒修 → 列在 MA 章的已知現象 |
 | 7 | 使用者往上捲導致整格看起來空白 → A 章的捲動項 ＋ `S` 協定 |
-| 8、47、51 | PowerShell 5.1 讀 UTF-8 無 BOM 當 Big5／不要用 `ConvertFrom-Json` 改設定檔 → `docs/DEV-SETUP.md` 的環境雷 ＋「隱含契約」 |
+| 51 | 不要用 `ConvertFrom-Json`／`ConvertTo-Json` 改 `settings.json`（PowerShell 5.1 的預設深度只有 2）→ `docs/DEV-SETUP.md` ＋「隱含契約」。**第 8、47 條見上面的「漏掉」表** |
 | 9 | `catch (OperationCanceledException)` 吃掉 HttpClient 逾時 → TG16（輪詢失敗要退避並恢復，不可永久停掉） |
 | 11 | 對 claude 送「文字＋CR」一次寫入可能不送出 → MA19、TG8 |
 | 12 | `/tui` 重啟丟掉環境變數 → MA 章的已知現象 |
