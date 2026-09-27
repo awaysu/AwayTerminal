@@ -75,6 +75,7 @@ AwayTerminal（https://github.com/awaysu/AwayTerminal ，C# WPF + WebView2 + xte
   2. **行程與指令護欄**：整棵 agent 行程樹放進 Windows Job Object（kill-on-close，分頁關掉就收乾淨；mac/Linux 用 process group）；啟動時自動在沙盒工作區產生各工具的護欄設定——Claude Code `.claude/settings.local.json` 的 `PreToolUse` hook 拒絕 `taskkill /IM`、`Stop-Process -Name`、砍 repo 外路徑、`git push --force` 等；Codex 用 `--sandbox workspace-write`；Gemini CLI 用 `--sandbox`。
   3. **桌面隔離**（Windows Sandbox／Hyper-V VM／WSL2）：唯一真正保護桌面（焦點、視窗、行程）的做法，先寫成 `docs/AGENT-SANDBOX.md` 的選項，階段 4 再評估做成「在 VM 中開團隊」。
   - 前兩層是防呆不是防壞：agent 與使用者同一個 Windows 登入工作階段，繞路仍碰得到桌面；文件要明講。
+- **介面語言八種**（2026-09-27 定案，取代舊版的中／英）：繁體中文（主）、English、简体中文（術語照大陸慣用）、日本語、한국어、Español、Deutsch、Français。缺字串退回 en 再退回 zh-TW；首次啟動依系統語言，對不到用 en；日期／log 時間戳格式不隨語言變。每個任務新增的字串都要補齊八語（`scripts/test-i18n.mjs`）。
 
 ## 階段計畫
 1. **技術驗證**：先量舊版基準；Tauri + xterm.js WebGL + ConPTY/OpenConsole，搬入 `terminal.js`；Windows 跑 PowerShell 與 Claude Code，驗證注音、多行貼上、二次輸入與舊版一致，並做速度比較（確認二進位 channel 真的沒走 JSON）。**同一階段就要做**（對應下方風險 1–3）：
