@@ -867,9 +867,16 @@ pub fn tab_close(
     manager: State<'_, SessionManager>,
     tabs_state: State<'_, Arc<TabManager>>,
 ) {
-    emit_host(&app, format!("x{id}"));
+    close_tab(&app, id, &manager, &tabs_state);
+}
+
+/// [`tab_close`] 的本體，給背景執行緒用（Telegram 遠端的 `/close`）。
+///
+/// 前端不在迴圈裡：`x{id}` 一樣是 emit，所以從任何執行緒呼叫都可以。
+pub fn close_tab(app: &AppHandle, id: u32, manager: &SessionManager, tabs_state: &Arc<TabManager>) {
+    emit_host(app, format!("x{id}"));
     // 巨集要先叫停（舊版 `CloseTab` 也是先 `(tab.Macro as MacroRunner)?.Stop()`）
-    crate::ttl::runner::stop_for_tab(&app, id);
+    crate::ttl::runner::stop_for_tab(app, id);
     // 關分頁要先收掉 log（舊版 RemoveTabSilently 的 `(tab.Logger as SessionLogger)?.Dispose()`）
     if let Some(slot) = tabs_state.logger_slot(id) {
         if let Ok(mut g) = slot.lock() {
@@ -887,13 +894,13 @@ pub fn tab_close(
     //（舊版 `RemoveTabSilently` → `AfterAgentTabRemoved`）。前端不必知道這件事。
     if let Some(teams) = app.try_state::<Arc<crate::agent::TeamManager>>() {
         if teams.find_tab(id).is_some() {
-            crate::agent::tab_removed(&app, &teams, id);
+            crate::agent::tab_removed(app, &teams, id);
         }
     }
     if let Some(next) = next {
-        emit_host(&app, format!("s{next}"));
+        emit_host(app, format!("s{next}"));
     }
-    tabs::emit_state(&app, &tabs_state);
+    tabs::emit_state(app, tabs_state);
 }
 
 /// 分頁列點一列 → 設為作用中並通知前端（`s{id}`）。
@@ -1025,6 +1032,17 @@ pub fn pane_answer(
     // 關閉程式時存畫面（恢復分頁）：交給等在信箱那邊的 `restore::save`
     if kind == "save" {
         crate::restore::deliver(id, text);
+        return;
+    }
+    // 遠端（Telegram）要「畫面上看得到的文字」：交給等在信箱那邊的 `telegram::screen`。
+    // ⚠️ 這條路一定要走 `q…text`／`a…text`（xterm buffer 的 `translateToString`），
+    // **不可以拿原始位元組流去 ANSI**——舊版 CLAUDE.md 的那條雷。
+    if kind == "text" {
+        crate::telegram::screen::deliver(id, text);
+        return;
+    }
+    if kind == "shot" {
+        crate::telegram::shot::deliver(id, text);
         return;
     }
     if kind != "cwd" {

@@ -69,6 +69,16 @@ impl TeamManager {
         }
     }
 
+    /// Telegram 遠端列這個分頁時要顯示的名字（舊版 `RemoteTitle`）：
+    /// 代理團隊的一格＝`組名（代理團隊 Agent-12）`，一般分頁回 `None`（用分頁自己的標題）。
+    pub fn remote_title(&self, tab: u32) -> Option<String> {
+        self.lock().iter().find_map(|t| {
+            let slot = t.slot_by_tab(tab)?;
+            let kind = crate::i18n::t(if t.is_chat() { "chat.title" } else { "ma.title" });
+            Some(format!("{}（{} {}）", t.title, kind, slot.agent_id()))
+        })
+    }
+
     /// 點分頁列那一列要切到哪個分頁：代理團隊＝最後點過的那一格（還在組裡的話）。
     pub fn focus_target(&self, tab: u32) -> u32 {
         let list = self.lock();

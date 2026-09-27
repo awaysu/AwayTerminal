@@ -55,6 +55,19 @@ function fill(s) {
   el.logAppend.checked = s.logAppend !== false;
   el.sandboxDefault.checked = s.sandboxDefault !== false;
   el.weakCount.textContent = fmt('settings.weakCount', (s.sshWeakAccepted || []).length);
+  // Telegram 遠端：狀態從後端問（**token 不回傳**，只回「有沒有設定」）
+  el.tgEnabled.checked = !!s.remoteEnabled;
+  el.tgChat.value = s.telegramChatId ? String(s.telegramChatId) : '';
+  el.tgNotify.checked = !!s.remoteNotify;
+  el.tgToken.value = '';
+  el.tgToken.placeholder = '';
+  el.tgNote.textContent = '';
+  invoke('telegram_state')
+    .then((st) => {
+      el.tgToken.placeholder = T[st.hasToken ? 'settings.tgTokenSet' : 'settings.tgTokenNone'];
+      el.tgNote.textContent = T[st.running ? 'settings.tgRunning' : 'settings.tgStopped'];
+    })
+    .catch(() => {});
   el.note.textContent = '';
   // 檔案總管右鍵選單：狀態直接讀登錄檔（不是讀設定——使用者可能用別的方式刪過）
   shellMenuBefore = false;
@@ -148,6 +161,20 @@ async function save(e) {
       return;
     }
   }
+  // Telegram 遠端：token 留空＝不動（設定視窗永遠不回填，留空就不能當成「清掉」）
+  try {
+    const st = await invoke('telegram_apply', {
+      enabled: el.tgEnabled.checked,
+      token: el.tgToken.value.trim() ? el.tgToken.value.trim() : null,
+      chatId: Number(el.tgChat.value.trim()) || 0,
+      notify: el.tgNotify.checked,
+    });
+    // ⚠️ 這一行**不可以**印 token（後端也不回傳）
+    log(`[settings] Telegram 遠端：${st.running ? '已啟動' : '未啟動'} chat=${st.chatId} token=${st.hasToken ? '已設定' : '未設定'}`);
+  } catch (err) {
+    el.note.textContent = String(err);
+    return;
+  }
   // 介面文字：前端自己換（Rust 那邊有自己的一份表，見 src-tauri/src/i18n.rs）
   applyLang(after.language);
   close();
@@ -191,6 +218,11 @@ function applyTexts() {
   el.migrate.textContent = T['migrate.button'];
   el.lShell.textContent = T['settings.groupShell'];
   el.lShellMenu.textContent = T['settings.shellMenu'];
+  el.lTg.textContent = T['settings.groupTg'];
+  el.lTgEnabled.textContent = T['settings.tgEnabled'];
+  el.lTgToken.textContent = T['settings.tgToken'];
+  el.lTgChat.textContent = T['settings.tgChat'];
+  el.lTgNotify.textContent = T['settings.tgNotify'];
   el.reset.textContent = T['common.reset'];
   el.ok.textContent = T['common.ok'];
   el.cancel.textContent = T['common.cancel'];
@@ -255,6 +287,16 @@ export function initSettings(injected) {
   el.lShell = $('st-l-shell');
   el.lShellMenu = $('st-l-shellmenu');
   el.shellNote = $('st-shell-note');
+  el.lTg = $('st-l-tg');
+  el.lTgEnabled = $('st-l-tgenabled');
+  el.lTgToken = $('st-l-tgtoken');
+  el.lTgChat = $('st-l-tgchat');
+  el.lTgNotify = $('st-l-tgnotify');
+  el.tgEnabled = $('st-tg-enabled');
+  el.tgToken = $('st-tg-token');
+  el.tgChat = $('st-tg-chat');
+  el.tgNotify = $('st-tg-notify');
+  el.tgNote = $('st-tg-note');
   el.note = $('st-note');
   el.reset = $('st-reset');
   el.ok = $('st-ok');

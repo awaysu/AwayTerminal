@@ -206,9 +206,31 @@ struct Inner {
     view_mode: String,
 }
 
+/// 一個分頁剛從忙轉閒（[`TabManager::busy_transitions`] 回的）。
+///
+/// 時間單位全是毫秒；要不要真的推播由 [`crate::status::should_push`] 決定（照舊版
+/// `UpdateStatuses` 那一段的規則），這裡只負責把事實算出來。
+#[derive(Debug, Clone, Copy)]
+pub struct IdleEvent {
+    pub id: u32,
+    /// 這段忙碌的起點（epoch ms）。
+    pub busy_since: u64,
+    /// 這段忙碌持續了多久。
+    pub busy_ms: u64,
+    /// 最後一次送出的時間（epoch ms；0＝沒送過）。
+    pub last_submit: u64,
+    /// 距最後一次使用者輸入多久。
+    pub since_input_ms: u64,
+}
+
 /// 所有分頁。放在 tauri `State` 裡。
 pub struct TabManager {
     inner: Mutex<Inner>,
+    /// 每個分頁「這一段忙碌是什麼時候開始的」（epoch ms）。
+    ///
+    /// 和 `Tab.busy` 分開放，因為它只有 Telegram 遠端的完成推播要用（舊版也是放在
+    /// `MainWindow._busySince`，不在分頁物件上）。轉閒時移除。
+    busy_since: Mutex<HashMap<u32, u64>>,
 }
 
 impl TabManager {
@@ -218,6 +240,7 @@ impl TabManager {
                 view_mode: normalize_view_mode(view_mode).to_string(),
                 ..Inner::default()
             }),
+            busy_since: Mutex::new(HashMap::new()),
         }
     }
 
@@ -362,6 +385,35 @@ impl TabManager {
             .filter_map(|id| inner.tabs.get(id))
             .map(|t| (t.id, t.kind, t.pid, t.last_output.load(Ordering::Relaxed)))
             .collect()
+    }
+
+    /// 這一輪有哪些分頁剛從忙轉閒（Telegram 遠端的完成推播用）。
+    ///
+    /// **要在 [`Self::apply_busy`] 之前呼叫**——它靠「目前記著的 `busy`」和新算出來的
+    /// 比對。順手維護 `busy_since`：轉忙時記下起點，轉閒時取出並移除。
+    pub fn busy_transitions(&self, busy: &[(u32, bool)]) -> Vec<IdleEvent> {
+        let now = now_ms();
+        let inner = self.lock();
+        let mut since = self.busy_since.lock().unwrap_or_else(|e| e.into_inner());
+        let mut out = Vec::new();
+        for &(id, b) in busy {
+            let Some(tab) = inner.tabs.get(&id) else { continue };
+            if b && !tab.busy {
+                since.insert(id, now);
+            } else if !b && tab.busy {
+                if let Some(start) = since.remove(&id) {
+                    let last_input = tab.last_input.load(Ordering::Relaxed);
+                    out.push(IdleEvent {
+                        id,
+                        busy_since: start,
+                        busy_ms: now.saturating_sub(start),
+                        last_submit: tab.last_submit.load(Ordering::Relaxed),
+                        since_input_ms: now.saturating_sub(last_input),
+                    });
+                }
+            }
+        }
+        out
     }
 
     /// 套用輪詢算出來的忙碌狀態，回傳 true＝有任何一個變了（才需要 emit）。

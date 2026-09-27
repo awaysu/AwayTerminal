@@ -11,7 +11,7 @@
 // 另外把 `%TEMP%` 底下自己留下的驗證資料夾清掉。
 //
 // 用法：
-//   node scripts/dev-verify.mjs [分頁數=2] [逾時秒=420]
+//   node scripts/dev-verify.mjs [分頁數=2] [逾時秒=600]
 // 輸出直接透傳，結束時印一行收尾記錄。
 
 import { spawn, execFileSync } from 'node:child_process';
@@ -20,7 +20,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const tabs = process.argv[2] || '2';
-const timeoutSec = Number(process.argv[3] || 420);
+const timeoutSec = Number(process.argv[3] || 600);
 const isWindows = process.platform === 'win32';
 
 /** `%TEMP%` 底下由 `--verify` 產生的資料夾（名字固定前綴，只刪這些）。 */

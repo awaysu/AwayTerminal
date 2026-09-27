@@ -372,6 +372,8 @@ pub async fn exit_confirm(app: AppHandle, restore: bool, update_md: Option<bool>
             store.flush();
         }
     }
+    // 遠端在跑就送一則「已離線」（舊版 `NotifyOfflineBlocking`，在 exit 之前）
+    crate::telegram::remote::notify_offline();
     println!("[AwayTerminal] 離開：恢復分頁={restore}，存了 {n} 個分頁");
     app.exit(0);
 }

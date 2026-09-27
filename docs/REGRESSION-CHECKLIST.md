@@ -849,7 +849,44 @@ TEMP 路徑印出完整結果，Documents 路徑印完 `path = …` 就停住。
 | CH35 | 👤 **真的** AI 聊天室 | 三個真的 CLI 讀完角色檔後真的輪流發言、互相回應、主持人寫出像樣的結論 | — | ⬜ | — | — |
 | CH36 | 👤 八語 | 切每一種語言，建聊天室視窗、右鍵選單、打進畫面那一行都跟著換 | — | ⬜ | — | — |
 
-## N. Telegram 遠端（待填，階段 4）
+## N. Telegram 遠端
+
+行為對照與「為什麼」在 **`docs/TELEGRAM.md`**。👤＝要人看畫面（或看手機）的。
+自動那幾條的來源：`cargo test --lib telegram`（49 個單元測試）與 `npm run verify`
+的 Telegram 區段（`telegram_probe`，假 Bot API 在 127.0.0.1，**不連外**）。
+
+| # | 怎麼測 | 預期結果 | 舊版出處 | Win | mac | Linux |
+|---|---|---|---|---|---|---|
+| TG1 | `cargo test --lib telegram` | 49 個全過 | `TelegramRemote.cs` | PASS | — | — |
+| TG2 | probe：啟動 | 先 `getUpdates?offset=-1`（prime offset）→ `setMyCommands` → 送上線通知 | `PollLoop` | PASS | — | — |
+| TG3 | probe：非授權 chat 發指令 | **沒有任何回覆**（sendMessage 次數不變） | `HandleUpdate` 的 chat id 檢查 | PASS | — | — |
+| TG4 | probe：`/help` | 回指令一覽（含 `/goto`） | `HelpText` | PASS | — | — |
+| TG5 | probe：沒附著就 `/last` | 提示先 `/goto` | `SendLast` | PASS | — | — |
+| TG6 | probe：`/goto` 不帶編號 | 列分頁＋inline 按鈕（`goto:n`） | `SendTabList` | PASS | — | — |
+| TG7 | probe：按 `goto:1` 按鈕 | 進那個分頁、回「…/exit 離開」 | callback `goto:` | PASS | — | — |
+| TG8 | probe：手機打一行字 | 真的進到分頁（畫面上找得到記號） | `SendTextThenEnter` | PASS | — | — |
+| TG9 | probe：送出之後 | **不立刻回推**（只靠完成推播，不會一則變三則） | 舊版 1.0.3x 拿掉的固定延遲回推 | PASS | — | — |
+| TG10 | probe：`/last 10` | 回 HTML 的 `<pre>` 畫面文字 | `SendLast` | PASS | — | — |
+| TG11 | probe：截圖 | 是有效的 PNG（檔頭對、>1KB） | `SendPhotoAsync` | PASS | — | — |
+| TG12 | probe：`/shot` | 走 `sendPhoto` | 同上 | PASS | — | — |
+| TG13 | probe：5000 字的訊息 | 切成多段、每段 ≤4096 | **v2 新增**（舊版會被 Telegram 退掉） | PASS | — | — |
+| TG14 | probe：連續兩次忙→閒、同內容 | 只推一則（8 秒去重） | `OnTabIdle` | PASS | — | — |
+| TG15 | probe：`/close` | **先出確認按鈕**，按取消分頁還在 | `HandleClose` | PASS | — | — |
+| TG16 | probe：輪詢連續失敗 | 退避 3 秒後恢復，**不會永久停掉** | 1.1.10 的 `TaskCanceledException` 教訓 | PASS | — | — |
+| TG17 | probe：token | 不出現在任何一行輸出裡 | 新增的自我檢查 | PASS | — | — |
+| TG18 | `cargo test telegram::tidy` | 37 條雜訊規則每條一例都過，且 shell 輸出**原樣通過** | `TidyForPhone` | PASS | — | — |
+| TG19 | `cargo test telegram::api::tests::errors_never_leak_the_url` | 錯誤訊息不含 URL（URL 裡有 token） | 新增 | PASS | — | — |
+| TG20 | 👤 真的 bot：設定 | 設定視窗貼 token＋chat id → 手機收到「🟢 已開啟」 | `RemoteDialog` | ⬜ | — | — |
+| TG21 | 👤 真的 bot：token 欄位 | 重開設定視窗**不回填** token，顯示「（已設定，留空＝不變更）」；留空按確定 token 不變 | 新增（舊版會回填） | ⬜ | — | — |
+| TG22 | 👤 真的 bot：關程式 | 手機收到「🔴 已關閉」 | `NotifyOfflineBlocking` | ⬜ | — | — |
+| TG23 | 👤 手機問 claude 一句話 | 做完自動推回答案，**只一則**，表格已攤平、讀得懂 | `OnTabIdle`＋`TidyForPhone` | ⬜ | — | — |
+| TG24 | 👤 手機回數字選 claude 的選單 | 真的選到那一項（↑／↓＋Enter） | `TryAnswerMenu` | ⬜ | — | — |
+| TG25 | 👤 `/shot` | 圖看得懂、中文與框線對齊（**單色**，見下面的差異表） | `SendPhotoAsync` | ⬜ | — | — |
+| TG26 | 👤 附著後放 10 分鐘 | 9 分鐘一則警告、10 分鐘靜默離開，分頁沒被關 | `CheckIdleAsync` | ⬜ | — | — |
+| TG27 | 👤 在電腦上持續用那個分頁 | 手機一直收得到完成推播（不會因為手機沒動作被自動離開） | `OnTabIdle` 重置閒置計時 | ⬜ | — | — |
+| TG28 | 👤 分頁右鍵「推播到 Telegram」 | 取消勾選之後那個分頁不再推（**v2 新增**；遠端沒開時整項隱藏） | 新增 | ⬜ | — | — |
+| TG29 | 👤 八語 | 切每一種語言，`/help` 與所有回覆都跟著換（舊版這些是寫死的繁中） | 新增 | ⬜ | — | — |
+| TG30 | 👤 代理團隊那一列 | 分頁清單顯示「組名（代理團隊 Agent-11）」，只有代表列會推播 | `RemoteTitle`／`RemoteVisible` | ⬜ | — | — |
 
 ## O. 安裝 / 更新 / 簽章（待填，階段 5）
 
@@ -873,6 +910,11 @@ TEMP 路徑印出完整結果，Documents 路徑印完 `path = …` 就停住。
 | log 開檔 | 直接開 | 丟背景執行緒、最多等 3 秒 | 見上面的環境雷 |
 | SSH 後端 | 呼叫系統 `ssh.exe` | **內建 `russh`** | `CLAUDE.md` 定案：SSH 內建、行為照 PuTTY。使用流程照舊版，協定層照 PuTTY（`docs/SSH.md`） |
 | SSH 的 `login as:` 時機 | **連線前**就問（帳號要放進 `ssh.exe` 命令列） | **連上交握後**才問 | PuTTY 的順序，也是內建 SSH 的自然順序。使用者看到的差別：前面多一行灰字「連線到 host:port …」，主機金鑰對話框會在 `login as:` 之前 |
+| Telegram 截圖 | WPF 把 pane 整塊 render 成點陣圖（**每個字有顏色**） | 前端把畫面文字畫進一張**新的** `<canvas>`（**單色**：前景／背景） | 抓 xterm 自己的 canvas 要打開 WebGL 的 `preserveDrawingBuffer`，每一格都多留一份 buffer、拖慢渲染——而渲染速度正是這一版的重點。平台截圖（`PrintWindow` 之類）需要視窗在前景，團隊規則不准碰前景視窗 → 介面留在 `shot::platform`，階段 5 再評估 |
+| Telegram 的介面語言 | 訊息**寫死繁體中文**（沒走 `Loc.T`） | 八語（`tg.*` 共 49 條） | v2 的八語規則對所有使用者看得到的字都成立 |
+| Telegram 逐分頁推播 | 沒有（只有全域的 `/notify`） | 分頁右鍵「推播到 Telegram」可單獨關掉 | **新增功能**；只留在記憶體、不進 `settings.json`（分頁 id 跨重啟沒有意義，同逐分頁配色） |
+| Telegram 超長訊息 | 直接送（>4096 會被 Telegram 退掉） | 自動切段連送（`split_message`） | 舊版的漏洞，不是刻意行為 |
+| Telegram `/new`、`/ssh`、`/telnet`、`/history` | 有 | **還沒做** | 都是「從手機開一條新連線」，要有 SSH／Telnet 後端才有意義（階段 2）。`/help` 的清單裡先不列 |
 | SSH 主機金鑰存放 | （舊版沒有，`ssh.exe` 用 `~/.ssh/known_hosts`） | `{app config dir}/known_hosts`，**不碰** `~/.ssh/known_hosts` | 程式不該偷偷寫 OpenSSH 的檔。代價：用 `ssh` 連過的主機這裡仍會問一次 |
 | **沙盒模式** | 沒有 | 自訂連線多一個選項，**預設開啟** | **新增功能**，規格＝`CLAUDE.md`「新增功能」一節。說明見 `docs/AGENT-SANDBOX.md` |
 | 分頁列的沙盒標記 ⬚ | — | 綠色＝有 worktree、灰色＝只有環境變數與 Job Object | 新增；一個字不占空間又看得出來 |
@@ -968,3 +1010,6 @@ TEMP 路徑印出完整結果，Documents 路徑印完 `path = …` 就停住。
 | **測試的 `%TEMP%` 資料夾要用 Drop 守衛刪，不是在最後一行刪** | assert 失敗時那一行跑不到，資料夾就留著（TASK-017 留下兩個 `awayterm-roles-compose-*`）。`roles.rs` 的測試改用 `struct TempDir` + `impl Drop` | MA1 |
 | **剛關掉的 PTY 還占著資料夾** | 優雅結束鍵 60ms ＋ 收行程的執行緒還在跑 → 馬上刪 `%TEMP%` 會拿到 `os error 32`。要等一下並重試（`agent_verify_end` 重試 10 次 × 400ms） | MA3 |
 | `macro-dialog` event 一定要回 `macro_answer` | 巨集的執行緒停在那裡等（每 100ms 檢查中斷）。不回就會一直卡著，使用者看到「巨集不動了」。`statusbox`／`closesbox` 是例外（不等回覆） | T50、T51 |
+| **遠端要畫面上的文字只能走 `q…text`，不可以拿位元組流去 ANSI** | 位元組流裡是 claude／codex 逐格重繪的控制序列，去掉 ANSI 得到一團重複的垃圾（同一行十幾個不同寬度的版本）＝選單偵測對不到、手機看到亂碼。舊版 `CLAUDE.md` 明文寫過這條雷，而它的來源正是舊版自己的「UI 執行緒卡住就退回位元組流」備援 → v2 **不做那個備援**，逾時就回一句「畫面尚未就緒」 | TG8、TG10 |
+| **含 token 的 URL 絕不可以進錯誤訊息** | `ureq::Error` 的 `to_string()` 在某些變體會帶上完整 URL，而 Bot API 的 URL 就是 `…/bot<token>/method` → 一次輪詢失敗就把 token 印進 log。`api.rs` 的 `describe()` 只留錯誤型別與 HTTP 狀態，有單元測試守著 | TG17、TG19 |
+| **`std::sync::Mutex` 的 `lock()` 在同一個運算式裡只能出現一次** | Rust 的臨時值活到**整條敘述結束**，所以 `f(g.lock().a, g.lock().b)`、`g.lock().x == 0 && g.lock().y > 0` 都是拿著鎖再去搶同一個鎖＝當場鎖死，而且**編譯器不會警告**。實際案例：`telegram_probe` 的兩行檢查這樣寫 → probe 抓著假 Bot API 的狀態鎖不放 → 每個連線都卡在 `lock()` → 每次 `getUpdates` 都逾時、整段 `--verify` 卡到逾時才收工（看起來像「假伺服器壞了」，其實是呼叫端）。要先把值綁進區域變數，或加只鎖一次的小 getter | TG2、TG16 |

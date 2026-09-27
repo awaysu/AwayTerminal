@@ -31,6 +31,7 @@ pub mod status;
 pub mod tabs;
 pub mod update;
 pub mod tap;
+pub mod telegram;
 pub mod telnet;
 pub mod toolbar;
 pub mod ttl;
@@ -206,6 +207,11 @@ pub fn run() {
             agent::agent_verify_state,
             agent::agent_verify_end,
             agent::chat_verify_transcript,
+            telegram::telegram_state,
+            telegram::telegram_apply,
+            telegram::telegram_tab_notify,
+            telegram::telegram_tab_state,
+            telegram::probe::telegram_probe,
             claudemd::claude_md_available,
             claudemd::claude_md_update,
         ])
@@ -236,6 +242,9 @@ pub fn run() {
             status::spawn(app.handle().clone(), tabs.clone());
             // 代理團隊的投遞 tick（600ms，和狀態燈同一個節奏；沒有團隊時直接 return）
             agent::deliver::spawn(app.handle().clone());
+
+            // Telegram 遠端：設定裡開著就拉起輪詢（要在 manage 之前拿 store 的值）
+            telegram::start_if_enabled(app.handle(), &store);
 
             app.manage(store);
             app.manage(tabs);

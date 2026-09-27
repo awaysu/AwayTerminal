@@ -30,6 +30,8 @@ const ALLOW = [
   ['src/ttl/runner.rs', '還沒結束（已中斷）', '同上'],
   ['src/compose.rs', '第二行', 'compose_verify_roundtrip 的測試資料'],
   ['src/update.rs', '假伺服器', 'update_verify 的訊息，只有 --verify 跑得到'],
+  ['src/telegram/probe.rs', '', '整個檔案只有 --verify 跑得到（假 Bot API ＋檢查項目的名稱）'],
+  ['src/telegram/tidy.rs', '^[一-鿿]$', '正規表示式的字元範圍，不是句子'],
 ];
 
 function walk(dir) {

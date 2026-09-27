@@ -14,7 +14,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 
 use crate::host::emit_host;
 use crate::tabs::{self, TabKind, TabManager};
@@ -63,9 +63,53 @@ fn tick(app: &AppHandle, manager: &TabManager) {
         })
         .collect();
 
+    // Telegram 遠端：忙→閒的那一刻交給遠端服務（先算，`apply_busy` 會把舊值蓋掉）
+    let idled = if crate::telegram::remote::is_running() {
+        manager.busy_transitions(&busy)
+    } else {
+        Vec::new()
+    };
+
     if manager.apply_busy(&busy) {
         tabs::emit_state(app, manager);
     }
+
+    for ev in idled {
+        if should_push(&ev) {
+            // 代理團隊只有代表列（Agent-x1）會推播（舊版 `RemoteVisible`）
+            let teams = app.try_state::<Arc<crate::agent::TeamManager>>();
+            if let Some(t) = &teams {
+                if !t.is_strip_row(ev.id) {
+                    continue;
+                }
+            }
+            let title = teams
+                .and_then(|t| t.remote_title(ev.id))
+                .or_else(|| manager.title_of(ev.id))
+                .unwrap_or_default();
+            crate::telegram::remote::on_tab_idle(app, ev.id, &title);
+        }
+    }
+}
+
+/// 何時推播「完成」？區分「真的送出指令跑東西」與「只是在輸入框打字」（舊版註解照抄）：
+///
+/// 舊法只看「最後按鍵距轉閒 <2.5s＝打字回顯」，但在程式裡打字送出、AI 很快回答時，
+/// 轉閒也在 2.5s 內 → 被誤判成打字、不推（舊版使用者實測「改在 App 發問沒丟給手機」）。
+/// 改用「這段忙碌期間有沒有送出過（按 Enter／遠端 enter=true → `last_submit`）」判斷：
+///   - 有送出＝真工作 → 忙 ≥0.8s 就推（含程式裡打字送出、遠端送出、快答）。
+///   - 沒送出＝純打字 → 維持 2.5s 打字回顯抑制 ＋ 忙 ≥3s 門檻（擋輸入框打字噪音）。
+///
+/// 送出時間允許比忙碌起點早 2 秒（送出→開始輸出有延遲，尤其遠端），才不會漏判。
+fn should_push(ev: &tabs::IdleEvent) -> bool {
+    let submitted_this_busy = ev.last_submit + 2_000 >= ev.busy_since;
+    let echo_from_typing = !submitted_this_busy && ev.since_input_ms < 2_500;
+    let long_enough = if submitted_this_busy {
+        ev.busy_ms >= 800
+    } else {
+        ev.busy_ms >= 3_000
+    };
+    !echo_from_typing && long_enough
 }
 
 /// 某個 PID 現在還在嗎。**唯讀**（用 Toolhelp 掃一遍，不開 handle、不砍任何東西）。

@@ -1,0 +1,25 @@
+▐▛███▜▌ Claude Code v2.1.283
+▝▜█████▛▘ Sonnet 4.5 · Claude Pro
+  ▘▘ ▝▝   C:\Projects\Example
+
+ Welcome back awaysu!
+
+╭───────────────────────────────────────────────────────────────╮
+│ ✻ Tips for getting started                                    │
+│   Run /init to create a CLAUDE.md file                        │
+╰───────────────────────────────────────────────────────────────╯
+
+❯ 2 + 2 是多少？
+
+● 4
+
+  需要我解釋算式嗎？
+
+✻ Crunched for 3s
+· ↓ 3.0k tokens · esc to interrupt
+
+────────────────────────────────────────────────────────────────
+❯
+────────────────────────────────────────────────────────────────
+  ⏵⏵ bypass permissions on
+  ◉ xhigh · /effort                          5:03 | Fable 5 | 5h: 51

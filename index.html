@@ -93,6 +93,8 @@
     <!-- 沙盒模式（新功能）：勾勾顯示的是**連線設定**的值，改了下次啟動生效 -->
     <div class="menu-item" data-act="sandbox">沙盒模式</div>
     <div class="menu-item" data-act="sandbox-clear">清除沙盒…</div>
+    <!-- 推播到 Telegram（v2 多的；舊版只有全域的 /notify）。遠端沒開時整項隱藏 -->
+    <div class="menu-item" data-act="tg-notify">推播到 Telegram</div>
     <!-- 代理團隊那一列才顯示（舊版分頁右鍵的 ma.* 那幾項） -->
     <!-- AI 聊天室那一列才顯示（舊版分頁右鍵的 chat.* 那幾項） -->
     <div class="menu-sep" data-chat="1"></div>
@@ -575,6 +577,21 @@
         <legend id="st-l-shell"></legend>
         <label class="sd-check"><input id="st-shellmenu" type="checkbox" /><span id="st-l-shellmenu"></span></label>
         <div id="st-shell-note" class="sd-hint"></div>
+      </fieldset>
+
+      <!-- Telegram 遠端（舊版是獨立的「遠端」對話框，這裡併進設定視窗的一個區塊）。
+           token 欄位是 password 型別、**永遠不回填**（後端只回「有沒有設定」）。 -->
+      <fieldset>
+        <legend id="st-l-tg"></legend>
+        <label class="sd-check"><input id="st-tg-enabled" type="checkbox" /><span id="st-l-tgenabled"></span></label>
+        <div class="st-grid">
+          <label id="st-l-tgtoken" for="st-tg-token"></label>
+          <span class="sd-row"><input id="st-tg-token" type="password" autocomplete="off" spellcheck="false" /></span>
+          <label id="st-l-tgchat" for="st-tg-chat"></label>
+          <span class="sd-row"><input id="st-tg-chat" type="text" inputmode="numeric" spellcheck="false" /></span>
+        </div>
+        <label class="sd-check"><input id="st-tg-notify" type="checkbox" /><span id="st-l-tgnotify"></span></label>
+        <div id="st-tg-note" class="sd-hint"></div>
       </fieldset>
 
       <div id="st-note" class="sd-hint"></div>

@@ -1089,6 +1089,23 @@
         if (s.trim() !== "") out.push(s);
       }
       return out.slice(-(lines || 6));
+    },
+    // Telegram 遠端截圖用（唯讀）：目前可見畫面每一列的純文字（含空白列）＋這個分頁的配色。
+    // 畫成 PNG 是 bridge.js 的事——這裡不碰渲染，才不會動到 WebGL 那條路。
+    screen: function (id) {
+      var rec = terms[id]; if (!rec) return null;
+      var term = rec.term, buf = term.buffer.active, out = [];
+      for (var y = 0; y < term.rows; y++) {
+        var ln = buf.getLine(buf.viewportY + y);
+        out.push(ln ? ln.translateToString(true) : "");
+      }
+      var th = themeFor(rec) || {};
+      return {
+        cols: term.cols, rows: term.rows, lines: out,
+        bg: rec.bg || th.background || cfg.background,
+        fg: rec.fg || th.foreground || cfg.foreground,
+        fontFamily: cfg.fontFamily, fontSize: cfg.fontSize
+      };
     }
   };
 

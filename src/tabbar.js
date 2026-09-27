@@ -521,6 +521,17 @@ async function logAction(id) {
  * `CLAUDE.md` 明寫「改變在**下次啟動**該分頁時生效，需提示」，所以這裡改完設定之後
  * 一定要問使用者要不要現在重開分頁。重開＝關掉（走既有的優雅結束流程）再用同設定開一個。
  */
+/** 分頁右鍵「推播到 Telegram」：只留在記憶體、立刻生效（不必重開分頁）。 */
+async function toggleTgNotify(id) {
+  try {
+    const on = await invoke('telegram_tab_state', { id });
+    await invoke('telegram_tab_notify', { id, on: !on });
+    toast(fmt('menu.tgNotifySet', !on ? T['sb.on'] : T['sb.off']));
+  } catch (e) {
+    log(`[tabbar] 推播到 Telegram 切換失敗：${e}`);
+  }
+}
+
 async function toggleSandbox(id) {
   const tab = state.tabs.find((t) => t.id === id);
   if (!tab || !tab.connName) return;
@@ -787,6 +798,17 @@ function installStripEvents() {
       const on = tab.connSandbox !== false;
       el.menuSandbox.textContent = `${on ? '✓ ' : '　'}${T['sb.menu']}`;
     }
+    // 推播到 Telegram：遠端沒開就整項隱藏（沒開的話這個勾勾沒有任何意義）
+    el.menuTgNotify.hidden = true;
+    invoke('telegram_state')
+      .then((st) => {
+        if (!st.running) return;
+        el.menuTgNotify.hidden = false;
+        return invoke('telegram_tab_state', { id }).then((on) => {
+          el.menuTgNotify.textContent = `${on ? '✓ ' : '　'}${T['menu.tgNotify']}`;
+        });
+      })
+      .catch(() => {});
     showMenu(el.tabMenu, e.clientX, e.clientY, { id: String(id) });
   });
 
@@ -982,6 +1004,7 @@ function installMenus() {
     else if (item.dataset.act === 'macro') runMacroForTab(id, state);
     else if (item.dataset.act === 'sandbox') toggleSandbox(id);
     else if (item.dataset.act === 'sandbox-clear') clearSandbox(id);
+    else if (item.dataset.act === 'tg-notify') toggleTgNotify(id);
     else if (item.dataset.act === 'close') closeTab(id);
   });
 
@@ -1394,6 +1417,7 @@ function applyTexts() {
     setText(el.tabMenu, '[data-act="macro"]', T['menu.macro']);
     setText(el.tabMenu, '[data-act="close"]', T['menu.close']);
     setText(el.tabMenu, '[data-act="sandbox-clear"]', T['sb.clear']);
+    setText(el.tabMenu, '[data-act="tg-notify"]', T['menu.tgNotify']);
     // 代理團隊那幾項（「投遞」有子選單，只換前面那段文字）
     const dev = el.tabMenu.querySelector('[data-act="ma-delivery"]');
     if (dev && dev.firstChild) dev.firstChild.nodeValue = T['ma.menuDelivery'];
@@ -1473,6 +1497,7 @@ export async function initTabBar() {
   el.favsMenu = $('favs-menu');
   el.menuSandbox = el.tabMenu.querySelector('[data-act="sandbox"]');
   el.menuSandboxClear = el.tabMenu.querySelector('[data-act="sandbox-clear"]');
+  el.menuTgNotify = el.tabMenu.querySelector('[data-act="tg-notify"]');
   el.toast = $('toast');
   el.hostkey = $('hostkey');
   el.hostkeyBox = $('hostkey-box');

@@ -247,8 +247,25 @@ async function awayVerify() {
   await verifyAgentTeam();
   await verifyAgentRestore();
   await verifyChatRoom();
+  await verifyTelegram(first ? first.id : null);
 }
 window.awayVerify = awayVerify;
+
+/**
+ * Telegram 遠端驗證（TASK-020 C）：整段跑在 Rust 的 `telegram_probe` 裡——它起一個
+ * **只聽 127.0.0.1 的假 Bot API**，把遠端接上去、排指令進去、檢查程式打出來的呼叫。
+ *
+ * ⚠️ **不打真的 Telegram**、不讀使用者設定裡的 token（`remote::start` 直接吃參數）。
+ * 檢查項目與 PASS／FAIL 都由 Rust 那邊產生，這裡只負責印出來。
+ */
+async function verifyTelegram(tabId) {
+  try {
+    const lines = await invoke('telegram_probe', { tab: tabId });
+    log(lines.join('\n'));
+  } catch (e) {
+    log(`[verify] Telegram 遠端失敗：${e}`);
+  }
+}
 
 /**
  * 代理團隊驗證（TASK-017 C）：**整條路**——建團隊 → 兩格啟動 → 角色檔送到 → PM 寫信 →
@@ -1313,13 +1330,18 @@ async function verifyRestore() {
     restoredId = info.id;
     // 等舊畫面倒回來 + 新 shell 的提示字元出現
     let tail = [];
+    const sepOf = (rows) => rows.findIndex((l) => l.includes('以上為上次關閉前的紀錄'));
     for (let i = 0; i < 30; i++) {
       await wait(400);
       tail = term.tail(info.id, 40);
-      if (tail.some((l) => l.includes(MARK)) && tail.some((l) => l.includes('PS '))) break;
+      // ⚠️ 等的是「分隔行**之後**的提示字元」。倒回來的舊畫面裡本來就有 `PS …`，
+      // 只要 `tail.some(PS )` 就 break 的話，新 shell 的提示字元還沒畫出來就跑掉了
+      // → 下一行的 iPrompt 拿到 -1、順序檢查假失敗（實測 3 輪有 2 輪中）。
+      const s = sepOf(tail);
+      if (tail.some((l) => l.includes(MARK)) && s >= 0 && tail.some((l, k) => k > s && l.includes('PS '))) break;
     }
     const iMark = tail.findIndex((l) => l.includes(MARK));
-    const iSep = tail.findIndex((l) => l.includes('以上為上次關閉前的紀錄'));
+    const iSep = sepOf(tail);
     const iPrompt = tail.findIndex((l, k) => k > iSep && l.includes('PS '));
     lines.push(`[verify] 舊畫面有倒回來（記號在第 ${iMark} 行）：${iMark >= 0}`);
     lines.push(`[verify] 分隔行有出現（第 ${iSep} 行）：${iSep >= 0}`);
@@ -1579,7 +1601,7 @@ async function verifyMigrate() {
       `[verify] 新版不支援的 COM 值降級並提醒（${now.comParity}/${now.comStopBits}/${now.comFlow}）：` +
         `${now.comParity === 'None' && now.comStopBits === 'One' && now.comFlow === 'RequestToSend' && r.warnings.length === 3}`,
     );
-    lines.push(`[verify] Telegram token 有存下來（功能還沒做）：${now.telegramBotToken === '123:abc'}`);
+    lines.push(`[verify] Telegram token 有存下來：${now.telegramBotToken === '123:abc'}`);
     const fav = now.favorites.find((f) => f.name === '__verify_fav__');
     lines.push(
       `[verify] SSH 最愛的參數：${!!fav && fav.ssh && fav.ssh.host === '192.168.1.9' && fav.ssh.port === 2222}`,
