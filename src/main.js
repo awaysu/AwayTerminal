@@ -19,6 +19,7 @@ import { invoke, Channel } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 
 import { bridgeReady, log, createSession } from './bridge.js';
+import { loadAdapter as loadImeAdapter, engineInfo } from './ime/detect.js';
 import { initTabBar, currentTabState, askYesNo, showInfo } from './tabbar.js';
 import { T, fmt } from './strings.js';
 import { applyLang, getLang, pushToBackend } from './i18n.js';
@@ -31,30 +32,91 @@ window.Unicode11Addon = { Unicode11Addon };
 window.WebLinksAddon = { WebLinksAddon };
 window.SerializeAddon = { SerializeAddon };
 
-// --- WebGL 渲染器（terminal.js AT2-2 會呼叫）---
+// --- 渲染器：WebGL → canvas → DOM 三段退回（terminal.js AT2-2 會呼叫）---
+//
+// `CLAUDE.md` 風險 2 解法 c。Linux 的 WebKitGTK 上 WebGL 可能被停用、或慢到不如
+// canvas，所以要能退、而且要能**手動選**（自動選錯時使用者有辦法救自己）。
+//
+// 設定（`settings.renderer`，經 `T{json}` 送過來）：
+//   `auto`（預設）＝照下面的順序實測決定｜`webgl`｜`canvas`｜`dom`
+//
+// ⚠️ **canvas 這一段目前不會啟用**：`@xterm/addon-canvas` 已發佈的版本（穩定 0.7.0、
+// 預覽 0.8.0-beta.48）宣告的 peer 都是 `@xterm/xterm ^5.0.0`，我們是 6.0.0。
+// 硬裝會是「宣告不相容的相依 ＋ 一條在 Windows 上永遠不會被執行到的程式碼」，
+// 所以先把位置留好（`window.AwayCanvasAddon`），等有相容版本或真機證實需要它時
+// 再一行接上。細節與決定過程在 `docs/PLATFORM-UNIX.md`。
 let rendererReported = false;
+
+/** 目前實際用的渲染器（關於頁顯示、`report_renderer` 回報）。 */
+let activeRenderer = 'DOM';
+
+/** `T{json}` 送來的偏好（`auto`／`webgl`／`canvas`／`dom`）。 */
+window.AwayRendererPref = 'auto';
+
+/** 依序要試的渲染器。`auto` ＝全部照順序試；指定了就只試那一個（失敗才退 DOM）。 */
+function rendererPlan(pref) {
+  if (pref === 'webgl' || pref === 'canvas' || pref === 'dom') return [pref];
+  return ['webgl', 'canvas', 'dom'];
+}
+
+function tryWebgl(term, id) {
+  const webgl = new WebglAddon();
+  webgl.onContextLoss(() => {
+    // 休眠喚醒／驅動重置：卸載 addon，xterm 自動退回 DOM 渲染
+    console.warn('[AwayTerminal] WebGL context lost, falling back to DOM renderer');
+    log(`[AwayTerminal] pane ${id} WebGL context lost → 退回 DOM 渲染`);
+    webgl.dispose();
+    activeRenderer = 'DOM (context lost)';
+  });
+  term.loadAddon(webgl);
+  return 'WebGL';
+}
+
+function tryCanvas(term) {
+  // 位置留好：`main.js` 目前不 import canvas addon（見上面的說明）。
+  // 要啟用就把 addon 裝起來、在這裡 `window.AwayCanvasAddon = { CanvasAddon }`。
+  const mk = window.AwayCanvasAddon && window.AwayCanvasAddon.CanvasAddon;
+  if (!mk) throw new Error('canvas addon 沒有安裝');
+  term.loadAddon(new mk());
+  return 'canvas';
+}
+
 window.AwayWebgl = function (term, id) {
   let renderer = 'DOM';
-  try {
-    const webgl = new WebglAddon();
-    webgl.onContextLoss(() => {
-      // 休眠喚醒 / 驅動重置：卸載 addon，xterm 自動退回 DOM 渲染
-      console.warn('[AwayTerminal] WebGL context lost, falling back to DOM renderer');
-      log(`[AwayTerminal] pane ${id} WebGL context lost → 退回 DOM 渲染`);
-      webgl.dispose();
-    });
-    term.loadAddon(webgl);
-    renderer = 'WebGL';
-  } catch (e) {
-    console.warn('[AwayTerminal] WebGL addon 載入失敗，退回 DOM 渲染:', e);
-    renderer = 'DOM (WebGL 載入失敗)';
+  for (const want of rendererPlan(window.AwayRendererPref)) {
+    if (want === 'dom') break; // DOM 是「什麼都不掛」
+    try {
+      renderer = want === 'webgl' ? tryWebgl(term, id) : tryCanvas(term);
+      break;
+    } catch (e) {
+      console.warn(`[AwayTerminal] ${want} 渲染器掛不起來，往下退：`, e);
+      log(`[AwayTerminal] pane ${id} ${want} 掛不起來（${e && e.message ? e.message : e}）`);
+    }
   }
+  activeRenderer = renderer;
   console.log('[AwayTerminal] renderer =', renderer);
   if (!rendererReported) {
     rendererReported = true;
     invoke('report_renderer', { renderer }).catch(() => {});
   }
   return renderer;
+};
+
+/** 關於頁／診斷用：目前實際在用的渲染器。 */
+window.AwayActiveRenderer = () => activeRenderer;
+
+// --- IME adapter（terminal.js 不動；`CLAUDE.md` 風險 1 解法 b）---
+//
+// 執行時偵測引擎（不依 OS），Chromium 是 no-op、WebKit 目前是空的（等真機錄影）。
+// 掛載點只有這裡：`terminal.js` 完全不知道有這一層。
+let imeAdapter = null;
+window.AwayIme = async function (term, id) {
+  try {
+    if (!imeAdapter) imeAdapter = await loadImeAdapter();
+    imeAdapter.apply(term, id, { log });
+  } catch (e) {
+    console.warn('[AwayTerminal] IME adapter 套用失敗（維持預設行為）：', e);
+  }
 };
 
 // ------------------------------------------------- 端到端驗證（不需視窗焦點）
@@ -1722,6 +1784,14 @@ async function openDirTab(dir) {
   // 分頁列也要先掛好 `tab-state` 的 listener：第一條 session 是 terminal.js 送出
   // `ready` 之後才建的，那一刻就會 emit 第一筆狀態，晚掛就漏掉第一列。
   await initTabBar();
+  // webview 引擎（IME adapter 選哪一邊靠它；真機第一天要先確認這行印對了）
+  try {
+    const info = engineInfo();
+    log(`[main] webview 引擎＝${info.engine}（${info.flavour}）`);
+  } catch (e) {
+    /* 偵測失敗不影響啟動 */
+  }
+
   // 離開程式的對話框（Rust 擋下 CloseRequested 後會 emit exit-request）
   await initExitDialog();
 

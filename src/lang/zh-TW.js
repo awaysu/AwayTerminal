@@ -708,4 +708,16 @@ export default {
   'tg.openedSsh': '已開啟並進入 [{0}]。login as: → 直接回覆帳號，接著照畫面提示回覆密碼。',
   'tg.sshUsage': '用法：/ssh [user@]主機[:埠]（不帶參數時用我的最愛裡第一條 SSH）',
   'tg.telnetUsage': '用法：/telnet 主機[:埠]（不帶參數時用我的最愛裡第一條 Telnet）',
+
+  // TASK-022：渲染器選擇、關於頁、Linux 的提示
+  'settings.groupRender': '終端機渲染',
+  'settings.renderer': '渲染器',
+  'settings.renderer.auto': '自動（啟動時實測決定）',
+  'settings.renderer.webgl': 'WebGL（最快）',
+  'settings.renderer.canvas': 'Canvas（WebGL 不能用時）',
+  'settings.renderer.dom': 'DOM（最慢，最相容）',
+  'settings.rendererNote': '目前使用：{0}。改了要重開分頁才生效。',
+  'about.renderer': '終端機渲染',
+  'warn.gtkImModule': '沒有設定 GTK_IM_MODULE，中文輸入法可能不能用。裝 fcitx5 的話設 GTK_IM_MODULE=fcitx，裝 ibus 的話設 GTK_IM_MODULE=ibus，再重新登入。',
+  'err.comDialoutGroup': '沒有權限開這個連接埠。Linux 要加入 dialout 群組：{0}（執行後要重新登入才生效）。',
 };

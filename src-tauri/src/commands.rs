@@ -305,7 +305,8 @@ pub fn session_create(
 
     let mut sh = match kind.as_str() {
         // "powershell" 是 TASK-003 的舊名，留著相容 `?cmd=` 之前的呼叫
-        "shell" | "powershell" => shell::powershell().ok_or_else(|| {
+        // Windows＝PowerShell；mac/Linux＝使用者的 $SHELL（見 `shell::local_shell`）
+        "shell" | "powershell" => shell::local_shell().ok_or_else(|| {
             t("err.noPowerShell").to_string()
         })?,
         "custom" => {

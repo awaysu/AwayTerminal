@@ -692,4 +692,16 @@ export default {
   'tg.openedSsh': '已开启并进入 [{0}]。login as: → 直接回账号，接着照画面提示回密码。',
   'tg.sshUsage': '用法：/ssh [user@]主机[:端口]（不带参数时用收藏里第一条 SSH）',
   'tg.telnetUsage': '用法：/telnet 主机[:端口]（不带参数时用收藏里第一条 Telnet）',
+
+  // TASK-022：渲染器選擇、關於頁、Linux 的提示
+  'settings.groupRender': '终端渲染',
+  'settings.renderer': '渲染器',
+  'settings.renderer.auto': '自动（启动时实测决定）',
+  'settings.renderer.webgl': 'WebGL（最快）',
+  'settings.renderer.canvas': 'Canvas（WebGL 不可用时）',
+  'settings.renderer.dom': 'DOM（最慢，最兼容）',
+  'settings.rendererNote': '当前使用：{0}。改了要重开标签页才生效。',
+  'about.renderer': '终端渲染',
+  'warn.gtkImModule': '没有设置 GTK_IM_MODULE，中文输入法可能不能用。装 fcitx5 请设 GTK_IM_MODULE=fcitx，装 ibus 请设 GTK_IM_MODULE=ibus，然后重新登录。',
+  'err.comDialoutGroup': '没有权限打开这个串口。Linux 需要加入 dialout 组：{0}（执行后要重新登录才生效）。',
 };

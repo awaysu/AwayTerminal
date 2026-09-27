@@ -711,4 +711,16 @@ export default {
   'tg.openedSsh': 'Opened and attached to [{0}]. At login as: reply with the account name, then follow the screen for the password.',
   'tg.sshUsage': 'Usage: /ssh [user@]host[:port] (without arguments the first SSH favourite is used)',
   'tg.telnetUsage': 'Usage: /telnet host[:port] (without arguments the first Telnet favourite is used)',
+
+  // TASK-022：渲染器選擇、關於頁、Linux 的提示
+  'settings.groupRender': 'Terminal rendering',
+  'settings.renderer': 'Renderer',
+  'settings.renderer.auto': 'Automatic (measured at startup)',
+  'settings.renderer.webgl': 'WebGL (fastest)',
+  'settings.renderer.canvas': 'Canvas (when WebGL is unavailable)',
+  'settings.renderer.dom': 'DOM (slowest, most compatible)',
+  'settings.rendererNote': 'Currently using: {0}. Changing this takes effect on the next tab you open.',
+  'about.renderer': 'Terminal rendering',
+  'warn.gtkImModule': 'GTK_IM_MODULE is not set, so a Chinese input method may not work. Set GTK_IM_MODULE=fcitx for fcitx5 or GTK_IM_MODULE=ibus for ibus, then log in again.',
+  'err.comDialoutGroup': 'No permission to open this serial port. On Linux you need to be in the dialout group: {0} (log in again afterwards).',
 };

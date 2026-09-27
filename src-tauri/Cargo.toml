@@ -1,3 +1,9 @@
+# `platform` 是 workspace 成員（不只是 path 依賴）：這樣它和主 crate 共用
+# 一份 Cargo.lock 與一個 target 目錄。不設的話它會自己長一份，
+# 跨 target check 的產物也會散在兩個地方。
+[workspace]
+members = ["platform"]
+
 [package]
 name = "awayterminal"
 version = "2.0.0"
@@ -14,6 +20,12 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+# 平台相依原始碼（PTY／行程樹／PATH 搜尋／序列埠路徑／Linux 環境變數）。
+# 獨立成 crate 的理由：只依賴 libc，所以在 Windows 上也能
+# `cargo check -p awayterm-platform --target <linux/mac>`（主 crate 因為 tauri 的
+# GTK／objc *-sys 做不到）。見 platform/src/lib.rs 的檔頭。
+awayterm-platform = { path = "platform" }
+
 tauri = { version = "2", features = [] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

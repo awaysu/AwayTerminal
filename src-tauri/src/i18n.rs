@@ -633,6 +633,13 @@ static TABLE: &[(&str, &str, &str)] = &[
     ("tg.telnetUsage",
      "用法：/telnet 主機[:埠]（不帶參數時用我的最愛裡第一條 Telnet）",
      "Usage: /telnet host[:port] (without arguments the first Telnet favourite is used)"),
+    // ---------------- TASK-022：Linux 的平台提示 ----------------
+    ("err.comDialoutGroup",
+     "沒有權限開這個連接埠。Linux 要加入 dialout 群組：{0}（執行後要重新登入才生效）。",
+     "No permission to open this serial port. On Linux you need to be in the dialout group: {0} (log in again afterwards)."),
+    ("warn.gtkImModule",
+     "沒有設定 GTK_IM_MODULE，中文輸入法可能不能用。裝 fcitx5 的話設 GTK_IM_MODULE=fcitx，裝 ibus 的話設 GTK_IM_MODULE=ibus，再重新登入。",
+     "GTK_IM_MODULE is not set, so a Chinese input method may not work. Set GTK_IM_MODULE=fcitx for fcitx5 or GTK_IM_MODULE=ibus for ibus, then log in again."),
 ];
 
 /// 測試用：把前端推過來的字串清掉（各測試之間不要互相影響）。

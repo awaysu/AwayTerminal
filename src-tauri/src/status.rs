@@ -182,7 +182,17 @@ fn parents_with_children() -> std::collections::HashSet<u32> {
 
 /// mac／Linux 之後各自實作（`CLAUDE.md`：Linux 讀 `/proc`、mac 用 `libproc`）。
 /// 在那之前一律回空集合＝本機 shell 分頁不會被判定成忙碌，不會亂閃。
+/// mac／Linux：掃 `/proc`（Linux）或 `proc_listpids`（mac）。實作在
+/// `awayterm-platform::proctree`，那一層在 Windows 上也被三個 target 的編譯器檢查過。
 #[cfg(not(windows))]
 fn parents_with_children() -> std::collections::HashSet<u32> {
-    std::collections::HashSet::new()
+    awayterm_platform::proctree::parents_with_children()
+}
+
+/// 某個 PID 現在還在嗎。**唯讀**（`kill(pid, 0)` 只檢查存在與權限，不送訊號）。
+///
+/// 只給 `--verify` 驗沙盒的行程群組用（對應 Windows 的 Toolhelp 版本）。
+#[cfg(not(windows))]
+pub fn pid_exists(pid: u32) -> bool {
+    awayterm_platform::proctree::pid_exists(pid)
 }

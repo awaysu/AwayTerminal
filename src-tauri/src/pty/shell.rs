@@ -16,6 +16,42 @@ pub struct Shell {
     pub title: String,
 }
 
+/// 「本機 shell」分頁要開什麼。
+///
+/// | 平台 | 開什麼 |
+/// |---|---|
+/// | Windows | PowerShell（`pwsh.exe` 優先，否則內建的 `powershell.exe`） |
+/// | macOS | 使用者的 `$SHELL`（沒設就 `/bin/zsh`） |
+/// | Linux | 使用者的 `$SHELL`（沒設就 `/bin/bash`） |
+///
+/// 照 `CLAUDE.md` 的平台差異表：「mac/Linux 預設開使用者的 `$SHELL`，
+/// **有裝 `pwsh` 才開 PowerShell**」。所以 Unix 上「PowerShell」是另一個選項
+/// （[`powershell`]），不是預設的那一個。
+///
+/// 分頁標題沿用舊版：Windows 是 `PowerShell`，Unix 用 shell 的檔名（`zsh`／`bash`），
+/// 之後提示字元出來會被改成工作目錄名（`TracksCwdTitle`）。
+#[cfg(windows)]
+pub fn local_shell() -> Option<Shell> {
+    powershell()
+}
+
+#[cfg(not(windows))]
+pub fn local_shell() -> Option<Shell> {
+    let argv = awayterm_platform::pty::default_shell();
+    let exe = PathBuf::from(argv.first()?);
+    let name = exe
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("shell")
+        .to_string();
+    Some(Shell {
+        command_line: quote_command(&exe, &[]),
+        exe,
+        title: name.clone(),
+        name,
+    })
+}
+
 /// PowerShell：`pwsh.exe` 優先，否則 `powershell.exe`。
 #[cfg(windows)]
 pub fn powershell() -> Option<Shell> {
@@ -48,9 +84,11 @@ pub fn powershell() -> Option<Shell> {
     })
 }
 
+/// mac／Linux：**有裝 `pwsh` 才提供 PowerShell**（`CLAUDE.md` 的平台差異表）。
+/// 預設的本機 shell 是使用者的 `$SHELL`，見 [`default_shell`]。
 #[cfg(not(windows))]
 pub fn powershell() -> Option<Shell> {
-    which("pwsh").map(|exe| Shell {
+    awayterm_platform::which::pwsh().map(|exe| Shell {
         command_line: quote_command(&exe, &["-NoLogo"]),
         exe,
         name: "pwsh".to_string(),
@@ -174,6 +212,7 @@ fn resolve_program(head: &str) -> Option<PathBuf> {
 /// （見 `examples/job_probe.rs` 與 `docs/AGENT-SANDBOX.md`）。
 /// 這台機器的 `pwsh` 就是別名，而 `C:\Program Files\PowerShell\7\pwsh.exe` 是真檔案。
 /// 只有「完全找不到真檔案」時才回別名（能跑總比找不到好）。
+#[cfg(windows)]
 pub fn which(name: &str) -> Option<PathBuf> {
     let path = std::env::var_os("PATH")?;
     let mut alias: Option<PathBuf> = None;
@@ -196,7 +235,25 @@ pub fn which(name: &str) -> Option<PathBuf> {
     alias
 }
 
+/// mac／Linux：`PATH` ＋ 幾個 GUI 程式的 PATH 常常沒有的目錄
+/// （`~/.local/bin`、Homebrew、npm 全域、nvm…），並且要檢查**執行權限位元**。
+///
+/// ⚠️ **mac 的 GUI 程式拿不到使用者的 PATH**：從 Finder／Dock 啟動繼承的是 `launchd`
+/// 的環境，不會跑 `.zshrc`／`.zprofile`，所以 `PATH` 常常只有 `/usr/bin:/bin:…`，
+/// Homebrew 裝的 `node`／`pwsh`／`adb` 全都找不到。Store 別名那條規則**只有 Windows**。
+///
+/// 實作與順序在 `awayterm_platform::which`（那一層在 Windows 上也被三個 target 的
+/// 編譯器檢查過，而且它的測試在這台機器上就跑得到）。
+#[cfg(not(windows))]
+pub fn which(name: &str) -> Option<PathBuf> {
+    awayterm_platform::which::which(name)
+}
+
 /// 這個路徑是 Store 的 app execution alias 嗎（`…\WindowsApps\x.exe`）。
+///
+/// **只有 Windows 有這種東西**；Unix 那邊 `which` 走 `awayterm_platform::which`。
+/// 測試在 Windows 以外的平台也要跑得到（規則是純字串比對），所以留著不加 `cfg`，
+/// 只在 `which` 的呼叫點分平台。
 fn is_store_alias(p: &Path) -> bool {
     p.components().any(|c| {
         c.as_os_str()

@@ -692,4 +692,16 @@ export default {
   'tg.openedSsh': '[{0}] を開いて入りました。login as: にはアカウント名を返信し、続いて画面の指示に従ってパスワードを返信してください。',
   'tg.sshUsage': '使い方：/ssh [user@]ホスト[:ポート]（引数なしならお気に入りの最初の SSH を使います）',
   'tg.telnetUsage': '使い方：/telnet ホスト[:ポート]（引数なしならお気に入りの最初の Telnet を使います）',
+
+  // TASK-022：渲染器選擇、關於頁、Linux 的提示
+  'settings.groupRender': 'ターミナルの描画',
+  'settings.renderer': '描画方式',
+  'settings.renderer.auto': '自動（起動時に判定）',
+  'settings.renderer.webgl': 'WebGL（最速）',
+  'settings.renderer.canvas': 'Canvas（WebGL が使えないとき）',
+  'settings.renderer.dom': 'DOM（最も遅いが最も互換性が高い）',
+  'settings.rendererNote': '現在の描画方式：{0}。変更は次に開くタブから有効になります。',
+  'about.renderer': 'ターミナルの描画',
+  'warn.gtkImModule': 'GTK_IM_MODULE が設定されていないため、日本語／中国語入力が使えない可能性があります。fcitx5 なら GTK_IM_MODULE=fcitx、ibus なら GTK_IM_MODULE=ibus を設定して再ログインしてください。',
+  'err.comDialoutGroup': 'このシリアルポートを開く権限がありません。Linux では dialout グループに入る必要があります：{0}（実行後に再ログインしてください）。',
 };

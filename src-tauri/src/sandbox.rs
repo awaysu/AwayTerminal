@@ -438,7 +438,9 @@ pub fn pid_alive(pid: u32) -> bool {
     }
     #[cfg(not(windows))]
     {
-        std::path::Path::new(&format!("/proc/{pid}")).exists()
+        // `kill(pid, 0)` 而不是看 `/proc/<pid>`：mac 沒有 `/proc`，而且這個做法
+        // 在兩個 Unix 上都對（唯讀，只檢查存在與權限、不送訊號）。
+        awayterm_platform::proctree::pid_exists(pid)
     }
 }
 

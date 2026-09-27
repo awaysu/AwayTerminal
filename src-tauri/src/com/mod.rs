@@ -168,7 +168,17 @@ pub struct PortInfo {
 /// 資訊組一個友善名稱——PM 在 TASK-011 指定的加值，顯示用而已，拿去開的還是 `name`。
 pub fn list_ports() -> Vec<PortInfo> {
     let mut out: Vec<PortInfo> = match serialport::available_ports() {
-        Ok(ports) => ports.into_iter().map(describe).collect(),
+        Ok(ports) => ports
+            .into_iter()
+            // 平台特有的過濾（`CLAUDE.md` 平台差異表）：
+            //   mac  只留 `cu.*`／`tty.*`，並且把藍牙那個節點濾掉
+            //   Linux 只留 `ttyUSB*`／`ttyACM*`／`ttyS*`／`ttyAMA*`
+            //   Windows `COM<n>`
+            // `serialport` 在 mac 會把 `/dev/tty.Bluetooth-Incoming-Port` 也列出來，
+            // 那不是使用者要的東西。
+            .filter(|p| awayterm_platform::serial::looks_like_serial(&p.port_name))
+            .map(describe)
+            .collect(),
         Err(e) => {
             println!("[AwayTerminal] 列舉連接埠失敗：{e}");
             Vec::new()
@@ -276,6 +286,9 @@ pub struct Link {
 /// 開不起來就回 `Err`——**同步失敗**，和舊版 `SerialPort.Open()` 一樣（呼叫端會把分頁收掉）。
 pub fn open(params: &ComParams) -> Result<(Link, Vec<String>), String> {
     let mut warnings = Vec::new();
+    // mac：`tty.xxx` 開的時候會等 DCD（可能永遠卡住），主動連出去要用 `cu.xxx`。
+    // 其他平台原樣（見 `awayterm_platform::serial` 的說明）。
+    let port_path = awayterm_platform::serial::prefer_call_unit(&params.port);
     let parity = map_parity(&params.parity);
     let stop = map_stop(&params.stop_bits);
     let flow = map_flow(&params.flow);
@@ -293,14 +306,30 @@ pub fn open(params: &ComParams) -> Result<(Link, Vec<String>), String> {
         }
     };
 
-    let mut port = serialport::new(&params.port, params.baud)
+    let mut port = serialport::new(&port_path, params.baud)
         .data_bits(data_bits)
         .parity(parity.value)
         .stop_bits(stop.value)
         .flow_control(flow.value)
         .timeout(READ_POLL)
         .open()
-        .map_err(|e| tf("err.comOpenFailed", &[&params.port, &e.description]))?;
+        .map_err(|e| {
+            // Linux 沒進 dialout 群組的話開埠會是「權限不足」——那是**設定問題不是壞掉**，
+            // 錯誤訊息要直接告訴使用者要跑哪一行（`CLAUDE.md` 平台差異表的權限那一欄）。
+            if awayterm_platform::serial::needs_group_membership()
+                && e.kind() == serialport::ErrorKind::NoDevice
+            {
+                // serialport 把 EACCES 歸到 NoDevice，描述文字才看得出是權限
+                if e.description.to_ascii_lowercase().contains("permission") {
+                    // 拿不到 `$USER` 時就用字面的 `$USER`——那在 shell 裡照樣是對的，
+                    // 使用者可以整行複製貼上（比塞一個「<你的帳號>」佔位字好）。
+                    let user = std::env::var("USER").unwrap_or_else(|_| "$USER".to_string());
+                    let hint = awayterm_platform::serial::dialout_hint(&user);
+                    return tf("err.comDialoutGroup", &[&hint]);
+                }
+            }
+            tf("err.comOpenFailed", &[&params.port, &e.description])
+        })?;
 
     // 舊版：DTR 一律拉起來；RTS 只在沒有硬體流控時自己設
     if let Err(e) = port.write_data_terminal_ready(true) {

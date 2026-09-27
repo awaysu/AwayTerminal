@@ -563,6 +563,11 @@ fn spawn_for_tab(
     let mut cmd = {
         let mut c = Command::new("sh");
         c.arg("-c").arg(cmdline);
+        // 自己一個行程群組 ＝ Unix 這邊的 Job Object（`platform/src/pgroup.rs`）：
+        // 巨集停止或分頁關掉時 `killpg` 就能把 `sh` 開出來的整棵收掉。
+        // `process_group(0)` ＝ pgid 設成子行程自己的 pid（std 1.64 起穩定）。
+        use std::os::unix::process::CommandExt;
+        c.process_group(0);
         c
     };
 

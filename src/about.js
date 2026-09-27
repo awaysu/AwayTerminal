@@ -101,6 +101,11 @@ function render() {
   el.rows.append(row(T['about.download'], info.downloadUrl, true));
   el.rows.append(row('Source Code', info.sourceUrl, true));
   el.rows.append(row(T['about.license'], 'MIT　© 2026 Chih-Wei Su (Awaysu)'));
+  // 目前實際在用的終端機渲染器（WebGL／canvas／DOM）。
+  // Linux 的 WebKitGTK 上 WebGL 可能被停用而靜靜退回 DOM ——那會慢很多，
+  // 但畫面看起來一樣，所以要有地方看得到（`CLAUDE.md` 風險 2 解法 c）。
+  const rend = (window.AwayActiveRenderer && window.AwayActiveRenderer()) || '-';
+  el.rows.append(row(T['about.renderer'], rend));
   // 介面語言：目前語言 ＋「機器翻譯，歡迎修正」（PM 在 TASK-015 修訂版要求關於頁也放一行）
   el.rows.append(row(T['settings.groupLang'], `${langName()}　${T['settings.langNote']}`));
   // 第三方元件：xterm.js 的版本是 build 時從 node_modules 讀的**實際**版本

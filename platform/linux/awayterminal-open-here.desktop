@@ -1,0 +1,20 @@
+[Desktop Entry]
+Type=Service
+# Dolphin（KDE）的 ServiceMenu：在資料夾上右鍵就會出現，比 Nautilus 的「腳本」子選單更像原生項目。
+# 安裝方式見 awayterminal-open-here.sh 的檔頭。
+ServiceTypes=KonqPopupMenu/Plugin,inode/directory
+MimeType=inode/directory;
+Actions=OpenInAwayTerminal
+X-KDE-Priority=TopLevel
+
+[Desktop Action OpenInAwayTerminal]
+Name=Open in AwayTerminal
+Name[zh_TW]=用 AwayTerminal 開啟
+Name[zh_CN]=用 AwayTerminal 打开
+Name[ja]=AwayTerminal で開く
+Name[ko]=AwayTerminal 로 열기
+Name[es]=Abrir en AwayTerminal
+Name[de]=In AwayTerminal öffnen
+Name[fr]=Ouvrir dans AwayTerminal
+Icon=utilities-terminal
+Exec=awayterminal --open-dir %f

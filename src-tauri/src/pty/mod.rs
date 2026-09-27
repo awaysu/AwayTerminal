@@ -62,11 +62,12 @@ pub fn spawn(
 
 #[cfg(not(windows))]
 pub fn spawn(
-    _opts: SpawnOptions,
-    _on_output: OnOutput,
-    _on_exit: OnExit,
+    opts: SpawnOptions,
+    on_output: OnOutput,
+    on_exit: OnExit,
 ) -> io::Result<Arc<dyn TerminalSession>> {
-    unix::spawn_unsupported()
+    let session = unix::UnixPtySession::spawn(opts, on_output, on_exit)?;
+    Ok(Arc::new(session))
 }
 
 /// 目前使用的 ConPTY 主機（診斷字串，啟動時記進 log）。

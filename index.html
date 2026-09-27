@@ -573,6 +573,23 @@
         </div>
       </fieldset>
 
+      <!-- 終端機渲染器（CLAUDE.md 風險 2 解法 c）：auto 會實測決定，選錯時使用者能自救 -->
+      <fieldset>
+        <legend id="st-l-render"></legend>
+        <div class="st-grid">
+          <label id="st-l-renderpick" for="st-renderer"></label>
+          <span class="sd-row">
+            <select id="st-renderer">
+              <option value="auto"></option>
+              <option value="webgl"></option>
+              <option value="canvas"></option>
+              <option value="dom"></option>
+            </select>
+          </span>
+        </div>
+        <div id="st-render-note" class="sd-hint"></div>
+      </fieldset>
+
       <fieldset>
         <legend id="st-l-shell"></legend>
         <label class="sd-check"><input id="st-shellmenu" type="checkbox" /><span id="st-l-shellmenu"></span></label>

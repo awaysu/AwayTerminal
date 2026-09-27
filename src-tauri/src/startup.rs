@@ -11,7 +11,49 @@
 pub fn prepare_process_environment() {
     clean_inherited_env();
     set_terminal_env();
+    prepare_webkit_env();
 }
+
+/// Linux 的 WebKitGTK 環境變數（`CLAUDE.md` 風險 2 的解法 b）。
+///
+/// 兩個「不設就會壞」的變數，症狀都是**整片白畫面**、使用者完全看不出原因：
+///
+/// | 變數 | 為什麼 |
+/// |---|---|
+/// | `WEBKIT_DISABLE_DMABUF_RENDERER` | NVIDIA 專有驅動 ＋ WebKitGTK 2.4x 的 DMA-BUF renderer ＝ 白畫面。Linux 上最常見的 Tauri 問題 |
+/// | `WEBKIT_DISABLE_COMPOSITING_MODE` | 舊 WebKitGTK ／部分 Intel、虛擬機驅動下合成模式會不更新或閃爍 |
+///
+/// **只在使用者沒設時才設**（他可能正是為了測試才設成 0），判斷邏輯在
+/// `awayterm_platform::linuxenv`（純函式，在 Windows 上也測得到）。
+///
+/// ⚠️ 一定要在**建立 webview 之前**——WebKitGTK 只在第一次初始化時讀這些變數。
+/// 這個函式在 `run()` 的第一行被呼叫，比 `.setup()` 早得多。
+///
+/// `GTK_IM_MODULE` **刻意不設**，只在畫面上提示一次：值要看使用者裝 fcitx5 還是 ibus，
+/// 猜錯會把本來好的輸入法弄壞。
+#[cfg(target_os = "linux")]
+fn prepare_webkit_env() {
+    use awayterm_platform::linuxenv::{self, Action};
+    let plan = linuxenv::plan(|k| std::env::var(k).ok());
+    for a in &plan {
+        if let Action::Set(k, v) = a {
+            std::env::set_var(k, v);
+        }
+    }
+    println!("[AwayTerminal] WebKitGTK 環境：{}", linuxenv::describe(&plan));
+    if linuxenv::is_wayland(|k| std::env::var(k).ok()) {
+        println!("[AwayTerminal] 桌面是 Wayland（截圖不能抓別的視窗，見 docs/TELEGRAM.md）");
+    }
+    if linuxenv::should_hint_im_module(|k| std::env::var(k).ok()) {
+        // 前端啟動後會看這個旗標決定要不要提示一次（八語的 `warn.gtkImModule`）
+        std::env::set_var("AWAYTERM_HINT_GTK_IM_MODULE", "1");
+        println!("[AwayTerminal] GTK_IM_MODULE 沒設——中文輸入法可能不能用，會在畫面上提示");
+    }
+}
+
+/// 其他平台沒有這件事。
+#[cfg(not(target_os = "linux"))]
+fn prepare_webkit_env() {}
 
 /// 清掉會抑制子行程彩色輸出 / 干擾行為的繼承環境變數。
 ///

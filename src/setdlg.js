@@ -56,6 +56,13 @@ function fill(s) {
   el.sandboxDefault.checked = s.sandboxDefault !== false;
   el.weakCount.textContent = fmt('settings.weakCount', (s.sshWeakAccepted || []).length);
   // Telegram 遠端：狀態從後端問（**token 不回傳**，只回「有沒有設定」）
+  el.renderer.value = ['auto', 'webgl', 'canvas', 'dom'].includes(s.renderer)
+    ? s.renderer
+    : 'auto';
+  el.renderNote.textContent = fmt(
+    'settings.rendererNote',
+    (window.AwayActiveRenderer && window.AwayActiveRenderer()) || '-'
+  );
   el.tgEnabled.checked = !!s.remoteEnabled;
   el.tgChat.value = s.telegramChatId ? String(s.telegramChatId) : '';
   el.tgNotify.checked = !!s.remoteNotify;
@@ -138,6 +145,8 @@ async function save(e) {
     logAppend: el.logAppend.checked,
     exitRestoreTabs: el.exitRestore.checked,
     sandboxDefault: el.sandboxDefault.checked,
+    // 渲染器：改了要重開分頁才生效（addon 在建 pane 時掛）
+    renderer: el.renderer.value,
   };
   let after;
   try {
@@ -218,6 +227,15 @@ function applyTexts() {
   el.migrate.textContent = T['migrate.button'];
   el.lShell.textContent = T['settings.groupShell'];
   el.lShellMenu.textContent = T['settings.shellMenu'];
+  el.lRender.textContent = T['settings.groupRender'];
+  el.lRenderPick.textContent = T['settings.renderer'];
+  for (const o of el.renderer.options) {
+    o.textContent = T[`settings.renderer.${o.value}`] || o.value;
+  }
+  el.renderNote.textContent = fmt(
+    'settings.rendererNote',
+    (window.AwayActiveRenderer && window.AwayActiveRenderer()) || '-'
+  );
   el.lTg.textContent = T['settings.groupTg'];
   el.lTgEnabled.textContent = T['settings.tgEnabled'];
   el.lTgToken.textContent = T['settings.tgToken'];
@@ -287,6 +305,10 @@ export function initSettings(injected) {
   el.lShell = $('st-l-shell');
   el.lShellMenu = $('st-l-shellmenu');
   el.shellNote = $('st-shell-note');
+  el.lRender = $('st-l-render');
+  el.lRenderPick = $('st-l-renderpick');
+  el.renderer = $('st-renderer');
+  el.renderNote = $('st-render-note');
   el.lTg = $('st-l-tg');
   el.lTgEnabled = $('st-l-tgenabled');
   el.lTgToken = $('st-l-tgtoken');

@@ -692,4 +692,16 @@ export default {
   'tg.openedSsh': '[{0}] 을 열고 들어갔습니다. login as: 에는 계정 이름을, 이어서 화면 안내에 따라 비밀번호를 답장하세요.',
   'tg.sshUsage': '사용법: /ssh [user@]호스트[:포트]（인수가 없으면 즐겨찾기의 첫 SSH 를 사용）',
   'tg.telnetUsage': '사용법: /telnet 호스트[:포트]（인수가 없으면 즐겨찾기의 첫 Telnet 을 사용）',
+
+  // TASK-022：渲染器選擇、關於頁、Linux 的提示
+  'settings.groupRender': '터미널 렌더링',
+  'settings.renderer': '렌더러',
+  'settings.renderer.auto': '자동（시작할 때 판단）',
+  'settings.renderer.webgl': 'WebGL（가장 빠름）',
+  'settings.renderer.canvas': 'Canvas（WebGL 을 쓸 수 없을 때）',
+  'settings.renderer.dom': 'DOM（가장 느리지만 호환성 최고）',
+  'settings.rendererNote': '현재 사용: {0}. 변경은 다음에 여는 탭부터 적용됩니다.',
+  'about.renderer': '터미널 렌더링',
+  'warn.gtkImModule': 'GTK_IM_MODULE 이 설정되지 않아 입력기가 동작하지 않을 수 있습니다. fcitx5 는 GTK_IM_MODULE=fcitx, ibus 는 GTK_IM_MODULE=ibus 로 설정한 뒤 다시 로그인하세요.',
+  'err.comDialoutGroup': '이 시리얼 포트를 열 권한이 없습니다. Linux 에서는 dialout 그룹에 속해야 합니다: {0}（실행 후 다시 로그인하세요）.',
 };

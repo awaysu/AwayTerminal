@@ -692,4 +692,16 @@ export default {
   'tg.openedSsh': '[{0}] ouvert et actif. À login as:, répondez par le compte, puis le mot de passe selon l’écran.',
   'tg.sshUsage': 'Utilisation : /ssh [user@]hôte[:port] (sans argument, le premier favori SSH est utilisé)',
   'tg.telnetUsage': 'Utilisation : /telnet hôte[:port] (sans argument, le premier favori Telnet est utilisé)',
+
+  // TASK-022：渲染器選擇、關於頁、Linux 的提示
+  'settings.groupRender': 'Rendu du terminal',
+  'settings.renderer': 'Moteur de rendu',
+  'settings.renderer.auto': 'Automatique (mesuré au démarrage)',
+  'settings.renderer.webgl': 'WebGL (le plus rapide)',
+  'settings.renderer.canvas': 'Canvas (si WebGL est indisponible)',
+  'settings.renderer.dom': 'DOM (le plus lent, le plus compatible)',
+  'settings.rendererNote': 'Actuellement : {0}. Le changement prend effet au prochain onglet ouvert.',
+  'about.renderer': 'Rendu du terminal',
+  'warn.gtkImModule': 'GTK_IM_MODULE n’est pas défini, la méthode de saisie risque de ne pas fonctionner. Définissez GTK_IM_MODULE=fcitx pour fcitx5 ou GTK_IM_MODULE=ibus pour ibus, puis reconnectez-vous.',
+  'err.comDialoutGroup': 'Pas la permission d’ouvrir ce port série. Sous Linux, il faut appartenir au groupe dialout : {0} (reconnectez-vous ensuite).',
 };

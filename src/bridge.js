@@ -91,6 +91,17 @@ function wcwidth(ch) {
 
 /** 把一個舊協定字串交給 terminal.js。 */
 function deliver(str) {
+  // `T{json}` 裡的 `renderer` 是**我們自己加的欄位**（terminal.js 不認它，多一個
+  // 欄位對它無害）。要在 terminal.js 處理 `T` 之前就設好——它會在同一個
+  // dispatch 裡呼叫 `window.AwayWebgl`（AT2-2），那時候就要讀得到偏好。
+  if (str.charCodeAt(0) === 84 /* T */) {
+    try {
+      const t = JSON.parse(str.slice(1));
+      if (typeof t.renderer === 'string') window.AwayRendererPref = t.renderer;
+    } catch (e) {
+      /* 壞掉的 JSON 交給 terminal.js 自己處理 */
+    }
+  }
   // v2 自己多的 `q…shot`：**在這裡處理掉、不往下傳**——terminal.js 的 `q` 分支對不認識的
   // 種類會回傳選取文字（那個檔案要和舊版逐字一樣，不能為了截圖去改它）。
   if (str.charCodeAt(0) === 113 /* q */) {

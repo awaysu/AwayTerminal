@@ -46,6 +46,12 @@ impl Default for WindowBounds {
 pub struct AppSettings {
     // ---- 字型與顏色（舊版 AppSettings.FontFamily / FontSize / Foreground / Background）----
     pub font_family: String,
+    /// 終端機渲染器：`auto`（啟動時實測決定）｜`webgl`｜`canvas`｜`dom`。
+    ///
+    /// `CLAUDE.md` 風險 2 解法 c：Linux 的 WebKitGTK 上 WebGL 可能被停用或很慢，
+    /// 所以要能退回、而且要能手動選（自動選錯時使用者有辦法救自己）。
+    #[serde(default = "default_renderer")]
+    pub renderer: String,
     pub font_size: u32,
     pub foreground: String,
     pub background: String,
@@ -219,7 +225,8 @@ pub struct ColorPair {
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
-            font_family: "Cascadia Mono".to_string(),
+            font_family: default_font_family().to_string(),
+            renderer: default_renderer(),
             font_size: 14,
             foreground: "#E0E0E0".to_string(),
             background: "#1E1E1E".to_string(),
@@ -267,16 +274,65 @@ impl Default for AppSettings {
     }
 }
 
+/// 渲染器的預設值：`auto` ＝啟動時實測決定（WebGL → canvas → DOM）。
+fn default_renderer() -> String {
+    "auto".to_string()
+}
+
+/// 使用者選的字型後面接的 fallback 清單，依平台。
+///
+/// | 平台 | 等寬 | 中文 |
+/// |---|---|---|
+/// | Windows | Cascadia Mono → Consolas | Microsoft JhengHei（微軟正黑體） |
+/// | macOS | Menlo → SF Mono | PingFang TC → Heiti TC |
+/// | Linux | DejaVu Sans Mono → Liberation Mono | Noto Sans Mono CJK TC → Noto Sans CJK TC |
+///
+/// 最後一定要有 `monospace`——前面全都沒裝時至少還是等寬（不等寬的話 xterm 的
+/// 欄位對位會整片跑掉）。
+///
+/// 舊版那一組是 `Consolas, "Microsoft JhengHei", "微軟正黑體", monospace`，
+/// Windows 這一欄逐字沿用（多了 Cascadia Mono 當第一順位，那是新版的預設字型）。
+pub fn font_fallback() -> &'static str {
+    #[cfg(target_os = "macos")]
+    {
+        "Menlo, \"SF Mono\", \"PingFang TC\", \"Heiti TC\", monospace"
+    }
+    #[cfg(target_os = "linux")]
+    {
+        "\"DejaVu Sans Mono\", \"Liberation Mono\", \"Noto Sans Mono CJK TC\", \"Noto Sans CJK TC\", monospace"
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    {
+        "Consolas, \"Microsoft JhengHei\", \"微軟正黑體\", monospace"
+    }
+}
+
+/// 預設字型（設定檔第一次建立時用）。Windows 的 Cascadia Mono 在 mac／Linux 沒有。
+pub fn default_font_family() -> &'static str {
+    #[cfg(target_os = "macos")]
+    {
+        "Menlo"
+    }
+    #[cfg(target_os = "linux")]
+    {
+        "DejaVu Sans Mono"
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    {
+        "Cascadia Mono"
+    }
+}
+
 impl AppSettings {
     /// 舊版 `PostTheme()` 的 `T{json}` 內容。欄位名是 `terminal.js` 認的那些，別改。
     pub fn theme_json(&self) -> serde_json::Value {
         serde_json::json!({
-            // 舊版：$"\"{s.FontFamily}\", Consolas, \"Microsoft JhengHei\", \"微軟正黑體\", monospace"
-            "fontFamily": format!(
-                "\"{}\", Consolas, \"Microsoft JhengHei\", \"微軟正黑體\", monospace",
-                self.font_family
-            ),
+            // 使用者選的字型 ＋ **依平台的 fallback**（`CLAUDE.md` 平台差異表的
+            // 「中文字型 fallback」）。舊版只有 Windows 那一組。
+            "fontFamily": format!("\"{}\", {}", self.font_family, font_fallback()),
             "fontSize": self.font_size,
+            // 前端照這個決定要掛哪個 renderer addon（`auto` ＝自己實測）
+            "renderer": self.renderer,
             "foreground": self.foreground,
             "background": self.background,
             "imeQuietMs": self.ime_quiet_ms,

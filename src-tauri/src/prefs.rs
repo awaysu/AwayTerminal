@@ -26,6 +26,8 @@ use crate::settings::{AppSettings, SettingsStore};
 pub struct PrefsPatch {
     pub language: Option<String>,
     pub font_family: Option<String>,
+    /// 終端機渲染器（`auto`／`webgl`／`canvas`／`dom`）。改了要重開分頁才生效。
+    pub renderer: Option<String>,
     pub font_size: Option<u32>,
     pub foreground: Option<String>,
     pub background: Option<String>,
@@ -69,6 +71,12 @@ pub fn settings_apply(
             // 認得的八種才收（前端的 `LANGS`）；認不出來就不動，避免把設定寫壞
             if crate::i18n::is_supported_lang(lang) {
                 s.language = lang.clone();
+            }
+        }
+        if let Some(r) = &patch.renderer {
+            // 只認這四個，別的值忽略（前端下拉只會送這四個，但設定檔可能被手改）
+            if ["auto", "webgl", "canvas", "dom"].contains(&r.as_str()) {
+                s.renderer = r.clone();
             }
         }
         if let Some(f) = &patch.font_family {

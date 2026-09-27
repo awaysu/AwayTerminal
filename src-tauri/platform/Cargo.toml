@@ -1,0 +1,14 @@
+[package]
+name = "awayterm-platform"
+version = "2.0.0"
+edition = "2021"
+rust-version = "1.89"
+license = "MIT"
+description = "AwayTerminal 的平台相依原始碼（PTY、行程樹、PATH 搜尋、序列埠路徑）"
+publish = false
+
+# 刻意只依賴 `libc`：這個 crate 存在的理由就是「在 Windows 上也能
+# `cargo check --target <linux/mac>`」，所以不可以拉進任何需要外部標頭檔或
+# Apple SDK 的東西（tauri、GTK 的 *-sys、objc2、libproc 都不行）。
+[dependencies]
+libc = "0.2"
