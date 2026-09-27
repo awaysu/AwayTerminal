@@ -71,7 +71,52 @@ cargo clippy --all-targets --target <同上> -- -D warnings
 
 ---
 
-## 2. 第一天要跑什麼
+## 2. 拿到機器之後：第一封任務信怎麼寫
+
+給 Agent-11（PM）直接用的樣板。**重點是先確認編得起來、再驗功能**，而且**一次只給一個平台**
+（兩個平台的問題混在一起會很難查）。
+
+```
+# TASK-0xx：macOS 真機（第一批）
+
+機器：<型號／晶片／macOS 版本>　已裝：Xcode Command Line Tools
+
+## A. 先讓它編起來（預留半天）
+1. `cd src-tauri && cargo build` —— **預期會有編譯錯誤**，都在主 crate 的
+   `#[cfg(unix)]` 接線（`src/pty/unix.rs` 與 `status.rs`／`sandbox.rs`／`com/mod.rs`／
+   `ttl/runner.rs`／`startup.rs` 的 unix 分支）。理由見 docs/PLATFORM-UNIX.md 第 0 節。
+2. 一次修一個錯誤、每修完重跑 `cargo build`。**不要順手改邏輯**——這一步只求編得過。
+3. `cargo test -p awayterm-platform` 全過（25 項）。
+4. 回報：改了哪幾行、有沒有任何一處要改邏輯（那就是設計錯了，要另外討論）。
+
+## B. 最重要的一支 probe
+`cargo run --example pty_probe` —— 證明 `openpty` ＋ fork 那條路真的通。
+不過的話**先停下來回報**，不要往下做（後面全部靠它）。
+
+## C. 其餘 probe
+`ssh_probe`／`telnet_probe`／`com_probe`／`ttl_probe`（都只連 127.0.0.1／in-process）。
+
+## D. 端到端
+`npm ci && npm run verify` —— 18 段全過、0 FAIL。
+
+## E. 手動（docs/MANUAL-TEST-PLAN.md）
+先跑 **P0-IME 那 12 條**與 **M1～M9**（docs/PLATFORM-UNIX.md 第 3 節）。
+⚠️ M2 的 IME 錄影是這次最重要的產出：把事件序列存進 docs/ime-baseline/，
+和 Windows 的基準做差異表寫進 docs/IME-LAB.md。**先不要動 ime-webkit.js**——
+先有差異表再寫修正。
+
+## 規則
+不改 CLAUDE.md；一次一個平台；同一問題兩種做法都失敗或超過 10 分鐘就 BLOCKED 回報；
+每一步的實際輸出都貼回來（不要只說「過了」）。
+```
+
+Linux 那一封同形，把 A 的檔案清單換成一樣的、B～D 一樣，E 換成 L1～L10，
+並註明**先跑 24.04 + Wayland + fcitx5 與 22.04 + X11 + ibus 兩種組合**
+（八種全跑沒有必要，有差異再展開）。
+
+---
+
+## 3. 第一天要跑什麼
 
 ### 共同（兩個平台都做）
 
@@ -123,7 +168,7 @@ cd .. && npm run verify
 
 ---
 
-## 3. 已知的缺口與決定
+## 4. 已知的缺口與決定
 
 ### canvas 渲染器**沒有裝**（刻意）
 
@@ -156,7 +201,7 @@ peer 都是 `@xterm/xterm ^5.0.0`，我們用的是 **6.0.0**。硬裝的話：
 
 ---
 
-## 4. 需要的機器與工具
+## 5. 需要的機器與工具
 
 | 平台 | 需要 |
 |---|---|
@@ -173,7 +218,7 @@ sudo apt install -y libwebkit2gtk-4.1-dev build-essential curl wget file \
 
 ---
 
-## 5. 發佈（等真機之後，不在這次範圍）
+## 6. 發佈（等真機之後，不在這次範圍）
 
 | 平台 | 要做 |
 |---|---|

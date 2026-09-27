@@ -41,6 +41,7 @@ pub mod cmdline;
 pub mod linuxenv;
 pub mod proctree;
 pub mod serial;
+pub mod uptime;
 pub mod which;
 
 #[cfg(unix)]

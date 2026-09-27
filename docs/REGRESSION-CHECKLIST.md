@@ -86,6 +86,7 @@
 | C3 | 👤 Ctrl+滾輪一路快速縮放，同時看 settings.json 的修改時間 | **不是每滾一格寫一次**（寫檔有 600ms 防抖） | 新增（舊版每次都寫） | | | |
 | C4 | 切到分欄模式，關掉程式再開 | 還是分欄模式 | 新增（舊版 `_viewMode` 只在記憶體） | | | |
 | C5 | 👤 拖曳分頁列左緣改寬度，關掉程式再開 | 寬度記住了；最小 120px | `TabSplitter_DragCompleted` / `TabPanelWidth` | | | |
+| C6 | `cargo test --lib settings` | ①**不認識的欄位原樣保留**（降版或安裝版／開發版共用設定檔時不會洗掉 Telegram token——舊版踩雷第 52 條）②解析失敗時**整個不寫回**，原檔不動 | 舊版踩雷第 52 條 | PASS | — | — |
 | C6 | 👤 按工具列右端的 ▲ 隱藏分頁列，關掉程式再開 | 還是隱藏的，按鈕顯示 ▼ | `TabPanelToggle_Click` / `TabPanelVisible` | | | |
 | C7 | 👤 改視窗大小／位置，關掉程式再開 | 回到上次的大小與位置；上次是最大化就開成最大化（不會把最大化後的尺寸記成還原尺寸） | 新增（舊版固定 `WindowState="Maximized"`） | | | |
 | C8 | 把 settings.json 故意改成壞掉的 JSON 再啟動 | 用預設值開起來，而且**不會覆寫**那個檔（`_suppressSave` 同款行為），dev log 有一行解析失敗 | `AppSettings.Load` 的 `_suppressSave` | | | |
@@ -330,6 +331,7 @@ TEMP 路徑印出完整結果，Documents 路徑印完 `path = …` 就停住。
 | CM14 | 👤 流量控制擋住時打字 | **不會凍住**（寫入在專用執行緒上，逾時 2 秒後丟掉那一筆） | 舊版同款 | ⬜ 需真設備 | | |
 | CM15 | 👤 拔線 | 結束事件正好一次 → 勾了自動重連就退避重連；沒勾就提示按 Enter | `ReadLoop` 的 finally | PASS（probe 的拔線那條） | | |
 | CM16 | 重連的「連上了」判斷 | **開埠成功**就算（不能等輸出——序列裝置可能永遠不說話） | 見「隱含契約」總則 | PASS（probe） | | |
+| CM17 | `cargo test com` ＋ 讀 `com/mod.rs` | 輸出走**專屬執行緒的 blocking read**（同 ConPTY 的讀取迴圈），**不可改回事件式**——舊版 `SerialPort.DataReceived` 有延遲，資料要一到就送畫面（舊版踩雷第 29 條） | `SerialSession.cs` | PASS | — | — |
 | CM17 | 👤 關分頁 | **不送任何優雅結束鍵**，埠馬上釋放（別的程式開得起來） | `Dispose` 只關 port | PASS（probe 驗過不送鍵） | | |
 | CM18 | 關分頁的結束事件 | 正好一次，而且**立刻**（不等讀取逾時） | `Dispose` 自己發 `Exited` | PASS（probe；第一版偷懶等逾時被抓到） | | |
 | CM19 | 👤 清畫面 | 走 `term.clear()`（沒有 shell 可下 `cls`），先問確認 | 舊版同 | | | |
@@ -535,6 +537,7 @@ TEMP 路徑印出完整結果，Documents 路徑印完 `path = …` 就停住。
 | ST13 | 👤 改 imeQuiet 之後在 Claude 分頁打注音 | 行為跟著改（0＝立刻送） | `terminal.js` 的 `QUIET_MS` | | | |
 | ST14 | 👤 改 log 預設資料夾 → 開 log | 新位置生效 | `AppSettings.LogDir` | | | |
 | ST15 | 👤 按「清除已接受的弱演算法記錄」 | 旁邊的筆數變 0；下次連那台舊設備會**再問一次** | ⬜ 新增 | PASS（`--verify`） | | |
+| ST16 | 👤 深色的設定視窗裡點開任一個下拉（語言、渲染器） | 選項**看得清楚**（不是白底灰字）。舊版踩雷第 45 條是 WPF 的隱式樣式滲進 ComboBox；新版是 CSS，症狀可能一樣 | 舊版踩雷第 45 條 | ⬜ | — | — |
 | ST16 | 👤 關掉「新增的自訂連線預設開啟沙盒」→ 自訂連線「自動偵測」 | 新加進來的連線沙盒是**關**的；**已存在的不受影響** | ⬜ 新增 | PASS（單元測試） | | |
 | ST17 | 👤 檔案總管那一組 | 勾選框是**灰的**，旁邊寫「（這項還沒搬過來）」 | — | | | |
 | ST18 | 改設定後重開程式 | 值還在（`settings.json`） | `Save()` | | | |
@@ -887,19 +890,102 @@ TEMP 路徑印出完整結果，Documents 路徑印完 `path = …` 就停住。
 | TG28 | 👤 分頁右鍵「推播到 Telegram」 | 取消勾選之後那個分頁不再推（**v2 新增**；遠端沒開時整項隱藏） | 新增 | ⬜ | — | — |
 | TG29 | 👤 八語 | 切每一種語言，`/help` 與所有回覆都跟著換（舊版這些是寫死的繁中） | 新增 | ⬜ | — | — |
 | TG30 | 👤 代理團隊那一列 | 分頁清單顯示「組名（代理團隊 Agent-11）」，只有代表列會推播 | `RemoteTitle`／`RemoteVisible` | ⬜ | — | — |
-| TG31 | probe：`/new` | 列可開的連線＋按鈕，清單含「PowerShell（桌面）」 | `ListConnections` | PASS | — | — |
-| TG32 | probe：`/history` | 列清單＋按鈕（v2 ＝我的最愛，舊版是 `History`） | `ListHistory` | PASS | — | — |
-| TG33 | probe：`/new 999` | 只回「1~n」提示，**不開任何分頁** | `OpenFromList` | PASS | — | — |
-| TG34 | probe：`/new 1` | 真的開了分頁（PowerShell 桌面）並自動附著 | `AttachAndReport` | PASS | — | — |
-| TG35 | probe：`/ssh`／`/telnet` 不帶參數且沒有對應的我的最愛 | 回用法說明，**不連任何主機** | `DoSsh`／`DoTelnet` | PASS | — | — |
-| TG36 | `cargo test telegram::cmd` | `[user@]主機[:埠]` 解析（含「IPv6 會被切壞」這個舊版限制） | `ParseHostPort` | PASS | — | — |
-| TG37 | `cargo test telegram::cmd::tests::help_lists_every_command` | `/help` 有舊版全部 19 條 | `HelpText` | PASS | — | — |
-| TG38 | `cargo test ...command_menu_matches_v1_order` | 指令選單順序照舊版（goto/new/history/ssh/telnet 在前） | `RegisterCommandsAsync` | PASS | — | — |
-| TG39 | `cargo test ...plain_suffix_never_touches_a_password` | `/plain` 的後綴**不會**加到 SSH 密碼或 shell 指令上 | **v2 新增的防護** | PASS | — | — |
-| TG40 | 👤 真的 bot：`/ssh` 開一台真的設備 | 手機上回帳號 → 回密碼 → 進到 shell；**密碼不出現在任何推播裡** | `DoSsh` | ⬜ | — | — |
-| TG41 | 👤 真的 bot：`/new` 開一條自訂連線 | 開起來、自動附著、`/follow` 開著時 1.5 秒後推開場畫面 | `AttachAndReport` | ⬜ | — | — |
+| TG31 | probe：`/new` | 列可開的連線＋按鈕，清單含「PowerShell（桌面）」 | `ListConnections` | PASS | — | — |
+
+| TG32 | probe：`/history` | 列清單＋按鈕（v2 ＝我的最愛，舊版是 `History`） | `ListHistory` | PASS | — | — |
+
+| TG33 | probe：`/new 999` | 只回「1~n」提示，**不開任何分頁** | `OpenFromList` | PASS | — | — |
+
+| TG34 | probe：`/new 1` | 真的開了分頁（PowerShell 桌面）並自動附著 | `AttachAndReport` | PASS | — | — |
+
+| TG35 | probe：`/ssh`／`/telnet` 不帶參數且沒有對應的我的最愛 | 回用法說明，**不連任何主機** | `DoSsh`／`DoTelnet` | PASS | — | — |
+
+| TG36 | `cargo test telegram::cmd` | `[user@]主機[:埠]` 解析（含「IPv6 會被切壞」這個舊版限制） | `ParseHostPort` | PASS | — | — |
+
+| TG37 | `cargo test telegram::cmd::tests::help_lists_every_command` | `/help` 有舊版全部 19 條 | `HelpText` | PASS | — | — |
+
+| TG38 | `cargo test ...command_menu_matches_v1_order` | 指令選單順序照舊版（goto/new/history/ssh/telnet 在前） | `RegisterCommandsAsync` | PASS | — | — |
+
+| TG39 | `cargo test ...plain_suffix_never_touches_a_password` | `/plain` 的後綴**不會**加到 SSH 密碼或 shell 指令上 | **v2 新增的防護** | PASS | — | — |
+
+| TG40 | 👤 真的 bot：`/ssh` 開一台真的設備 | 手機上回帳號 → 回密碼 → 進到 shell；**密碼不出現在任何推播裡** | `DoSsh` | ⬜ | — | — |
+
+| TG41 | 👤 真的 bot：`/new` 開一條自訂連線 | 開起來、自動附著、`/follow` 開著時 1.5 秒後推開場畫面 | `AttachAndReport` | ⬜ | — | — |
+| TG42 | 👤 真的 bot：看 claude 開場畫面的推播 | 歡迎框的邊線與 spinner 片段都被濾掉。**已知缺口**：歡迎框上緣「邊線＋標題」合併成一行時舊版會漏，新版沿用同一組規則所以可能一樣（舊版踩雷第 54 條標為待辦） | 舊版踩雷第 54 條 | ⬜ | — | — |
+
 
 ## O. 安裝 / 更新 / 簽章（待填，階段 5）
+
+---
+
+## 踩雷紀錄覆蓋稽核（`CLAUDE.md` 風險 12 的收尾）
+
+舊版 `reference/AwayTerminal/CLAUDE.md` 的「踩雷紀錄」那一節（第 186–247 行，
+**55 條**頂層條目、26 個圈號子項）逐條對照這份清單。TASK-023 做的。
+
+| 結果 | 條數 |
+|---|---|
+| ✅ 已覆蓋（清單、`docs/TERMINAL-JS-DIFF.md` 第二節、或「隱含契約」表裡有） | **33** |
+| ➖ 不適用於新版（技術不同就不存在了） | **17** |
+| ➕ **漏掉 → 這次補上** | **5** |
+
+### ➕ 漏掉、這次補上的五條
+
+| 舊版第幾條 | 內容 | 補在哪 |
+|---|---|---|
+| 29 | **COM 的輸出要用專屬執行緒 blocking read**，不可改回事件式（舊版 `SerialPort.DataReceived` 有延遲） | 新增 CM17（下面 COM 章節） |
+| 45 | 深色對話框的下拉選單**灰字配白底看不清**（舊版是 WPF 隱式樣式滲進 ComboBox；新版換成 CSS，但症狀可能一樣） | 新增 ST16 |
+| 48 | `Get-AuthenticodeSignature` 回 `UnknownError` 且訊息是「root certificate which is not trusted」**是預期結果**，不是簽章失敗 | `docs/RELEASE.md` 第 3 節 |
+| 52 | **舊 exe 會把不認識的設定欄位整組洗掉**（舊版 2026-07-27 中招，Telegram token 被洗掉、遠端靜默 3 小時） | **程式已修**（`AppSettings.extra` ＋ 四條單元測試）＋ 新增 C6 |
+| 54 | claude 的 inline 渲染器會在 scrollback 留孤兒行；**歡迎框上緣「邊線＋標題」合併行舊版仍會漏掉**（舊版標為待辦） | 新增 TG42（已知缺口） |
+
+第 52 條是這次稽核最有價值的發現——**它對新版一樣成立而且會掉資料**：
+使用者降版、或安裝版與開發版共用同一個 `settings.json` 時，舊的 exe 存檔就會把新欄位
+（含 Telegram token）洗掉。舊版用 `[JsonExtensionData]` 修，新版現在用
+`#[serde(flatten)] extra` 對應，測試 `unknown_fields_survive_a_round_trip` 守著。
+
+順便確認新版在這一條上有兩個地方**比舊版好**：①寫檔是 tmp ＋ 原子替換（舊版 v0.9.82
+才加）；②**解析失敗時整個不寫回**（`writable = false`，原檔完全不動），舊版是先備份
+`settings.json.bad` 再退預設——我們的做法不會產生「使用者以為設定還在、其實已經是預設值」
+的狀態。測試 `a_broken_file_is_never_overwritten` 守著。
+
+### ➖ 不適用的十七條（技術不同）
+
+| 舊版第幾條 | 為什麼不適用 |
+|---|---|
+| 10 | 「從 UI 執行緒 `_ = SomeAsyncLoop()`」是 WPF SynchronizationContext 的問題。新版對應的雷是「會等前端回覆的 command 一定要 `async`」，已在「隱含契約」表 |
+| 17、21、26、27 | 都是**侵入式 UI 自動化**（螢幕座標點擊、`SendKeys`）的踩雷。新版的 `--verify` 完全不搶前景、不點擊（見「隱含契約」的「`--verify` 驗不到需要視窗尺寸的東西」），這一整類不存在 |
+| 20 | 「claude 輸入列第一字後空一格」是舊版自己的顯示殘影，新版沒有那段程式 |
+| 28 | WebView2 airspace（WPF 疊在 WebView2 上）。新版所有對話框都是頁內 DOM，見「刻意與舊版不同」 |
+| 30 | WebView2 快取（改了 `web/` 看起來沒變）。新版 dev 走 Vite HMR、release 是內嵌資源，沒有自己伺服檔案那一層 |
+| 34、35、38、39、44 | xterm 黑帶／`windowsPty`／fit 截行／初始尺寸／DPI 髮絲線——都是舊版的 WPF 版面與 xterm 選項組合，新版的版面是 CSS grid ＋ `FitAddon`，這幾條的觸發條件不存在 |
+| 41、42 | WinForms（對話框 owner、`ShowDialog` 猜主視窗）。新版沒有 WinForms。**但 42 最後那一條教訓**（「不要等沒有完成時間上限的佇列」）已一般化進「隱含契約」的 async command 那一條 |
+| 36 | 「BEL→綠燈機制別加回」＝舊版拿掉的實作，新版從來沒有 |
+| 50 | 「憑證私鑰不進 git」——新版的對應規則寫在 `docs/RELEASE.md`（updater 私鑰與簽章憑證都不進 repo），比清單更適合放那裡 |
+
+### ✅ 已覆蓋的三十三條（抽樣對照）
+
+| 舊版第幾條 | 覆蓋在哪 |
+|---|---|
+| 1（①～⑪，全程式碼自審） | ①SSH 死 session → K 章＋M 章；②`/history` 排除代理團隊／聊天室 → TG32 的說明；③文字＋CR 要分開送 → MA19、TG8；④啟動失敗要有訊息 → AB 章；⑤重連按 Enter 只能一條鏈 → M9；⑥關於頁的 xterm 版本要是真的 → AB3（build 時從 `node_modules` 讀）；⑦選單偵測要看瘦身前的文字 → `menu_needs_the_navigation_line` 測試＋TG24；⑧碎片規則不可吃掉 shell 輸出 → `shell_output_survives` 測試＋TG18；⑨前綴去重只對 TUI 畫面 → 同上；⑩`PrimeOffset` 要 `offset=-1` → TG2；⑪設定讀取失敗要分「讀不到」和「壞掉」→ C 章＋新增的 C6 |
+| 2 | 底部固定輸入框讓增量算成「沒有新輸出」→ `finds_new_output_above_a_fixed_input_box` 測試 ＋ TG23 |
+| 3、4、5 | claude／Codex 的輸入時序與 `tui.whimsy` → MA19、MA20 |
+| 6 | 「Codex 少一行」未重現、舊版也沒修 → 列在 MA 章的已知現象 |
+| 7 | 使用者往上捲導致整格看起來空白 → A 章的捲動項 ＋ `S` 協定 |
+| 8、47、51 | PowerShell 5.1 讀 UTF-8 無 BOM 當 Big5／不要用 `ConvertFrom-Json` 改設定檔 → `docs/DEV-SETUP.md` 的環境雷 ＋「隱含契約」 |
+| 9 | `catch (OperationCanceledException)` 吃掉 HttpClient 逾時 → TG16（輪詢失敗要退避並恢復，不可永久停掉） |
+| 11 | 對 claude 送「文字＋CR」一次寫入可能不送出 → MA19、TG8 |
+| 12 | `/tui` 重啟丟掉環境變數 → MA 章的已知現象 |
+| 13、14、18、19、22、31、32、33 | ConPTY 那一批（OpenConsole 後端、第一幀 `ESC[2J`、std handle 值傳播、逐字節流、殭屍 conhost 鎖資料夾、Win10 不轉送 alt-screen、環境變數、折行是硬換行）→ `docs/PROTOCOL.md`、`pty/conpty.rs` 的註解、A 章與「隱含契約」 |
+| 15、23、24、25 | IME／貼上那一批 → **`docs/TERMINAL-JS-DIFF.md` 第二節**逐條對照 ＋ `docs/MANUAL-TEST-PLAN.md` 的 **P0-IME 12 條** |
+| 16 | 恢復 scrollback 要在 fit 到最終寬度之後 → R5～R7 ＋「隱含契約」 |
+| 29(部分)、37、40、43、46、49 | COM 輸出、關閉慢、控制字元常值、清除畫面要分開送 Esc 與 Ctrl+L、防毒鎖檔 → D13、G 章、`docs/DEV-SETUP.md` |
+| 48 | 見「漏掉」表（這次補進 `docs/RELEASE.md`） |
+| 53 | 遠端 `/last` 絕不能用原始位元組流去 ANSI → 「隱含契約」有一條專門寫它 ＋ TG8、TG10 |
+| 55 | Telegram bot 測試可全自動 → `telegram_probe`（假 Bot API），TG1～TG19 |
+
+> **方法**：先用關鍵字粗篩（45/55 有命中），再逐條人工判斷；沒命中的 10 條全部讀原文
+> 才分類。稽核腳本不留在 repo 裡——它是一次性的工具，判斷本身在上面這三張表。
 
 ---
 

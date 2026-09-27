@@ -11,6 +11,8 @@ description = "AwayTerminal 2 — cross-platform terminal"
 authors = ["awaysu"]
 edition = "2021"
 rust-version = "1.89"
+# `cargo deny` 會把沒有 license 欄位的 crate 列成 Unlicensed（包含我們自己）
+license = "MIT"
 
 [lib]
 name = "awayterminal_lib"
@@ -24,7 +26,7 @@ tauri-build = { version = "2", features = [] }
 # 獨立成 crate 的理由：只依賴 libc，所以在 Windows 上也能
 # `cargo check -p awayterm-platform --target <linux/mac>`（主 crate 因為 tauri 的
 # GTK／objc *-sys 做不到）。見 platform/src/lib.rs 的檔頭。
-awayterm-platform = { path = "platform" }
+awayterm-platform = { path = "platform", version = "2.0.0" }
 
 tauri = { version = "2", features = [] }
 serde = { version = "1", features = ["derive"] }

@@ -24,6 +24,7 @@
 //! 直譯器是**可暫停的狀態機**（[`exec::Interp::step`] 一次跑一行），所以第二批要讓
 //! `wait`／`pause` 掛起、或讓使用者按鍵打斷，都不必改寫執行模型。
 
+pub mod cksum;
 pub mod cmds;
 pub mod error;
 pub mod host;

@@ -53,9 +53,47 @@ pub struct MacroHandle {
     /// PM 在 TASK-014 定的規則：巨集不套 agent 的 hook 護欄，但不能變成沙盒的後門。
     #[cfg(windows)]
     job: Mutex<Option<crate::pty::job::JobObject>>,
+    /// Unix：`exec` 開出來的每個子行程的 **pgid**（＝它自己的 pid，因為 spawn 時
+    /// 設了 `process_group(0)`）。Windows 那邊是一個 Job Object 收全部，Unix 沒有
+    /// 對應的「容器」handle，所以要自己記一份清單。
+    ///
+    /// 巨集結束或被停止時逐一 `killpg`（見 [`MacroHandle::reap_process_groups`]）。
+    #[cfg(unix)]
+    pgroups: Mutex<Vec<i32>>,
 }
 
 impl MacroHandle {
+    /// Unix：記下一個 `exec` 開出來的行程群組（pgid ＝子行程的 pid）。
+    #[cfg(unix)]
+    pub fn note_process_group(&self, pid: u32) {
+        self.pgroups
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(pid as i32);
+    }
+
+    /// Unix：把記下來的行程群組全部收掉（`SIGHUP` → 等 → `SIGKILL`）。
+    ///
+    /// 對應 Windows 端「drop Job Object handle ＝ kill-on-close」。
+    /// 兩個地方會呼叫：巨集跑完、以及使用者按停止／關分頁（`stop_for_tab`）。
+    /// 可重複呼叫（清單會被拿空）。
+    #[cfg(unix)]
+    pub fn reap_process_groups(&self) {
+        let pids: Vec<i32> = std::mem::take(
+            &mut *self.pgroups.lock().unwrap_or_else(|e| e.into_inner()),
+        );
+        for pid in pids {
+            awayterm_platform::pgroup::terminate_group(
+                pid,
+                std::time::Duration::from_millis(200),
+            );
+        }
+    }
+
+    /// Windows 上什麼都不用做（Job Object 的 handle 被 drop 就收掉了）。
+    #[cfg(not(unix))]
+    pub fn reap_process_groups(&self) {}
+
     fn new(file: String) -> Self {
         Self {
             stop: AtomicBool::new(false),
@@ -65,6 +103,8 @@ impl MacroHandle {
             answer: Mutex::new(None),
             #[cfg(windows)]
             job: Mutex::new(None),
+            #[cfg(unix)]
+            pgroups: Mutex::new(Vec::new()),
         }
     }
 
@@ -110,6 +150,16 @@ impl MacroHost for TabMacroHost {
 
     fn read_byte(&self) -> Option<u8> {
         self.handle.recv.read_byte()
+    }
+
+    /// 這條連線連到哪（`gethostname`）。SSH／Telnet 回主機、COM 回埠名。
+    fn conn_host(&self) -> Option<String> {
+        let tabs = self.app.try_state::<Arc<crate::tabs::TabManager>>()?;
+        match tabs.conn_params_of(self.tab)? {
+            crate::reconnect::ConnParams::Ssh(p) => Some(p.host),
+            crate::reconnect::ConnParams::Telnet(p) => Some(p.host),
+            crate::reconnect::ConnParams::Com(p) => Some(p.port),
+        }
     }
 
     fn flush_recv(&self) {
@@ -450,6 +500,9 @@ fn finish(app: &AppHandle, id: u32, handle: &Arc<MacroHandle>, result: Result<()
         Ok(()) => println!("[AwayTerminal] 巨集結束：分頁 {id} → {}", handle.file),
         Err(e) => println!("[AwayTerminal] 巨集錯誤：分頁 {id} → {e}"),
     }
+    // Unix：`exec` 開出來的行程群組要收掉（Windows 是 `handle` 被 drop 時 Job Object
+    // 自動收）。**成功與失敗都要收**，不然巨集出錯就會留下孤兒。
+    handle.reap_process_groups();
     // 錯誤也發給前端（跳對話框，同舊版的錯誤視窗）
     if let Err(e) = result {
         let _ = app.emit(
@@ -482,6 +535,8 @@ pub fn stop_for_tab(app: &AppHandle, id: u32) {
                 cancelled: true,
                 ..Default::default()
             });
+            // Unix：`exec` 開出來的東西要自己收（Windows 是 Job Object 自動收）
+            h.reap_process_groups();
         }
     }
 }
@@ -604,6 +659,12 @@ fn spawn_for_tab(
             return -1;
         }
     };
+
+    #[cfg(unix)]
+    {
+        // `process_group(0)` 讓子行程自己當 pgid leader → 記下來，停止時 `killpg`
+        handle.note_process_group(child.id());
+    }
 
     #[cfg(windows)]
     {

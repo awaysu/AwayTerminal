@@ -73,7 +73,7 @@ impl Interp {
 
     /// 需要連線才能做的指令：沒有 host 或連線不在 → `Link macro first. Use 'connect' macro.`
     /// （原碼的 `if (! Linked) return ErrLinkFirst;`）
-    fn need_link(&self) -> Result<()> {
+    pub(super) fn need_link(&self) -> Result<()> {
         match self.host() {
             Some(h) if h.connected() => Ok(()),
             _ => Err(Err::LinkFirst),

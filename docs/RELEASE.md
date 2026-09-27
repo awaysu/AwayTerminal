@@ -137,6 +137,12 @@ Get-ChildItem Cert:\CurrentUser\My -CodeSigningCert |
 
 `%1` 會被換成要簽的檔案路徑。Tauri 會對主程式與兩種安裝檔各呼叫一次。
 
+⚠️ **`Get-AuthenticodeSignature` 回 `UnknownError` 不一定是壞事**（舊版踩雷第 48 條，
+2026-08-04 一度誤判）：訊息如果是「terminated in a root certificate which is not
+trusted」，那代表簽章用的根憑證不在信任存放區——**自我簽署的憑證本來就會這樣**，
+程式照樣能執行。別把它當成防毒攔截或簽章失敗。真的有問題的是
+`HashMismatch`（檔案被改過）或 `NotSigned`。
+
 手動簽（確認用）：
 
 ```powershell
@@ -245,6 +251,10 @@ signtool verify /pa /v <檔案>
 [ ] node scripts/i18n-audit.mjs     PASS（沒有沒歸類的中文字串）
 [ ] node scripts/test-bridge-args.mjs  PASS
 [ ] node scripts/test-sandbox-guard.mjs PASS
+[ ] cd src-tauri && cargo deny check      advisories/bans/licenses/sources 全 ok
+[ ] npm audit --omit=dev                  0 vulnerabilities
+[ ] 重看 deny.toml 的 ignore 清單          上游修好了就拿掉（目前只有 RUSTSEC-2023-0071）
+[ ] THIRD-PARTY-NOTICES.md 第 13 節的授權盤點與 cargo deny list 一致
 [ ] 各 probe：pty / ssh / telnet / com / ttl / agent / chat / sandbox / job
 [ ] npm run verify                  0 FAIL
 [ ] npm run tauri build             msi + nsis 都出來

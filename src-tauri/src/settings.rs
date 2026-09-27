@@ -148,6 +148,20 @@ pub struct AppSettings {
     /// 的 `matchLang`）並存回來。舊版預設一律繁中、沒有系統語言偵測（見 docs/SETTINGS.md）。
     /// ⚠️ 舊設定檔裡是 `zh`（只有中英兩種的時候）→ 讀進來時當成 `zh-TW`。
     pub language: String,
+
+    /// **不認識的欄位原樣保留。** 對應舊版的 `[JsonExtensionData] ExtraFields`。
+    ///
+    /// 為什麼（舊版踩雷紀錄第 52 條，2026-07-27 中招、遠端靜默 3 小時才發現）：
+    /// 舊的 exe 一存檔就把它不認識的新欄位整組洗掉——那次被洗掉的正是
+    /// Telegram 的 token／chatId／RemoteEnabled。會發生的情境：
+    ///   * 使用者降版（新版寫過 settings.json，再開舊版）
+    ///   * 安裝版與開發版共用同一個設定檔（我們自己測試時最容易中）
+    ///
+    /// `#[serde(flatten)]` ＋ `serde_json::Map` ＝ 反序列化時把剩下的 key 全部收進來、
+    /// 序列化時原樣寫回去。**不要**給它 `skip_serializing_if`：那會讓空的 map 不寫，
+    /// 但也會讓「本來有、這次沒讀到」的情況變成刪除。
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
 /// 一條自訂連線。欄位照舊版 `Services/AppSettings.cs` 的 `CustomConn`，
@@ -270,6 +284,7 @@ impl Default for AppSettings {
                 ColorPair { fg: "#EBDBB2".into(), bg: "#282828".into() },
             ],
             language: String::new(),
+            extra: serde_json::Map::new(),
         }
     }
 }
@@ -498,4 +513,70 @@ pub fn spawn_autosave(store: Arc<SettingsStore>) {
             }
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// **不認識的欄位要原樣保留**（舊版踩雷第 52 條：舊 exe 一存檔就把新欄位洗掉，
+    /// 那次被洗掉的是 Telegram 的 token）。
+    ///
+    /// 會發生的情境：使用者降版、或安裝版與開發版共用同一個 settings.json。
+    #[test]
+    fn unknown_fields_survive_a_round_trip() {
+        let json = r#"{
+            "fontSize": 18,
+            "someFutureFeature": { "a": 1, "b": ["x"] },
+            "telegramBotToken": "keep-me"
+        }"#;
+        let s: AppSettings = serde_json::from_str(json).expect("要讀得進來");
+        assert_eq!(s.font_size, 18, "認識的欄位照舊");
+        assert_eq!(s.telegram_bot_token, "keep-me");
+        assert!(s.extra.contains_key("someFutureFeature"), "不認識的欄位被吃掉了");
+
+        let out = serde_json::to_string(&s).expect("要寫得出來");
+        let back: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(
+            back["someFutureFeature"]["a"], 1,
+            "寫回去的時候不認識的欄位不見了——這就是第 52 條的資料遺失"
+        );
+        assert_eq!(back["fontSize"], 18);
+    }
+
+    /// 認識的欄位**不可以**跑進 `extra`（不然會寫出重複的 key）。
+    #[test]
+    fn known_fields_do_not_leak_into_extra() {
+        let json = r#"{ "fontSize": 20, "language": "ja" }"#;
+        let s: AppSettings = serde_json::from_str(json).unwrap();
+        assert!(s.extra.is_empty(), "extra 撿到了認識的欄位：{:?}", s.extra);
+    }
+
+    /// 預設值寫出來的 JSON 不含 `extra` 這個 key（`flatten` 是攤平，不是巢狀）。
+    #[test]
+    fn flatten_does_not_add_a_nested_key() {
+        let out = serde_json::to_string(&AppSettings::default()).unwrap();
+        assert!(!out.contains("\"extra\""), "flatten 沒生效：{out}");
+    }
+
+    /// 解析失敗時**不可以**寫回去（不然使用者的檔案會被預設值蓋掉）。
+    ///
+    /// v2 的做法比舊版更保守：舊版是先備份 `settings.json.bad` 再退預設，
+    /// 我們是**整個不寫**（`writable = false`），原檔完全不動。
+    #[test]
+    fn a_broken_file_is_never_overwritten() {
+        let dir = std::env::temp_dir().join(format!("awayterm-settings-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("settings.json");
+        let broken = "{ this is not json";
+        std::fs::write(&path, broken).unwrap();
+
+        let store = SettingsStore::load(&dir);
+        store.update(|s| s.font_size = 99);
+        store.flush();
+
+        let after = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(after, broken, "壞掉的設定檔被覆寫了");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

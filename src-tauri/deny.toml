@@ -1,0 +1,122 @@
+# cargo-deny 設定：授權合規與安全公告。
+#
+#   cd src-tauri && cargo deny check
+#
+# 為什麼要有它（階段 5 的授權義務）：本專案是 MIT，但相依樹裡有 Apache-2.0、
+# MPL-2.0、BSD、Unicode 等等，散布安裝檔時**必須附授權全文**。人工維護
+# `THIRD-PARTY-NOTICES.md` 一定會漏，這支工具負責：
+#   1. 擋掉不能用的授權（GPL／AGPL／LGPL 這種 copyleft 傳染到我們的程式）
+#   2. 擋掉有安全公告的版本
+#   3. `cargo deny list` 吐出完整清單，用來對照 NOTICES 有沒有漏
+#
+# 進了 `docs/RELEASE.md` 的發佈前檢查清單。
+
+[graph]
+# 三個平台都要檢查——Linux 的 GTK 相依與 mac 的 objc 相依只在各自的 target 下出現，
+# 少了哪個就會漏掉那一批的授權。
+targets = [
+    "x86_64-pc-windows-msvc",
+    "x86_64-unknown-linux-gnu",
+    "aarch64-apple-darwin",
+    "x86_64-apple-darwin",
+]
+all-features = false
+
+# ----------------------------------------------------------------- 授權
+[licenses]
+# 只允許這些。**GPL／AGPL／LGPL 不在清單上＝自動被擋**
+# （`cargo-deny` 是白名單制，沒列到的一律視為違規）。
+allow = [
+    "MIT",
+    "MIT-0",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-1-Clause",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "0BSD",
+    "Unlicense",
+    "CC0-1.0",
+    "CDLA-Permissive-2.0",
+    # Unicode 資料（`icu_*`、`unicode-ident`）。允許再散布，要附聲明。
+    "Unicode-3.0",
+    # 檔案層級 copyleft：**未修改地連結不影響我們的授權**，但散布時要附全文。
+    # 相依的是 `serialport`（連接埠）與 `cssparser`／`selectors`（tauri 的 CSS 處理）。
+    "MPL-2.0",
+]
+# 信賴度低於這個值的授權判斷要人工確認（預設 0.8）
+confidence-threshold = 0.9
+# 例外：整個 crate 的授權不看（要寫理由）。目前沒有需要的。
+exceptions = []
+
+# 雙重授權時「選哪一個」。`cargo-deny` 遇到 `A OR B` 會挑第一個在 allow 清單裡的，
+# 但有些 crate 的表達式含我們**不允許**的選項，要明確記下我們選了哪一個——
+# 否則升版時多出一個 GPL 選項也不會被注意到。
+[[licenses.clarify]]
+# `MIT OR GPL-3.0-only` → **我們選 MIT**。
+# `unescaper` 是 tauri 的相依（解字串轉義）。
+name = "unescaper"
+expression = "MIT"
+license-files = []
+
+[[licenses.clarify]]
+# `MIT OR Apache-2.0 OR LGPL-2.1-or-later` → **我們選 MIT**。
+# `r-efi` 只在 `wasip2`／UEFI target 下出現（`getrandom` 的相依），
+# 我們四個 target 都不是 UEFI，但它還是會進相依圖。
+name = "r-efi"
+expression = "MIT"
+license-files = []
+
+# ----------------------------------------------------------------- 安全公告
+[advisories]
+# 用預設的 RustSec 資料庫。
+# `yanked` 只警告不擋：被 yank 的版本常常是相依樹深處的東西，我們改不了，
+# 但要看得到（升版時一起處理）。
+yanked = "warn"
+# 沒有維護的 crate 只警告——tauri 的相依樹裡有幾個（例如 `winapi` 0.3）
+# 是「穩定到不需要維護」，擋掉會讓整個建置停擺。
+unmaintained = "workspace"
+
+# 已知、**沒有修補版本**的公告。每一條都要寫：影響什麼、我們的曝險、使用者能做什麼。
+ignore = [
+    # RUSTSEC-2023-0071 — Marvin Attack：`rsa` crate 的 RSA 私鑰運算不是常數時間，
+    # 理論上可以靠計時側通道還原私鑰。
+    #
+    # 相依路徑：`rsa` ← `russh`（我們的 SSH 後端）與 `ssh-key`。
+    # **沒有安全的升版**：公告本文明講 rsa 0.9.10（最新穩定）與 0.10.0-rc.18（最新）
+    # 都還受影響，上游的修正（RustCrypto/RSA#626）還沒完成。換掉 `russh` 等於重做
+    # 整個 SSH 後端，而第二後端 `ssh2`（libssh2 → OpenSSL）有它自己的一堆問題。
+    #
+    # 我們的曝險：
+    #   * **驗證主機金鑰**用的是公開運算，沒有秘密 → 不受影響。
+    #   * **用 RSA 私鑰登入**（`.ppk`／OpenSSH 金鑰）會做簽章運算。要利用它，
+    #     攻擊者得控制我們連上的那台伺服器、並在大量連線中量測時間差。
+    #     互動式終端機的使用情境（連自己信任的設備、一天幾次）離那個門檻很遠。
+    #
+    # 使用者能做的：**改用 Ed25519 金鑰登入**（`ssh-keygen -t ed25519`），
+    # 完全不碰 RSA 的那條路。寫進 `docs/SSH.md`。
+    #
+    # 每次發佈前重看一次這一條（`docs/RELEASE.md` 的檢查清單）：上游修好就拿掉。
+    "RUSTSEC-2023-0071",
+]
+
+# ----------------------------------------------------------------- 來源
+[sources]
+# 只接受 crates.io。git 相依（尤其指向 branch 的）會讓建置不可重現，
+# 而且沒有 crates.io 的 yank／公告機制。
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+
+# ----------------------------------------------------------------- 重複版本
+[bans]
+# 同一個 crate 有多個版本只**警告**：tauri 的相依樹裡本來就有一堆
+# （`windows-sys` 有五個版本、`base64` 三個），那不是我們能修的，
+# 擋掉等於不能建置。但要看得到——編譯時間與安裝檔大小都吃它。
+multiple-versions = "warn"
+wildcards = "deny"
+# 這幾個是「同一個東西的不同世代」，重複是預期的，不用每次都警告。
+skip = []
+deny = []

@@ -89,6 +89,18 @@ pub trait MacroHost: Send + Sync {
 
     // ---- 以下有預設實作＝「這個 host 不支援」，probe 的假 host 不用全部實作 ----
 
+    /// **這條連線**的主機名稱（`gethostname`）。
+    ///
+    /// ⚠️ 原碼的 `gethostname` **不是本機的 hostname**：它走 DDE
+    /// （`GetTTParam(CmdGetHostname)`）問 ttermpro「你現在連到哪」，而且會先檢查
+    /// `Linked`（沒連線就回 `Link macro first.`）。照抄成 `hostname()` 會是**錯的**。
+    ///
+    /// SSH／Telnet 回主機名稱、COM 回埠名（同舊版「連到什麼」的語意），
+    /// 本機 shell 沒有連線對象 → `None`（呼叫端寫空字串）。
+    fn conn_host(&self) -> Option<String> {
+        None
+    }
+
     /// 清畫面（`clearscreen`）。
     fn clear_screen(&self) {}
 

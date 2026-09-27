@@ -1,0 +1,29 @@
+; CRC 與 checksum（TASK-023 D2）。
+; 值是**外部已知**的標準檢查向量，不是我們自己跑出來的：
+;   CRC-32（zlib）   of "123456789" = 0xCBF43926
+;   CRC-16/X-25      of "123456789" = 0x906E
+;   位元組相加        of "123456789" = 0x1DD
+
+v = '123456789'
+
+crc32 c_crc32 v
+crc16 c_crc16 v
+checksum8  c_sum8  v
+checksum16 c_sum16 v
+checksum32 c_sum32 v
+
+; 空字串：照原碼「直接 return、不寫變數」→ 先設一個哨兵值，跑完要還是它
+c_empty = 12345
+crc16 c_empty ''
+
+; 檔案版：開不了的檔案 → result = -1，而且變數不動
+c_nofile = 999
+crc32file c_nofile 'C:\definitely\not\here\xyzzy.bin'
+c_noresult = result
+
+; uptime：開機到現在的毫秒。只能驗「是正數」（值每次都不一樣）
+uptime c_uptime
+c_up_positive = 0
+if c_uptime > 0 then
+  c_up_positive = 1
+endif

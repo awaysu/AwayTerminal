@@ -7,6 +7,7 @@
 //! 正規表示式（`strmatch`／`strreplace`／`waitregex`）、剪貼簿、`exec`。
 //! 那些是 TASK-013，原因寫在 `docs/TTL.md`。
 
+use super::cksum;
 use super::error::{Err, Result};
 use super::exec::Interp;
 use super::vars::VarType;
@@ -45,6 +46,20 @@ impl Interp {
 
             // ---- 數值 ----
             Word::Random => self.cmd_random(),
+
+            // ---- CRC / checksum（`cksum.rs`，逐段照 ttl.cpp）----
+            Word::Checksum8 => self.cmd_cksum(cksum::Kind::Sum8, false),
+            Word::Checksum8File => self.cmd_cksum(cksum::Kind::Sum8, true),
+            Word::Checksum16 => self.cmd_cksum(cksum::Kind::Sum16, false),
+            Word::Checksum16File => self.cmd_cksum(cksum::Kind::Sum16, true),
+            Word::Checksum32 => self.cmd_cksum(cksum::Kind::Sum32, false),
+            Word::Checksum32File => self.cmd_cksum(cksum::Kind::Sum32, true),
+            Word::Crc16 => self.cmd_cksum(cksum::Kind::Crc16, false),
+            Word::Crc16File => self.cmd_cksum(cksum::Kind::Crc16, true),
+            Word::Crc32 => self.cmd_cksum(cksum::Kind::Crc32, false),
+            Word::Crc32File => self.cmd_cksum(cksum::Kind::Crc32, true),
+            Word::Uptime => self.cmd_uptime(),
+            Word::GetHostname => self.cmd_gethostname(),
             Word::RotateL => self.cmd_rotate(true),
             Word::RotateR => self.cmd_rotate(false),
 
@@ -601,6 +616,75 @@ impl Interp {
         let span = (max as u32).wrapping_add(1);
         let v = (next_rand() % span) as i32;
         self.set_int_ref(&target, v)
+    }
+
+    /// `TTLDoChecksum`／`TTLDoChecksumFile`：
+    /// `crc16 <整數變數> <字串>`、`crc16file <整數變數> <檔名>`（其餘四種同形）。
+    ///
+    /// 照原碼的兩個細節：
+    ///   * **空字串／空檔名直接 return，不寫變數**（`if (Str[0]==0) return Err;`）
+    ///   * `*file` 開不了檔時 `result` ＝ **-1**，而且**也不寫變數**
+    ///
+    /// 算法本身在 [`cksum`]（含標準檢查向量的測試）。
+    fn cmd_cksum(&mut self, kind: cksum::Kind, from_file: bool) -> Result<()> {
+        let target = self.var_ref(VarType::Integer)?;
+        let arg = self.str_val()?;
+        self.end_of_args()?;
+        if arg.is_empty() {
+            return Ok(()); // 同原碼：什麼都不做
+        }
+        let data = if from_file {
+            let path = String::from_utf8_lossy(&arg).to_string();
+            match std::fs::read(&path) {
+                Ok(bytes) => bytes,
+                Err(_) => {
+                    // 原碼：result = -1，變數不動
+                    self.vars.set_result(-1);
+                    return Ok(());
+                }
+            }
+        } else {
+            arg
+        };
+        let v = kind.apply(&data);
+        // TTL 的整數是 32 位元有號（`docs/TTL.md`）：CRC32 超過 i32::MAX 時照原碼的
+        // 位元樣式存進去（原碼是 `SetIntVal(VarId, cksum)`，DWORD → int 的位元重解讀）。
+        self.set_int_ref(&target, v as i32)
+    }
+
+    /// `TTLUptime`：`uptime <整數變數>` ＝ 作業系統開機到現在的**毫秒**數。
+    ///
+    /// 原碼用 `GetTickCount()`（32 位元，**49 天會繞回 0**，原碼註解明講而且說
+    /// 「TeraTerm 不支援 64 位元變數所以用 GetTickCount64 沒有意義」）。
+    /// 我們照它繞回——`docs/TTL.md` 有記這個相容行為。
+    ///
+    /// 跨平台的取值在 `awayterm_platform::uptime`（Windows `GetTickCount64`、
+    /// Linux `/proc/uptime`、mac `sysctl kern.boottime`），一律截成 32 位元。
+    fn cmd_uptime(&mut self) -> Result<()> {
+        let target = self.var_ref(VarType::Integer)?;
+        self.end_of_args()?;
+        let ms = awayterm_platform::uptime::uptime_ms_u32();
+        self.set_int_ref(&target, ms as i32)
+    }
+
+    /// `TTLGetHostname`：`gethostname <字串變數>` ＝ **這條連線**連到的主機。
+    ///
+    /// ⚠️ **不是本機的 hostname。** 原碼走 DDE 問 ttermpro「你現在連到哪」，
+    /// 而且會先檢查 `Linked`——沒連線時回 `Link macro first. Use 'connect' macro.`
+    /// （＝`Err::LinkFirst`），這一點照抄。
+    ///
+    /// 這是 TASK-023 查原碼才發現的：照名字實作成本機 hostname 會是**靜悄悄的錯**。
+    fn cmd_gethostname(&mut self) -> Result<()> {
+        let target = self.var_ref(VarType::String)?;
+        self.end_of_args()?;
+        // `need_link()` 是 io.rs 已經有的那一條（沒有 host 或連線不在 → `LinkFirst`），
+        // 和 `send`／`wait` 走同一個判斷。
+        self.need_link()?;
+        let host = self
+            .host()
+            .and_then(|h| h.conn_host())
+            .unwrap_or_default();
+        self.set_str_ref(&target, host.as_bytes())
     }
 
     /// `BitRotate`：`rotateleft <整數變數> <值> <位數>`（`rotateright` 是負的位數）。

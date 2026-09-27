@@ -24,6 +24,33 @@ fn main() {
 
     println!("== AwayTerminal2 ttl_probe ==");
 
+    // ------------------------------------------------- CRC／checksum／uptime
+    match run("cksum.ttl") {
+        Err(e) => {
+            fail += 1;
+            println!("FAIL  cksum.ttl 跑不完：{e}");
+        }
+        Ok(v) => {
+            // 標準檢查向量（外部已知答案，不是我們自己跑出來的）
+            let ints: &[(&str, i32)] = &[
+                ("c_crc32", 0xCBF4_3926u32 as i32),
+                ("c_crc16", 0x906E),
+                ("c_sum8", 0xDD),
+                ("c_sum16", 0x1DD),
+                ("c_sum32", 0x1DD),
+                // 空字串：照原碼不寫變數 → 哨兵值還在
+                ("c_empty", 12345),
+                // 檔案開不了：result = -1、變數不動
+                ("c_nofile", 999),
+                ("c_noresult", -1),
+                ("c_up_positive", 1),
+            ];
+            let (p, f) = check(&v, "cksum.ttl", ints, &[]);
+            pass += p;
+            fail += f;
+        }
+    }
+
     // ---------------------------------------------------------------- 運算式
     match run("expr.ttl") {
         Err(e) => {
