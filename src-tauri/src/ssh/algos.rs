@@ -22,6 +22,7 @@
 //! OpenSSH 8.8 完全移除。**先不開**，等使用者的設備清單真的出現只支援 DSA 的機器再說
 //! （只要在 `Cargo.toml` 的 russh features 加 `"dsa"`，再把 `Algorithm::Dsa` 排進最後）。
 
+use crate::i18n::{t};
 use std::borrow::Cow;
 
 use russh::keys::{Algorithm, EcdsaCurve, HashAlg};
@@ -151,16 +152,16 @@ const WEAK_MAC: &[&str] = &["hmac-sha1", "hmac-sha1-etm@openssh.com", "hmac-sha1
 pub fn weak_ones(kex: &str, host_key: &str, cipher: &str, mac: &str) -> Vec<(&'static str, String)> {
     let mut out = Vec::new();
     if WEAK_KEX.contains(&kex) {
-        out.push(("金鑰交換", kex.to_string()));
+        out.push((t("algo.kex"), kex.to_string()));
     }
     if WEAK_HOST_KEY.contains(&host_key) {
-        out.push(("主機金鑰", host_key.to_string()));
+        out.push((t("algo.hostkey"), host_key.to_string()));
     }
     if WEAK_CIPHER.contains(&cipher) {
-        out.push(("加密", cipher.to_string()));
+        out.push((t("algo.cipher"), cipher.to_string()));
     }
     if WEAK_MAC.contains(&mac) {
-        out.push(("訊息驗證", mac.to_string()));
+        out.push((t("algo.mac"), mac.to_string()));
     }
     out
 }
@@ -341,7 +342,7 @@ mod tests {
         let w = weak_ones("diffie-hellman-group14-sha1", "ssh-rsa", "aes128-cbc", "hmac-sha1");
         assert_eq!(w.len(), 4, "四項都該被標出來：{w:?}");
         let kinds: Vec<&str> = w.iter().map(|(k, _)| *k).collect();
-        assert_eq!(kinds, vec!["金鑰交換", "主機金鑰", "加密", "訊息驗證"]);
+        assert_eq!(kinds, vec![t("algo.kex"), t("algo.hostkey"), t("algo.cipher"), t("algo.mac")]);
     }
 
     #[test]

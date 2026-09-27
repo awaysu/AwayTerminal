@@ -18,6 +18,7 @@
 //! | `ProcessId` ＝ 0 | [`TelnetSession::pid`] |
 //! | `Resize` 是空的（`// NAWS 可選，暫略`） | **改成真的送 NAWS**（`CLAUDE.md`：「Telnet 自己實作（加 NAWS）」） |
 
+use crate::i18n::{tf};
 use std::io::{Read, Write};
 use std::net::{TcpStream, ToSocketAddrs};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
@@ -458,10 +459,10 @@ fn connect_and_read(
 fn connect(target: &str) -> Result<TcpStream, String> {
     let addrs: Vec<_> = target
         .to_socket_addrs()
-        .map_err(|e| format!("找不到主機 {target}：{e}"))?
+        .map_err(|e| tf("err.hostNotFoundWhy", &[target, &e.to_string()]))?
         .collect();
     if addrs.is_empty() {
-        return Err(format!("找不到主機 {target}"));
+        return Err(tf("err.hostNotFound", &[target]));
     }
     let mut last = String::new();
     for addr in addrs {
@@ -470,7 +471,7 @@ fn connect(target: &str) -> Result<TcpStream, String> {
                 let _ = s.set_nodelay(true); // 同舊版 `new TcpClient { NoDelay = true }`
                 return Ok(s);
             }
-            Err(e) => last = format!("連線 {addr} 失敗：{e}"),
+            Err(e) => last = tf("err.connectFailed", &[&addr.to_string(), &e.to_string()]),
         }
     }
     Err(last)

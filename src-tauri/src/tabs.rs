@@ -12,6 +12,7 @@
 //! tauri event `tab-state`，payload 是 JSON。`terminal.js` 完全看不到它，
 //! 舊協定也一個字都沒變。
 
+use crate::i18n::{t};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -39,10 +40,10 @@ impl TabKind {
         match self {
             TabKind::PowerShell => "PowerShell",
             TabKind::Claude => "Claude Code",
-            TabKind::Custom => "自訂連線",
+            TabKind::Custom => t("kind.custom"),
             TabKind::Ssh => "SSH",
             TabKind::Telnet => "Telnet",
-            TabKind::Com => "連接埠",
+            TabKind::Com => t("kind.com"),
             TabKind::Adb => "ADB",
         }
     }

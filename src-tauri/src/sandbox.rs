@@ -17,6 +17,7 @@
 //! `HOME`／`APPDATA`／`LOCALAPPDATA`／`USERPROFILE` **一律不改**——
 //! Claude Code、Codex 的登入狀態存在那裡，改了會讓 agent 掉登入（`CLAUDE.md` 明寫）。
 
+use crate::i18n::{t, tf};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -80,7 +81,7 @@ pub fn prepare(work_dir: &Path, name: &str, tool_path: &str) -> Result<Sandbox, 
         }
         None => {
             let root = work_dir.join(SANDBOX_DIRS[0]).join(SANDBOX_DIRS[1]).join(&safe);
-            std::fs::create_dir_all(&root).map_err(|e| format!("建立沙盒目錄失敗：{e}"))?;
+            std::fs::create_dir_all(&root).map_err(|e| tf("err.sandboxDirFailed", &[&e.to_string()]))?;
             (root, work_dir.to_path_buf(), String::new(), false)
         }
     };
@@ -237,7 +238,7 @@ fn git(dir: &Path, args: &[&str]) -> Result<String, String> {
         .args(args)
         .current_dir(dir)
         .output()
-        .map_err(|e| format!("git 執行失敗（{}）：{e}", args.join(" ")))?;
+        .map_err(|e| tf("err.gitFailed", &[&args.join(" "), &e.to_string()]))?;
     if !out.status.success() {
         return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());
     }
@@ -262,7 +263,7 @@ fn add_worktree(repo: &Path, path: &Path, branch: &str) -> Result<(), String> {
         return Ok(());
     }
     if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| format!("建立沙盒目錄失敗：{e}"))?;
+        std::fs::create_dir_all(parent).map_err(|e| tf("err.sandboxDirFailed", &[&e.to_string()]))?;
     }
     let path_str = path.to_string_lossy().to_string();
     git(repo, &["worktree", "add", "-b", branch, &path_str])?;
@@ -298,7 +299,7 @@ fn ensure_ignored(repo: &Path) {
 /// 移除一個沙盒 worktree。**分支保留**（裡面可能有還沒合併的成果）。
 pub fn remove_worktree(work_dir: &str) -> Result<(), String> {
     let path = PathBuf::from(work_dir);
-    let repo = git_toplevel(&path).ok_or_else(|| "不在 git repo 裡".to_string())?;
+    let repo = git_toplevel(&path).ok_or_else(|| t("err.notGitRepo").to_string())?;
     let path_str = path.to_string_lossy().to_string();
     git(&repo, &["worktree", "remove", "--force", &path_str])?;
     println!("[AwayTerminal] 已移除沙盒 worktree：{path_str}（分支保留）");
@@ -458,7 +459,7 @@ pub fn sandbox_verify(
 ) -> Result<SandboxChecks, String> {
     let sb = tabs_state
         .sandbox_of(id)
-        .ok_or_else(|| "這個分頁沒有沙盒".to_string())?;
+        .ok_or_else(|| t("err.tabNoSandbox").to_string())?;
     let work = PathBuf::from(&sb.work_dir);
     let repo = git_toplevel(&work);
 

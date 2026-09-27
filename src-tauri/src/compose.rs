@@ -15,6 +15,7 @@
 //! | 固定送到當初那個分頁（期間切分頁也不會送錯） | 同上 | 同（`id` 是參數） |
 //! | 勾選狀態記在設定 | `AppSettings.ComposeSendEnter` | `settings.compose_send_enter` |
 
+use crate::i18n::{t, tf};
 use std::sync::Arc;
 
 use tauri::{AppHandle, State};
@@ -84,27 +85,27 @@ pub async fn compose_load_file(app: AppHandle) -> Result<Option<LoadedText>, Str
     let (tx, rx) = std::sync::mpsc::channel();
     app.dialog()
         .file()
-        .set_title("載入文字檔")
+        .set_title(t("dlg.loadTextFile"))
         .add_filter(
-            "文字檔",
+            t("dlg.textFiles"),
             &["txt", "md", "log", "json", "csv", "xml", "yaml", "yml"],
         )
-        .add_filter("所有檔案", &["*"])
+        .add_filter(t("dlg.allFiles"), &["*"])
         .pick_file(move |f| {
             let _ = tx.send(f);
         });
     let picked = tokio::task::spawn_blocking(move || rx.recv().ok().flatten())
         .await
-        .map_err(|e| format!("檔案選擇失敗：{e}"))?;
+        .map_err(|e| tf("err.filePickFailed", &[&e.to_string()]))?;
     let Some(path) = picked else { return Ok(None) };
     let path = path.to_string();
     let p = std::path::PathBuf::from(&path);
 
-    let size = std::fs::metadata(&p).map_err(|e| format!("讀取檔案失敗：{e}"))?.len();
+    let size = std::fs::metadata(&p).map_err(|e| tf("err.readFileFailed", &[&e.to_string()]))?.len();
     if size > LOAD_MAX_MB * 1024 * 1024 {
-        return Err(format!("檔案太大（上限 {LOAD_MAX_MB} MB），未載入。"));
+        return Err(tf("compose.loadTooBig", &[&LOAD_MAX_MB.to_string()]));
     }
-    let bytes = std::fs::read(&p).map_err(|e| format!("讀取檔案失敗：{e}"))?;
+    let bytes = std::fs::read(&p).map_err(|e| tf("err.readFileFailed", &[&e.to_string()]))?;
     let (text, encoding) = decode_text(&bytes);
     println!(
         "[AwayTerminal] 輸入文字：載入 {path}（{} bytes，{encoding}）",
@@ -124,20 +125,20 @@ pub async fn compose_save_file(app: AppHandle, text: String) -> Result<Option<St
     let (tx, rx) = std::sync::mpsc::channel();
     app.dialog()
         .file()
-        .set_title("儲存")
+        .set_title(t("dlg.save"))
         .set_file_name("compose.txt")
-        .add_filter("文字檔", &["txt"])
+        .add_filter(t("dlg.textFiles"), &["txt"])
         .add_filter("Markdown", &["md"])
-        .add_filter("所有檔案", &["*"])
+        .add_filter(t("dlg.allFiles"), &["*"])
         .save_file(move |f| {
             let _ = tx.send(f);
         });
     let picked = tokio::task::spawn_blocking(move || rx.recv().ok().flatten())
         .await
-        .map_err(|e| format!("存檔對話框失敗：{e}"))?;
+        .map_err(|e| tf("err.savePickFailed", &[&e.to_string()]))?;
     let Some(path) = picked else { return Ok(None) };
     let path = path.to_string();
-    std::fs::write(&path, text.as_bytes()).map_err(|e| format!("儲存檔案失敗：{e}"))?;
+    std::fs::write(&path, text.as_bytes()).map_err(|e| tf("err.saveFileFailed", &[&e.to_string()]))?;
     println!("[AwayTerminal] 輸入文字：存成 {path}");
     Ok(Some(path))
 }
@@ -165,7 +166,7 @@ pub async fn compose_send(
         return Ok(()); // 空白不送（舊版 `Send()` 也是直接 return）
     }
     if tabs_state.kind_of(id).is_none() {
-        return Err("沒有分頁可送".to_string());
+        return Err(t("compose.noTab").to_string());
     }
     if remember.unwrap_or(true) {
         settings.update(|s| s.compose_send_enter = send_enter);
@@ -204,11 +205,11 @@ pub fn compose_verify_roundtrip(text: String) -> Result<serde_json::Value, Strin
     let source = format!("{text}\r第二行");
     let (bytes, _, had_errors) = encoding_rs::BIG5.encode(&source);
     if had_errors {
-        return Err("這段文字沒辦法用 Big5 表示".to_string());
+        return Err(t("err.notBig5").to_string());
     }
-    std::fs::write(&path, &bytes).map_err(|e| format!("寫檔失敗：{e}"))?;
+    std::fs::write(&path, &bytes).map_err(|e| tf("err.writeFailed", &[&e.to_string()]))?;
 
-    let raw = std::fs::read(&path).map_err(|e| format!("讀檔失敗：{e}"))?;
+    let raw = std::fs::read(&path).map_err(|e| tf("err.readFailed", &[&e.to_string()]))?;
     let (decoded, encoding) = decode_text(&raw);
     let normalized = normalize_newlines(&decoded);
     let first_line = normalized.split("\r\n").next().unwrap_or("").to_string();

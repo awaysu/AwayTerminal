@@ -28,6 +28,7 @@ pub mod conn;
 pub mod hostkey;
 pub mod prompt;
 
+use crate::i18n::{t, tf};
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
@@ -59,7 +60,7 @@ fn runtime() -> &'static Runtime {
             .thread_name("awayterm-ssh")
             .enable_all()
             .build()
-            .expect("建立 SSH runtime 失敗")
+            .unwrap_or_else(|e| panic!("{}: {e}", t("err.sshRuntime")))
     })
 }
 
@@ -307,7 +308,7 @@ impl client::Handler for Handler {
             // 憑證式主機金鑰要先知道信任哪個 CA，這個階段不支援 → 明確拒絕，不要默默放行
             echo(
                 &self.on_output,
-                "\r\n\x1b[33m這台主機用 OpenSSH 憑證當主機金鑰，目前還不支援。\x1b[0m\r\n",
+                &format!("\r\n\x1b[33m{}\x1b[0m\r\n", t("term.sshCertUnsupported")),
             );
             return Ok(false);
         };
@@ -378,12 +379,15 @@ async fn run(
 
     echo(
         &on_output,
-        &format!("\x1b[90m連線到 {}:{} …\x1b[0m\r\n", opts.host, opts.port),
+        &format!(
+            "\x1b[90m{}\x1b[0m\r\n",
+            tf("term.sshConnecting", &[&opts.host, &opts.port.to_string()])
+        ),
     );
 
     let mut handle = client::connect(config, (opts.host.as_str(), opts.port), handler)
         .await
-        .map_err(|e| format!("連線失敗：{e}"))?;
+        .map_err(|e| tf("err.sshConnectFailed", &[&e.to_string()]))?;
 
     // ---- 帳號：PuTTY 式在終端機裡問 ----
     let user = match opts.user.clone() {
@@ -391,7 +395,7 @@ async fn run(
         _ => {
             let u = prompt_line(&on_output, &mut rx, "login as: ", true).await?;
             if u.trim().is_empty() {
-                return Err("沒有輸入帳號，連線取消。".to_string());
+                return Err(t("err.sshNoUser").to_string());
             }
             u.trim().to_string()
         }
@@ -407,7 +411,7 @@ async fn run(
     let channel = handle
         .channel_open_session()
         .await
-        .map_err(|e| format!("開啟 session 失敗：{e}"))?;
+        .map_err(|e| tf("err.sshSessionFailed", &[&e.to_string()]))?;
     channel
         .request_pty(
             false,
@@ -419,7 +423,7 @@ async fn run(
             &[],
         )
         .await
-        .map_err(|e| format!("請求 PTY 失敗：{e}"))?;
+        .map_err(|e| tf("err.sshPtyFailed", &[&e.to_string()]))?;
 
     // 送出環境變數（舊版 `ssh.exe` 的 `-o SendEnv=…`）。
     // 伺服器多半設了 `AcceptEnv` 白名單，沒放行就會回 failure——**只印一行灰字、不擋連線**
@@ -431,7 +435,10 @@ async fn run(
         if let Err(e) = channel.set_env(false, k.as_str(), v.as_str()).await {
             echo(
                 &on_output,
-                &format!("\x1b[90m（環境變數 {k} 送不出去：{e}）\x1b[0m\r\n"),
+                &format!(
+                    "\x1b[90m{}\x1b[0m\r\n",
+                    tf("term.sshEnvFailed", &[k.as_str(), &e.to_string()])
+                ),
             );
         }
     }
@@ -439,7 +446,7 @@ async fn run(
     channel
         .request_shell(false)
         .await
-        .map_err(|e| format!("開啟 shell 失敗：{e}"))?;
+        .map_err(|e| tf("err.sshShellFailed", &[&e.to_string()]))?;
 
     // 到這裡才算「真的連上了」：重連的退避次數在這裡歸零（見 OnConnected 的說明）
     if let Some(cb) = &on_connected {
@@ -513,8 +520,14 @@ async fn authenticate(
                 let with_hash = russh::keys::PrivateKeyWithHashAlg::new(Arc::new(key), hash_alg);
                 match handle.authenticate_publickey(user, with_hash).await {
                     Ok(r) if r.success() => return Ok(()),
-                    Ok(_) => echo(on_output, "\x1b[90m金鑰被拒絕，改用其他方式。\x1b[0m\r\n"),
-                    Err(e) => echo(on_output, &format!("\x1b[90m金鑰驗證失敗（{e}）。\x1b[0m\r\n")),
+                    Ok(_) => echo(
+                        on_output,
+                        &format!("\x1b[90m{}\x1b[0m\r\n", t("term.sshKeyRejected")),
+                    ),
+                    Err(e) => echo(on_output, &format!(
+                            "\x1b[90m{}\x1b[0m\r\n",
+                            tf("term.sshKeyAuthFailed", &[&e.to_string()])
+                        )),
                 }
             }
             Err(e) => echo(on_output, &format!("\x1b[33m{e}\x1b[0m\r\n")),
@@ -557,7 +570,7 @@ async fn authenticate(
                     resp = handle
                         .authenticate_keyboard_interactive_respond(answers)
                         .await
-                        .map_err(|e| format!("驗證失敗：{e}"))?;
+                        .map_err(|e| tf("err.sshAuthFailed", &[&e.to_string()]))?;
                 }
             }
         },
@@ -573,13 +586,13 @@ async fn authenticate(
             Ok(_) => {
                 echo(on_output, "Access denied\r\n");
                 if attempt == 3 {
-                    return Err("密碼錯誤三次，連線結束。".to_string());
+                    return Err(t("err.sshBadPassword3").to_string());
                 }
             }
-            Err(e) => return Err(format!("驗證失敗：{e}")),
+            Err(e) => return Err(tf("err.sshAuthFailed", &[&e.to_string()])),
         }
     }
-    Err("驗證失敗。".to_string())
+    Err(t("err.sshAuthFailedPlain").to_string())
 }
 
 /// 讀一把私鑰。有密碼保護而使用者沒給時，在終端機裡問（不回顯）。
@@ -589,16 +602,16 @@ async fn load_key(
     on_output: &OnOutput,
     rx: &mut mpsc::UnboundedReceiver<Cmd>,
 ) -> Result<ssh_key::PrivateKey, String> {
-    let text = std::fs::read_to_string(path).map_err(|e| format!("讀不到金鑰檔 {path}：{e}"))?;
+    let text = std::fs::read_to_string(path).map_err(|e| tf("err.sshKeyRead", &[path, &e.to_string()]))?;
     match russh::keys::decode_secret_key(&text, passphrase) {
         Ok(k) => Ok(k),
         Err(_) if passphrase.is_none() => {
             // OpenSSH 與 .ppk 的加密金鑰都會走到這裡
             let pw = prompt_line(on_output, rx, "Passphrase for key: ", false).await?;
             russh::keys::decode_secret_key(&text, Some(&pw))
-                .map_err(|e| format!("金鑰解密失敗：{e}"))
+                .map_err(|e| tf("err.sshKeyDecrypt", &[&e.to_string()]))
         }
-        Err(e) => Err(format!("金鑰讀取失敗：{e}")),
+        Err(e) => Err(tf("err.sshKeyLoad", &[&e.to_string()])),
     }
 }
 
@@ -609,20 +622,20 @@ async fn try_agent(handle: &mut client::Handle<Handler>, user: &str) -> Result<b
     #[cfg(windows)]
     let mut agent = russh::keys::agent::client::AgentClient::connect_pageant()
         .await
-        .map_err(|e| format!("找不到 Pageant：{e}"))?;
+        .map_err(|e| tf("err.pageantMissing", &[&e.to_string()]))?;
     #[cfg(not(windows))]
     let mut agent = {
-        let path = std::env::var("SSH_AUTH_SOCK").map_err(|_| "沒有 SSH_AUTH_SOCK".to_string())?;
+        let path = std::env::var("SSH_AUTH_SOCK").map_err(|_| t("err.noAuthSock").to_string())?;
         let stream = tokio::net::UnixStream::connect(path)
             .await
-            .map_err(|e| format!("連不上 ssh-agent：{e}"))?;
+            .map_err(|e| tf("err.agentConnect", &[&e.to_string()]))?;
         russh::keys::agent::client::AgentClient::connect(stream)
     };
 
     let identities = agent
         .request_identities()
         .await
-        .map_err(|e| format!("agent 沒有回應身分清單：{e}"))?;
+        .map_err(|e| tf("err.agentIdentities", &[&e.to_string()]))?;
     if identities.is_empty() {
         return Ok(false);
     }
@@ -658,12 +671,12 @@ async fn prompt_line(
     let mut buf = String::new();
     loop {
         let Some(cmd) = rx.recv().await else {
-            return Err("連線已取消。".to_string());
+            return Err(t("err.connCancelled").to_string());
         };
         let data = match cmd {
             Cmd::Write(d) => d,
             Cmd::Resize(..) => continue, // 問答期間也可能改變視窗大小
-            Cmd::Close => return Err("連線已取消。".to_string()),
+            Cmd::Close => return Err(t("err.connCancelled").to_string()),
         };
         for ch in String::from_utf8_lossy(&data).chars() {
             match ch {
@@ -677,7 +690,7 @@ async fn prompt_line(
                     }
                 }
                 // Ctrl+C：取消整條連線（PuTTY 在登入階段按 Ctrl+C 也是斷線）
-                '\u{3}' => return Err("已取消。".to_string()),
+                '\u{3}' => return Err(t("err.cancelled").to_string()),
                 c if c.is_control() => {}
                 c => {
                     buf.push(c);

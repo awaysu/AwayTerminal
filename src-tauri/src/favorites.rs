@@ -20,6 +20,7 @@
 //! 這一點連 `SshConnParams`／`TelnetParams` 都有單元測試釘住
 //! （`reconnect.rs` 的 `conn_params_have_no_password_field`）。
 
+use crate::i18n::{t, tf};
 use std::sync::Arc;
 
 use tauri::State;
@@ -162,10 +163,10 @@ pub fn fav_add(
     let existing = settings.get().favorites;
     if let Some(dup) = existing.iter().find(|f| key_of(f) == key) {
         // 舊版：同一個連線只收一筆，已經有了就講出來（不是錯誤）
-        return Err(format!("已經在我的最愛裡了：{}", dup.name));
+        return Err(tf("fav.exists", &[&dup.name]));
     }
     let base = if item.name.trim().is_empty() {
-        "我的最愛".to_string()
+        t("fav.title").to_string()
     } else {
         item.name.trim().to_string()
     };
@@ -194,7 +195,7 @@ pub fn fav_rename(
 ) -> Result<(), String> {
     let new_name = new_name.trim().to_string();
     if new_name.is_empty() {
-        return Err("請輸入名稱".to_string());
+        return Err(t("err.needName").to_string());
     }
     let taken = settings
         .get()
@@ -202,7 +203,7 @@ pub fn fav_rename(
         .iter()
         .any(|f| f.name == new_name && f.name != name);
     if taken {
-        return Err(format!("已經有一筆叫「{new_name}」了"));
+        return Err(tf("fav.nameTaken", &[&new_name]));
     }
     settings.update(|s| {
         if let Some(f) = s.favorites.iter_mut().find(|f| f.name == name) {

@@ -17,6 +17,7 @@
 //! ⚠️ 我們**不讀** `~/.ssh/known_hosts`：那是 OpenSSH 的檔，程式不該偷偷往裡面寫。
 //! 檔案位置印在啟動 log 裡，使用者要清掉某一台就自己刪那一行。
 
+use crate::i18n::{tf};
 use std::path::{Path, PathBuf};
 
 use russh::keys::ssh_key::{self, HashAlg};
@@ -120,7 +121,7 @@ impl HostKeyStore {
     /// 記下一把主機金鑰（append 一行）。
     pub fn learn(&self, host: &str, port: u16, key: &ssh_key::PublicKey) -> Result<(), String> {
         if let Some(dir) = self.path.parent() {
-            std::fs::create_dir_all(dir).map_err(|e| format!("建立資料夾失敗：{e}"))?;
+            std::fs::create_dir_all(dir).map_err(|e| tf("err.mkdirFailed", &[&e.to_string()]))?;
         }
         // `russh` 的 `learn_known_hosts_path` 沒有被 `pub use` 出來，所以自己寫這一行。
         // 格式就是 OpenSSH 的：非預設埠用 `[host]:port`（同 russh 讀取端的慣例）。
@@ -131,14 +132,14 @@ impl HostKeyStore {
         };
         let line = key
             .to_openssh()
-            .map_err(|e| format!("金鑰序列化失敗：{e}"))?;
+            .map_err(|e| tf("err.keySerialize", &[&e.to_string()]))?;
         let mut file = std::fs::OpenOptions::new()
             .create(true)
             .append(true)
             .open(&self.path)
-            .map_err(|e| format!("開啟 known_hosts 失敗：{e}"))?;
+            .map_err(|e| tf("err.knownHostsOpen", &[&e.to_string()]))?;
         use std::io::Write;
-        writeln!(file, "{pattern} {line}").map_err(|e| format!("寫入 known_hosts 失敗：{e}"))
+        writeln!(file, "{pattern} {line}").map_err(|e| tf("err.knownHostsWrite", &[&e.to_string()]))
     }
 }
 

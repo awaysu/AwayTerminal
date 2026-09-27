@@ -23,6 +23,7 @@
 //! | `ProcessId => 0` | 同 |
 //! | 開埠失敗 → 分頁**移除**＋跳錯誤視窗（`Open()` 是同步的） | 同（`session_create` 回 `Err`，前端跳對話框） |
 
+use crate::i18n::{t, tf};
 use std::io::{Read, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
@@ -106,9 +107,7 @@ pub fn map_parity(name: &str) -> Mapped<serialport::Parity> {
         "None" => Mapped { value: serialport::Parity::None, warning: None },
         other => Mapped {
             value: serialport::Parity::None,
-            warning: Some(format!(
-                "同位檢查 {other} 這個函式庫不支援（只有 None／Odd／Even），已改用 None"
-            )),
+            warning: Some(tf("com.parityUnsupported", &[other])),
         },
     }
 }
@@ -120,9 +119,7 @@ pub fn map_stop(name: &str) -> Mapped<serialport::StopBits> {
         "One" => Mapped { value: serialport::StopBits::One, warning: None },
         other => Mapped {
             value: serialport::StopBits::One,
-            warning: Some(format!(
-                "停止位元 {other} 這個函式庫不支援（只有 1 與 2），已改用 1"
-            )),
+            warning: Some(tf("com.stopBitsUnsupported", &[other])),
         },
     }
 }
@@ -135,14 +132,12 @@ pub fn map_flow(name: &str) -> Mapped<serialport::FlowControl> {
         "RequestToSend" => Mapped { value: serialport::FlowControl::Hardware, warning: None },
         "RequestToSendXOnXOff" => Mapped {
             value: serialport::FlowControl::Hardware,
-            warning: Some(
-                "流量控制 RTS/CTS+XON/XOFF 這個函式庫不支援，已改用 RTS/CTS".to_string(),
-            ),
+            warning: Some(t("com.flowRtsXonUnsupported").to_string()),
         },
         "None" => Mapped { value: serialport::FlowControl::None, warning: None },
         other => Mapped {
             value: serialport::FlowControl::None,
-            warning: Some(format!("流量控制 {other} 認不出來，已改用 None")),
+            warning: Some(tf("com.flowUnknown", &[other])),
         },
     }
 }
@@ -293,7 +288,7 @@ pub fn open(params: &ComParams) -> Result<(Link, Vec<String>), String> {
         7 => serialport::DataBits::Seven,
         8 => serialport::DataBits::Eight,
         other => {
-            warnings.push(format!("資料位元 {other} 不支援，已改用 8"));
+            warnings.push(tf("com.dataBitsUnsupported", &[&other.to_string()]));
             serialport::DataBits::Eight
         }
     };
@@ -305,15 +300,15 @@ pub fn open(params: &ComParams) -> Result<(Link, Vec<String>), String> {
         .flow_control(flow.value)
         .timeout(READ_POLL)
         .open()
-        .map_err(|e| format!("開啟 {} 失敗：{}", params.port, e.description))?;
+        .map_err(|e| tf("err.comOpenFailed", &[&params.port, &e.description]))?;
 
     // 舊版：DTR 一律拉起來；RTS 只在沒有硬體流控時自己設
     if let Err(e) = port.write_data_terminal_ready(true) {
-        warnings.push(format!("設定 DTR 失敗：{e}"));
+        warnings.push(tf("err.comDtrFailed", &[&e.to_string()]));
     }
     if rts_should_be_set(&params.flow) {
         if let Err(e) = port.write_request_to_send(true) {
-            warnings.push(format!("設定 RTS 失敗：{e}"));
+            warnings.push(tf("err.comRtsFailed", &[&e.to_string()]));
         }
     }
 
@@ -322,7 +317,7 @@ pub fn open(params: &ComParams) -> Result<(Link, Vec<String>), String> {
     // 寫入那條要給流量控制留時間，兩者不能共用同一個值。
     let mut writer = port
         .try_clone()
-        .map_err(|e| format!("{} 無法複製 handle：{}", params.port, e.description))?;
+        .map_err(|e| tf("err.comHandleFailed", &[&params.port, &e.description]))?;
     let _ = writer.set_timeout(WRITE_TIMEOUT);
 
     Ok((

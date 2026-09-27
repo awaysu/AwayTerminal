@@ -33,6 +33,10 @@ md5 = "0.8"
 serialport = "4.10.1"
 fancy-regex = "0.19.2"
 encoding_rs = "0.8.42"
+# 「檢查更新」的 HTTPS GET（舊版是 .NET 的 HttpClient）。MIT OR Apache-2.0。
+# 預設帶 rustls + webpki-roots（不碰系統憑證庫，跨平台行為一致）。
+# ⚠️ 這是**唯一**一個會連外的功能，而且只有使用者按下「檢查更新」才會跑。
+ureq = "3.4.2"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = [

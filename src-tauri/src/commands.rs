@@ -8,6 +8,7 @@
 //!   - `pane_*`：`terminal.js` 那邊先發生的事（`p` / `k`）→ 只改模型，**不回送**，
 //!     否則會和前端打乒乓（舊版 `case 'p'` 的註解就是「不回送避免迴圈」）。
 
+use crate::i18n::{t, tf};
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
@@ -210,10 +211,10 @@ pub fn session_create(
                 auto_reconnect: args.auto_reconnect.unwrap_or(saved.auto_reconnect),
             })
         } else if kind == "ssh" {
-            let args = ssh.ok_or_else(|| "kind=ssh 需要 ssh 參數".to_string())?;
+            let args = ssh.ok_or_else(|| t("err.sshNeedsParams").to_string())?;
             let host = args.host.trim().to_string();
             if host.is_empty() {
-                return Err("請輸入主機".to_string());
+                return Err(t("err.needHost").to_string());
             }
             crate::reconnect::ConnParams::Ssh(crate::ssh::conn::SshConnParams {
                 host,
@@ -229,10 +230,10 @@ pub fn session_create(
                 env: args.env.clone().unwrap_or_default(),
             })
         } else {
-            let args = telnet.ok_or_else(|| "kind=telnet 需要 telnet 參數".to_string())?;
+            let args = telnet.ok_or_else(|| t("err.telnetNeedsParams").to_string())?;
             let host = args.host.trim().to_string();
             if host.is_empty() {
-                return Err("請輸入主機".to_string());
+                return Err(t("err.needHost").to_string());
             }
             crate::reconnect::ConnParams::Telnet(crate::telnet::TelnetParams {
                 host,
@@ -254,10 +255,10 @@ pub fn session_create(
             .as_deref()
             .map(str::trim)
             .filter(|s| !s.is_empty())
-            .ok_or_else(|| "kind=conn 需要 conn（連線名稱）".to_string())?;
+            .ok_or_else(|| t("err.connNeedsName").to_string())?;
         Some(
             crate::custom::find(&settings, name)
-                .ok_or_else(|| format!("找不到自訂連線：{name}"))?,
+                .ok_or_else(|| tf("err.connNotFound", &[name]))?,
         )
     } else {
         None
@@ -266,21 +267,21 @@ pub fn session_create(
     let mut sh = match kind.as_str() {
         // "powershell" 是 TASK-003 的舊名，留著相容 `?cmd=` 之前的呼叫
         "shell" | "powershell" => shell::powershell().ok_or_else(|| {
-            "找不到 pwsh.exe 或 powershell.exe（PATH 與 System32 都沒有）".to_string()
+            t("err.noPowerShell").to_string()
         })?,
         "custom" => {
             let cmd = command
                 .as_deref()
                 .map(str::trim)
                 .filter(|s| !s.is_empty())
-                .ok_or_else(|| "kind=custom 需要 command".to_string())?;
-            shell::custom(cmd).ok_or_else(|| format!("找不到指令：{cmd}"))?
+                .ok_or_else(|| t("err.customNeedsCommand").to_string())?;
+            shell::custom(cmd).ok_or_else(|| tf("err.commandNotFound", &[cmd]))?
         }
         "conn" => {
             let c = conn_def.as_ref().unwrap();
             let exe = std::path::PathBuf::from(&c.path);
             if !exe.is_file() {
-                return Err(format!("執行檔不存在：{}", c.path));
+                return Err(tf("err.exeMissing", &[&c.path]));
             }
             shell::Shell {
                 command_line: String::new(), // 下面依沙盒與 via_powershell 組出來
@@ -289,7 +290,7 @@ pub fn session_create(
                 exe,
             }
         }
-        other => return Err(format!("尚未支援的連線種類：{other}")),
+        other => return Err(tf("err.unsupportedKind", &[other])),
     };
 
     // ---- 沙盒（只有自訂連線有這個選項；`CLAUDE.md`「新增功能 → 沙盒模式」）----
@@ -334,7 +335,7 @@ pub fn session_create(
             // 我們的 PTY 一開始就是前端回報的真實尺寸，所以直接用 -NoExit -Command 起——
             // 結果一樣（工具跑完仍留在 shell 裡），少一套延後打字的機制。
             let ps = shell::powershell()
-                .ok_or_else(|| "找不到 PowerShell（via_powershell 需要它）".to_string())?;
+                .ok_or_else(|| t("err.noPowerShellVia").to_string())?;
             format!(
                 "{} -NoExit -Command \"& '{}'{}\"",
                 ps.command_line,
@@ -457,7 +458,7 @@ pub fn session_create(
     .map_err(|e| {
         // 建不起來就把已經送出的 `n` 收回去，否則前端會留一個沒有連線的空 pane
         emit_host(&app, format!("x{id}"));
-        format!("啟動 {} 失敗：{e}", sh.exe.display())
+        tf("err.launchFailed", &[&sh.exe.display().to_string(), &e.to_string()])
     })?;
 
     let info = SessionInfo {
@@ -668,7 +669,7 @@ fn create_remote(
 
     let parts = tabs_state
         .session_parts_of(id)
-        .ok_or_else(|| "分頁建立失敗".to_string())?;
+        .ok_or_else(|| t("err.tabCreateFailed").to_string())?;
     if let Err(e) = crate::reconnect::start(&app, id, &params, parts) {
         emit_host(&app, format!("x{id}"));
         tabs_state.remove(id);

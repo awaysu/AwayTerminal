@@ -35,8 +35,8 @@
        #terminals / #searchbar 的 id 與內部 class 全部照舊版 web/index.html——
        terminal.js 直接 querySelector 這些名字，不可以改。 -->
   <div id="app">
-    <!-- 按鈕順序照舊版 MainWindow.xaml 的工具列。舊版還有「遠端」「其他設定」「關於」，
-         那些功能還沒做 → 這次不放佔位按鈕。 -->
+    <!-- 按鈕順序照舊版 MainWindow.xaml 的工具列。舊版還有「遠端」（Telegram，階段 4），
+         那個功能還沒做 → 不放佔位按鈕。 -->
     <div id="toolbar">
       <button id="btn-new" type="button" class="tool-btn">新分頁 ▾</button>
       <button id="btn-favs" type="button" class="tool-btn">我的最愛 ▾</button>
@@ -49,6 +49,9 @@
       <button id="btn-compose" type="button" class="tool-btn">輸入文字</button>
       <span class="tool-sep"></span>
       <button id="btn-view" type="button" class="tool-btn">視窗分割</button>
+      <span class="tool-sep"></span>
+      <button id="btn-settings" type="button" class="tool-btn">其他設定</button>
+      <button id="btn-about" type="button" class="tool-btn">關於</button>
       <span class="tool-spacer"></span>
       <button id="btn-tabpanel" type="button" class="tool-arrow">▲</button>
     </div>
@@ -429,6 +432,127 @@
         <button id="modal-cancel" type="button">取消</button>
       </div>
     </form>
+  </div>
+
+  <!-- 設定（舊版 Dialogs/SettingsDialog）：語言／字體背景顏色／Claude 輸入送出／檔案總管，
+       外加一組「新版多的」（舊版只能手改 settings.json 的欄位）。
+       套用時機照舊版：**按「確定」才套**（取消＝什麼都不動）。 -->
+  <div id="setdlg" hidden>
+    <form id="setdlg-box">
+      <div id="setdlg-title"></div>
+
+      <fieldset>
+        <legend id="st-l-lang"></legend>
+        <div class="st-radios">
+          <label><input type="radio" name="st-lang" id="st-lang-zh" value="zh" /><span>中文</span></label>
+          <label><input type="radio" name="st-lang" id="st-lang-en" value="en" /><span>English</span></label>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend id="st-l-font"></legend>
+        <div class="st-grid">
+          <label id="st-l-family" for="st-family"></label>
+          <span class="sd-row"><input id="st-family" list="st-fonts" autocomplete="off" spellcheck="false" />
+            <datalist id="st-fonts"></datalist></span>
+
+          <label id="st-l-size" for="st-size"></label>
+          <span class="sd-row"><input id="st-size" type="number" min="6" max="40" step="1" /></span>
+
+          <label id="st-l-fg" for="st-fg"></label>
+          <span class="sd-row"><input id="st-fg" autocomplete="off" spellcheck="false" />
+            <input id="st-fg-pick" type="color" /></span>
+
+          <label id="st-l-bg" for="st-bg"></label>
+          <span class="sd-row"><input id="st-bg" autocomplete="off" spellcheck="false" />
+            <input id="st-bg-pick" type="color" /></span>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend id="st-l-ime"></legend>
+        <div class="st-grid">
+          <label id="st-l-imequiet" for="st-imequiet"></label>
+          <span class="sd-row"><input id="st-imequiet" type="number" min="0" max="150" step="1" />
+            <button id="st-imehelp" type="button" class="link-btn"></button></span>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend id="st-l-more"></legend>
+        <div class="st-grid">
+          <label id="st-l-restorelines" for="st-restorelines"></label>
+          <span class="sd-row"><input id="st-restorelines" type="number" min="0" max="100000" step="100" />
+            <span id="st-restorelines-hint" class="sd-hint"></span></span>
+
+          <label id="st-l-keepalive" for="st-keepalive"></label>
+          <span class="sd-row"><input id="st-keepalive" type="number" min="0" max="1440" step="1" /></span>
+
+          <label id="st-l-logdir" for="st-logdir"></label>
+          <span class="sd-row"><input id="st-logdir" autocomplete="off" spellcheck="false" />
+            <button id="st-logdir-pick" type="button"></button></span>
+        </div>
+        <label class="sd-check"><input id="st-exitrestore" type="checkbox" /><span id="st-l-exitrestore"></span></label>
+        <label class="sd-check"><input id="st-autoreconnect" type="checkbox" /><span id="st-l-autoreconnect"></span></label>
+        <label class="sd-check"><input id="st-logts" type="checkbox" /><span id="st-l-logts"></span></label>
+        <label class="sd-check"><input id="st-logappend" type="checkbox" /><span id="st-l-logappend"></span></label>
+      </fieldset>
+
+      <fieldset>
+        <legend id="st-l-sandbox"></legend>
+        <label class="sd-check"><input id="st-sandboxdefault" type="checkbox" /><span id="st-l-sandboxdefault"></span></label>
+        <div id="st-sandbox-note" class="sd-hint"></div>
+        <div class="sd-row st-weak">
+          <button id="st-weak-clear" type="button"></button>
+          <span id="st-weak-count" class="sd-hint"></span>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend id="st-l-shell"></legend>
+        <label class="sd-check"><input id="st-shellmenu" type="checkbox" disabled /><span id="st-l-shellmenu"></span></label>
+        <div id="st-shell-note" class="sd-hint"></div>
+      </fieldset>
+
+      <div id="st-note" class="sd-hint"></div>
+      <div class="modal-buttons">
+        <button id="st-reset" type="button"></button>
+        <button id="st-ok" type="submit"></button>
+        <button id="st-cancel" type="button"></button>
+      </div>
+    </form>
+  </div>
+
+  <!-- 關於（舊版 About_Click 動態組出來的視窗）：版本／編譯時間／作者／下載／原始碼／
+       授權／第三方元件＋「檢查更新」。檢查更新**只有按下去才查**（舊版沒有啟動時自動查）。 -->
+  <div id="aboutdlg" hidden>
+    <div id="aboutdlg-box">
+      <div id="about-name">AwayTerminal</div>
+      <div id="about-rows"></div>
+      <details id="about-notices">
+        <summary id="about-notices-label"></summary>
+        <pre id="about-notices-text"></pre>
+      </details>
+      <div class="modal-buttons">
+        <span id="about-status" class="sd-hint"></span>
+        <button id="about-check" type="button"></button>
+        <button id="about-close" type="button"></button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 有新版時才跳（舊版 ShowUpdateDialog）：目前／最新版本＋更新內容，按鈕開軟體頁 -->
+  <div id="updatedlg" hidden>
+    <div id="updatedlg-box">
+      <div id="up-title"></div>
+      <div id="up-rows"></div>
+      <div id="up-notes-label" class="sd-hint"></div>
+      <pre id="up-notes"></pre>
+      <div class="modal-buttons">
+        <button id="up-go" type="button"></button>
+        <button id="up-close" type="button"></button>
+      </div>
+    </div>
   </div>
 
   <script type="module" src="/src/main.js"></script>

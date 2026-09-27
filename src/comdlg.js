@@ -13,6 +13,7 @@
 import { invoke } from '@tauri-apps/api/core';
 
 import { T, fmt } from './strings.js';
+import { onLangChange } from './i18n.js';
 import { log } from './bridge.js';
 
 const el = {};
@@ -125,6 +126,23 @@ function close(result) {
  *
  * `defaults` ＝設定裡上次用的值（同舊版：對話框開起來就是上次的設定）。
  */
+/** 把介面文字重設一次（切語言時會被叫；註冊在 `i18n.js`）。 */
+function applyTexts() {
+  $('comdlg-title').textContent = T['com.title'];
+  $('cd-l-port').textContent = T['cd.port'];
+  $('cd-l-baud').textContent = T['cd.baud'];
+  $('cd-l-data').textContent = T['cd.data'];
+  $('cd-l-parity').textContent = T['cd.parity'];
+  $('cd-l-stop').textContent = T['cd.stop'];
+  $('cd-l-flow').textContent = T['cd.flow'];
+  $('cd-l-reconnect').textContent = T['sd.reconnect'];
+  el.refresh.textContent = T['cd.rescan'];
+  el.reset.textContent = T['common.reset'];
+  el.ok.textContent = T['com.open'];
+  el.fav.textContent = T['sd.addFav'];
+  el.cancel.textContent = T['dlg.cancel'];
+}
+
 export async function openComDialog(defaults) {
   const d = defaults || {};
   await loadPorts(d.port);
@@ -158,19 +176,7 @@ export function initComDialog() {
   el.fav = $('cd-fav');
   el.cancel = $('cd-cancel');
 
-  $('comdlg-title').textContent = T['com.title'];
-  $('cd-l-port').textContent = T['cd.port'];
-  $('cd-l-baud').textContent = T['cd.baud'];
-  $('cd-l-data').textContent = T['cd.data'];
-  $('cd-l-parity').textContent = T['cd.parity'];
-  $('cd-l-stop').textContent = T['cd.stop'];
-  $('cd-l-flow').textContent = T['cd.flow'];
-  $('cd-l-reconnect').textContent = T['sd.reconnect'];
-  el.refresh.textContent = T['cd.rescan'];
-  el.reset.textContent = T['common.reset'];
-  el.ok.textContent = T['com.open'];
-  el.fav.textContent = T['sd.addFav'];
-  el.cancel.textContent = T['dlg.cancel'];
+  onLangChange(applyTexts);
 
   el.refresh.addEventListener('click', () => loadPorts(el.port.value.trim()));
   el.reset.addEventListener('click', resetFields);

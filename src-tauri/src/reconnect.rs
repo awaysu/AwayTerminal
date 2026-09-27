@@ -28,6 +28,7 @@
 //! | Telnet | **從 socket 讀到第一批位元組**（沒有 shell channel 可用；我們自己的訊息不經過 socket） |
 //! | COM | **開埠成功**（序列裝置可能永遠不主動說話，等輸出會讓退避永遠不歸零） |
 
+use crate::i18n::{t, tf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -143,7 +144,11 @@ pub fn on_exit(app: &AppHandle, id: u32, info: ExitInfo) {
         echo(
             app,
             id,
-            "\r\n\x1b[90m[連線已結束]\x1b[0m \x1b[33m[按 Enter 在此分頁重新連線]\x1b[0m\r\n",
+            &format!(
+                "\r\n\x1b[90m{}\x1b[0m \x1b[33m{}\x1b[0m\r\n",
+                t("term.connEnded"),
+                t("term.pressEnter")
+            ),
         );
         tabs::emit_state(app, &tabs);
     }
@@ -163,7 +168,8 @@ pub fn schedule(app: &AppHandle, id: u32) {
         app,
         id,
         &format!(
-            "\r\n\x1b[33m[連線中斷，{delay} 秒後自動重連…（關閉分頁可停止）]\x1b[0m\r\n"
+            "\r\n\x1b[33m{}\x1b[0m\r\n",
+            tf("term.reconnectIn", &[&delay.to_string()])
         ),
     );
     tabs::emit_state(app, &tabs);
@@ -224,7 +230,11 @@ fn reconnect_now(app: &AppHandle, id: u32) {
             if params.auto_reconnect() {
                 schedule(app, id);
             } else {
-                echo(app, id, "\x1b[33m[按 Enter 在此分頁重新連線]\x1b[0m\r\n");
+                echo(
+                    app,
+                    id,
+                    &format!("\x1b[33m{}\x1b[0m\r\n", t("term.pressEnter")),
+                );
             }
         }
     }
@@ -276,7 +286,7 @@ pub fn start(
 ) -> Result<(), String> {
     let manager = app
         .try_state::<SessionManager>()
-        .ok_or_else(|| "連線清單還沒準備好".to_string())?;
+        .ok_or_else(|| t("err.connListNotReady").to_string())?;
     let (on_output, on_exit) = pipeline(app, id, &parts);
     let on_connected = {
         let app = app.clone();

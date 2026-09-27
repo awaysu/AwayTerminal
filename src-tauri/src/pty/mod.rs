@@ -77,6 +77,6 @@ pub fn backend_name() -> String {
     }
     #[cfg(not(windows))]
     {
-        "unix pty (尚未實作)".to_string()
+        crate::i18n::t("err.unixPtyShort").to_string()
     }
 }

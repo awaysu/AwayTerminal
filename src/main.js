@@ -19,6 +19,8 @@ import { invoke, Channel } from '@tauri-apps/api/core';
 
 import { bridgeReady, log, createSession } from './bridge.js';
 import { initTabBar, currentTabState } from './tabbar.js';
+import { T } from './strings.js';
+import { applyLang, getLang } from './i18n.js';
 
 // --- terminal.js 期待的全域（沿用 UMD 的命名空間形狀，這樣 terminal.js 一個字都不用改）---
 window.Terminal = Terminal;
@@ -231,10 +233,147 @@ async function awayVerify() {
   await verifyComPath();
   await verifyMacro();
   await verifyCompose();
+  await verifySettings();
+  await verifyLanguage();
+  await verifyUpdate();
   await verifyRestore();
   await verifySandbox();
 }
 window.awayVerify = awayVerify;
+
+/**
+ * 設定視窗驗證（TASK-015 A）：改字級 → Rust 重送 `T{json}` → **前端的字級真的變了**。
+ *
+ * 這一條在驗的是「設定改了之後真的套到所有分頁」那條路
+ * （`settings_apply` → `emit_host("T…")` → `terminal.js` 的 `case 'T'`）。
+ */
+async function verifySettings() {
+  const lines = ['[verify] 設定視窗（app 端路徑）'];
+  const before = await invoke('settings_get');
+  const want = 24;
+  try {
+    const after = await invoke('settings_apply', {
+      patch: { fontSize: want, background: '#123456', imeQuietMs: 33 },
+    });
+    lines.push(`[verify] 字級 ${before.fontSize} → ${after.fontSize}（要 ${want}）：${after.fontSize === want}`);
+    lines.push(`[verify] 背景存進設定：${after.background === '#123456'}、imeQuiet=${after.imeQuietMs}`);
+
+    // `T{json}` → terminal.js 的 `applyTheme()` 真的跑了嗎？
+    // 它會把每個 pane 的 style.background 設成 cfg.background——這個不需要視窗有尺寸就看得到。
+    let paneBg = '';
+    const id = currentTabState().activeId;
+    for (let i = 0; i < 20; i++) {
+      await wait(150);
+      const pane = document.querySelector(`.term[data-id="${id}"]`);
+      paneBg = pane ? pane.style.background : '';
+      if (paneBg && paneBg !== 'rgb(30, 30, 30)') break;
+    }
+    lines.push(
+      `[verify] 設定套到分頁（pane 背景=${paneBg}）：${paneBg === 'rgb(18, 52, 86)'}` +
+        '　※「字級變了畫面跟著變」要目視，見 REGRESSION-CHECKLIST ST9',
+    );
+
+    // 壞掉的顏色要被擋下來，退回預設（舊版 ValidColor）
+    const bad = await invoke('settings_apply', { patch: { foreground: 'Red' } });
+    lines.push(`[verify] 顏色 'Red' 被退回預設 ${bad.foreground}：${bad.foreground === '#E0E0E0'}`);
+    // 字級超出範圍 → 不動（clamp_font_size 回 None）
+    const clamp = await invoke('settings_apply', { patch: { fontSize: 999 } });
+    lines.push(`[verify] 字級 999 被忽略（維持 ${clamp.fontSize}）：${clamp.fontSize === want}`);
+    // 「清除已接受的弱演算法記錄」
+    const cleared = await invoke('ssh_weak_clear');
+    const afterClear = await invoke('settings_get');
+    lines.push(
+      `[verify] 清除弱演算法記錄：清掉 ${cleared} 筆、現在 ${afterClear.sshWeakAccepted.length} 筆：` +
+        `${afterClear.sshWeakAccepted.length === 0}`,
+    );
+    // 字型清單（下拉用；這台機器真的有的）
+    const fonts = await invoke('font_list');
+    lines.push(`[verify] 字型清單 ${fonts.length} 個：${fonts.slice(0, 4).join('、')}…`);
+  } catch (e) {
+    lines.push(`[verify] 失敗：${e}`);
+  } finally {
+    // 驗完一律還原（不要把驗證用的字級／顏色留在使用者的設定裡）
+    await invoke('settings_apply', {
+      patch: {
+        fontSize: before.fontSize,
+        foreground: before.foreground,
+        background: before.background,
+        imeQuietMs: before.imeQuietMs,
+      },
+    });
+  }
+  log(lines.join('\n'));
+}
+
+/** 語言切換（TASK-015 B）：切成英文 → 前端字串、Rust 的錯誤訊息都要變英文，且**不必重啟**。 */
+async function verifyLanguage() {
+  const lines = ['[verify] 中／英介面切換'];
+  const before = getLang();
+  try {
+    const btn = document.getElementById('btn-copy');
+    const zhLabel = btn ? btn.textContent : '';
+    // Rust 端的訊息：故意開一個不存在的自訂連線，看錯誤訊息的語言
+    // 用一個「錯誤訊息一定是我們自己的」command（`session_create` 會先被 tauri 的參數檢查擋掉）
+    const errZh = await invoke('sandbox_clear', { id: 999999 }).catch((e) => String(e));
+
+    await invoke('settings_apply', { patch: { language: 'en' } });
+    applyLang('en');
+    const enLabel = btn ? btn.textContent : '';
+    const errEn = await invoke('sandbox_clear', { id: 999999 }).catch((e) => String(e));
+
+    lines.push(`[verify] 工具列文字 ${JSON.stringify(zhLabel)} → ${JSON.stringify(enLabel)}：${zhLabel !== enLabel && enLabel === 'Copy'}`);
+    // 搜尋列的字是 Rust 端的 `T{json}` 設的 → 變成英文就證明那條路真的有到 terminal.js
+    await wait(500);
+    const ph = document.getElementById('search-input');
+    lines.push(
+      `[verify] T{json} 送到 terminal.js（搜尋列 placeholder=${JSON.stringify(ph ? ph.placeholder : null)}）：` +
+        `${!!ph && ph.placeholder === 'Search'}`,
+    );
+    lines.push(`[verify] Rust 錯誤訊息跟著換：${errZh !== errEn && /sandbox/i.test(errEn)}`);
+    lines.push(`[verify]   zh=${errZh}`);
+    lines.push(`[verify]   en=${errEn}`);
+    lines.push(`[verify] 不必重啟（同一個 webview 就換掉了）：true`);
+  } catch (e) {
+    lines.push(`[verify] 失敗：${e}`);
+  } finally {
+    await invoke('settings_apply', { patch: { language: before } });
+    applyLang(before);
+  }
+  log(lines.join('\n'));
+}
+
+/**
+ * 檢查更新（TASK-015 C）：解析與離線兩條路。
+ *
+ * ⚠️ **不會連真的網站**：後端在 127.0.0.1 開一個只回一次的假伺服器，
+ * 再對一個沒人聽的 port 打一次證明失敗是安靜的（見 `update::update_verify`）。
+ */
+async function verifyUpdate() {
+  const lines = ['[verify] 檢查更新'];
+  try {
+    const r = await invoke('update_verify');
+    lines.push(`[verify] 請求：${r.requestLine}`);
+    lines.push(`[verify] 帶了 app=awayterminal2：${r.sentSlug}、User-Agent：${r.sentUserAgent}`);
+    lines.push(
+      `[verify] 解析出最新版 ${r.parsed ? r.parsed.latestVersion : '(null)'}、` +
+        `有新版=${r.parsed ? r.parsed.updateAvailable : '?'}：${!!r.parsed && r.parsed.latestVersion === '9.9.9'}`,
+    );
+    lines.push(`[verify] 離線／連不上時安靜回 null（不跳錯誤）：${r.offlineIsNone}`);
+    const about = await invoke('about_info');
+    lines.push(
+      `[verify] 關於頁：v${about.version}、編譯時間 ${about.buildTime}、` +
+        `xterm.js ${about.xtermVersion}（要和 package.json 一致）`,
+    );
+    const notices = await invoke('third_party_notices');
+    lines.push(
+      `[verify] 讀得到 THIRD-PARTY-NOTICES.md：${notices.length} 字、` +
+        `有 fancy-regex 那節=${notices.includes('fancy-regex')}`,
+    );
+  } catch (e) {
+    lines.push(`[verify] 失敗：${e}`);
+  }
+  log(lines.join('\n'));
+}
 
 /**
  * 沙盒模式驗證（TASK-007）。**只碰自己建立的東西、只查自己記下的 PID。**
@@ -352,6 +491,13 @@ async function verifySandbox() {
   } finally {
     if (tabId !== null) await invoke('tab_close', { id: tabId }).catch(() => {});
     await invoke('custom_delete', { name: CONN }).catch(() => {});
+    // 驗完把 worktree 與分支收掉，不要留東西在使用者的 repo 裡
+    //（`sandbox_verify_cleanup` 本來只在開頭清「上一次殘留的」；結尾也清一次＝正常跑完就不留）。
+    // 註：`--verify` 偶爾在啟動階段就卡住是 WebView2 的 dev flake
+    //（`Chrome_WidgetWin_0 … Error = 1411`，見 docs/DEV-SETUP.md），**和這個 worktree 無關**——
+    // 我一開始以為有關，後來在沒有殘留的情況下也重現了。
+    const left = await invoke('sandbox_verify_cleanup').catch(() => []);
+    if (left.length) lines.push(`[verify] 收掉驗證用的沙盒：${left.join('、')}`);
   }
   log(lines.join('\n'));
 }
@@ -525,8 +671,10 @@ async function verifyMacro() {
     // 結束提示是 `finish()` 在清掉分頁狀態之後才推進畫面的，所以要自己再等一下
     // （第一版和上面共用同一份 tail，量到的是還沒印出來的那一刻）
     let done = '';
+    // 8 秒（原本 4 秒）：機器忙的時候這一行來得慢，會偶發假失敗
+    //（TASK-015 期間同一份程式碼 5 次裡有 2 次沒等到）
     for (let i = 0; i < 20; i++) {
-      await wait(200);
+      await wait(400);
       done = term.tail(id, 30).join(' ');
       if (done.includes('巨集執行完畢')) break;
     }

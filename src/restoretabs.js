@@ -14,12 +14,22 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 
 import { T } from './strings.js';
+import { onLangChange } from './i18n.js';
 
 /**
  * 照上次存下的清單重開分頁。回傳成功恢復幾個（0＝沒有紀錄，呼叫端要開預設分頁）。
  *
  * 順序就是上次的分頁順序（Rust 端照分頁列的順序存）。
  */
+/** 把介面文字重設一次（切語言時會被叫；註冊在 `i18n.js`）。 */
+function applyTexts() {
+  $('exitdlg-title').textContent = T['exit.title'];
+  $('exitdlg-body').textContent = T['exit.body'];
+  $('ex-l-restore').textContent = T['exit.restore'];
+  el.go.textContent = T['exit.go'];
+  el.cancel.textContent = T['dlg.cancel'];
+}
+
 export async function restoreSavedTabs(createSession) {
   let list = [];
   try {
@@ -96,11 +106,7 @@ export async function initExitDialog() {
   el.go = $('ex-go');
   el.cancel = $('ex-cancel');
 
-  $('exitdlg-title').textContent = T['exit.title'];
-  $('exitdlg-body').textContent = T['exit.body'];
-  $('ex-l-restore').textContent = T['exit.restore'];
-  el.go.textContent = T['exit.go'];
-  el.cancel.textContent = T['dlg.cancel'];
+  onLangChange(applyTexts);
 
   const leave = () => {
     el.root.hidden = true;

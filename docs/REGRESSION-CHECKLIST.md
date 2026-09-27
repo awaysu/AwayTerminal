@@ -513,6 +513,69 @@ TEMP 路徑印出完整結果，Documents 路徑印完 `path = …` 就停住。
 | CP15 | 👤 Ctrl+Enter／Esc | 送出／關閉 | `PreviewKeyDown` | | | |
 | CP16 | 文字框空的時候 | 「送出」是灰的（空白不送；只想送 Enter 請直接在終端機按） | `Send_Click` 的第一行 | PASS（前端邏輯） | | |
 
+## ST. 設定視窗（TASK-015 A）
+
+舊版對應 `Dialogs/SettingsDialog`。欄位對照表、哪些是新版多的、顏色驗證的規則都在
+**`docs/SETTINGS.md`**。
+
+| # | 怎麼測 | 預期結果 | 舊版出處 | Win | mac | Linux |
+|---|---|---|---|---|---|---|
+| ST1 | `cargo test prefs` | 顏色驗證與字型清單的測試全過 | `ValidColor` | PASS | | |
+| ST2 | `--verify` 的設定那一步 | 字級／背景／imeQuiet 存得進去、`T{json}` 有重送、pane 背景跟著變、`'Red'` 退回預設、字級 999 被忽略 | — | PASS | | |
+| ST3 | 👤 工具列「其他設定」 | 開頁內對話框，欄位順序＝語言／字體背景顏色／Claude 輸入送出／其他／沙盒模式／檔案總管 | `SettingsDialog.xaml` | | | |
+| ST4 | 👤 對話框開起來的值 | 是**目前的設定**（不是預設值） | 建構子讀 `AppSettings.Current` | | | |
+| ST5 | 👤 按「取消」 | **什麼都不動**（連剛改的顏色也不套） | `IsCancel` | | | |
+| ST6 | 👤 按「回到預設」 | 字型 Cascadia Mono／大小 14／前景 #E0E0E0／背景 #1E1E1E／imeQuiet 20；**語言與其他組不動** | `Reset_Click` | | | |
+| ST7 | 👤 顏色欄位旁的小色塊 | 點了開系統選色器；打字改十六進位色碼時色塊跟著變 | `ColorDialog` ＋ `Border` | | | |
+| ST8 | 👤 打一個不合法的顏色（例 `Red`、`#12345`）按確定 | 退回預設色，**不跳錯誤** | `ValidColor` | PASS（單元測試＋`--verify`） | | |
+| ST9 | 👤 **改字級按確定** | 所有分頁的字**立刻變大／變小**，而且欄數跟著變（`vi`／`top` 不會畫錯） | `PostTheme()` → `applyTheme()` | ⬜ **只能目視**（見下） | | |
+| ST10 | 👤 Ctrl+滾輪縮放 | 同 ST9（走同一條 `applyTheme`） | 舊版同 | ⬜ 只能目視 | | |
+| ST11 | 👤 改字型成「Consolas」 | 立刻換字型；下拉列得出這台機器有的等寬字型，也可以自己打沒列到的 | `Fonts.SystemFontFamilies` | | | |
+| ST12 | 👤 「送出前等待靜止 (ms)」旁的「這是什麼？」 | 跳說明，文字**逐字**和舊版一樣 | `settings.imeQuietHelp` | | | |
+| ST13 | 👤 改 imeQuiet 之後在 Claude 分頁打注音 | 行為跟著改（0＝立刻送） | `terminal.js` 的 `QUIET_MS` | | | |
+| ST14 | 👤 改 log 預設資料夾 → 開 log | 新位置生效 | `AppSettings.LogDir` | | | |
+| ST15 | 👤 按「清除已接受的弱演算法記錄」 | 旁邊的筆數變 0；下次連那台舊設備會**再問一次** | ⬜ 新增 | PASS（`--verify`） | | |
+| ST16 | 👤 關掉「新增的自訂連線預設開啟沙盒」→ 自訂連線「自動偵測」 | 新加進來的連線沙盒是**關**的；**已存在的不受影響** | ⬜ 新增 | PASS（單元測試） | | |
+| ST17 | 👤 檔案總管那一組 | 勾選框是**灰的**，旁邊寫「（這項還沒搬過來）」 | — | | | |
+| ST18 | 改設定後重開程式 | 值還在（`settings.json`） | `Save()` | | | |
+
+⚠️ **ST9／ST10 為什麼只能目視**：`--verify` 跑到設定那一步時 pane 的方框是 **0×0**
+（那個環境量不到尺寸），`FitAddon.fit()` 因此是 no-op、`term.cols` 停在啟動時的值——
+**改字級之前就已經 0×0**，所以不是設定那條路的問題。自動驗證改成驗
+「`T{json}` 有到 `terminal.js`」＋「`applyTheme()` 真的跑了（pane 背景變了）」。
+
+## LG. 中／英介面（TASK-015 B）
+
+| # | 怎麼測 | 預期結果 | 舊版出處 | Win | mac | Linux |
+|---|---|---|---|---|---|---|
+| LG1 | `node scripts/i18n-audit.mjs` | **沒歸類的 0 條**（每個含中文的 Rust 字串都在字串表、TTL 錯誤表、`println!` 診斷或有理由的例外裡） | — | PASS | | |
+| LG2 | `--verify` 的語言那一步 | 工具列「複製」→「Copy」、Rust 的錯誤訊息跟著換、`T{json}` 的搜尋列文字變英文 | `Loc.Changed` | PASS | | |
+| LG3 | 👤 設定 → English → 確定 | **不必重啟**：工具列、選單、右鍵、所有對話框的文字立刻變英文 | `Loc.SetLang` ＋ `ApplyTexts()` | | | |
+| LG4 | 👤 切英文後開 SSH／連接埠／我的最愛／自訂連線／輸入文字／設定／關於 | 每一個對話框都是英文（沒有殘留中文） | 舊版每次開才建立，所以自動是新語言 | | | |
+| LG5 | 👤 切英文後讓連線失敗（例如連 127.0.0.1:1） | 終端機裡的錯誤訊息是英文 | — | PASS（`--verify` 驗 `sandbox_clear`） | | |
+| LG6 | 👤 切英文後跑一支有錯的巨集 | 錯誤對話框是英文（`errdlg.cpp` 的原文） | `Err::message()` | | | |
+| LG7 | 👤 切英文後 Ctrl+F | 搜尋列的提示字與按鈕 tooltip 是英文 | `PostTheme()` 的 `search` | PASS（`--verify`） | | |
+| LG8 | 👤 切回中文 | 全部回到繁中，沒有漏的 | 同 LG3 | | | |
+| LG9 | 重開程式 | 記得上次的語言 | `AppSettings.Language` | | | |
+
+## AB. 關於與檢查更新（TASK-015 C）
+
+行為表在 `docs/SETTINGS.md` 第 3 節。
+
+| # | 怎麼測 | 預期結果 | 舊版出處 | Win | mac | Linux |
+|---|---|---|---|---|---|---|
+| AB1 | `cargo test update` | URL 參數、解析、壞回應、版本比較共 6 條全過 | `UpdateChecker` | PASS | | |
+| AB2 | `--verify` 的更新那一步 | 請求帶 `app=awayterminal2` 與 User-Agent、解析得出版本、**連不上時安靜回 null**；關於頁的 xterm.js 版本＝`package.json` 的版本 | — | PASS（**打 127.0.0.1 的假伺服器，不連真網站**） | | |
+| AB3 | 👤 工具列「關於」 | 版式照舊版：名稱／版本／編譯時間／作者／下載／Source Code／授權／第三方元件 | `About_Click` | | | |
+| AB4 | 👤 作者那一行 | email 是**圖片**（選不到、複製不到文字） | `RenderTextImage` | | | |
+| AB5 | 👤 第三方元件 | xterm.js 的版本是**實際**版本（不是寫死的；舊版寫 5.5.0 而實際 6.0.0） | `CLAUDE.md` 的雷 | PASS（`--verify`） | | |
+| AB6 | 👤 展開「完整第三方授權聲明」 | 顯示 `THIRD-PARTY-NOTICES.md` 的內容（**不是複製品**） | ⬜ 新增 | PASS（`--verify` 讀到 11397 字） | | |
+| AB7 | 👤 點「下載」「Source Code」 | 用系統瀏覽器開（`awaysu.cc` / `github.com/awaysu/AwayTerminal2`） | `MakeLink` | | | |
+| AB8 | 👤 按「檢查更新」（**有網路**） | 按鈕旁顯示「檢查中…」→「已是最新版本 (vX)」或跳「有新版本可用」 | `check.Click` | ⬜ 需網路 ＋ 網站要有 `awayterminal2` 這個代號 | | |
+| AB9 | 👤 按「檢查更新」（**拔網路**） | 只顯示一行「檢查失敗（請確認網路後再試）」，**不跳錯誤視窗** | 舊版刻意如此 | PASS（`--verify` 的離線路徑） | | |
+| AB10 | 👤 有新版時 | 跳視窗：目前／最新版本＋更新內容，按「前往下載頁」開軟體頁 | `ShowUpdateDialog` | | | |
+| AB11 | 啟動程式 | **不會自動查更新**（舊版也不會） | — | PASS（程式裡只有按鈕那條路） | | |
+
 ## L. 我的最愛
 
 舊版對應 `MainWindow.Favorites.cs` + `Dialogs/FavoritesDialog`。程式在
@@ -641,6 +704,13 @@ TEMP 路徑印出完整結果，Documents 路徑印完 `path = …` 就停住。
 | 輸入文字視窗 | WPF **模態視窗** | 頁內對話框 | 理由與可回退的做法見 `docs/COMPOSE.md` 第 2 節（組字都在 `<textarea>`／WPF `TextBox` 裡，對這個功能沒有差別） |
 | 輸入文字送出的換行 | 原樣送（WPF 多行文字本來就是 CRLF） | **明確**轉成 CRLF | `<textarea>` 給的是 `\n`；不轉的話同一份文字新舊版送出的位元組不一樣 |
 | 載入文字檔的「系統 ANSI」 | `Encoding.Default`（這台是 cp950） | **固定 Big5** | 跨平台沒有「系統 ANSI」這回事；使用者的舊檔就是 Big5 |
+| 設定視窗的欄位 | 只有語言／字型／大小／前景／背景／imeQuiet／檔案總管 | **多一組「其他」與「沙盒模式」** | PM 在 TASK-015 要求「`settings.json` 已有的欄位全部要能從這裡改」。對照表見 `docs/SETTINGS.md` |
+| 顏色欄位接受的寫法 | WPF `ColorConverter`（連 `Red` 這種名稱都吃） | **只收 `#RGB`／`#RRGGBB`** | `#` 開頭才保證在 CSS 與 xterm.js 兩邊一致；認不出來退回預設（同舊版的「退回預設」行為） |
+| 字型下拉的來源 | `Fonts.SystemFontFamilies`（WPF 列得出全部字型） | **候選清單 ∩ `%WINDIR%\Fonts`**，而且是可自己打的 `<input list>` | 瀏覽器沒有「列出系統字型」的標準做法（`queryLocalFonts` 要權限、WebView2 上不一定有） |
+| 關於頁的 xterm.js 版本 | 寫死字串（結果一直印 5.5.0，實際 6.0.0） | **build 時從 `node_modules` 讀** | `CLAUDE.md` 記著這條雷；寫死一定會過期 |
+| 關於頁的第三方授權 | 只列幾行元件名稱 | 多一個可展開的區塊，**直接讀 `THIRD-PARTY-NOTICES.md`** | 不想維護兩份；安裝檔本來就要附那個檔 |
+| 檢查更新的 `app=` 參數 | `awayterminal` | **`awayterminal2`** | 新版是另一個產品頁。⚠️ 網站後台要先建好這個代號 |
+| 更新的 `platform=` 參數 | 固定 `windows` | 依平台（`windows`／`macos`／`linux`） | 舊版只有 Windows |
 
 ## 隱含契約（最容易回歸的一類）
 
@@ -658,6 +728,8 @@ TEMP 路徑印出完整結果，Documents 路徑印完 `path = …` 就停住。
 | `ssh-weak-algo` event 也一定要回 `ssh_hostkey_answer`（兩者共用同一個回覆通道） | 同上：不回就卡 180 秒。加新的「交握中間問使用者」的事件時都要記得配一個前端 listener | K24～K26 |
 | **舊版靠外部程式（`ssh.exe`、`telnet.exe` 之類）副作用成立的規則，內建實作要重新檢查觸發點** | 照抄會得到「看起來對、其實永遠不成立／永遠成立」的條件。實際案例：舊版「**一收到輸出**就把重連退避歸零」——它的輸出全部來自 `ssh.exe`，所以等於「連上了」；內建 SSH 之後我們自己的狀態訊息（「連線到 …」、`login as:`、錯誤訊息）走同一條輸出 callback，退避永遠停在第一次的 3 秒（`--verify` 抓到）。搬 Telnet／COM／ADB 時每一條「有輸出」「行程結束」類的規則都要重新問一次「這個訊號現在還是原來的意思嗎」 | M8、M9、TN12、CM16 |
 | **要收掉自己開的行程，只能用 handle（Job Object／PID），而且那個 PID 必須是自己這次開的** | 按名稱砍（`taskkill /IM`、`Stop-Process -Name`）會把整個團隊連自己一起砍掉——這台機器的團隊就跑在舊版 AwayTerminal 底下，而新版 exe 的名稱和舊版一樣。**已知漏洞**：用 **Store 的 app execution alias** 開的行程（很多機器上的 `pwsh`）由 AppX 服務建立，不在我們的 job 裡 → 收不到（`examples/job_probe.rs` 兩種都實測過） | T70～T73、Q7 |
+| **介面文字改了之後要讓每個模組重套一次**（`i18n.js` 的 `onLangChange`） | 舊版的對話框是「每次開啟才建立」的，所以建構子讀 `Loc.T` 就自動是新語言；我們的對話框是**一直存在的 DOM**，只在 init 設一次文字 → 切語言之後那個對話框永遠是舊語言。加新的頁內對話框時一定要 `onLangChange(applyTexts)` | LG3、LG4 |
+| **`--verify` 驗不到「需要視窗有尺寸」的東西** | 跑到後面幾步時 pane 的方框是 `0×0`，`FitAddon.fit()` 變成 no-op、`term.cols` 停在啟動時的值。拿 cols 當判斷就會得到「永遠沒變」的假失敗（TASK-015 花了好幾輪才確認**改字級之前就已經 0×0**）。這類項目要列進 👤 目視清單 | ST9、ST10 |
 | **`--verify` 的步驟之間，前一步在畫面上留下的重畫要等它畫完** | 上一步的 Ctrl+C 讓 PSReadLine 重畫（印中斷的那一行＋新的提示字元），**蓋掉**下一步剛用 `writeOutput` 寫進畫面的記號 → 恢復分頁那兩條變成假失敗（TASK-014 實際踩到：`verifyCompose` 送完 Ctrl+C 沒等就跑 `verifyRestore`） | R2、R4、CP2 |
 | 會等前端回覆的 tauri command **一定要是 `async`** | tauri 2 的同步 command 跑在**主執行緒**上；擋住主執行緒 webview 的 IPC 就進不來，前端永遠沒機會回答 → 一定逾時。實際案例：`exit_confirm` 要等 `a…save`，第一版寫成同步 → 「存下 2 個分頁」卻一個畫面都沒存到 | R1～R4 |
 | 恢復畫面的 `b{id}` 一定要在 `n{id}` 之後、`s{id}` 與啟動連線之前 | 順序錯了就不是「舊訊息在上、新連線在下」：`b` 比 `n` 早＝前端還沒有那個 pane，訊息直接丟掉；比連線晚＝新輸出被舊畫面蓋掉 | R5～R7 |

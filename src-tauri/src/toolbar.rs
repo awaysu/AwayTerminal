@@ -20,6 +20,7 @@
 //!
 //! **確認對話框與 toast 都在前端**（舊版是 WPF `MessageBox` / `Popup`）；這裡只負責動作。
 
+use crate::i18n::{t, tf};
 use std::sync::Arc;
 
 use tauri::{AppHandle, State};
@@ -169,7 +170,7 @@ pub fn save_text_to_file(
     };
     let mut bytes = vec![0xEF, 0xBB, 0xBF];
     bytes.extend_from_slice(text.as_bytes());
-    std::fs::write(&path, bytes).map_err(|e| format!("存檔失敗：{e}"))?;
+    std::fs::write(&path, bytes).map_err(|e| tf("err.saveFailed", &[&e.to_string()]))?;
     println!("[AwayTerminal] 已存檔 {} ({} bytes)", path.display(), text.len());
     Ok(Some(path.to_string_lossy().to_string()))
 }
@@ -204,7 +205,7 @@ pub fn pick_work_dir(
 pub fn open_url(app: AppHandle, url: String) -> Result<(), String> {
     let url = url.trim();
     if !(url.starts_with("http://") || url.starts_with("https://")) {
-        return Err(format!("只允許 http/https：{url}"));
+        return Err(tf("err.onlyHttp", &[url]));
     }
     tauri_plugin_opener::OpenerExt::opener(&app)
         .open_url(url, None::<&str>)
@@ -279,11 +280,11 @@ pub fn log_start(
 ) -> Result<String, String> {
     let path = path.trim();
     if path.is_empty() {
-        return Err("請輸入 log 存檔位置。".to_string());
+        return Err(t("err.needLogPath").to_string());
     }
     let slot = tabs_state
         .logger_slot(id)
-        .ok_or_else(|| format!("找不到分頁 {id}"))?;
+        .ok_or_else(|| tf("err.tabNotFound", &[&id.to_string()]))?;
     // 開檔有逾時保護：這台機器實測「我的文件」被防毒擋住時會**永遠不返回**，
     // 而這個 command 跑在 IPC 執行緒上（見 Logger::open_with_timeout 的說明）。
     let logger = Logger::open_with_timeout(
@@ -292,7 +293,7 @@ pub fn log_start(
         append,
         std::time::Duration::from_secs(3),
     )
-    .map_err(|e| format!("無法開始記錄：{e}"))?;
+    .map_err(|e| tf("err.logStartFailed", &[&e.to_string()]))?;
 
     if remember.unwrap_or(true) {
         settings.update(|s| {
@@ -332,18 +333,18 @@ pub fn log_start_inner(
 ) -> Result<String, String> {
     let path = path.trim();
     if path.is_empty() {
-        return Err("巨集的 logopen 沒有給檔名".to_string());
+        return Err(t("err.macroLogNoName").to_string());
     }
     let slot = tabs_state
         .logger_slot(id)
-        .ok_or_else(|| format!("找不到分頁 {id}"))?;
+        .ok_or_else(|| tf("err.tabNotFound", &[&id.to_string()]))?;
     let logger = Logger::open_with_timeout(
         std::path::Path::new(path),
         timestamp,
         append,
         std::time::Duration::from_secs(3),
     )
-    .map_err(|e| format!("無法開始記錄：{e}"))?;
+    .map_err(|e| tf("err.logStartFailed", &[&e.to_string()]))?;
     let real = logger.path().to_string_lossy().to_string();
     {
         let mut g = slot.lock().unwrap_or_else(|e| e.into_inner());
@@ -410,12 +411,9 @@ pub fn save_text_to_file_at(path: String, text: String) -> Result<String, String
     let p = std::path::PathBuf::from(&path);
     let temp = std::env::temp_dir();
     if !p.starts_with(&temp) {
-        return Err(format!(
-            "只接受暫存資料夾底下的路徑（{}）",
-            temp.display()
-        ));
+        return Err(tf("err.tempOnlyPath", &[&temp.display().to_string()]));
     }
-    std::fs::write(&p, text.as_bytes()).map_err(|e| format!("寫入失敗：{e}"))?;
+    std::fs::write(&p, text.as_bytes()).map_err(|e| tf("err.writeFailed", &[&e.to_string()]))?;
     Ok(p.to_string_lossy().to_string())
 }
 
@@ -428,9 +426,9 @@ pub async fn macro_pick_file(app: AppHandle, title: Option<String>) -> Option<St
     let (tx, rx) = std::sync::mpsc::channel();
     app.dialog()
         .file()
-        .set_title(title.as_deref().unwrap_or("選擇 TTL 巨集"))
-        .add_filter("TeraTerm 巨集", &["ttl"])
-        .add_filter("所有檔案", &["*"])
+        .set_title(title.as_deref().unwrap_or(t("dlg.pickMacro")))
+        .add_filter(t("dlg.teratermMacro"), &["ttl"])
+        .add_filter(t("dlg.allFiles"), &["*"])
         .pick_file(move |f| {
             let _ = tx.send(f);
         });

@@ -153,6 +153,13 @@
 | `compose_load_file()` | 「輸入文字」載入檔案：選檔 → 解碼（BOM → 嚴格 UTF-8 → Big5）→ 回 `{text, encoding}`；**上限 2MB**，超過回 `Err`。取消回 `null` |
 | `compose_save_file(text)` | 把文字框內容存成檔（**UTF-8 無 BOM**）；回存到哪裡，取消回 `null` |
 | `compose_send(id, text, sendEnter, remember?)` | 送出：換行統一成 CRLF → emit `v{id}{US}{base64}`（＝**貼上**那條路），`sendEnter` 時再等 200ms 寫一個 `\r`（同舊版 `SendSnippet`）。`remember` 預設 `true`＝把勾選狀態存進 `settings.json` |
+| `settings_apply(patch)` | 設定視窗按「確定」：每個欄位都是 `Option`（沒帶的不動），夾好範圍後寫檔、**重送 `T{json}`**、設定 Rust 端的語言，回傳套用後的完整設定。見 `docs/SETTINGS.md` |
+| `ssh_weak_clear()` | 清掉「已接受的弱演算法」記錄，回傳清了幾筆（設定視窗的按鈕） |
+| `font_list()` | 設定視窗字型下拉的候選（**只回這台機器真的有的**；瀏覽器沒有列出系統字型的標準做法，所以是候選清單 ∩ `%WINDIR%\Fonts`） |
+| `about_info()` | 關於頁：版本、編譯時間（exe 的檔案時間）、**實際的** xterm.js 版本（`build.rs` 從 `node_modules` 讀）、Tauri 版本、下載／原始碼網址、作者字串（拆三段，前端用 canvas 畫） |
+| `third_party_notices()` | `THIRD-PARTY-NOTICES.md` 的內容（**不複製一份**：dev 讀 repo 根目錄、安裝後讀 `resources/`） |
+| `update_check(current, base?)` | 檢查更新（`awaysu.cc/software/api.php`，10 秒逾時）。失敗一律回 `null`＝**安靜失敗**（照舊版）。`base` 只給 `--verify` 用 |
+| `update_verify()` | **只給 `--verify` 用**：在 127.0.0.1 開一個假伺服器驗完整條路，再對沒人聽的 port 驗失敗路徑。**不會連真的網站** |
 | `compose_verify_roundtrip(text)` | **只給 `--verify` 用**：寫一個 Big5 檔再讀回來，回 `{encoding, textOk, text, crlfOk, bytes}`（比對在 Rust 端做，JS 的字面容易假失敗） |
 | `save_text_to_file_at(path, text)` | **只給 `--verify` 用**：直接寫檔，而且**只接受系統暫存資料夾底下的路徑**（不是任意寫檔的後門） |
 | `com_ports()` | 目前看得到的埠（名稱＋USB 描述）與四組選項清單（鮑率／資料位元／同位／停止位元／流量控制）。**清單只含函式庫真的支援的值** |

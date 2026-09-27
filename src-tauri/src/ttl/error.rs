@@ -116,6 +116,18 @@ impl Err {
         }
     }
 
+    /// 照**目前的介面語言**挑一個（英文那份就是原碼 `errdlg.cpp` 的字）。
+    ///
+    /// 這就是 TASK-015 選「Rust 端自己有一份表」的理由之一：這兩份訊息本來就都在，
+    /// 不必為了 i18n 把 22 個錯誤碼送到前端再查一次表。
+    pub fn message_for_lang(self) -> &'static str {
+        if crate::i18n::is_en() {
+            self.message()
+        } else {
+            self.message_zh()
+        }
+    }
+
     pub fn code(self) -> u16 {
         self as u16
     }

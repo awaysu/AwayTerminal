@@ -540,3 +540,173 @@ body.col-resizing { cursor: col-resize; user-select: none; }
 #cp-placeholder[hidden] {
   display: none;
 }
+
+/* ---------------------------------------------------------------- 設定視窗 */
+/* 舊版是 470px 寬、SizeToContent="Height" 的 WPF 視窗；這裡照那個寬度，
+   欄位多了一組「其他」與「沙盒模式」，所以高度給上限 + 內容捲動。 */
+#setdlg,
+#aboutdlg,
+#updatedlg {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 62;
+}
+#setdlg[hidden],
+#aboutdlg[hidden],
+#updatedlg[hidden] {
+  display: none;
+}
+#setdlg-box,
+#aboutdlg-box,
+#updatedlg-box {
+  width: 470px;
+  max-width: 92vw;
+  max-height: 88vh;
+  overflow: auto;
+  background: #2D2D30;
+  border: 1px solid #3F3F46;
+  border-radius: 4px;
+  padding: 16px;
+  color: #E0E0E0;
+}
+#setdlg-title {
+  font-weight: bold;
+  margin-bottom: 10px;
+}
+#setdlg fieldset {
+  border: 1px solid #555;
+  border-radius: 3px;
+  margin: 0 0 12px;
+  padding: 8px 10px 10px;
+}
+#setdlg legend {
+  color: #CFCFCF;
+  padding: 0 4px;
+}
+.st-radios {
+  display: flex;
+  gap: 18px;
+}
+.st-radios label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+}
+.st-grid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 10px;
+  align-items: center;
+}
+.st-grid > label {
+  color: #E0E0E0;
+}
+.st-grid input[type='text'],
+.st-grid input:not([type]),
+.st-grid input[type='number'] {
+  background: #1E1E1E;
+  color: #E0E0E0;
+  border: 1px solid #555;
+  border-radius: 2px;
+  padding: 3px 4px;
+  min-width: 0;
+  flex: 1;
+}
+.st-grid input[type='number'] {
+  max-width: 88px;
+  flex: 0 0 auto;
+}
+.st-grid input[type='color'] {
+  width: 26px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid #555;
+  background: #1E1E1E;
+  cursor: pointer;
+}
+.st-weak {
+  margin-top: 8px;
+  gap: 8px;
+}
+.st-weak button,
+#st-logdir-pick {
+  background: #3F3F46;
+  color: #E0E0E0;
+  border: 1px solid #555;
+  border-radius: 2px;
+  padding: 3px 8px;
+  cursor: pointer;
+}
+.st-weak button:hover,
+#st-logdir-pick:hover {
+  background: #50505a;
+}
+#setdlg .modal-buttons button {
+  min-width: 84px;
+}
+#st-note {
+  margin-top: 6px;
+  min-height: 14px;
+}
+
+/* ---------------------------------------------------------------- 關於 / 更新 */
+#about-name {
+  font-size: 18px;
+  font-weight: bold;
+  color: #fff;
+}
+.about-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+  flex-wrap: wrap;
+}
+.about-label {
+  color: #A0A0A0;
+}
+.about-author {
+  display: block;
+}
+#about-notices {
+  margin-top: 14px;
+}
+#about-notices summary {
+  cursor: pointer;
+  color: #4FC1FF;
+}
+#about-notices-text,
+#up-notes {
+  max-height: 260px;
+  overflow: auto;
+  white-space: pre-wrap;
+  background: #1E1E1E;
+  border: 1px solid #3F3F46;
+  border-radius: 3px;
+  padding: 8px;
+  margin: 8px 0 0;
+  font-family: 'Cascadia Mono', Consolas, monospace;
+  font-size: 11px;
+  color: #C8C8C8;
+}
+#up-title {
+  font-size: 16px;
+  font-weight: bold;
+  color: #fff;
+}
+#aboutdlg .modal-buttons,
+#updatedlg .modal-buttons {
+  align-items: center;
+}
+#aboutdlg .modal-buttons button,
+#updatedlg .modal-buttons button {
+  min-width: 92px;
+}
+#about-status {
+  margin-right: auto;
+}

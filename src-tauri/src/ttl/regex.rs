@@ -300,7 +300,8 @@ impl Interp {
         self.end_of_args()?;
         for k in &unsupported {
             let msg = format!(
-                "\r\n\x1b[33m[巨集] regexoption {k} 這個版本沒有支援（見 docs/TTL-REGEX.md）\x1b[0m\r\n"
+                "\r\n\x1b[33m{}\x1b[0m\r\n",
+                crate::i18n::tf("term.regexOptUnsupported", &[k])
             );
             if let Some(h) = self.host() {
                 h.echo(&msg);

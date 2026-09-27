@@ -8,6 +8,6 @@ use crate::session::TerminalSession;
 pub fn spawn_unsupported() -> io::Result<Arc<dyn TerminalSession>> {
     Err(io::Error::new(
         io::ErrorKind::Unsupported,
-        "此平台的 PTY 後端尚未實作（Windows ConPTY 已完成，forkpty 待後續任務）",
+        crate::i18n::t("err.unixPtyTodo"),
     ))
 }

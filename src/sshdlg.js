@@ -13,6 +13,7 @@
 import { invoke } from '@tauri-apps/api/core';
 
 import { T, fmt } from './strings.js';
+import { onLangChange } from './i18n.js';
 import { log } from './bridge.js';
 
 const el = {};
@@ -158,6 +159,29 @@ function close(result) {
  * `defaults` 是設定裡的預設值（保持連線的分鐘數、自動重連），或是編輯既有的一筆最愛。
  * `kind` ＝一開始要選哪個類型（同舊版記住 `LastConnType`）。
  */
+/** 把介面文字重設一次（切語言時會被叫；註冊在 `i18n.js`）。 */
+function applyTexts() {
+  $('sshdlg-title').textContent = T['sd.title'];
+  $('sd-l-type').textContent = T['sd.type'];
+  $('sd-l-host').textContent = T['sd.host'];
+  $('sd-l-port').textContent = T['sd.port'];
+  $('sd-l-user').textContent = T['sd.user'];
+  $('sd-user-hint').textContent = T['sd.userHint'];
+  $('sd-l-key').textContent = T['sd.key'];
+  el.keyBrowse.textContent = T['log.browse'];
+  $('sd-l-keep').textContent = T['sd.keep'];
+  $('sd-keep-hint').textContent = T['sd.keepHint'];
+  $('sd-l-agent').textContent = T['sd.agent'];
+  $('sd-l-reconnect').textContent = T['sd.reconnect'];
+  $('sd-l-adv').textContent = T['sd.adv'];
+  $('sd-adv-note').textContent = T['sd.advNote'];
+  $('sd-l-env').textContent = T['sd.env'];
+  $('sd-env-hint').textContent = T['sd.envHint'];
+  el.ok.textContent = T['sd.connect'];
+  el.fav.textContent = T['sd.addFav'];
+  el.cancel.textContent = T['dlg.cancel'];
+}
+
 export function openConnDialog(defaults, kind) {
   return new Promise((resolve) => {
     resolveOpen = resolve;
@@ -189,25 +213,7 @@ export async function initConnDialog() {
   el.fav = $('sd-fav');
   el.cancel = $('sd-cancel');
 
-  $('sshdlg-title').textContent = T['sd.title'];
-  $('sd-l-type').textContent = T['sd.type'];
-  $('sd-l-host').textContent = T['sd.host'];
-  $('sd-l-port').textContent = T['sd.port'];
-  $('sd-l-user').textContent = T['sd.user'];
-  $('sd-user-hint').textContent = T['sd.userHint'];
-  $('sd-l-key').textContent = T['sd.key'];
-  el.keyBrowse.textContent = T['log.browse'];
-  $('sd-l-keep').textContent = T['sd.keep'];
-  $('sd-keep-hint').textContent = T['sd.keepHint'];
-  $('sd-l-agent').textContent = T['sd.agent'];
-  $('sd-l-reconnect').textContent = T['sd.reconnect'];
-  $('sd-l-adv').textContent = T['sd.adv'];
-  $('sd-adv-note').textContent = T['sd.advNote'];
-  $('sd-l-env').textContent = T['sd.env'];
-  $('sd-env-hint').textContent = T['sd.envHint'];
-  el.ok.textContent = T['sd.connect'];
-  el.fav.textContent = T['sd.addFav'];
-  el.cancel.textContent = T['dlg.cancel'];
+  onLangChange(applyTexts);
 
   try {
     catalog = await invoke('algo_catalog');

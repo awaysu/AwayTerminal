@@ -6,6 +6,7 @@
 //!
 //! 對照表在 `docs/PROTOCOL.md`。
 
+use crate::i18n::{t};
 use std::sync::Arc;
 
 use tauri::{AppHandle, Emitter, State};
@@ -41,10 +42,10 @@ pub fn host_ready(app: AppHandle, settings: State<'_, Arc<SettingsStore>>) {
 pub fn host_message(msg: String) {
     let kind = msg.chars().next().unwrap_or('?');
     let what = match kind {
-        'U' => "點了終端機裡的連結（開啟選單尚未實作）",
-        'm' => "程式接管滑鼠提示（複製／選取功能尚未實作）",
-        'G' => "Multi-Agent 分隔線比例（代理團隊尚未實作）",
-        _ => "未知",
+        'U' => t("host.linkClicked"),
+        'm' => t("host.mouseTakeover"),
+        'G' => t("host.agentRatio"),
+        _ => t("host.unknown"),
     };
     println!("[AwayTerminal] [host_message 未接] {kind} = {what} :: {}", head(&msg));
 }

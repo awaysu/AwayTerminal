@@ -5,6 +5,7 @@
 //!
 //! 檔案是 TASK-009 的 `ssh/reconnect.rs` 拆出來的（TASK-010 加 Telnet 時泛化）。
 
+use crate::i18n::{t};
 use std::sync::Arc;
 
 use tauri::{AppHandle, Manager};
@@ -52,10 +53,10 @@ pub fn start(
 ) -> Result<Arc<dyn TerminalSession>, String> {
     let settings = app
         .try_state::<Arc<SettingsStore>>()
-        .ok_or_else(|| "設定還沒準備好".to_string())?;
+        .ok_or_else(|| t("err.settingsNotReady").to_string())?;
     let tabs = app
         .try_state::<Arc<TabManager>>()
-        .ok_or_else(|| "分頁清單還沒準備好".to_string())?;
+        .ok_or_else(|| t("err.tabsNotReady").to_string())?;
 
     let on_user: super::OnUser = {
         let app = app.clone();

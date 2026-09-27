@@ -223,11 +223,25 @@ not vendored).
 
 ---
 
-## 9. Rust crates
+## 9. ureq — MIT OR Apache-2.0
+
+- Used for: the one outbound HTTPS request this program makes — **"Check for updates"**,
+  and only when the user presses that button (`src-tauri/src/update.rs`).
+- Upstream: <https://github.com/algesten/ureq>
+- Licence: MIT OR Apache-2.0 (we take MIT, same as this project).
+
+Brings in the rustls TLS stack (`rustls`, `webpki-roots`, `ring`) — all permissive
+(Apache-2.0 / ISC / MIT); `ring` is already in the tree via russh. Chosen over `reqwest`
+because a blocking one-shot GET needs neither an async HTTP stack nor the system
+certificate store, which keeps behaviour identical on Windows, macOS and Linux.
+
+---
+
+## 10. Rust crates
 
 Linked as dependencies, each under MIT or MIT/Apache-2.0:
 `windows-sys`, `libloading`, `serde`, `serde_json`, `tokio`, `chrono`,
-`tauri-plugin-dialog`, `tauri-plugin-opener`.
+`tauri-plugin-dialog`, `tauri-plugin-opener`, `md5`.
 Full per-crate licence text is reproduced by `cargo about` / `cargo license` output.
 
 ---
@@ -252,7 +266,7 @@ plan in `CLAUDE.md`:
 - The **full licence texts** of every crate in the dependency tree, generated with
   `cargo about`, bundled into the installers (stage 5). Sections 4–8 above are the ones
   that need more than a name in a list: russh (Apache-2.0), serialport-rs (MPL-2.0),
-  TeraTerm (BSD-3), encoding_rs (BSD-3 tables).
+  TeraTerm (BSD-3), encoding_rs (BSD-3 tables), ureq's rustls stack (Apache-2.0 / ISC).
 
 （TeraTerm and serialport-rs used to be listed here; they now have their own sections
 above — 6 and 5 — because the code that uses them has landed.）

@@ -103,10 +103,9 @@ impl Logger {
         });
         match rx.recv_timeout(timeout) {
             Ok(r) => r,
-            Err(_) => Err(format!(
-                "開啟 {} 逾時（{} 秒沒有反應）。這台機器的防毒／資料夾保護可能擋住了寫入，                 請把 AwayTerminal 加進例外，或把 log 位置換到別的資料夾。",
-                path.display(),
-                timeout.as_secs()
+            Err(_) => Err(crate::i18n::tf(
+                "err.logOpenTimeout",
+                &[&path.display().to_string(), &timeout.as_secs().to_string()],
             )),
         }
     }

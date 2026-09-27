@@ -14,6 +14,7 @@
 import { invoke } from '@tauri-apps/api/core';
 
 import { T, fmt } from './strings.js';
+import { onLangChange } from './i18n.js';
 import { log } from './bridge.js';
 
 const el = {};
@@ -42,6 +43,19 @@ function setText(text) {
   el.input.value = text;
   el.input.selectionStart = el.input.selectionEnd = text.length;
   refresh();
+}
+
+/** 把介面文字重設一次（切語言時會被叫；註冊在 `i18n.js`）。 */
+function applyTexts() {
+  el.title.textContent = T['compose.title'];
+  el.placeholder.textContent = T['compose.placeholder'];
+  el.load.textContent = T['compose.loadFile'];
+  el.clear.textContent = T['compose.clear'];
+  el.undo.textContent = T['compose.undo'];
+  el.save.textContent = T['compose.save'];
+  el.sendEnterLabel.textContent = T['compose.sendEnter'];
+  el.back.textContent = T['compose.back'];
+  el.send.textContent = T['compose.send'];
 }
 
 export function openCompose(state) {
@@ -96,15 +110,7 @@ export async function initCompose(injected) {
   el.send = $('cp-send');
   el.note = $('cp-note');
 
-  el.title.textContent = T['compose.title'];
-  el.placeholder.textContent = T['compose.placeholder'];
-  el.load.textContent = T['compose.loadFile'];
-  el.clear.textContent = T['compose.clear'];
-  el.undo.textContent = T['compose.undo'];
-  el.save.textContent = T['compose.save'];
-  el.sendEnterLabel.textContent = T['compose.sendEnter'];
-  el.back.textContent = T['compose.back'];
-  el.send.textContent = T['compose.send'];
+  onLangChange(applyTexts);
 
   // 勾選狀態從設定來（舊版 AppSettings.ComposeSendEnter，預設開）
   try {

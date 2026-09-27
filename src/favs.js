@@ -9,6 +9,7 @@
 import { invoke } from '@tauri-apps/api/core';
 
 import { T, fmt, iconSvg } from './strings.js';
+import { onLangChange } from './i18n.js';
 import { log } from './bridge.js';
 
 const el = {};
@@ -19,6 +20,19 @@ let hooks = {};
 
 function $(id) {
   return document.getElementById(id);
+}
+
+/** 把介面文字重設一次（切語言時會被叫；註冊在 `i18n.js`）。 */
+function applyTexts() {
+  el.btn.textContent = T['tb.favorites'] + ' ▾';
+  el.btn.title = T['tip.favorites'];
+  $('favs-title').textContent = T['fav.settings'];
+  el.up.textContent = T['fav.up'];
+  el.down.textContent = T['fav.down'];
+  el.rename.textContent = T['menu.rename'];
+  el.delete.textContent = T['conn.delete'];
+  el.close.textContent = T['dlg.close'];
+  el.menu.querySelector('[data-fav="manage"]').textContent = T['fav.settings'];
 }
 
 export async function reloadFavs() {
@@ -225,15 +239,7 @@ export function initFavs(injected) {
   el.delete = $('favs-delete');
   el.close = $('favs-close');
 
-  el.btn.textContent = T['tb.favorites'] + ' ▾';
-  el.btn.title = T['tip.favorites'];
-  $('favs-title').textContent = T['fav.settings'];
-  el.up.textContent = T['fav.up'];
-  el.down.textContent = T['fav.down'];
-  el.rename.textContent = T['menu.rename'];
-  el.delete.textContent = T['conn.delete'];
-  el.close.textContent = T['dlg.close'];
-  el.menu.querySelector('[data-fav="manage"]').textContent = T['fav.settings'];
+  onLangChange(applyTexts);
 
   el.btn.addEventListener('click', async (e) => {
     e.stopPropagation();

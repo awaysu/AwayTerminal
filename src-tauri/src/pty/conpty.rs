@@ -123,8 +123,9 @@ impl ConPtySession {
                         close(in_write);
                         close(out_read);
                         close(out_write);
-                        return Err(io::Error::other(format!(
-                            "ConptyCreatePseudoConsole 失敗 (HRESULT 0x{hr:08X})"
+                        return Err(io::Error::other(crate::i18n::tf(
+                            "err.conptyCreate",
+                            &[&format!("{hr:08X}")],
                         )));
                     }
                 },
@@ -136,8 +137,9 @@ impl ConPtySession {
                         close(in_write);
                         close(out_read);
                         close(out_write);
-                        return Err(io::Error::other(format!(
-                            "CreatePseudoConsole 失敗 (HRESULT 0x{hr:08X})"
+                        return Err(io::Error::other(crate::i18n::tf(
+                            "err.createPseudoCon",
+                            &[&format!("{hr:08X}")],
                         )));
                     }
                     hpc
@@ -463,7 +465,7 @@ unsafe fn start_process(
     InitializeProcThreadAttributeList(std::ptr::null_mut(), 1, 0, &mut attr_size);
     if attr_size == 0 {
         return Err(io::Error::other(
-            "InitializeProcThreadAttributeList 回報大小 0",
+            crate::i18n::t("err.attrListSizeZero"),
         ));
     }
     let mut attr_buf = vec![0u8; attr_size];

@@ -189,7 +189,7 @@ impl Interp {
     pub fn from_text(name: &str, text: &str) -> std::result::Result<Self, TtlError> {
         Self::new(
             Source::new(name, text.as_bytes()),
-            Box::new(|f| Err(format!("這個直譯器沒有檔案載入器，include 不能用：{f}"))),
+            Box::new(|f| Err(crate::i18n::tf("err.noFileLoader", &[f]))),
         )
     }
 
@@ -1215,7 +1215,7 @@ pub fn run_text_with_includes(
         Source::new("main.ttl", src.as_bytes()),
         Box::new(move |name| match files.get(name) {
             Some(text) => Ok(Source::new(name, text.as_bytes())),
-            None => Err(format!("沒有這個檔：{name}")),
+            None => Err(crate::i18n::tf("err.noSuchFile", &[name])),
         }),
     )?;
     it.run(100_000)?;

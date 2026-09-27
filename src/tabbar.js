@@ -21,6 +21,9 @@ import { initConnDialog, openConnDialog, parseHostPort } from './sshdlg.js';
 import { initComDialog, openComDialog } from './comdlg.js';
 import { initMacro, runMacroForTab } from './macro.js';
 import { initCompose, openCompose } from './compose.js';
+import { initSettings } from './setdlg.js';
+import { initAbout } from './about.js';
+import { onLangChange } from './i18n.js';
 import { initFavs, addConnFavorite } from './favs.js';
 
 const MIN_PANEL_WIDTH = 120; // 舊版 TabPanelMinWidth
@@ -1005,6 +1008,77 @@ function installPanelResize() {
   });
 }
 
+/**
+ * 把工具列／選單／固定對話框的文字重設一次。
+ *
+ * 切語言時會再被呼叫一次（註冊在 `i18n.js`，同舊版 `Loc.Changed` → `ApplyTexts()`），
+ * 所以**不要**在這裡做除了設定文字以外的事。
+ */
+function applyTexts() {
+    el.btnNew.textContent = T['tb.new'] + ' ▾';
+    el.btnCopy.textContent = T['tb.copy'];
+    el.btnCopy.title = T['tip.copy'];
+    el.btnPaste.textContent = T['tb.paste'];
+    el.btnPaste.title = T['tip.paste'];
+    el.btnCopyAll.textContent = T['tb.copyall'];
+    el.btnCopyAll.title = T['tip.copyall'];
+    el.btnClear.textContent = T['tb.clear'];
+    el.btnClear.title = T['tip.clear'];
+    el.btnPage.textContent = T['tb.page'] + ' ▾';
+    el.btnPage.title = T['tip.page'];
+    el.btnPanel.title = T['tip.tabPanel'];
+    el.btnView.title = T['tip.viewCycle'];
+    setText(el.newMenu, '[data-kind="shell"]', T['tb.powershell']);
+    setText(el.newMenu, '[data-kind="ssh"]', T['tb.ssh']);
+    setText(el.newMenu, '[data-kind="ssh-quick"]', T['sd.quick']);
+    setText(el.newMenu, '[data-kind="com"]', T['tb.com'] + '…');
+    setText(el.newMenu, '[data-kind="custom"]', T['tb.customCmd']);
+    setText(el.tabMenu, '[data-act="rename"]', T['menu.rename']);
+    setText(el.tabMenu, '[data-act="log"]', T['menu.log']);
+    setText(el.tabMenu, '[data-act="macro"]', T['menu.macro']);
+    setText(el.tabMenu, '[data-act="close"]', T['menu.close']);
+    setText(el.tabMenu, '[data-act="sandbox-clear"]', T['sb.clear']);
+    setText(el.newMenu, '[data-kind="manage"]', T['tb.manageConns']);
+    setText(el.tabMenu, '[data-color=""]', T['menu.colorDefault']);
+    for (const [sel, key] of [
+      ['[data-scroll="up"]', 'page.up'],
+      ['[data-scroll="down"]', 'page.down'],
+      ['[data-scroll="top"]', 'page.top'],
+      ['[data-scroll="bottom"]', 'page.bottom'],
+    ]) {
+      setText(el.pageMenu, sel, T[key]);
+    }
+    for (const [sel, key] of [
+      ['[data-term="copy"]', 'ctx.copy'],
+      ['[data-term="copyPaste"]', 'ctx.copyPaste'],
+      ['[data-term="paste"]', 'tb.paste'],
+      ['[data-term="copyall"]', 'tb.copyall'],
+      ['[data-term="copyAllFile"]', 'ctx.copyAllFile'],
+      ['[data-term="selectAll"]', 'ctx.selectAll'],
+      ['[data-term="search"]', 'ctx.search'],
+    ]) {
+      setText(el.termMenu, sel, T[key]);
+    }
+    setText(el.urlMenu, '[data-url="open"]', T['ctx.openUrl']);
+    setText(el.urlMenu, '[data-url="copy"]', T['ctx.copyUrl']);
+    // 配色父項的文字要保留子選單的箭頭，所以只改第一個文字節點
+    el.tabMenu.querySelector('[data-act="color"]').firstChild.nodeValue = T['menu.color'];
+
+    el.hkStore.textContent = T['hk.store'];
+    el.hkOnce.textContent = T['hk.once'];
+    el.hkCancel.textContent = T['hk.cancel'];
+    el.waGo.textContent = T['wa.go'];
+    el.waCancel.textContent = T['wa.cancel'];
+
+  // 工具列的「輸入文字」在 installToolbar() 裡設（那個函式只跑一次），這裡補上
+  if (el.btnCompose) {
+    el.btnCompose.textContent = T['tb.compose'];
+    el.btnCompose.title = T['tip.compose'];
+  }
+  // 分頁列、三態按鈕、右鍵選單的動態部分都在 render() 裡（它也讀 T[...]）
+  render();
+}
+
 // ------------------------------------------------------------------ 啟動
 
 export async function initTabBar() {
@@ -1065,61 +1139,7 @@ export async function initTabBar() {
   el.modalOk = $('modal-ok');
   el.modalCancel = $('modal-cancel');
 
-  // 介面文字一律從 strings.js 來（之後要做中英切換）
-  el.btnNew.textContent = T['tb.new'] + ' ▾';
-  el.btnCopy.textContent = T['tb.copy'];
-  el.btnCopy.title = T['tip.copy'];
-  el.btnPaste.textContent = T['tb.paste'];
-  el.btnPaste.title = T['tip.paste'];
-  el.btnCopyAll.textContent = T['tb.copyall'];
-  el.btnCopyAll.title = T['tip.copyall'];
-  el.btnClear.textContent = T['tb.clear'];
-  el.btnClear.title = T['tip.clear'];
-  el.btnPage.textContent = T['tb.page'] + ' ▾';
-  el.btnPage.title = T['tip.page'];
-  el.btnPanel.title = T['tip.tabPanel'];
-  el.btnView.title = T['tip.viewCycle'];
-  setText(el.newMenu, '[data-kind="shell"]', T['tb.powershell']);
-  setText(el.newMenu, '[data-kind="ssh"]', T['tb.ssh']);
-  setText(el.newMenu, '[data-kind="ssh-quick"]', T['sd.quick']);
-  setText(el.newMenu, '[data-kind="com"]', T['tb.com'] + '…');
-  setText(el.newMenu, '[data-kind="custom"]', T['tb.customCmd']);
-  setText(el.tabMenu, '[data-act="rename"]', T['menu.rename']);
-  setText(el.tabMenu, '[data-act="log"]', T['menu.log']);
-  setText(el.tabMenu, '[data-act="macro"]', T['menu.macro']);
-  setText(el.tabMenu, '[data-act="close"]', T['menu.close']);
-  setText(el.tabMenu, '[data-act="sandbox-clear"]', T['sb.clear']);
-  setText(el.newMenu, '[data-kind="manage"]', T['tb.manageConns']);
-  setText(el.tabMenu, '[data-color=""]', T['menu.colorDefault']);
-  for (const [sel, key] of [
-    ['[data-scroll="up"]', 'page.up'],
-    ['[data-scroll="down"]', 'page.down'],
-    ['[data-scroll="top"]', 'page.top'],
-    ['[data-scroll="bottom"]', 'page.bottom'],
-  ]) {
-    setText(el.pageMenu, sel, T[key]);
-  }
-  for (const [sel, key] of [
-    ['[data-term="copy"]', 'ctx.copy'],
-    ['[data-term="copyPaste"]', 'ctx.copyPaste'],
-    ['[data-term="paste"]', 'tb.paste'],
-    ['[data-term="copyall"]', 'tb.copyall'],
-    ['[data-term="copyAllFile"]', 'ctx.copyAllFile'],
-    ['[data-term="selectAll"]', 'ctx.selectAll'],
-    ['[data-term="search"]', 'ctx.search'],
-  ]) {
-    setText(el.termMenu, sel, T[key]);
-  }
-  setText(el.urlMenu, '[data-url="open"]', T['ctx.openUrl']);
-  setText(el.urlMenu, '[data-url="copy"]', T['ctx.copyUrl']);
-  // 配色父項的文字要保留子選單的箭頭，所以只改第一個文字節點
-  el.tabMenu.querySelector('[data-act="color"]').firstChild.nodeValue = T['menu.color'];
-
-  el.hkStore.textContent = T['hk.store'];
-  el.hkOnce.textContent = T['hk.once'];
-  el.hkCancel.textContent = T['hk.cancel'];
-  el.waGo.textContent = T['wa.go'];
-  el.waCancel.textContent = T['wa.cancel'];
+  onLangChange(applyTexts);
 
   installToolbar();
   installStripEvents();
@@ -1131,6 +1151,8 @@ export async function initTabBar() {
   initComDialog();
   await initMacro({ askYesNo, showInfo });
   await initCompose({ toast });
+  initSettings({ showInfo, hideMenus });
+  initAbout({ showInfo, hideMenus });
   await initFavs({
     createSession,
     askText,

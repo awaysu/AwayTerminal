@@ -34,7 +34,10 @@ use crate::settings::SettingsStore;
 use crate::tabs::TabManager;
 
 /// 分隔行的文字（舊版 `Loc.T("term.restoredSep")`，`{0}`＝上次關閉時間）。
-pub const SEP_FORMAT: &str = "──── 以上為上次關閉前的紀錄（{0}）────";
+/// 隨語言換，所以是函式不是常數（`i18n` 的 key＝`term.restoreSeparator`）。
+pub fn sep_format() -> &'static str {
+    crate::i18n::t("term.restoreSeparator")
+}
 
 /// 一個存下來的分頁（舊版 `Models/SavedTab.cs` 的子集：我們只做已經搬好的連線種類）。
 ///
@@ -221,7 +224,7 @@ pub fn emit_buffer(app: &AppHandle, id: u32, index: Option<usize>) {
     let when = file_time(&path);
     let sep = format!(
         "\x1b[90m{}\x1b[0m",
-        SEP_FORMAT.replace("{0}", &when)
+        sep_format().replace("{0}", &when)
     );
     // 舊內容尾端補 SGR 重置（同舊版 `text + "\x1b[0m"`）：上次死在某個顏色裡時，
     // 分隔行與新連線的輸出不該跟著那個顏色。
@@ -345,7 +348,12 @@ mod tests {
     /// 分隔行的格式（舊版 `term.restoredSep`）：灰字、含存檔時間。
     #[test]
     fn separator_matches_old_text() {
-        let sep = format!("\x1b[90m{}\x1b[0m", SEP_FORMAT.replace("{0}", "2026-09-27 01:23"));
+        let _g = crate::i18n::test_lock();
+        crate::i18n::set_lang("zh");
+        let sep = format!(
+            "\x1b[90m{}\x1b[0m",
+            sep_format().replace("{0}", "2026-09-27 01:23")
+        );
         assert_eq!(
             sep,
             "\x1b[90m──── 以上為上次關閉前的紀錄（2026-09-27 01:23）────\x1b[0m"

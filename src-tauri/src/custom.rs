@@ -13,6 +13,7 @@
 //! | `OpenCustom` 的 `closeBytes` | `CustomConn::close_bytes()` |
 //! | v1.0.18 起不自動建立任何自訂連線 | 同（`custom_conns` 預設是空的） |
 
+use crate::i18n::{t, tf};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -99,8 +100,9 @@ pub const KNOWN_TOOLS: &[KnownTool] = &[
 /// `CLAUDE.md` 說「自訂連線…各多一個沙盒選項，**預設開啟**」。自動偵測加進來的
 /// AI coding agent 一律預設開；WSL／ADB 這種「使用者拿來操作機器」的工具預設**關**——
 /// 對它們開沙盒只會讓使用者莫名其妙進到一個 worktree 裡。
-fn default_sandbox(name: &str) -> bool {
-    !matches!(name, "WSL" | "ADB")
+/// `global`＝設定視窗的「新增的自訂連線預設開啟沙盒」（`settings.sandbox_default`）。
+fn default_sandbox(name: &str, global: bool) -> bool {
+    global && !matches!(name, "WSL" | "ADB")
 }
 
 /// 在 PATH 與常見安裝位置尋找工具，回傳第一個存在的完整路徑。
@@ -151,7 +153,7 @@ fn home_dir() -> Option<PathBuf> {
 ///
 /// 「已存在」的判斷照舊版：**同名**或**同路徑**都算（後者是為了 1.1.10 以前叫
 /// 「Gemini」的舊項目，避免重複加入）。
-pub fn auto_detect(existing: &[CustomConn]) -> Vec<CustomConn> {
+pub fn auto_detect(existing: &[CustomConn], sandbox_global: bool) -> Vec<CustomConn> {
     let mut added = Vec::new();
     for tool in KNOWN_TOOLS {
         if existing
@@ -181,7 +183,7 @@ pub fn auto_detect(existing: &[CustomConn]) -> Vec<CustomConn> {
             icon: tool.icon.to_string(),
             pick_dir: tool.pick_dir,
             via_powershell: via_ps,
-            sandbox: default_sandbox(tool.name),
+            sandbox: default_sandbox(tool.name, sandbox_global),
             ..CustomConn::default()
         });
     }
@@ -199,8 +201,8 @@ pub fn custom_list(settings: State<'_, Arc<SettingsStore>>) -> Vec<CustomConn> {
 /// 執行一次自動偵測並存檔。回傳這次新增的名稱（空的＝什麼都沒找到）。
 #[tauri::command]
 pub fn custom_detect(settings: State<'_, Arc<SettingsStore>>) -> Vec<String> {
-    let existing = settings.get().custom_conns;
-    let added = auto_detect(&existing);
+    let cfg = settings.get();
+    let added = auto_detect(&cfg.custom_conns, cfg.sandbox_default);
     if added.is_empty() {
         return Vec::new();
     }
@@ -219,10 +221,10 @@ pub fn custom_save(
 ) -> Result<(), String> {
     let name = conn.name.trim().to_string();
     if name.is_empty() {
-        return Err("請輸入名稱".to_string());
+        return Err(t("err.needName").to_string());
     }
     if conn.path.trim().is_empty() {
-        return Err("請輸入執行檔路徑".to_string());
+        return Err(t("err.needExePath").to_string());
     }
     let key = original_name.unwrap_or_else(|| name.clone());
     settings.update(|s| {
@@ -267,7 +269,7 @@ pub fn conn_set_sandbox(
         }
     });
     if !found {
-        return Err(format!("找不到自訂連線：{name}"));
+        return Err(tf("err.connNotFound", &[&name]));
     }
     println!("[AwayTerminal] 自訂連線「{name}」沙盒模式 → {sandbox}（下次啟動生效）");
     crate::tabs::emit_state(&app, &tabs_state);
@@ -284,9 +286,9 @@ pub fn sandbox_clear(
 ) -> Result<String, String> {
     let sb = tabs_state
         .sandbox_of(id)
-        .ok_or_else(|| "這個分頁沒有沙盒".to_string())?;
+        .ok_or_else(|| t("err.tabNoSandbox").to_string())?;
     if !sb.has_worktree {
-        return Err("這個沙盒沒有 worktree（不是 git repo），沒有東西要移除".to_string());
+        return Err(t("err.sandboxNoWorktree").to_string());
     }
     crate::sandbox::remove_worktree(&sb.work_dir)?;
     Ok(sb.branch)
@@ -313,19 +315,19 @@ mod tests {
             path: "C:\\whatever\\claude.cmd".into(),
             ..CustomConn::default()
         }];
-        let added = auto_detect(&existing);
+        let added = auto_detect(&existing, true);
         assert!(!added.iter().any(|c| c.name == "ClaudeCode"));
 
         // 路徑已存在但名稱不同（舊版叫 Gemini 的那種）→ 也要跳過。
         // 用實際偵測到的路徑來組測試資料，機器上沒裝任何工具時自動跳過這段。
-        let all = auto_detect(&[]);
+        let all = auto_detect(&[], true);
         if let Some(first) = all.first() {
             let existing = vec![CustomConn {
                 name: "SomethingElse".into(),
                 path: first.path.clone(),
                 ..CustomConn::default()
             }];
-            let added = auto_detect(&existing);
+            let added = auto_detect(&existing, true);
             assert!(
                 !added.iter().any(|c| c.path == first.path),
                 "同一支執行檔不該被加第二次"
@@ -335,11 +337,13 @@ mod tests {
 
     #[test]
     fn sandbox_defaults_on_for_agents_off_for_shells() {
-        assert!(default_sandbox("ClaudeCode"));
-        assert!(default_sandbox("Codex"));
-        assert!(default_sandbox("Aider"));
-        assert!(!default_sandbox("WSL"));
-        assert!(!default_sandbox("ADB"));
+        assert!(default_sandbox("ClaudeCode", true));
+        assert!(default_sandbox("Codex", true));
+        assert!(default_sandbox("Aider", true));
+        assert!(!default_sandbox("WSL", true));
+        assert!(!default_sandbox("ADB", true));
+        // 設定裡把全域預設關掉 → 連 agent 也不開（TASK-015 A4）
+        assert!(!default_sandbox("ClaudeCode", false));
         // 新建一條（使用者自己加的）預設也是開的
         assert!(CustomConn::default().sandbox);
     }

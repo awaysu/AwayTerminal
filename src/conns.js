@@ -9,6 +9,7 @@
 import { invoke } from '@tauri-apps/api/core';
 
 import { T } from './strings.js';
+import { onLangChange } from './i18n.js';
 import { log } from './bridge.js';
 
 const el = {};
@@ -22,6 +23,17 @@ function $(id) {
 }
 
 /** 目前的自訂連線清單（「新分頁 ▾」要用）。 */
+/** 把介面文字重設一次（切語言時會被叫；註冊在 `i18n.js`）。 */
+function applyTexts() {
+  $('conns-title').textContent = T['conn.title'];
+  el.detect.textContent = T['conn.detect'];
+  el.new.textContent = T['conn.new'];
+  el.close.textContent = T['dlg.close'];
+  el.save.textContent = T['conn.save'];
+  el.delete.textContent = T['conn.delete'];
+  el.browse.textContent = T['log.browse'];
+}
+
 export function currentConns() {
   return conns;
 }
@@ -138,13 +150,7 @@ export function initConns(onChangedCb) {
   el.new = $('conns-new');
   el.close = $('conns-close');
 
-  $('conns-title').textContent = T['conn.title'];
-  el.detect.textContent = T['conn.detect'];
-  el.new.textContent = T['conn.new'];
-  el.close.textContent = T['dlg.close'];
-  el.save.textContent = T['conn.save'];
-  el.delete.textContent = T['conn.delete'];
-  el.browse.textContent = T['log.browse'];
+  onLangChange(applyTexts);
 
   el.list.addEventListener('click', (e) => {
     const row = e.target.closest('.conns-row');

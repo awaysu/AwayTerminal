@@ -9,8 +9,10 @@ pub mod commands;
 pub mod custom;
 pub mod favorites;
 pub mod host;
+pub mod i18n;
 pub mod logging;
 pub mod output;
+pub mod prefs;
 pub mod pty;
 pub mod reconnect;
 pub mod restore;
@@ -21,6 +23,7 @@ pub mod ssh;
 pub mod startup;
 pub mod status;
 pub mod tabs;
+pub mod update;
 pub mod tap;
 pub mod telnet;
 pub mod toolbar;
@@ -68,6 +71,13 @@ pub fn run() {
             commands::view_mode_cycle,
             commands::tab_panel_set,
             commands::settings_get,
+            prefs::settings_apply,
+            prefs::ssh_weak_clear,
+            prefs::font_list,
+            update::update_check,
+            update::about_info,
+            update::update_verify,
+            update::third_party_notices,
             commands::pane_selected,
             commands::pane_reordered,
             commands::pane_font_size,
@@ -142,6 +152,8 @@ pub fn run() {
             if let Ok(docs) = app.path().document_dir() {
                 store.fill_log_dir(&docs);
             }
+            // 介面語言要在任何訊息產生之前設好（背景執行緒寫進畫面的字也吃這個）
+            i18n::set_lang(&store.get().language);
             settings::spawn_autosave(store.clone());
 
             let view_mode = store.get().view_mode;

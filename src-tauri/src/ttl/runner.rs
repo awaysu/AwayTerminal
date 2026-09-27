@@ -17,6 +17,7 @@
 //! 主執行緒與 PTY 的讀取執行緒完全不受影響。中斷是一個 `AtomicBool`，
 //! 正在等的指令每 10ms 檢查一次。
 
+use crate::i18n::{t, tf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 
@@ -347,14 +348,14 @@ pub async fn macro_run(app: AppHandle, id: u32, path: String) -> Result<String, 
     // 已經在跑就不要再開一條（前端會先問「要停止巨集嗎」）
     if let Some(tabs) = app.try_state::<Arc<TabManager>>() {
         if tabs.macro_of(id).is_some() {
-            return Err("這個分頁已經在跑巨集了".to_string());
+            return Err(t("err.macroRunning").to_string());
         }
     }
 
     // 讀檔與註冊標籤在這裡做：失敗要在「開始跑」之前就回報（同舊版讀檔失敗跳對話框）
     let interp = Interp::from_file(&p).map_err(|e: TtlError| {
         if e.err == super::Err::CantOpen {
-            format!("無法讀取巨集：{path}")
+            tf("err.macroReadFail", &[&path])
         } else {
             format!("{e}")
         }
@@ -362,11 +363,11 @@ pub async fn macro_run(app: AppHandle, id: u32, path: String) -> Result<String, 
 
     let handle = Arc::new(MacroHandle::new(file.clone()));
     let Some(tabs) = app.try_state::<Arc<TabManager>>() else {
-        return Err("分頁清單還沒準備好".to_string());
+        return Err(t("err.tabsNotReady").to_string());
     };
     // 掛上 IoTap：從現在起連線的輸出會進巨集的接收緩衝
     let Some(tap) = tabs.tap_of(id) else {
-        return Err("找不到分頁".to_string());
+        return Err(t("err.tabNotFoundPlain").to_string());
     };
     tap.set(Some(Arc::new(MacroTap {
         handle: handle.clone(),
@@ -390,7 +391,7 @@ pub async fn macro_run(app: AppHandle, id: u32, path: String) -> Result<String, 
             let result = run_loop(&mut it, &handle);
             finish(&app2, id, &handle, result);
         })
-        .map_err(|e| format!("開不了巨集執行緒：{e}"))?;
+        .map_err(|e| tf("err.macroThread", &[&e.to_string()]))?;
 
     Ok(file)
 }
@@ -424,14 +425,21 @@ fn finish(app: &AppHandle, id: u32, handle: &Arc<MacroHandle>, result: Result<()
         if let Some(parts) = tabs.session_parts_of(id) {
             let msg = match &result {
                 Ok(()) if handle.stop.load(Ordering::Relaxed) => {
-                    format!("\r\n\x1b[90m[巨集已中斷：{}]\x1b[0m\r\n", handle.file)
+                    format!(
+                        "\r\n\x1b[90m{}\x1b[0m\r\n",
+                        tf("term.macroInterrupted", &[&handle.file])
+                    )
                 }
-                Ok(()) => format!("\r\n\x1b[90m[巨集執行完畢：{}]\x1b[0m\r\n", handle.file),
+                Ok(()) => format!(
+                    "\r\n\x1b[90m{}\x1b[0m\r\n",
+                    tf("term.macroDone", &[&handle.file])
+                ),
                 Err(e) => format!(
-                    "\r\n\x1b[31m[巨集錯誤] {} {}:{}\x1b[0m\r\n",
-                    e.err.message_zh(),
-                    e.file,
-                    e.line_no
+                    "\r\n\x1b[31m{}\x1b[0m\r\n",
+                    tf(
+                        "term.macroError",
+                        &[e.err.message_for_lang(), &e.file, &e.line_no.to_string()]
+                    )
                 ),
             };
             parts.pump.push(msg.as_bytes());
@@ -448,7 +456,7 @@ fn finish(app: &AppHandle, id: u32, handle: &Arc<MacroHandle>, result: Result<()
             "macro-error",
             serde_json::json!({
                 "id": id,
-                "message": e.err.message_zh(),
+                "message": e.err.message_for_lang(),
                 "english": e.err.message(),
                 "file": e.file,
                 "line": e.line_no,

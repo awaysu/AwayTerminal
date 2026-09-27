@@ -9,6 +9,7 @@
 //! 寫檔照舊版 `AppSettings.Save()`：先寫 `.tmp` 再原子替換，中途被強制結束不會留半截 JSON。
 //! 存檔有防抖（見 [`SettingsStore::mark_dirty`]）——Ctrl+滾輪一路縮放不會每格寫一次檔。
 
+use crate::i18n::{t};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -100,6 +101,11 @@ pub struct AppSettings {
     pub saved_tabs: Vec<crate::restore::SavedTab>,
     /// 離開對話框「下次開啟恢復目前分頁」的勾選狀態（舊版 `ExitRestoreTabs`，預設開）。
     pub exit_restore_tabs: bool,
+    /// **新版多的**：新加入的自訂連線預設要不要開沙盒（設定視窗可改；預設開，
+    /// 同 `CLAUDE.md`「沙盒模式…預設開啟」）。已存在的連線不受影響。
+    /// ⚠️ WSL／ADB 這類「拿來操作機器」的工具即使這裡是開，自動偵測仍然預設關
+    ///（見 `custom::default_sandbox`）。
+    pub sandbox_default: bool,
 
     /// 「輸入文字」視窗的「送出後送 Enter」勾選（舊版 `ComposeSendEnter`，預設開）。
     pub compose_send_enter: bool,
@@ -224,6 +230,7 @@ impl Default for AppSettings {
             favorites: Vec::new(),
             saved_tabs: Vec::new(),
             exit_restore_tabs: true,
+            sandbox_default: true,
             compose_send_enter: true,
             custom_conns: Vec::new(),
             // 舊版 MainWindow.xaml 的「配色」子選單那五組，順序照抄
@@ -253,12 +260,19 @@ impl AppSettings {
             "background": self.background,
             "imeQuietMs": self.ime_quiet_ms,
             "restoreLines": self.restore_buffer_lines,
-            "agentStates": ["閒置", "忙碌", "有信待送", "已結束", "忙碌 · 有信待送"],
+            // 這幾個字前端直接顯示 → 隨語言（舊版 `PostTheme()` 也是 `Loc.T` 進 JSON）
+            "agentStates": [
+                t("ma.stateIdle"),
+                t("ma.stateBusy"),
+                t("ma.stateQueued"),
+                t("ma.stateExited"),
+                t("ma.stateBusyQueued"),
+            ],
             "search": {
-                "placeholder": "搜尋",
-                "prev": "上一個 (Shift+Enter)",
-                "next": "下一個 (Enter)",
-                "close": "關閉 (Esc)"
+                "placeholder": t("search.placeholder"),
+                "prev": t("search.prev"),
+                "next": t("search.next"),
+                "close": t("search.close")
             }
         })
     }
