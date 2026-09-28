@@ -35,6 +35,7 @@ pub mod telegram;
 pub mod telnet;
 pub mod toolbar;
 pub mod ttl;
+pub mod winpos;
 
 use std::sync::Arc;
 
@@ -314,6 +315,12 @@ pub fn run() {
 }
 
 /// 啟動時把視窗擺回上次的大小／位置。
+///
+/// 位置**要先驗證**還落在某個螢幕上（TASK-026）：外接螢幕拔掉、解析度改小、
+/// 或設定檔裡留著最小化時存進去的假座標，照套就會開在看不到的地方——
+/// 工作列有圖示、點了沒畫面，而且重開也救不回來。驗不過就不套位置、直接置中
+/// （舊版 WPF 根本不記位置，`MainWindow.xaml` 是 `WindowStartupLocation="CenterScreen"`
+/// ——「一定看得到」是舊版的既有行為，不能退步）。
 fn apply_window_bounds(app: &tauri::AppHandle, store: &SettingsStore) {
     let Some(win) = app.get_webview_window("main") else {
         return;
@@ -324,13 +331,57 @@ fn apply_window_bounds(app: &tauri::AppHandle, store: &SettingsStore) {
         return;
     }
     let _ = win.set_size(tauri::LogicalSize::new(b.width as f64, b.height as f64));
-    if let (Some(x), Some(y)) = (b.x, b.y) {
-        let _ = win.set_position(tauri::LogicalPosition::new(x as f64, y as f64));
+    let (Some(x), Some(y)) = (b.x, b.y) else {
+        return;
+    };
+    let monitors = logical_monitors(&win);
+    let rect = winpos::Rect::new(x, y, b.width as i32, b.height as i32);
+    if monitors.is_empty() {
+        println!("[AwayTerminal] 列不出螢幕清單，記住的視窗位置不套用，改為置中");
+        let _ = win.center();
+        return;
     }
+    if !winpos::is_visible_on(rect, &monitors) {
+        println!("[AwayTerminal] 記住的視窗位置 ({x},{y}) 不在任何螢幕上，改為置中");
+        let _ = win.center();
+        return;
+    }
+    let _ = win.set_position(tauri::LogicalPosition::new(x as f64, y as f64));
+}
+
+/// 所有螢幕的矩形，換算成**主視窗當下 scale factor 下的邏輯像素**。
+///
+/// 一定要用視窗的 scale factor，不能用各螢幕自己的：`set_position(LogicalPosition)`
+/// 就是拿視窗的 scale factor 換回實體座標的，兩邊不一致的話混用 DPI 時會對不上。
+fn logical_monitors(win: &tauri::WebviewWindow) -> Vec<winpos::Rect> {
+    let scale = win.scale_factor().unwrap_or(1.0);
+    let Ok(monitors) = win.available_monitors() else {
+        return Vec::new();
+    };
+    monitors
+        .iter()
+        .map(|m| {
+            let p = m.position().to_logical::<f64>(scale);
+            let s = m.size().to_logical::<f64>(scale);
+            winpos::Rect::new(
+                p.x.round() as i32,
+                p.y.round() as i32,
+                s.width.round() as i32,
+                s.height.round() as i32,
+            )
+        })
+        .collect()
 }
 
 /// 最大化時只記 `maximized`，不覆寫還原後的大小（否則還原回來會變成整個螢幕）。
+///
+/// **最小化時整個不記**（TASK-026）：Windows 會把最小化的視窗移到實體座標
+/// `(-32000,-32000)` 並照樣發 `Moved`／`Resized`；`maximized` 這時候也讀不準
+/// （最小化前是不是最大化，`is_maximized()` 回答不了），所以連它一起不動。
 fn remember_window_bounds(window: &tauri::Window, store: &SettingsStore) {
+    if window.is_minimized().unwrap_or(false) {
+        return;
+    }
     let maximized = window.is_maximized().unwrap_or(false);
     let scale = window.scale_factor().unwrap_or(1.0);
     let size = window.inner_size().ok().map(|s| s.to_logical::<f64>(scale));
@@ -347,8 +398,13 @@ fn remember_window_bounds(window: &tauri::Window, store: &SettingsStore) {
             }
         }
         if let Some(pos) = pos {
-            s.window.x = Some(pos.x.round() as i32);
-            s.window.y = Some(pos.y.round() as i32);
+            let (x, y) = (pos.x.round() as i32, pos.y.round() as i32);
+            // 第二道保險：萬一某個平台在 `is_minimized()` 變 true 之前就先送 `Moved`，
+            // 這條會擋掉 −32000 那類不可能出現在真桌面上的座標。
+            if winpos::plausible_position(x, y) {
+                s.window.x = Some(x);
+                s.window.y = Some(y);
+            }
         }
     });
 }

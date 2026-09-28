@@ -93,6 +93,22 @@
 | C8 | 把 settings.json 故意改成壞掉的 JSON 再啟動 | 用預設值開起來，而且**不會覆寫**那個檔（`_suppressSave` 同款行為），dev log 有一行解析失敗 | `AppSettings.Load` 的 `_suppressSave` | | | |
 | C9 | 程式跑的時候看 settings.json 旁邊 | 不會留下 `.tmp` 半截檔（先寫 tmp 再原子替換） | `AppSettings.Save()` | | | |
 | C10 | 用編輯器開 settings.json | UTF-8、沒有 BOM、中文不是亂碼 | 踩雷：「PS5.1 `Get-Content` 會用 Big5 讀壞 settings.json」——**不要**用 PowerShell 5.1 的 `ConvertFrom-Json`/`ConvertTo-Json` 改這個檔 | | | |
+| C11 | 👤 **最小化之後從工作列右鍵關掉**程式 → 再開 | 視窗**在螢幕上**（回到最小化前的位置，不是開在看不見的地方）。雷：Windows 最小化時把視窗移到實體座標 `(-32000,-32000)`，還是會發 `Moved`／`Resized`——存下去之後下次啟動照套就開在螢幕外，重開也救不回來（TASK-026 使用者實際回報「工作列有 但沒辦法放大」） | 新增（舊版不記位置） | PASS（2026-09-28 實測，見下方註） | | |
+| C12 | 👤 把視窗拖到外接螢幕、關掉程式 → **拔掉外接螢幕**再開 | 視窗置中在剩下的那台螢幕上；dev log 有一行「記住的視窗位置 (x,y) 不在任何螢幕上，改為置中」 | 舊版 `MainWindow.xaml` 的 `WindowStartupLocation="CenterScreen"`（舊版不記位置，所以一定看得到；新版記了位置也不能退步） | | | |
+| C13 | `cargo test --lib winpos` | 「矩形有沒有一塊落在某台螢幕上」的判斷：全在螢幕內／完全在外／跨兩台／`-25600` 那個假座標／負座標但在左側副螢幕內／只露一條邊／標題列在畫面上緣外／沒有螢幕清單，共 10 個測試 | 新增（TASK-026） | PASS | — | — |
+
+### C11 的實測（2026-09-28，TASK-026）
+
+整條「最小化 → 從工作列關掉 → 再開」要真人跑（共用桌面的規則：不用會搶焦點的自動化）。
+**能自動驗的那一半**已經驗過了——用 `SW_SHOWMINNOACTIVE` 把 dev 視窗最小化（不搶焦點、不送鍵盤滑鼠），再用唯讀的 `GetWindowRect`／`IsIconic` 看狀態：
+
+| 起始 `window` | 最小化時的 `GetWindowRect` | 最小化 3.8 秒後的 `settings.json` |
+|---|---|---|
+| 修好的版本 `{x:200,y:150}` | `-25600,-25600`、`IsIconic=True` | `{x:200,y:150}`（**沒變**） |
+| 把 `is_minimized()` 那一段拿掉的對照組 `{x:200,y:150}` | 同上 | `{x:-25600,y:-25600}`（**就是使用者回報的那一份**） |
+| 修好的版本，起始塞 `{x:-25600,y:-25600}` | — | 視窗**置中**開在螢幕上（`rect=-7,-4,1543,834`），log 有「不在任何螢幕上，改為置中」 |
+
+`GetWindowRect` 讀到 −25600 而不是 −32000，是因為查詢用的 PowerShell 不是 DPI-aware，座標被 Windows 除以 1.25 虛擬化過——和使用者設定檔裡那個數字同一個來源。
 
 ## D. 工具列
 
@@ -1145,4 +1161,5 @@ TEMP 路徑印出完整結果，Documents 路徑印完 `path = …` 就停住。
 | **`telegram-open` 事件一定要回 `telegram_opened`** | 遠端的輪詢執行緒停在那裡等分頁 id（`session_create` 需要前端才有的 `Channel`，Rust 生不出來）。不回就等到 8 秒逾時，使用者在手機上看到「開啟失敗」。和 `ssh-hostkey` → `ssh_hostkey_answer`、`macro-dialog` → `macro_answer` 同一類 | TG34 |
 | **`session_create` 加了參數，`bridge.js` 的 `createSession` 也要傳** | Rust 收到 `None` 會安靜地走預設值，**不會報錯**，所以型別與編譯器都抓不到。已經發生兩次：TASK-011 漏 `com`（選了別的埠沒有作用）、TASK-021 漏 `adb`（多台裝置時選好的序號被丟掉、`adb shell` 失敗）。`scripts/test-bridge-args.mjs` 現在會比對兩邊 | AD3、CM1 |
 | **`--verify` 的每一段要各自包 try/catch** | 一段丟例外會讓**後面整批不跑**，而且畫面上看不出來（那幾段的 `[verify]` 行根本不存在），看起來像「跑完了、都沒問題」。TASK-021 在 release exe 上踩到：代理團隊／聊天室／Telegram 三段完全沒跑。現在每段各自包起來、最後印一行「幾段丟例外」 | 全部 |
+| **視窗位置存檔前一定要先問 `is_minimized()`** | Windows 最小化時把視窗移到實體座標 `(-32000,-32000)` 並照樣發 `Moved`／`Resized`（125% DPI 下換算成 −25600）。存進去之後下次啟動 `set_position` 到螢幕外 → 又發 `Moved` → 再存一次同樣的座標，**自我延續，使用者重開也救不回來**（工作列有圖示、點了沒畫面）。同理 `maximized` 這時候也讀不準，所以最小化時整個不記。啟動端要再驗一次「這個矩形還在某台螢幕上嗎」，不然拔掉外接螢幕也會中 | C11、C12、C13 |
 | **假伺服器的「等某個呼叫出現」一定要有起點** | 從第 0 筆開始掃會match到**很久以前**的訊息。`telegram_probe` 的 `/new 1` 檢查等含 `/last` 的回覆，結果立刻match到前面 `goto:1` 送的「已進入 …/last 看輸出」→ 分頁還沒建好就回傳（換個順序就會變成**假通過**）。`FakeBot::wait` 現在強制要傳 `from` | TG34 |
