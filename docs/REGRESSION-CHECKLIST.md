@@ -115,8 +115,8 @@
 按鈕順序照舊版 `MainWindow.xaml`：新連接 ｜ 我的最愛 ‖ 輸入文字 ｜ 複製 ｜ 貼上 ｜ 複製全部 ｜
 清畫面 ｜ 翻頁 ‖ 分割 ‖ 遠端 ｜ 其他設定 ‖ 關於。**新版目前有**新分頁 ｜ 我的最愛 ‖ 複製 ｜
 純文字貼上 ｜ 複製全部 ｜ 清除畫面 ｜ 翻頁 ｜ 輸入文字 ‖ 視窗分割 ‖ 其他設定 ｜ 關於，
-每顆都是圖上字下（TASK-027）。**只差舊版的「遠端」那一顆**——Telegram 遠端的設定放在
-「其他設定」裡面，工具列刻意不另外放一顆（2026-09-28 的現況；要放再說）。
+｜ 遠端設定 ｜ 其他設定 ‖ 關於，每顆都是圖上字下（TASK-027）。
+**舊版工具列的每一顆都有了**（TASK-029 補上「遠端設定」，位置與分隔線照 xaml：分割 ‖ 遠端 ｜ 其他設定 ‖ 關於）。
 
 | # | 怎麼測 | 預期結果 | 舊版出處 | Win | mac | Linux |
 |---|---|---|---|---|---|---|
@@ -135,6 +135,11 @@
 | D13 | 在 PowerShell 分頁確認清除 | 畫面清空但 **scrollback 還在**（用「翻頁」捲得回去）——走的是 Esc → 60ms → Ctrl+L，不是 `term.clear()` | `Clear_Click` 的 PowerShell/SSH 分支 | | | |
 | D14 | （之後做 Telnet/COM 時）確認清除 | 走 `c` 協定 → `term.clear()`，**scrollback 會被洗掉**，這就是為什麼一律先問 | 同上的 else 分支 | - | - | - |
 | D20 | `npm run verify` 看 `[verify] 工具列按鈕逐顆按` 那幾行 | **每一顆按鈕都被 `.click()` 按過**：新分頁／我的最愛／翻頁 → 下拉出現；輸入文字／其他設定／關於 → 對話框出現；清除畫面 → 確認框出現；複製／複製全部 → 不丟例外；視窗分割按三次回到原模式；分頁列 ▲／▼ 收合再展開。每一項按完都用 Esc 關掉，收尾那行「沒人接住的例外 0 個、console.error 0 個」。**「純文字貼上」刻意不按**（它會把使用者真正的剪貼簿內容打進 shell，有換行就等於替使用者按 Enter；那條路由 D1 的 `toolbar_paste` 用固定字串驗） | 新增（TASK-028：「其他設定」從 TASK-016 就打不開，十幾次驗收沒抓到，因為 `verifySettings` 只呼叫 command、從不開視窗） | PASS | | |
+| D21 | 👤 按工具列「遠端設定」 | 開**獨立視窗**（不是「其他設定」裡的區塊）：啟用遠端控制／Bot Token／允許的 Chat ID＋「取得 chat id」／其他分頁完成也推播／說明文字／儲存／取消，順序照舊版 `RemoteDialog.xaml` | `MainWindow.xaml` 第 76 行 `BtnRemote` ＋ `Dialogs/RemoteDialog.xaml` | | | |
+| D22 | 👤 **不勾**「啟用遠端控制」 | Token／Chat ID／「取得 chat id」／推播四個都**鎖住且變淡**；勾起來就恢復 | `RemoteDialog.UpdateEnabledUI`（`IsEnabled` ＋ `Opacity 0.45`） | | | |
+| D23 | 👤 填好 token、先用手機傳一則訊息給 bot，再按「取得 chat id」 | Chat ID 欄自動填上，跳「已取得 chat id：<數字>」；沒有訊息時跳「找不到訊息…」；token 空白且設定裡也沒有時跳「請先填入 Bot Token。」 | `RemoteDialog.GetId_Click` ／ `TryGetLatestChatId` | | | |
+| D24 | `--verify` 的 Telegram 那一段（假 Bot API） | 多一條「取得 chat id 抓到最近一則訊息的 chat」PASS；token 仍然不出現在任何一行輸出 | 新增（TASK-029） | PASS | — | — |
+| D25 | 👤 開「其他設定」 | **沒有** Telegram 區塊了（搬回獨立的遠端視窗；兩個地方改同一組欄位會互相蓋） | 舊版 `SettingsDialog` 本來就沒有這一區 | | | |
 | D15 | 👤 **和舊版並排看工具列** | 每顆按鈕都是**圖上字下**：圖 26×26、字 11px、按鈕寬 72（繁中／簡中的字都短於 72，所以整排和舊版一樣寬）、圓角 4、底 #3A3A3D、滑鼠移上去 #50505A。圖就是舊版那一組 PNG（`new-connecting`／`favorite`／`compose`／`copy`／`paste`／`copy-all`／`clear`／`page-scroll`／`arrange`／`settings`／`about`） | `MainWindow.xaml` 的 `ToolBtn` 樣式（第 16～49 行）與各 Button 的 `Tag` | | | |
 | D16 | `npm run verify` 看 `[verify] 圖示` 那幾行 | 工具列「沒圖 0、沒字 0、圖載不到 0」；下拉選單、分頁列、自訂連線挑選器都「載不到 0」；分頁列圖示有 `#tint-ready`／`#tint-busy` 的 filter | 新增（TASK-027） | PASS | | |
 | D17 | 切成德文／法文／日文（`Bildschirm löschen`、`Effacer l’écran`、`テキストとして貼り付け`） | 放不下 72 的按鈕會**變寬**（不是截字、也不是換行），工具列放不下時可以橫向捲；圖示照樣置中、整排高度一致 | 刻意與舊版不同（見下方表；舊版固定 72、長字會溢出蓋到隔壁） | | | |
@@ -962,6 +967,7 @@ TEMP 路徑印出完整結果，Documents 路徑印完 `path = …` 就停住。
 | DV8 | `cargo test --lib version_tests` | 三處版本一致、NOTICES 與 conpty 有進 bundle、八種安裝語言、updater 公鑰仍是空的 | 新增 | PASS | — | — |
 | DV9 | `npm run lint`（eslint，只開 `no-undef` ＋ `no-unused-vars`） | **0 error**（warning 允許）。它擋的是「用了但沒 import」這一類——Vite 打包不會擋，bundle 裡就是一個裸的全域呼叫，要等使用者按下去才炸（TASK-028：`setdlg.js` 的 `setToolLabel`）。`scripts/dev-verify.mjs` 會**先跑它**，有 error 就不浪費五分鐘跑驗證。`src/terminal.js` 不掃（原封不動搬過來的） | 新增（TASK-028） | PASS | — | — |
 | DV10 | `node scripts/audit-el-refs.mjs` | 每個前端模組「用了 `el.xxx`」的都在 init 有指定，`$('id')` 指到的 id 在 `index.html` 都存在。**eslint 抓不到這一類**（它看不到物件屬性），而這正是「其他設定」打不開的那個 bug（`el.shellMenu` 沒接） | 新增（TASK-028） | PASS | — | — |
+| DV11 | 跑完 `npm run verify` 或 `verify:release` 之後看最後一行 | `[dev-verify] 收尾掃描：target 底下沒有殘留行程`，而且 `Get-Process` 只看得到使用者安裝的 `C:\Program Files\AwayTerminal`（v1.2.8）。腳本現在**看到 `[verify] 收尾` 就收樹**（不必等逾時），收完再依路徑掃一次 `src-tauri/target` 補收 | 新增（TASK-029；TASK-028 的 release 那輪留下 exe 與 node 各一隻） | PASS | — | — |
 
 ---
 

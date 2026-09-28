@@ -6,6 +6,11 @@
 // 一整串孤兒；`awayterminal.exe` 抓著 `target\debug`，下一次 `cargo build` 就會噴
 // `os error 32`（PM 在 TASK-018 的信裡就是被這個擋住）。
 //
+// `--verify` 跑完之後 app **不會自己結束**（它就是一個開著的視窗），所以這支腳本還要負責
+// 「驗完就收工」：把子行程的輸出接起來看，看到最後一行收尾就收樹，不必等到逾時
+//（TASK-029：release 模式留下 exe 與 node 各一隻活到天亮，PM 得自己依 PID 收）。
+// 收完再**掃一次** `src-tauri/target/{debug,release}` 底下還有沒有活著的行程，有就依 PID 補收並印出來。
+//
 // 做法：把 tauri dev 開成子行程、記下**它的 PID**，收尾時用 `taskkill /PID <pid> /T /F`
 // （**依 PID 收整棵樹，不是依名稱**——依名稱會把使用者的 AwayTerminal 和這個團隊一起砍掉）。
 // 另外把 `%TEMP%` 底下自己留下的驗證資料夾清掉。
@@ -90,6 +95,41 @@ try {
   process.exit(1);
 }
 
+/**
+ * 收尾掃描：`src-tauri/target/{debug,release}` 底下還有沒有活著的行程。
+ *
+ * **只認路徑**（這個 repo 的 target 目錄），所以絕不會碰到使用者安裝在
+ * `C:\Program Files\AwayTerminal` 的舊版；找到的一律依 PID 收掉。
+ * 回傳收掉的 PID 清單（空的＝乾淨）。
+ */
+function sweepStrays() {
+  if (!isWindows) return []; // mac/Linux 用 process group（detached），這裡不重複做
+  const target = join(process.cwd(), 'src-tauri', 'target');
+  let out = '';
+  try {
+    out = execFileSync(
+      'powershell',
+      [
+        '-NoProfile',
+        '-Command',
+        `Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -like '${target}\\*' } | ForEach-Object { $_.ProcessId }`,
+      ],
+      { encoding: 'utf8' }
+    );
+  } catch {
+    return [];
+  }
+  const pids = out.split(/\s+/).map((x) => Number(x)).filter((x) => x > 0);
+  for (const pid of pids) {
+    try {
+      execFileSync('taskkill', ['/PID', String(pid), '/T', '/F'], { stdio: 'ignore' });
+    } catch {
+      // 已經自己結束了
+    }
+  }
+  return pids;
+}
+
 const what = release ? 'release exe' : 'dev';
 console.log(
   `[AwayTerminal] 開始跑 ${what}（--verify ${tabs}）：視窗會開起來、跑完自己關掉，最多 ${timeoutSec} 秒`
@@ -110,12 +150,41 @@ if (release && !existsSync(exe)) {
   console.log(`[dev-verify] 找不到 ${exe}——先跑 \`npm run tauri build\``);
   process.exit(1);
 }
+// stdio 用 pipe 而不是 inherit：輸出照樣原封不動轉出去（下面的 write），
+// 但這樣才看得到「驗證跑完了」那一行 → 可以當場收工，不必等逾時。
 const child = release
-  ? spawn(exe, ['--verify', tabs], { stdio: 'inherit', detached: !isWindows })
+  ? spawn(exe, ['--verify', tabs], { stdio: ['ignore', 'pipe', 'pipe'], detached: !isWindows })
   : spawn(process.execPath, [cli, 'dev', '--', '--', '--verify', tabs], {
-      stdio: 'inherit',
+      stdio: ['ignore', 'pipe', 'pipe'],
       detached: !isWindows,
     });
+
+// 驗證的最後一行（`awayVerify` 的收尾）。看到它就代表「該驗的都驗完了」。
+const DONE_MARK = '[verify] 收尾：整段沒人接住的例外';
+let done = false;
+let tail = '';
+const watch = (buf) => {
+  if (done) return;
+  tail = (tail + buf).slice(-4000);
+  if (!tail.includes(DONE_MARK)) return;
+  done = true;
+  // 收尾那一行之後還有幾行輸出（log 是非同步送出的），等一下再收
+  setTimeout(() => {
+    console.log('[dev-verify] 驗證跑完了，收掉整棵行程樹');
+    clearTimeout(timer);
+    killTree(child.pid);
+  }, 1500);
+};
+for (const [stream, out] of [
+  [child.stdout, process.stdout],
+  [child.stderr, process.stderr],
+]) {
+  if (!stream) continue;
+  stream.on('data', (b) => {
+    out.write(b);
+    watch(String(b));
+  });
+}
 
 let timedOut = false;
 const timer = setTimeout(() => {
@@ -139,10 +208,16 @@ child.on('exit', (code) => {
   // 正常結束也要確認一次：tauri dev 的 watcher 可能已經重新啟動過 app，
   // 那個新的 app 行程不是 npx 的直接子行程，但仍在同一棵樹裡
   killTree(child.pid);
+  const strays = sweepStrays();
   const removed = cleanTemp();
   console.log(
     `[AwayTerminal] ${what} 結束（exit ${timedOut ? 'timeout' : code}）` +
       `；清掉 %TEMP% 驗證資料夾 ${removed.length} 個${removed.length ? '：' + removed.join(', ') : ''}`
+  );
+  console.log(
+    strays.length
+      ? `[dev-verify] 收尾掃描：target 底下還有 ${strays.length} 隻，已依 PID 收掉（${strays.join(', ')}）`
+      : '[dev-verify] 收尾掃描：target 底下沒有殘留行程'
   );
   process.exit(timedOut ? 124 : (code ?? 1));
 });

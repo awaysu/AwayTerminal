@@ -284,7 +284,9 @@ export default {
   'sb.noSandbox': 'Dieser Tab hat keine Sandbox.',
   // ---- 設定視窗（TASK-015 A；舊版 Dialogs/SettingsDialog + Loc 的 settings.* / font.*）----
   'tb.settings': 'Einstellungen',
+  'tb.remote': 'Fernsteuerung',
   'tip.settings': 'Schriftart, Farben, Sprache und weitere Einstellungen',
+  'tip.remote': 'Fernsteuerung einrichten (Telegram)',
   'settings.title': 'Einstellungen',
   // machine-translation notice (under the language picker, and on the About page)
   'settings.langNote': 'Alle Sprachen außer traditionellem Chinesisch und Englisch sind maschinell übersetzt; Korrekturen sind willkommen.',
@@ -664,16 +666,22 @@ export default {
   'tg.on': 'ein',
   'tg.off': 'aus',
 
-  // Telegram 遠端的設定視窗區塊與分頁右鍵那一項（只在前端用）
-  'settings.groupTg': 'Telegram-Fernsteuerung',
-  'settings.tgEnabled': 'Telegram-Fernsteuerung einschalten',
-  'settings.tgToken': 'Bot-Token',
-  'settings.tgChat': 'Chat-ID',
-  'settings.tgNotify': 'Auch melden, wenn andere (nicht betretene) Tabs fertig sind',
-  'settings.tgTokenSet': '(gesetzt; leer lassen, um es zu behalten)',
-  'settings.tgTokenNone': '(noch nicht gesetzt)',
-  'settings.tgRunning': 'Die Fernsteuerung läuft.',
-  'settings.tgStopped': 'Die Fernsteuerung läuft nicht.',
+  // 遠端設定（Telegram）：舊版 `Dialogs/RemoteDialog` 的字串（TASK-029 搬回獨立視窗）
+  // 分頁右鍵的「推播到 Telegram」在下面（只在前端用）
+  'remote.title': 'Fernsteuerung (Telegram)',
+  'remote.enable': 'Fernsteuerung aktivieren',
+  'remote.token': 'Bot-Token',
+  'remote.chatId': 'Erlaubte Chat-ID',
+  'remote.getChatId': 'Chat-ID abrufen',
+  'remote.notify': 'Auch melden, wenn andere (nicht betretene) Tabs fertig sind',
+  'remote.hint': 'Erstelle über @BotFather einen Bot für den Token; schicke deinem Bot zuerst eine Nachricht vom Handy und klicke dann auf „Chat-ID abrufen“.',
+  'remote.needToken': 'Bitte zuerst den Bot-Token eingeben.',
+  'remote.noUpdates': 'Keine Nachricht gefunden. Schicke deinem Bot zuerst eine Nachricht vom Handy und versuche es erneut.',
+  'remote.gotChatId': 'Chat-ID erhalten: {0}',
+  'remote.tokenSet': '(gesetzt; leer lassen, um es zu behalten)',
+  'remote.tokenNone': '(noch nicht gesetzt)',
+  'remote.running': 'Die Fernsteuerung läuft.',
+  'remote.stopped': 'Die Fernsteuerung läuft nicht.',
   'menu.tgNotify': 'An Telegram senden',
   'menu.tgNotifySet': 'An Telegram senden: {0}',
 

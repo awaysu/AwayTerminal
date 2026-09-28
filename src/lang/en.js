@@ -291,7 +291,9 @@ export default {
   'sb.noSandbox': 'This tab has no sandbox.',
   // ---- 設定視窗（TASK-015 A；舊版 Dialogs/SettingsDialog + Loc 的 settings.* / font.*）----
   'tb.settings': 'Settings',
+  'tb.remote': 'Remote',
   'tip.settings': 'Font, colors, language and other settings',
+  'tip.remote': 'Remote control (Telegram)',
   'settings.title': 'Settings',
   // machine-translation notice (under the language picker, and on the About page)
   'settings.langNote': 'Every language other than Traditional Chinese and English is machine-translated; corrections are welcome.',
@@ -683,16 +685,22 @@ export default {
   'tg.on': 'on',
   'tg.off': 'off',
 
-  // Telegram 遠端的設定視窗區塊與分頁右鍵那一項（只在前端用）
-  'settings.groupTg': 'Telegram remote',
-  'settings.tgEnabled': 'Enable the Telegram remote',
-  'settings.tgToken': 'Bot token',
-  'settings.tgChat': 'Chat ID',
-  'settings.tgNotify': 'Also notify when other (not attached) tabs finish',
-  'settings.tgTokenSet': '(set; leave empty to keep it)',
-  'settings.tgTokenNone': '(not set yet)',
-  'settings.tgRunning': 'The remote is running.',
-  'settings.tgStopped': 'The remote is not running.',
+  // 遠端設定（Telegram）：舊版 `Dialogs/RemoteDialog` 的字串（TASK-029 搬回獨立視窗）
+  // 分頁右鍵的「推播到 Telegram」在下面（只在前端用）
+  'remote.title': 'Remote (Telegram)',
+  'remote.enable': 'Enable remote control',
+  'remote.token': 'Bot Token',
+  'remote.chatId': 'Allowed Chat ID',
+  'remote.getChatId': 'Get chat id',
+  'remote.notify': 'Also notify for tabs you haven\'t entered',
+  'remote.hint': 'Create a bot via @BotFather for the token; send your bot a message first, then click "Get chat id".',
+  'remote.needToken': 'Please enter the Bot Token first.',
+  'remote.noUpdates': 'No message found. Send your bot a message from your phone first, then try again.',
+  'remote.gotChatId': 'Got chat id: {0}',
+  'remote.tokenSet': '(set; leave empty to keep it)',
+  'remote.tokenNone': '(not set yet)',
+  'remote.running': 'The remote is running.',
+  'remote.stopped': 'The remote is not running.',
   'menu.tgNotify': 'Push to Telegram',
   'menu.tgNotifySet': 'Push to Telegram: {0}',
 

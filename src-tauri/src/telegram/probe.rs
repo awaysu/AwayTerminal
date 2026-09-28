@@ -658,6 +658,16 @@ fn run(app: &AppHandle, tab: Option<u32>) -> Result<Vec<String>, String> {
     std::thread::sleep(Duration::from_millis(200));
     r.check("停止之後遠端不再跑", !remote::is_running(), "");
 
+    // 11) 遠端設定視窗的「取得 chat id」（TASK-029）。
+    // **一定要在 `remote::stop()` 之後**：輪詢那條連線會把更新領走，還在跑的話這裡會拿到空的。
+    bot.say(CHAT, "hello from phone");
+    let got = super::api::Api::new(&bot.base(), FAKE_TOKEN).latest_chat_id();
+    r.check(
+        "取得 chat id 抓到最近一則訊息的 chat",
+        matches!(got, Ok(Some(id)) if id == CHAT),
+        &format!("回傳 {got:?}（要 Ok(Some({CHAT}))）"),
+    );
+
     r.lines.push(format!(
         "[verify] Telegram 遠端：{}",
         if r.ok { "全部通過" } else { "有項目失敗" }

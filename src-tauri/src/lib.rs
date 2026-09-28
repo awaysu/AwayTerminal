@@ -221,6 +221,7 @@ pub fn run() {
             agent::chat_verify_transcript,
             telegram::telegram_state,
             telegram::telegram_apply,
+            telegram::telegram_get_chat_id,
             telegram::telegram_opened,
             telegram::telegram_tab_notify,
             telegram::telegram_tab_state,

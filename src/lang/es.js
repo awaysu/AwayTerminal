@@ -284,7 +284,9 @@ export default {
   'sb.noSandbox': 'Esta pestaña no tiene entorno aislado.',
   // ---- 設定視窗（TASK-015 A；舊版 Dialogs/SettingsDialog + Loc 的 settings.* / font.*）----
   'tb.settings': 'Configuración',
+  'tb.remote': 'Remoto',
   'tip.settings': 'Fuente, colores, idioma y otras opciones',
+  'tip.remote': 'Control remoto (Telegram)',
   'settings.title': 'Configuración',
   // machine-translation notice (under the language picker, and on the About page)
   'settings.langNote': 'Todos los idiomas salvo el chino tradicional y el inglés están traducidos automáticamente; se agradecen las correcciones.',
@@ -664,16 +666,22 @@ export default {
   'tg.on': 'activado',
   'tg.off': 'desactivado',
 
-  // Telegram 遠端的設定視窗區塊與分頁右鍵那一項（只在前端用）
-  'settings.groupTg': 'Control remoto por Telegram',
-  'settings.tgEnabled': 'Activar el control remoto por Telegram',
-  'settings.tgToken': 'Token del bot',
-  'settings.tgChat': 'ID de chat',
-  'settings.tgNotify': 'Avisar también cuando terminen otras pestañas',
-  'settings.tgTokenSet': '(configurado; déjalo vacío para no cambiarlo)',
-  'settings.tgTokenNone': '(sin configurar)',
-  'settings.tgRunning': 'El control remoto está en marcha.',
-  'settings.tgStopped': 'El control remoto no está en marcha.',
+  // 遠端設定（Telegram）：舊版 `Dialogs/RemoteDialog` 的字串（TASK-029 搬回獨立視窗）
+  // 分頁右鍵的「推播到 Telegram」在下面（只在前端用）
+  'remote.title': 'Control remoto (Telegram)',
+  'remote.enable': 'Activar el control remoto',
+  'remote.token': 'Token del bot',
+  'remote.chatId': 'ID de chat permitido',
+  'remote.getChatId': 'Obtener el chat id',
+  'remote.notify': 'Avisar también cuando terminen otras pestañas',
+  'remote.hint': 'Crea un bot con @BotFather para obtener el token; envía primero un mensaje a tu bot desde el móvil y luego pulsa «Obtener el chat id».',
+  'remote.needToken': 'Introduce primero el token del bot.',
+  'remote.noUpdates': 'No se ha encontrado ningún mensaje. Envía primero un mensaje a tu bot desde el móvil y vuelve a intentarlo.',
+  'remote.gotChatId': 'Chat id obtenido: {0}',
+  'remote.tokenSet': '(configurado; déjalo vacío para no cambiarlo)',
+  'remote.tokenNone': '(sin configurar)',
+  'remote.running': 'El control remoto está en marcha.',
+  'remote.stopped': 'El control remoto no está en marcha.',
   'menu.tgNotify': 'Enviar a Telegram',
   'menu.tgNotifySet': 'Enviar a Telegram: {0}',
 

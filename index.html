@@ -76,7 +76,9 @@
       <span class="tool-sep"></span>
       <button id="btn-view" type="button" class="tool-btn"><img class="tool-ico" src="icon/arrange.png" alt="" draggable="false" /><span class="tool-label">視窗分割</span></button>
       <span class="tool-sep"></span>
+      <button id="btn-remote" type="button" class="tool-btn"><img class="tool-ico" src="icon/remote-settings.png" alt="" draggable="false" /><span class="tool-label">遠端設定</span></button>
       <button id="btn-settings" type="button" class="tool-btn"><img class="tool-ico" src="icon/settings.png" alt="" draggable="false" /><span class="tool-label">其他設定</span></button>
+      <span class="tool-sep"></span>
       <button id="btn-about" type="button" class="tool-btn"><img class="tool-ico" src="icon/about.png" alt="" draggable="false" /><span class="tool-label">關於</span></button>
       <span class="tool-spacer"></span>
       <button id="btn-tabpanel" type="button" class="tool-arrow">▲</button>
@@ -625,21 +627,6 @@
         <div id="st-shell-note" class="sd-hint"></div>
       </fieldset>
 
-      <!-- Telegram 遠端（舊版是獨立的「遠端」對話框，這裡併進設定視窗的一個區塊）。
-           token 欄位是 password 型別、**永遠不回填**（後端只回「有沒有設定」）。 -->
-      <fieldset>
-        <legend id="st-l-tg"></legend>
-        <label class="sd-check"><input id="st-tg-enabled" type="checkbox" /><span id="st-l-tgenabled"></span></label>
-        <div class="st-grid">
-          <label id="st-l-tgtoken" for="st-tg-token"></label>
-          <span class="sd-row"><input id="st-tg-token" type="password" autocomplete="off" spellcheck="false" /></span>
-          <label id="st-l-tgchat" for="st-tg-chat"></label>
-          <span class="sd-row"><input id="st-tg-chat" type="text" inputmode="numeric" spellcheck="false" /></span>
-        </div>
-        <label class="sd-check"><input id="st-tg-notify" type="checkbox" /><span id="st-l-tgnotify"></span></label>
-        <div id="st-tg-note" class="sd-hint"></div>
-      </fieldset>
-
       <div id="st-note" class="sd-hint"></div>
       <div class="modal-buttons">
         <button id="st-reset" type="button"></button>
@@ -651,6 +638,40 @@
 
   <!-- 關於（舊版 About_Click 動態組出來的視窗）：版本／編譯時間／作者／下載／原始碼／
        授權／第三方元件＋「檢查更新」。檢查更新**只有按下去才查**（舊版沒有啟動時自動查）。 -->
+  <!-- 遠端設定（Telegram）：舊版 `Dialogs/RemoteDialog.xaml` 的搬移版。
+       欄位順序、鎖灰規則、提示文字都照它；token 欄位**永遠不回填**（後端只回「有沒有設定」），
+       留空＝不變更。舊版的「遠端已由另一個視窗使用中」沒有搬（見 docs/TELEGRAM.md 的說明）。 -->
+  <div id="remotedlg" hidden>
+    <form id="remotedlg-box">
+      <div id="remotedlg-title"></div>
+
+      <label class="sd-check"><input id="rm-enabled" type="checkbox" /><span id="rm-l-enabled"></span></label>
+
+      <div class="rm-field">
+        <label id="rm-l-token" for="rm-token"></label>
+        <input id="rm-token" type="password" autocomplete="off" spellcheck="false" />
+      </div>
+
+      <div class="rm-field">
+        <label id="rm-l-chat" for="rm-chat"></label>
+        <span class="sd-row">
+          <input id="rm-chat" type="text" inputmode="numeric" spellcheck="false" />
+          <button id="rm-getid" type="button"></button>
+        </span>
+      </div>
+
+      <label class="sd-check rm-notify-row"><input id="rm-notify" type="checkbox" /><span id="rm-l-notify"></span></label>
+
+      <div id="rm-hint" class="sd-hint"></div>
+      <div id="rm-note" class="sd-hint"></div>
+
+      <div class="modal-buttons">
+        <button id="rm-ok" type="submit"></button>
+        <button id="rm-cancel" type="button"></button>
+      </div>
+    </form>
+  </div>
+
   <div id="aboutdlg" hidden>
     <div id="aboutdlg-box">
       <div id="about-name">AwayTerminal</div>

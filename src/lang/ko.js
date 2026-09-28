@@ -284,7 +284,9 @@ export default {
   'sb.noSandbox': '이 탭에는 샌드박스가 없습니다.',
   // ---- 設定視窗（TASK-015 A；舊版 Dialogs/SettingsDialog + Loc 的 settings.* / font.*）----
   'tb.settings': '설정',
+  'tb.remote': '원격 설정',
   'tip.settings': '글꼴, 색, 언어 및 기타 설정',
+  'tip.remote': '원격 제어 설정 (Telegram)',
   'settings.title': '설정',
   // machine-translation notice (under the language picker, and on the About page)
   'settings.langNote': '번체 중국어와 영어를 제외한 언어는 기계 번역입니다. 수정 제안을 환영합니다.',
@@ -664,16 +666,22 @@ export default {
   'tg.on': '켜짐',
   'tg.off': '꺼짐',
 
-  // Telegram 遠端的設定視窗區塊與分頁右鍵那一項（只在前端用）
-  'settings.groupTg': 'Telegram 원격',
-  'settings.tgEnabled': 'Telegram 원격 사용',
-  'settings.tgToken': '봇 토큰',
-  'settings.tgChat': '채팅 ID',
-  'settings.tgNotify': '들어가지 않은 다른 탭의 완료도 알림',
-  'settings.tgTokenSet': '（설정됨. 비워 두면 그대로）',
-  'settings.tgTokenNone': '（설정되지 않음）',
-  'settings.tgRunning': '원격이 실행 중입니다.',
-  'settings.tgStopped': '원격이 실행 중이 아닙니다.',
+  // 遠端設定（Telegram）：舊版 `Dialogs/RemoteDialog` 的字串（TASK-029 搬回獨立視窗）
+  // 分頁右鍵的「推播到 Telegram」在下面（只在前端用）
+  'remote.title': '원격 설정 (Telegram)',
+  'remote.enable': '원격 제어 사용',
+  'remote.token': '봇 토큰',
+  'remote.chatId': '허용할 채팅 ID',
+  'remote.getChatId': 'chat id 가져오기',
+  'remote.notify': '들어가지 않은 다른 탭의 완료도 알림',
+  'remote.hint': '@BotFather에서 봇을 만들어 토큰을 받으세요. 먼저 휴대폰에서 봇에게 메시지를 보낸 다음 「chat id 가져오기」를 누르세요.',
+  'remote.needToken': '먼저 봇 토큰을 입력하세요.',
+  'remote.noUpdates': '메시지를 찾을 수 없습니다. 먼저 휴대폰에서 봇에게 메시지를 보낸 뒤 다시 시도하세요.',
+  'remote.gotChatId': 'chat id를 가져왔습니다: {0}',
+  'remote.tokenSet': '（설정됨. 비워 두면 그대로）',
+  'remote.tokenNone': '（설정되지 않음）',
+  'remote.running': '원격이 실행 중입니다.',
+  'remote.stopped': '원격이 실행 중이 아닙니다.',
   'menu.tgNotify': 'Telegram 으로 알림',
   'menu.tgNotifySet': 'Telegram 알림: {0}',
 

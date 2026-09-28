@@ -284,7 +284,9 @@ export default {
   'sb.noSandbox': 'Cet onglet n’a pas de bac à sable.',
   // ---- 設定視窗（TASK-015 A；舊版 Dialogs/SettingsDialog + Loc 的 settings.* / font.*）----
   'tb.settings': 'Paramètres',
+  'tb.remote': 'À distance',
   'tip.settings': 'Police, couleurs, langue et autres paramètres',
+  'tip.remote': 'Commande à distance (Telegram)',
   'settings.title': 'Paramètres',
   // machine-translation notice (under the language picker, and on the About page)
   'settings.langNote': 'Toutes les langues sauf le chinois traditionnel et l’anglais sont traduites automatiquement ; les corrections sont bienvenues.',
@@ -664,16 +666,22 @@ export default {
   'tg.on': 'activé',
   'tg.off': 'désactivé',
 
-  // Telegram 遠端的設定視窗區塊與分頁右鍵那一項（只在前端用）
-  'settings.groupTg': 'Commande à distance Telegram',
-  'settings.tgEnabled': 'Activer la commande à distance Telegram',
-  'settings.tgToken': 'Jeton du bot',
-  'settings.tgChat': 'Identifiant de discussion',
-  'settings.tgNotify': 'Signaler aussi la fin des autres onglets',
-  'settings.tgTokenSet': '(défini ; laissez vide pour le conserver)',
-  'settings.tgTokenNone': '(pas encore défini)',
-  'settings.tgRunning': 'La commande à distance fonctionne.',
-  'settings.tgStopped': 'La commande à distance ne fonctionne pas.',
+  // 遠端設定（Telegram）：舊版 `Dialogs/RemoteDialog` 的字串（TASK-029 搬回獨立視窗）
+  // 分頁右鍵的「推播到 Telegram」在下面（只在前端用）
+  'remote.title': 'Commande à distance (Telegram)',
+  'remote.enable': 'Activer la commande à distance',
+  'remote.token': 'Jeton du bot',
+  'remote.chatId': 'Identifiant de discussion autorisé',
+  'remote.getChatId': 'Obtenir le chat id',
+  'remote.notify': 'Signaler aussi la fin des autres onglets',
+  'remote.hint': 'Créez un bot via @BotFather pour obtenir le jeton ; envoyez d’abord un message à votre bot depuis le téléphone, puis cliquez sur « Obtenir le chat id ».',
+  'remote.needToken': 'Saisissez d’abord le jeton du bot.',
+  'remote.noUpdates': 'Aucun message trouvé. Envoyez d’abord un message à votre bot depuis le téléphone, puis réessayez.',
+  'remote.gotChatId': 'Chat id obtenu : {0}',
+  'remote.tokenSet': '(défini ; laissez vide pour le conserver)',
+  'remote.tokenNone': '(pas encore défini)',
+  'remote.running': 'La commande à distance fonctionne.',
+  'remote.stopped': 'La commande à distance ne fonctionne pas.',
   'menu.tgNotify': 'Envoyer vers Telegram',
   'menu.tgNotifySet': 'Envoyer vers Telegram : {0}',
 

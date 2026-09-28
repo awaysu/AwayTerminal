@@ -115,6 +115,35 @@ impl Api {
         }
     }
 
+    /// 「取得 chat id」：抓最近一則**訊息**的 chat id（舊版 `TelegramRemote.TryGetLatestChatId`）。
+    ///
+    /// 逐項照舊版：`getUpdates`（不帶 offset）→ 掃 `result` → 回**最後一則**訊息的
+    /// `message.chat.id`；沒有訊息就回 `None`。inline 按鈕的點擊不算（舊版只看 `message`）。
+    /// 逾時 10 秒、`timeout=0`（不 long poll）——這是使用者按按鈕在等的，不能卡 30 秒。
+    ///
+    /// ⚠️ 遠端正在跑的時候按這顆，這次查詢會和輪詢那條連線搶同一批 update
+    /// （Telegram 對同一個 token 只給一條 getUpdates）。舊版也是這樣，行為照舊。
+    pub fn latest_chat_id(&self) -> Result<Option<i64>, String> {
+        let agent = self.agent(10);
+        let url = format!("{}?timeout=0", self.url("getUpdates"));
+        let mut resp = agent.get(&url).call().map_err(|e| describe(&e))?;
+        let status = resp.status().as_u16();
+        if status != 200 {
+            return Err(format!("getUpdates HTTP {status}"));
+        }
+        // i18n-audit:log-only-begin 錯誤字串只進診斷行
+        let body = resp
+            .body_mut()
+            .read_to_string()
+            .map_err(|e| format!("getUpdates 讀取失敗：{e}"))?;
+        // i18n-audit:log-only-end
+        let (msgs, _) = parse_updates(&body, 0)?;
+        Ok(msgs
+            .iter()
+            .rfind(|m| m.callback.is_none() && m.chat_id != 0)
+            .map(|m| m.chat_id))
+    }
+
     /// `sendMessage`。`html`＝用 HTML parse mode；`buttons`＝inline 鍵盤。
     pub fn send_message(
         &self,

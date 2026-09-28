@@ -91,6 +91,32 @@ pub fn telegram_apply(
     remote::status(&settings)
 }
 
+/// 遠端設定視窗的「取得 chat id」（舊版 `RemoteDialog.GetId_Click`）。
+///
+/// `token` 是 `None`＝用設定裡存的那一個（視窗永遠不回填 token，留空就是「沒改」）。
+/// 回 `Ok(None)`＝bot 收到的訊息裡沒有可用的 chat id（使用者還沒傳訊息給 bot）。
+/// **錯誤字串不含 URL**（URL 裡有 token，見 `api::describe`）。
+#[tauri::command]
+pub fn telegram_get_chat_id(
+    token: Option<String>,
+    base: Option<String>,
+    settings: State<'_, Arc<SettingsStore>>,
+) -> Result<Option<i64>, String> {
+    let token = match token {
+        Some(t) if !t.trim().is_empty() => t.trim().to_string(),
+        _ => settings.get().telegram_bot_token,
+    };
+    if token.trim().is_empty() {
+        // 前端在送出之前就會擋（`remote.needToken`），這裡是第二道
+        return Err("no token".into());
+    }
+    let api = match base {
+        Some(b) => api::Api::new(&b, &token),
+        None => api::Api::telegram(&token),
+    };
+    api.latest_chat_id()
+}
+
 /// 前端開完 `telegram-open` 要的分頁之後回報（`None`＝開失敗）。
 ///
 /// **隱含契約**：`telegram-open` 一定要回這一個，否則遠端的執行緒等到逾時

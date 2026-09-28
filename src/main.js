@@ -343,6 +343,7 @@ async function verifyToolbarButtons() {
     ['btn-favs', 'favs-menu', '我的最愛 ▾'],
     ['btn-page', 'page-menu', '翻頁 ▾'],
     ['btn-compose', 'composedlg', '輸入文字'],
+    ['btn-remote', 'remotedlg', '遠端設定'],
     ['btn-settings', 'setdlg', '其他設定'],
     ['btn-about', 'aboutdlg', '關於'],
     ['btn-clear', 'modal', '清除畫面（確認框）'],

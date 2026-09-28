@@ -284,7 +284,9 @@ export default {
   'sb.noSandbox': 'このタブにはサンドボックスがありません。',
   // ---- 設定視窗（TASK-015 A；舊版 Dialogs/SettingsDialog + Loc 的 settings.* / font.*）----
   'tb.settings': '設定',
+  'tb.remote': 'リモート設定',
   'tip.settings': 'フォント、色、言語などの設定',
+  'tip.remote': 'リモート操作の設定 (Telegram)',
   'settings.title': '設定',
   // machine-translation notice (under the language picker, and on the About page)
   'settings.langNote': '繁体字中国語と英語以外は機械翻訳です。修正を歓迎します。',
@@ -664,16 +666,22 @@ export default {
   'tg.on': 'オン',
   'tg.off': 'オフ',
 
-  // Telegram 遠端的設定視窗區塊與分頁右鍵那一項（只在前端用）
-  'settings.groupTg': 'Telegram リモート',
-  'settings.tgEnabled': 'Telegram リモートを有効にする',
-  'settings.tgToken': 'Bot トークン',
-  'settings.tgChat': 'チャット ID',
-  'settings.tgNotify': '入っていない他のタブの完了も通知する',
-  'settings.tgTokenSet': '（設定済み。空欄のままで変更しません）',
-  'settings.tgTokenNone': '（未設定）',
-  'settings.tgRunning': 'リモートは動作中です。',
-  'settings.tgStopped': 'リモートは動作していません。',
+  // 遠端設定（Telegram）：舊版 `Dialogs/RemoteDialog` 的字串（TASK-029 搬回獨立視窗）
+  // 分頁右鍵的「推播到 Telegram」在下面（只在前端用）
+  'remote.title': 'リモート設定 (Telegram)',
+  'remote.enable': 'リモート操作を有効にする',
+  'remote.token': 'Bot トークン',
+  'remote.chatId': '許可するチャット ID',
+  'remote.getChatId': 'chat id を取得',
+  'remote.notify': '入っていない他のタブの完了も通知する',
+  'remote.hint': '@BotFather で bot を作成してトークンを取得します。先にスマートフォンから bot にメッセージを送ってから「chat id を取得」を押してください。',
+  'remote.needToken': '先に Bot トークンを入力してください。',
+  'remote.noUpdates': 'メッセージが見つかりません。先にスマートフォンから bot にメッセージを送って、もう一度お試しください。',
+  'remote.gotChatId': 'chat id を取得しました：{0}',
+  'remote.tokenSet': '（設定済み。空欄のままで変更しません）',
+  'remote.tokenNone': '（未設定）',
+  'remote.running': 'リモートは動作中です。',
+  'remote.stopped': 'リモートは動作していません。',
   'menu.tgNotify': 'Telegram に通知する',
   'menu.tgNotifySet': 'Telegram への通知：{0}',
 

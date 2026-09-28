@@ -284,7 +284,9 @@ export default {
   'sb.noSandbox': '这个标签页没有沙箱。',
   // ---- 設定視窗（TASK-015 A；舊版 Dialogs/SettingsDialog + Loc 的 settings.* / font.*）----
   'tb.settings': '其他设置',
+  'tb.remote': '远程设置',
   'tip.settings': '字体、颜色、语言与其他设置',
+  'tip.remote': '远程控制设置 (Telegram)',
   'settings.title': '设置',
   // machine-translation notice (under the language picker, and on the About page)
   'settings.langNote': '除“繁體中文”与 English 之外都是机器翻译，欢迎修正。',
@@ -664,16 +666,22 @@ export default {
   'tg.on': '开',
   'tg.off': '关',
 
-  // Telegram 遠端的設定視窗區塊與分頁右鍵那一項（只在前端用）
-  'settings.groupTg': 'Telegram 远程',
-  'settings.tgEnabled': '开启 Telegram 远程',
-  'settings.tgToken': 'Bot token',
-  'settings.tgChat': 'Chat ID',
-  'settings.tgNotify': '其他（未进入的）标签页完成也推送通知',
-  'settings.tgTokenSet': '（已设定，留空＝不变更）',
-  'settings.tgTokenNone': '（尚未设定）',
-  'settings.tgRunning': '远程正在执行。',
-  'settings.tgStopped': '远程未执行。',
+  // 遠端設定（Telegram）：舊版 `Dialogs/RemoteDialog` 的字串（TASK-029 搬回獨立視窗）
+  // 分頁右鍵的「推播到 Telegram」在下面（只在前端用）
+  'remote.title': '远程设置 (Telegram)',
+  'remote.enable': '启用远程控制',
+  'remote.token': 'Bot Token',
+  'remote.chatId': '允许的 Chat ID',
+  'remote.getChatId': '获取 chat id',
+  'remote.notify': '其他（未进入的）标签页完成也推送通知',
+  'remote.hint': '向 @BotFather 申请 bot 获取 token；先用手机给你的 bot 发一条消息，再按“获取 chat id”。',
+  'remote.needToken': '请先填入 Bot Token。',
+  'remote.noUpdates': '找不到消息。请先用手机给你的 bot 发一条消息，再试一次。',
+  'remote.gotChatId': '已获取 chat id：{0}',
+  'remote.tokenSet': '（已设定，留空＝不变更）',
+  'remote.tokenNone': '（尚未设定）',
+  'remote.running': '远程正在执行。',
+  'remote.stopped': '远程未执行。',
   'menu.tgNotify': '推送到 Telegram',
   'menu.tgNotifySet': '推送到 Telegram：{0}',
 

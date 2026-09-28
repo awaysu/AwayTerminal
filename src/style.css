@@ -580,6 +580,7 @@ body.col-resizing { cursor: col-resize; user-select: none; }
 /* 舊版是 470px 寬、SizeToContent="Height" 的 WPF 視窗；這裡照那個寬度，
    欄位多了一組「其他」與「沙盒模式」，所以高度給上限 + 內容捲動。 */
 #setdlg,
+#remotedlg,
 #aboutdlg,
 #updatedlg {
   position: fixed;
@@ -591,11 +592,13 @@ body.col-resizing { cursor: col-resize; user-select: none; }
   z-index: 62;
 }
 #setdlg[hidden],
+#remotedlg[hidden],
 #aboutdlg[hidden],
 #updatedlg[hidden] {
   display: none;
 }
 #setdlg-box,
+#remotedlg-box,
 #aboutdlg-box,
 #updatedlg-box {
   width: 470px;
@@ -608,10 +611,28 @@ body.col-resizing { cursor: col-resize; user-select: none; }
   padding: 16px;
   color: #E0E0E0;
 }
-#setdlg-title {
+#setdlg-title,
+#remotedlg-title {
   font-weight: bold;
   margin-bottom: 10px;
 }
+
+/* 遠端設定（舊版 RemoteDialog 是 460 寬、欄位上下排：標籤一行、輸入一行）*/
+.rm-field { margin-top: 10px; }
+.rm-field > label { display: block; margin-bottom: 3px; }
+.rm-field input[type='text'],
+.rm-field input[type='password'] {
+  width: 100%;
+  box-sizing: border-box;
+  background: #1E1E1E; color: #E0E0E0; border: 1px solid #555; border-radius: 2px;
+  padding: 3px 4px; font: inherit;
+}
+#rm-chat { flex: 1 1 auto; min-width: 0; }
+#rm-getid { flex: 0 0 auto; }
+/* 未勾「啟用遠端控制」時整組鎖灰（舊版 UpdateEnabledUI 用 Opacity 0.45） */
+#remotedlg.rm-off .rm-field,
+#remotedlg.rm-off #rm-hint,
+#remotedlg.rm-off .rm-notify-row { opacity: .45; }
 #setdlg fieldset {
   border: 1px solid #555;
   border-radius: 3px;

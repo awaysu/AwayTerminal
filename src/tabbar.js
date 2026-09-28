@@ -24,6 +24,7 @@ import { initMacro, runMacroForTab } from './macro.js';
 import { initCompose, openCompose } from './compose.js';
 import { initSettings } from './setdlg.js';
 import { initAbout } from './about.js';
+import { initRemoteDialog } from './remotedlg.js';
 import { initAdb, openAdb, isAdbConn } from './adb.js';
 import {
   initAgentDialog,
@@ -1571,6 +1572,8 @@ export async function initTabBar() {
   await initCompose({ toast });
   initSettings({ showInfo, hideMenus });
   initAbout({ showInfo, hideMenus });
+  // 遠端設定（Telegram）：舊版就是工具列獨立一顆按鈕 ＋ 獨立視窗
+  initRemoteDialog({ showInfo, hideMenus });
   initAdb({ showInfo, askYesNo: (body) => askYesNo(T['tb.adb'], body), pickFromList: askFromList, createSession });
   initAgentDialog();
   await initFavs({
