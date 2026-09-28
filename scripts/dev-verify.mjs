@@ -77,6 +77,19 @@ function killTree(pid) {
   }
 }
 
+// 先跑 eslint（TASK-028）：`no-undef` 一秒就抓得到「用了但沒 import」，
+// 那一類 bug 會一路活到使用者按下去為止（`setdlg.js` 的 `setToolLabel` 就是）。
+// 跑五分鐘的驗證之前先擋掉，比跑完再回頭找便宜太多。
+try {
+  execFileSync(process.execPath, [join(process.cwd(), 'node_modules', 'eslint', 'bin', 'eslint.js'), '.'], {
+    stdio: 'inherit',
+  });
+  console.log('[dev-verify] eslint 通過');
+} catch {
+  console.log('[dev-verify] eslint 有錯誤（上面那些），先修掉再跑驗證');
+  process.exit(1);
+}
+
 const what = release ? 'release exe' : 'dev';
 console.log(
   `[AwayTerminal] 開始跑 ${what}（--verify ${tabs}）：視窗會開起來、跑完自己關掉，最多 ${timeoutSec} 秒`

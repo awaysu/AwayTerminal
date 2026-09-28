@@ -10,6 +10,7 @@
 import { invoke } from '@tauri-apps/api/core';
 
 import { T, fmt, LANGS, getLang as currentLang } from './strings.js';
+import { setToolLabel } from './icons.js';
 import { applyLang, onLangChange } from './i18n.js';
 import { log } from './bridge.js';
 
@@ -304,6 +305,10 @@ export function initSettings(injected) {
   el.migrateNote = $('st-migrate-note');
   el.lShell = $('st-l-shell');
   el.lShellMenu = $('st-l-shellmenu');
+  // ⚠️ 這一行從 TASK-016 就漏掉了（TASK-028 才發現）：`fill()` 第一件事就是
+  // `el.shellMenu.disabled = true`，沒有它整個 `openSettings()` 在
+  // `el.root.hidden = false` **之前**就丟例外 → 按「其他設定」完全沒反應。
+  el.shellMenu = $('st-shellmenu');
   el.shellNote = $('st-shell-note');
   el.lRender = $('st-l-render');
   el.lRenderPick = $('st-l-renderpick');

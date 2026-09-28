@@ -113,8 +113,10 @@
 ## D. 工具列
 
 按鈕順序照舊版 `MainWindow.xaml`：新連接 ｜ 我的最愛 ‖ 輸入文字 ｜ 複製 ｜ 貼上 ｜ 複製全部 ｜
-清畫面 ｜ 翻頁 ‖ 分割 ‖ 遠端 ｜ 其他設定 ‖ 關於。**新版目前只做了**新分頁 ‖ 複製 ｜ 純文字貼上 ｜
-複製全部 ｜ 清除畫面 ｜ 翻頁 ‖ 視窗分割——其餘按鈕的功能還沒搬，刻意不放佔位按鈕。
+清畫面 ｜ 翻頁 ‖ 分割 ‖ 遠端 ｜ 其他設定 ‖ 關於。**新版目前有**新分頁 ｜ 我的最愛 ‖ 複製 ｜
+純文字貼上 ｜ 複製全部 ｜ 清除畫面 ｜ 翻頁 ｜ 輸入文字 ‖ 視窗分割 ‖ 其他設定 ｜ 關於，
+每顆都是圖上字下（TASK-027）。**只差舊版的「遠端」那一顆**——Telegram 遠端的設定放在
+「其他設定」裡面，工具列刻意不另外放一顆（2026-09-28 的現況；要放再說）。
 
 | # | 怎麼測 | 預期結果 | 舊版出處 | Win | mac | Linux |
 |---|---|---|---|---|---|---|
@@ -132,6 +134,7 @@
 | D12 | 按「清除畫面」 | **先跳「確定要清除「分頁名稱」的畫面嗎？」**是／否；按否什麼都不會發生 | v1.0.27 起一律先問（使用者指定） | | | |
 | D13 | 在 PowerShell 分頁確認清除 | 畫面清空但 **scrollback 還在**（用「翻頁」捲得回去）——走的是 Esc → 60ms → Ctrl+L，不是 `term.clear()` | `Clear_Click` 的 PowerShell/SSH 分支 | | | |
 | D14 | （之後做 Telnet/COM 時）確認清除 | 走 `c` 協定 → `term.clear()`，**scrollback 會被洗掉**，這就是為什麼一律先問 | 同上的 else 分支 | - | - | - |
+| D20 | `npm run verify` 看 `[verify] 工具列按鈕逐顆按` 那幾行 | **每一顆按鈕都被 `.click()` 按過**：新分頁／我的最愛／翻頁 → 下拉出現；輸入文字／其他設定／關於 → 對話框出現；清除畫面 → 確認框出現；複製／複製全部 → 不丟例外；視窗分割按三次回到原模式；分頁列 ▲／▼ 收合再展開。每一項按完都用 Esc 關掉，收尾那行「沒人接住的例外 0 個、console.error 0 個」。**「純文字貼上」刻意不按**（它會把使用者真正的剪貼簿內容打進 shell，有換行就等於替使用者按 Enter；那條路由 D1 的 `toolbar_paste` 用固定字串驗） | 新增（TASK-028：「其他設定」從 TASK-016 就打不開，十幾次驗收沒抓到，因為 `verifySettings` 只呼叫 command、從不開視窗） | PASS | | |
 | D15 | 👤 **和舊版並排看工具列** | 每顆按鈕都是**圖上字下**：圖 26×26、字 11px、按鈕寬 72（繁中／簡中的字都短於 72，所以整排和舊版一樣寬）、圓角 4、底 #3A3A3D、滑鼠移上去 #50505A。圖就是舊版那一組 PNG（`new-connecting`／`favorite`／`compose`／`copy`／`paste`／`copy-all`／`clear`／`page-scroll`／`arrange`／`settings`／`about`） | `MainWindow.xaml` 的 `ToolBtn` 樣式（第 16～49 行）與各 Button 的 `Tag` | | | |
 | D16 | `npm run verify` 看 `[verify] 圖示` 那幾行 | 工具列「沒圖 0、沒字 0、圖載不到 0」；下拉選單、分頁列、自訂連線挑選器都「載不到 0」；分頁列圖示有 `#tint-ready`／`#tint-busy` 的 filter | 新增（TASK-027） | PASS | | |
 | D17 | 切成德文／法文／日文（`Bildschirm löschen`、`Effacer l’écran`、`テキストとして貼り付け`） | 放不下 72 的按鈕會**變寬**（不是截字、也不是換行），工具列放不下時可以橫向捲；圖示照樣置中、整排高度一致 | 刻意與舊版不同（見下方表；舊版固定 72、長字會溢出蓋到隔壁） | | | |
@@ -957,6 +960,8 @@ TEMP 路徑印出完整結果，Documents 路徑印完 `path = …` 就停住。
 | DV6 | `node scripts/test-i18n.mjs` | 八語都沒有缺漏／空字串／參數不符 | 新增（舊版只有中英） | PASS | — | — |
 | DV7 | `node scripts/i18n-audit.mjs` | Rust 裡沒有「使用者看得到但沒進字串表」的中文字面 | 新增 | PASS | — | — |
 | DV8 | `cargo test --lib version_tests` | 三處版本一致、NOTICES 與 conpty 有進 bundle、八種安裝語言、updater 公鑰仍是空的 | 新增 | PASS | — | — |
+| DV9 | `npm run lint`（eslint，只開 `no-undef` ＋ `no-unused-vars`） | **0 error**（warning 允許）。它擋的是「用了但沒 import」這一類——Vite 打包不會擋，bundle 裡就是一個裸的全域呼叫，要等使用者按下去才炸（TASK-028：`setdlg.js` 的 `setToolLabel`）。`scripts/dev-verify.mjs` 會**先跑它**，有 error 就不浪費五分鐘跑驗證。`src/terminal.js` 不掃（原封不動搬過來的） | 新增（TASK-028） | PASS | — | — |
+| DV10 | `node scripts/audit-el-refs.mjs` | 每個前端模組「用了 `el.xxx`」的都在 init 有指定，`$('id')` 指到的 id 在 `index.html` 都存在。**eslint 抓不到這一類**（它看不到物件屬性），而這正是「其他設定」打不開的那個 bug（`el.shellMenu` 沒接） | 新增（TASK-028） | PASS | — | — |
 
 ---
 
@@ -1169,4 +1174,7 @@ TEMP 路徑印出完整結果，Documents 路徑印完 `path = …` 就停住。
 | **`session_create` 加了參數，`bridge.js` 的 `createSession` 也要傳** | Rust 收到 `None` 會安靜地走預設值，**不會報錯**，所以型別與編譯器都抓不到。已經發生兩次：TASK-011 漏 `com`（選了別的埠沒有作用）、TASK-021 漏 `adb`（多台裝置時選好的序號被丟掉、`adb shell` 失敗）。`scripts/test-bridge-args.mjs` 現在會比對兩邊 | AD3、CM1 |
 | **`--verify` 的每一段要各自包 try/catch** | 一段丟例外會讓**後面整批不跑**，而且畫面上看不出來（那幾段的 `[verify]` 行根本不存在），看起來像「跑完了、都沒問題」。TASK-021 在 release exe 上踩到：代理團隊／聊天室／Telegram 三段完全沒跑。現在每段各自包起來、最後印一行「幾段丟例外」 | 全部 |
 | **視窗位置存檔前一定要先問 `is_minimized()`** | Windows 最小化時把視窗移到實體座標 `(-32000,-32000)` 並照樣發 `Moved`／`Resized`（125% DPI 下換算成 −25600）。存進去之後下次啟動 `set_position` 到螢幕外 → 又發 `Moved` → 再存一次同樣的座標，**自我延續，使用者重開也救不回來**（工作列有圖示、點了沒畫面）。同理 `maximized` 這時候也讀不準，所以最小化時整個不記。啟動端要再驗一次「這個矩形還在某台螢幕上嗎」，不然拔掉外接螢幕也會中 | C11、C12、C13 |
+| **使用者用按鈕觸發的功能，驗證就要真的按那顆按鈕** | 只驗底下的 command 會漏掉「按鈕→處理函式→開視窗」那一段。實際案例：`verifySettings` 只呼叫 `settings_get`／`settings_apply`，所以 `setdlg.js` 少一行 `el.shellMenu = $('st-shellmenu')` 造成的「按了沒反應」，從 TASK-016 一路活到 TASK-027（十幾個 commit、每次 `--verify` 全綠）。而且那個例外是在 `el.root.hidden = false` **之前**丟的 → 畫面完全沒動靜。現在 D20 會逐顆按，收尾也會數「沒人接住的例外／console.error」 | D20 |
+| **`el.xxx` 用了就要在 init 指定，而且 id 要真的在 `index.html`** | 這一類錯誤 JS 不會在載入時報，要等使用者按下去才炸，而且常常被 try/catch 吃掉變成「安靜地沒反應」。`eslint` 的 `no-undef` 抓得到「用了沒 import」（`setdlg.js` 的 `setToolLabel`），但**抓不到** `el.shellMenu` 這種物件屬性 → 靠 D20 真的按下去 | D20 |
+| **`npm run verify` 的輸出不可以接 `head`／`grep -m`** | 提早關掉管線會 SIGPIPE 掉 `npm` 那一層，但 `scripts/dev-verify.mjs` **不會死**——它底下的 `target\debugwayterminal.exe` 就一直開著。那隻孤兒抓著 `target\debug`（下次 `cargo build` 噴 `os error 32`），而且**占著單一執行個體的鎖**：下一次 `verify:release` 的 release exe 一啟動就 exit 0，log 只有兩行、完全沒有 `[verify]`，看起來像「跑完了、都沒問題」（TASK-027 實際踩到）。做法：`npm run verify > <log> 2>&1` 之後再 grep 那個檔；真的留下孤兒就用 `taskkill /PID <dev-verify 的 pid> /T /F` 依 PID 收整棵，**絕不依名稱** | 全部 |
 | **假伺服器的「等某個呼叫出現」一定要有起點** | 從第 0 筆開始掃會match到**很久以前**的訊息。`telegram_probe` 的 `/new 1` 檢查等含 `/last` 的回覆，結果立刻match到前面 `goto:1` 送的「已進入 …/last 看輸出」→ 分頁還沒建好就回傳（換個順序就會變成**假通過**）。`FakeBot::wait` 現在強制要傳 `from` | TG34 |

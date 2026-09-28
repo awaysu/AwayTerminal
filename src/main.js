@@ -315,9 +315,143 @@ async function verifyIcons() {
   log(lines.join('\n'));
 }
 
+/**
+ * 工具列按鈕逐顆按（TASK-028）。
+ *
+ * 為什麼要有這一段：`verifySettings` 只呼叫 `settings_get`／`settings_apply` 兩個 command，
+ * **從來沒開過那個對話框**——所以「按了『其他設定』沒反應」從 TASK-016 壞到 TASK-027，
+ * 十幾次 `--verify` 全綠都沒抓到。凡是「使用者是用按鈕觸發的」功能，驗證就要**真的按那顆按鈕**。
+ *
+ * 做法：`.click()`（不碰鍵盤滑鼠、不搶焦點）→ 等對應的視窗／選單出現 → Esc 關掉。
+ * 按鈕的 click handler 丟出來的例外**不會**傳回 `.click()` 的呼叫端（它變成 window 的
+ * `error` 事件），所以這裡自己掛一個 listener 接。
+ */
+async function verifyToolbarButtons() {
+  const lines = ['[verify] 工具列按鈕逐顆按'];
+  const shown = (id) => {
+    const e = document.getElementById(id);
+    return !!e && !e.hidden;
+  };
+  const esc = () => {
+    for (const t of [document, window]) {
+      t.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    }
+  };
+  // 按鈕 → 按了之後應該出現的東西
+  const cases = [
+    ['btn-new', 'new-menu', '新分頁 ▾'],
+    ['btn-favs', 'favs-menu', '我的最愛 ▾'],
+    ['btn-page', 'page-menu', '翻頁 ▾'],
+    ['btn-compose', 'composedlg', '輸入文字'],
+    ['btn-settings', 'setdlg', '其他設定'],
+    ['btn-about', 'aboutdlg', '關於'],
+    ['btn-clear', 'modal', '清除畫面（確認框）'],
+  ];
+  let bad = 0;
+  for (const [btnId, targetId, name] of cases) {
+    const btn = document.getElementById(btnId);
+    if (!btn) {
+      lines.push(`[verify] FAIL 找不到按鈕 #${btnId}（${name}）`);
+      bad++;
+      continue;
+    }
+    let err = null;
+    const onErr = (e) => {
+      err = e.error || e.message || e.reason;
+    };
+    window.addEventListener('error', onErr);
+    window.addEventListener('unhandledrejection', onErr);
+    btn.click();
+    let open = false;
+    for (let i = 0; i < 20 && !open; i++) {
+      await wait(100);
+      open = shown(targetId);
+    }
+    window.removeEventListener('error', onErr);
+    window.removeEventListener('unhandledrejection', onErr);
+    const why = err ? `　例外：${err && err.stack ? String(err.stack).split('\n')[0] : err}` : '';
+    lines.push(`[verify] ${name}（#${btnId} → #${targetId}）：${open && !err ? 'PASS' : 'FAIL'}${why}`);
+    if (!open || err) bad++;
+    esc();
+    await wait(250);
+    if (shown(targetId)) {
+      lines.push(`[verify] FAIL #${targetId} Esc 關不掉`);
+      bad++;
+    }
+  }
+
+  // 沒有視窗的那幾顆：按了不可以丟例外。
+  // **刻意不按「純文字貼上」**：它讀的是使用者真正的剪貼簿，會把裡面的東西打進 shell
+  //（有換行就等於替使用者按 Enter）。那條路已經由 `verifyToolbar` 用固定字串的
+  // `toolbar_paste` 驗過了。
+  const plain = [
+    ['btn-copy', '複製'],
+    ['btn-copyall', '複製全部'],
+  ];
+  for (const [btnId, name] of plain) {
+    const btn = document.getElementById(btnId);
+    let err = null;
+    const onErr = (e) => {
+      err = e.error || e.message || e.reason;
+    };
+    window.addEventListener('error', onErr);
+    window.addEventListener('unhandledrejection', onErr);
+    if (btn) btn.click();
+    await wait(300);
+    window.removeEventListener('error', onErr);
+    window.removeEventListener('unhandledrejection', onErr);
+    lines.push(`[verify] ${name}（#${btnId}）：${btn && !err ? 'PASS' : 'FAIL'}${err ? `　例外：${err}` : ''}`);
+    if (!btn || err) bad++;
+  }
+
+  // 視窗分割：按三次轉回原本的模式（同 awayVerify 開頭那段的作法）
+  const before = currentTabState().viewMode;
+  const view = document.getElementById('btn-view');
+  for (let i = 0; i < 3; i++) {
+    if (view) view.click();
+    await wait(400);
+  }
+  const after = currentTabState().viewMode;
+  lines.push(`[verify] 視窗分割（#btn-view）按三次回到原模式 ${before}→${after}：${before === after ? 'PASS' : 'FAIL'}`);
+  if (before !== after) bad++;
+
+  // 分頁列的 ▲／▼（壓在工具列最右端那一顆）
+  const panel = document.getElementById('btn-tabpanel');
+  const panelBefore = document.getElementById('tabpanel').hidden;
+  if (panel) {
+    panel.click();
+    await wait(300);
+    const toggled = document.getElementById('tabpanel').hidden !== panelBefore;
+    panel.click();
+    await wait(300);
+    const back = document.getElementById('tabpanel').hidden === panelBefore;
+    lines.push(`[verify] 分頁列 ▲／▼（#btn-tabpanel）：${toggled && back ? 'PASS' : 'FAIL'}`);
+    if (!toggled || !back) bad++;
+  }
+
+  lines.push(`[verify] 工具列按鈕總計：失敗 ${bad} 項`);
+  log(lines.join('\n'));
+}
+
 async function awayVerify() {
   const term = window.AwayTerm;
   if (!term) return;
+  // 整段驗證期間的「沒人接住的例外」計數（TASK-028）。
+  //
+  // `index.html` 的 inline script 本來就會把 `window.onerror` 送到 stdout，但那是一行一行
+  // 散在幾百行 log 裡的——沒有人會發現。這裡收成一個數字放進收尾那一行：**不是 0 就是 FAIL**。
+  // `console.error` 也一起算（前端模組的 catch 大多印到 console，不會變成 error 事件）。
+  const uncaught = [];
+  const onError = (e) => uncaught.push(`error: ${e.message || e.error}`);
+  const onReject = (e) => uncaught.push(`unhandledrejection: ${(e.reason && e.reason.stack) || e.reason}`);
+  window.addEventListener('error', onError);
+  window.addEventListener('unhandledrejection', onReject);
+  const consoleErrors = [];
+  const realConsoleError = console.error;
+  console.error = (...a) => {
+    consoleErrors.push(a.map((x) => (x && x.stack ? x.stack.split('\n')[0] : String(x))).join(' '));
+    realConsoleError.apply(console, a);
+  };
   for (let i = 0; i < 20; i++) {
     await new Promise((r) => setTimeout(r, 500));
     const ids = term.ids();
@@ -358,6 +492,7 @@ async function awayVerify() {
   // 看起來像「跑完了、都沒問題」。
   const sections = [
     ['圖示', verifyIcons],
+    ['工具列按鈕', verifyToolbarButtons],
     ['SSH', verifySshPath],
     ['Telnet', verifyTelnetPath],
     ['COM', verifyComPath],
@@ -386,11 +521,22 @@ async function awayVerify() {
       log(`[verify] FAIL 「${name}」這一段丟出例外：${e && e.stack ? e.stack : e}`);
     }
   }
+  window.removeEventListener('error', onError);
+  window.removeEventListener('unhandledrejection', onReject);
+  console.error = realConsoleError;
   log(
     broken.length
       ? `[verify] 收尾：${sections.length} 段裡有 ${broken.length} 段丟例外：${broken.join('、')}`
       : `[verify] 收尾：${sections.length} 段全部跑完（沒有丟例外）`
   );
+  // 沒人接住的例外／console.error：**不是 0 就是 FAIL**（今天「其他設定打不開」就是這兩種各一個）
+  const tail = [
+    `[verify] 收尾：整段沒人接住的例外 ${uncaught.length} 個、console.error ${consoleErrors.length} 個：` +
+      `${uncaught.length === 0 && consoleErrors.length === 0 ? 'PASS' : 'FAIL'}`,
+  ];
+  for (const u of uncaught.slice(0, 20)) tail.push(`[verify]   ✗ ${u}`);
+  for (const c of consoleErrors.slice(0, 20)) tail.push(`[verify]   ✗ console.error ${c}`);
+  log(tail.join('\n'));
 }
 window.awayVerify = awayVerify;
 

@@ -9,6 +9,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "tauri": "tauri",
+    "lint": "eslint .",
     "verify": "node scripts/dev-verify.mjs",
     "verify:release": "node scripts/dev-verify.mjs 1 300 --release"
   },
@@ -23,6 +24,8 @@
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",
+    "eslint": "^10.11.0",
+    "globals": "^17.12.0",
     "vite": "^7.1.0"
   }
 }
