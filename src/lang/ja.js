@@ -259,6 +259,7 @@ export default {
   'conn.sandboxOn': 'サンドボックス',
   'conn.sandboxOff': 'サンドボックスなし',
   'conn.hiddenTag': '非表示',
+  'conn.icon': 'アイコン',
   'dlg.close': '閉じる',
   'tb.manageConns': 'カスタム接続の設定…',
 

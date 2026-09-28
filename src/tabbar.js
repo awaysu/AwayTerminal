@@ -14,7 +14,8 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 
-import { T, fmt, iconSvg, elapsedText } from './strings.js';
+import { T, fmt, elapsedText } from './strings.js';
+import { iconImg, kindIcon, setToolLabel } from './icons.js';
 import { createSession, log } from './bridge.js';
 import { initConns, openManager, currentConns, reload as reloadConns } from './conns.js';
 import { initConnDialog, openConnDialog, parseHostPort } from './sshdlg.js';
@@ -79,6 +80,21 @@ function tooltipFor(tab) {
     s += `\n${T['sb.tipOff']}`;
   }
   return s;
+}
+
+/**
+ * 分頁列這一列要用哪個圖示（舊版 `TerminalTab.StatusIcon` / `IconFile`）。
+ *
+ * 代理團隊／AI 聊天室的代表列用 `multi-agent.png`／`chatroom.png`；自訂連線用**那條連線
+ * 自己的圖示**（舊版 1.1.2 的行為，`tab.IconFile = CustomIconFile(conn.Icon)`）；其餘照種類。
+ */
+function tabIconKey(tab, team) {
+  if (team) return team.kind === 'chat' ? 'chatroom' : 'multi-agent';
+  if (tab.kind === 'custom') {
+    const c = currentConns().find((x) => x.name === tab.connName);
+    return (c && c.icon) || 'run';
+  }
+  return kindIcon(tab.kind);
 }
 
 /** 圖示 tooltip：「是哪一種連線」＝種類名稱＋補充。同舊版 `KindTip`。 */
@@ -352,12 +368,14 @@ function askLogOptions(defaults) {
 
 function render() {
   // 三態按鈕顯示的是「點了會變成的樣子」（同舊版 `UpdateSplitButton`）
-  el.btnView.textContent =
+  setToolLabel(
+    el.btnView,
     state.viewMode === 'tab'
       ? T['tb.split']
       : state.viewMode === 'split'
         ? T['tb.columns']
-        : T['tb.tabs'];
+        : T['tb.tabs']
+  );
   // 分頁模式＝終端機外框細黃線；分割／分欄＝讓給各 pane 自己的黃框（同舊版 Split_Click）
   el.termFrame.classList.toggle('split-mode', state.viewMode !== 'tab');
 
@@ -392,7 +410,7 @@ function render() {
     const icon = document.createElement('span');
     // 閒置染綠 #A5D6A7、忙碌染紅 #EF9A9A（舊版 TerminalTab.ReadyColor / BusyColor）
     icon.className = 'tab-icon' + (tab.busy ? ' busy' : '');
-    icon.innerHTML = iconSvg(tab.kind);
+    icon.appendChild(iconImg(tabIconKey(tab, team), 'tab-ico'));
     icon.title = kindTipFor(tab);
 
     const title = document.createElement('span');
@@ -1008,7 +1026,7 @@ function installMenus() {
     else if (item.dataset.act === 'close') closeTab(id);
   });
 
-  el.btnCompose.textContent = T['tb.compose'];
+  setToolLabel(el.btnCompose, T['tb.compose']);
   el.btnCompose.title = T['tip.compose'];
   el.btnCompose.addEventListener('click', () => {
     hideMenus();
@@ -1244,9 +1262,14 @@ function renderConnMenu(list) {
   for (const c of list) {
     if (c.hidden) continue;
     const item = document.createElement('div');
-    item.className = 'menu-item';
+    item.className = 'menu-item with-icon';
     item.dataset.conn = c.name;
-    item.textContent = c.name;
+    // 圖示＝這條連線自己選的那個（舊版 New 下拉同一組圖）
+    item.appendChild(iconImg(c.icon || 'run', 'menu-ico'));
+    const label = document.createElement('span');
+    label.className = 'menu-label';
+    label.textContent = c.name;
+    item.appendChild(label);
     if (!c.sandbox) {
       // 沒開沙盒的要一眼看得出來——這是使用者最在意的那個開關
       const tag = document.createElement('span');
@@ -1393,16 +1416,16 @@ function installPanelResize() {
  * 所以**不要**在這裡做除了設定文字以外的事。
  */
 function applyTexts() {
-    el.btnNew.textContent = T['tb.new'] + ' ▾';
-    el.btnCopy.textContent = T['tb.copy'];
+    setToolLabel(el.btnNew, T['tb.new'] + ' ▾');
+    setToolLabel(el.btnCopy, T['tb.copy']);
     el.btnCopy.title = T['tip.copy'];
-    el.btnPaste.textContent = T['tb.paste'];
+    setToolLabel(el.btnPaste, T['tb.paste']);
     el.btnPaste.title = T['tip.paste'];
-    el.btnCopyAll.textContent = T['tb.copyall'];
+    setToolLabel(el.btnCopyAll, T['tb.copyall']);
     el.btnCopyAll.title = T['tip.copyall'];
-    el.btnClear.textContent = T['tb.clear'];
+    setToolLabel(el.btnClear, T['tb.clear']);
     el.btnClear.title = T['tip.clear'];
-    el.btnPage.textContent = T['tb.page'] + ' ▾';
+    setToolLabel(el.btnPage, T['tb.page'] + ' ▾');
     el.btnPage.title = T['tip.page'];
     el.btnPanel.title = T['tip.tabPanel'];
     el.btnView.title = T['tip.viewCycle'];
@@ -1464,7 +1487,7 @@ function applyTexts() {
 
   // 工具列的「輸入文字」在 installToolbar() 裡設（那個函式只跑一次），這裡補上
   if (el.btnCompose) {
-    el.btnCompose.textContent = T['tb.compose'];
+    setToolLabel(el.btnCompose, T['tb.compose']);
     el.btnCompose.title = T['tip.compose'];
   }
   // 分頁列、三態按鈕、右鍵選單的動態部分都在 render() 裡（它也讀 T[...]）
@@ -1559,6 +1582,8 @@ export async function initTabBar() {
     hideMenus,
     showMenuUnder,
     activeId,
+    // 自訂連線那幾筆最愛，圖示要用連線自己選的那個（舊版 FavoriteIcon → CustomIconFile）
+    conns: currentConns,
   });
   // 自訂連線：清單一變就重畫「新分頁 ▾」那一區
   await initConns(renderConnMenu);
@@ -1595,5 +1620,10 @@ export async function initTabBar() {
 
 function setText(root, selector, text) {
   const node = root.querySelector(selector);
-  if (node) node.textContent = text;
+  if (!node) return;
+  // 圖左字右的項目：只換文字那一段，不然 `textContent` 會把 <img> 一起洗掉
+  const label = node.querySelector(':scope > .menu-label');
+  if (label) label.textContent = text;
+  else node.textContent = text;
 }
+

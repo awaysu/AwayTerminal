@@ -259,6 +259,7 @@ export default {
   'conn.sandboxOn': 'Aislado',
   'conn.sandboxOff': 'Sin aislamiento',
   'conn.hiddenTag': 'Oculta',
+  'conn.icon': 'Icono',
   'dlg.close': 'Cerrar',
   'tb.manageConns': 'Conexiones personalizadas…',
 

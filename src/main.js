@@ -22,6 +22,7 @@ import { bridgeReady, log, createSession } from './bridge.js';
 import { loadAdapter as loadImeAdapter, engineInfo } from './ime/detect.js';
 import { initTabBar, currentTabState, askYesNo, showInfo } from './tabbar.js';
 import { T, fmt } from './strings.js';
+import { CUSTOM_ICON_KEYS } from './icons.js';
 import { applyLang, getLang, pushToBackend } from './i18n.js';
 import { matchLang, setLang, LANGS } from './strings.js';
 
@@ -255,6 +256,65 @@ async function verifyToolbar(id) {
  * 多分頁驗證：每條分頁各自有沒有輸出、有沒有 fit 到正確尺寸。
  * 等到每條都讀得到內容（最多 10 秒）再一次報告，避免「還沒到」被當成「沒有」。
  */
+/**
+ * 圖示的自動驗證（TASK-027）。
+ *
+ * 只驗「代理看得到」的部分：圖檔有沒有真的載進來（`naturalWidth > 0`＝路徑對、檔案在）、
+ * 每顆工具列按鈕是不是都**同時**有圖和字、分頁列圖示有沒有套上染色 filter。
+ * 「和舊版並排看起來一樣」要真人看（回歸清單 D14 標 👤）。
+ */
+async function verifyIcons() {
+  const lines = ['[verify] 圖示'];
+  const broken = (imgs) => imgs.filter((i) => !(i.naturalWidth > 0)).map((i) => i.getAttribute('src'));
+  // 圖檔是非同步載入的，剛開起來可能還沒完成 → 等一下再看
+  for (let i = 0; i < 20; i++) {
+    const all = [...document.querySelectorAll('#toolbar .tool-ico, .popup-menu .menu-ico')];
+    if (all.length && broken(all).length === 0) break;
+    await wait(250);
+  }
+
+  const btns = [...document.querySelectorAll('#toolbar .tool-btn')];
+  const noIcon = btns.filter((b) => !b.querySelector('.tool-ico'));
+  const noText = btns.filter((b) => !(b.querySelector('.tool-label') || {}).textContent);
+  const toolImgs = btns.map((b) => b.querySelector('.tool-ico')).filter(Boolean);
+  const toolBad = broken(toolImgs);
+  lines.push(
+    `[verify] 工具列 ${btns.length} 顆按鈕：沒圖 ${noIcon.length}、沒字 ${noText.length}、圖載不到 ${toolBad.length}` +
+      (toolBad.length ? ` ${toolBad.join('、')}` : '')
+  );
+  const first = toolImgs[0];
+  if (first) {
+    const r = first.getBoundingClientRect();
+    lines.push(`[verify] 工具列圖示尺寸 ${Math.round(r.width)}x${Math.round(r.height)}（舊版 26x26）`);
+  }
+
+  const menuImgs = [...document.querySelectorAll('#new-menu .menu-ico, #favs-menu .menu-ico')];
+  const menuBad = broken(menuImgs);
+  lines.push(
+    `[verify] 下拉選單 ${menuImgs.length} 個圖示：載不到 ${menuBad.length}` +
+      (menuBad.length ? ` ${menuBad.join('、')}` : '')
+  );
+
+  const tabImgs = [...document.querySelectorAll('#tabstrip .tab-ico')];
+  const tabBad = broken(tabImgs);
+  // 註：Chromium 的 computed value 會是 `url("http://…/#tint-ready")`（絕對網址、加引號），
+  // 所以只比對 fragment，不要比對 `url(` 開頭與結尾的 `)`。
+  const filters = tabImgs.map((i) => getComputedStyle(i).filter);
+  const tinted = filters.filter((f) => /#tint-(ready|busy)/.test(f));
+  lines.push(
+    `[verify] 分頁列 ${tabImgs.length} 個圖示：載不到 ${tabBad.length}、有染色 filter ${tinted.length}` +
+      (tabBad.length ? ` ${tabBad.join('、')}` : '') +
+      `  filter=${filters[0] || '-'}`
+  );
+
+  // 自訂連線的圖示挑選器（舊版 IconKeys 那 14 個）
+  const picker = [...document.querySelectorAll('#cf-icons button img')];
+  lines.push(
+    `[verify] 自訂連線圖示挑選器 ${picker.length} 個（舊版 IconKeys ${CUSTOM_ICON_KEYS.length} 個）：載不到 ${broken(picker).length}`
+  );
+  log(lines.join('\n'));
+}
+
 async function awayVerify() {
   const term = window.AwayTerm;
   if (!term) return;
@@ -297,6 +357,7 @@ async function awayVerify() {
   // 三段就完全沒跑，而且**畫面上看不出來**（那三段的 [verify] 行根本不存在），
   // 看起來像「跑完了、都沒問題」。
   const sections = [
+    ['圖示', verifyIcons],
     ['SSH', verifySshPath],
     ['Telnet', verifyTelnetPath],
     ['COM', verifyComPath],

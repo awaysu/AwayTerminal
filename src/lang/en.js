@@ -266,6 +266,7 @@ export default {
   'conn.sandboxOn': 'Sandbox',
   'conn.sandboxOff': 'No sandbox',
   'conn.hiddenTag': 'Hidden',
+  'conn.icon': 'Icon',
   'dlg.close': 'Close',
   'tb.manageConns': 'Custom connections…',
 

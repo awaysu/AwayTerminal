@@ -31,27 +31,53 @@
   </script>
 </head>
 <body>
+  <!-- 分頁列圖示的染色（舊版 `Services/IconTint.cs`：tint × 亮度^0.7，alpha 照抄）。
+       這組 PNG 的 alpha 是整塊圓角底圖、圖形畫在顏色裡，所以**不能**用 mask 染色
+       （會變成一塊純色方塊）。feColorMatrix 先轉亮度，feComponentTransfer 的 gamma
+       做 `amplitude × 亮度^0.7`＝舊版那條公式；amplitude 就是 tint 的 R/G/B ÷ 255。 -->
+  <svg id="icon-tints" width="0" height="0" aria-hidden="true" focusable="false" style="position:absolute">
+    <filter id="tint-ready" color-interpolation-filters="sRGB">
+      <feColorMatrix type="matrix" values="0.299 0.587 0.114 0 0  0.299 0.587 0.114 0 0  0.299 0.587 0.114 0 0  0 0 0 1 0" />
+      <feComponentTransfer>
+        <!-- #A5D6A7（閒置）-->
+        <feFuncR type="gamma" amplitude="0.647" exponent="0.7" offset="0" />
+        <feFuncG type="gamma" amplitude="0.839" exponent="0.7" offset="0" />
+        <feFuncB type="gamma" amplitude="0.655" exponent="0.7" offset="0" />
+      </feComponentTransfer>
+    </filter>
+    <filter id="tint-busy" color-interpolation-filters="sRGB">
+      <feColorMatrix type="matrix" values="0.299 0.587 0.114 0 0  0.299 0.587 0.114 0 0  0.299 0.587 0.114 0 0  0 0 0 1 0" />
+      <feComponentTransfer>
+        <!-- #EF9A9A（忙碌）-->
+        <feFuncR type="gamma" amplitude="0.937" exponent="0.7" offset="0" />
+        <feFuncG type="gamma" amplitude="0.604" exponent="0.7" offset="0" />
+        <feFuncB type="gamma" amplitude="0.604" exponent="0.7" offset="0" />
+      </feComponentTransfer>
+    </filter>
+  </svg>
   <!-- 版面照舊版 MainWindow.xaml：上方工具列 ＋ 左邊終端機（黃框）＋ 可拖寬的右側分頁列。
        #terminals / #searchbar 的 id 與內部 class 全部照舊版 web/index.html——
        terminal.js 直接 querySelector 這些名字，不可以改。 -->
   <div id="app">
     <!-- 按鈕順序照舊版 MainWindow.xaml 的工具列。舊版還有「遠端」（Telegram，階段 4），
          那個功能還沒做 → 不放佔位按鈕。 -->
+    <!-- 每顆按鈕＝圖上字下（舊版 MainWindow.xaml 的 `ToolBtn` 樣式：寬 72、圖 26×26、
+         字 11px、圓角 4、底 #3A3A3D、hover #50505A）。圖示檔就是舊版那一組 PNG。 -->
     <div id="toolbar">
-      <button id="btn-new" type="button" class="tool-btn">新分頁 ▾</button>
-      <button id="btn-favs" type="button" class="tool-btn">我的最愛 ▾</button>
+      <button id="btn-new" type="button" class="tool-btn"><img class="tool-ico" src="icon/new-connecting.png" alt="" draggable="false" /><span class="tool-label">新分頁 ▾</span></button>
+      <button id="btn-favs" type="button" class="tool-btn"><img class="tool-ico" src="icon/favorite.png" alt="" draggable="false" /><span class="tool-label">我的最愛 ▾</span></button>
       <span class="tool-sep"></span>
-      <button id="btn-copy" type="button" class="tool-btn">複製</button>
-      <button id="btn-paste" type="button" class="tool-btn">純文字貼上</button>
-      <button id="btn-copyall" type="button" class="tool-btn">複製全部</button>
-      <button id="btn-clear" type="button" class="tool-btn">清除畫面</button>
-      <button id="btn-page" type="button" class="tool-btn">翻頁 ▾</button>
-      <button id="btn-compose" type="button" class="tool-btn">輸入文字</button>
+      <button id="btn-copy" type="button" class="tool-btn"><img class="tool-ico" src="icon/copy.png" alt="" draggable="false" /><span class="tool-label">複製</span></button>
+      <button id="btn-paste" type="button" class="tool-btn"><img class="tool-ico" src="icon/paste.png" alt="" draggable="false" /><span class="tool-label">純文字貼上</span></button>
+      <button id="btn-copyall" type="button" class="tool-btn"><img class="tool-ico" src="icon/copy-all.png" alt="" draggable="false" /><span class="tool-label">複製全部</span></button>
+      <button id="btn-clear" type="button" class="tool-btn"><img class="tool-ico" src="icon/clear.png" alt="" draggable="false" /><span class="tool-label">清除畫面</span></button>
+      <button id="btn-page" type="button" class="tool-btn"><img class="tool-ico" src="icon/page-scroll.png" alt="" draggable="false" /><span class="tool-label">翻頁 ▾</span></button>
+      <button id="btn-compose" type="button" class="tool-btn"><img class="tool-ico" src="icon/compose.png" alt="" draggable="false" /><span class="tool-label">輸入文字</span></button>
       <span class="tool-sep"></span>
-      <button id="btn-view" type="button" class="tool-btn">視窗分割</button>
+      <button id="btn-view" type="button" class="tool-btn"><img class="tool-ico" src="icon/arrange.png" alt="" draggable="false" /><span class="tool-label">視窗分割</span></button>
       <span class="tool-sep"></span>
-      <button id="btn-settings" type="button" class="tool-btn">其他設定</button>
-      <button id="btn-about" type="button" class="tool-btn">關於</button>
+      <button id="btn-settings" type="button" class="tool-btn"><img class="tool-ico" src="icon/settings.png" alt="" draggable="false" /><span class="tool-label">其他設定</span></button>
+      <button id="btn-about" type="button" class="tool-btn"><img class="tool-ico" src="icon/about.png" alt="" draggable="false" /><span class="tool-label">關於</span></button>
       <span class="tool-spacer"></span>
       <button id="btn-tabpanel" type="button" class="tool-arrow">▲</button>
     </div>
@@ -119,25 +145,25 @@
   <!-- 新分頁下拉（舊版 New 下拉的結構：預設區 → 分隔線 → 使用者的自訂連線 → 分隔線 → 管理）。
        #new-conns 由 settings.customConns 填；連線沒開沙盒的會標「無沙盒」。 -->
   <div id="new-menu" class="popup-menu" hidden>
-    <div class="menu-item" data-kind="shell">PowerShell</div>
-    <div class="menu-item" data-kind="ssh">SSH…</div>
-    <div class="menu-item" data-kind="ssh-quick">快速連線（host[:port]）…</div>
-    <div class="menu-item" data-kind="com">連接埠…</div>
-    <div class="menu-item" data-kind="multiagent">代理團隊…</div>
-    <div class="menu-item" data-kind="chatroom">AI聊天室…</div>
+    <div class="menu-item with-icon" data-kind="shell"><img class="menu-ico" src="icon/powershell.png" alt="" draggable="false" /><span class="menu-label">PowerShell</span></div>
+    <div class="menu-item with-icon" data-kind="ssh"><img class="menu-ico" src="icon/ssh-telnet.png" alt="" draggable="false" /><span class="menu-label">SSH…</span></div>
+    <div class="menu-item with-icon" data-kind="ssh-quick"><img class="menu-ico" src="icon/ssh-telnet.png" alt="" draggable="false" /><span class="menu-label">快速連線（host[:port]）…</span></div>
+    <div class="menu-item with-icon" data-kind="com"><img class="menu-ico" src="icon/com.png" alt="" draggable="false" /><span class="menu-label">連接埠…</span></div>
+    <div class="menu-item with-icon" data-kind="multiagent"><img class="menu-ico" src="icon/multi-agent.png" alt="" draggable="false" /><span class="menu-label">代理團隊…</span></div>
+    <div class="menu-item with-icon" data-kind="chatroom"><img class="menu-ico" src="icon/chatroom.png" alt="" draggable="false" /><span class="menu-label">AI聊天室…</span></div>
     <div class="menu-sep"></div>
     <div id="new-conns"></div>
-    <div class="menu-item" data-kind="custom">自訂指令…</div>
+    <div class="menu-item with-icon" data-kind="custom"><img class="menu-ico" src="icon/run.png" alt="" draggable="false" /><span class="menu-label">自訂指令…</span></div>
     <div class="menu-sep"></div>
-    <div class="menu-item" data-kind="manage">自訂連線設定…</div>
+    <div class="menu-item with-icon" data-kind="manage"><img class="menu-ico" src="icon/settings.png" alt="" draggable="false" /><span class="menu-label">自訂連線設定…</span></div>
   </div>
 
   <!-- 我的最愛下拉（舊版 Favorites_Click：各筆最愛 → 分隔線 → 加到我的最愛 → 設定…） -->
   <div id="favs-menu" class="popup-menu" hidden>
     <div id="favs-items"></div>
     <div class="menu-sep"></div>
-    <div class="menu-item" data-fav="add">加到我的最愛：目前分頁</div>
-    <div class="menu-item" data-fav="manage">設定…</div>
+    <div class="menu-item with-icon" data-fav="add"><img class="menu-ico" src="icon/favorite.png" alt="" draggable="false" /><span class="menu-label">加到我的最愛：目前分頁</span></div>
+    <div class="menu-item with-icon" data-fav="manage"><img class="menu-ico" src="icon/settings.png" alt="" draggable="false" /><span class="menu-label">設定…</span></div>
   </div>
 
   <!-- 我的最愛設定（舊版 FavoritesDialog：改名、刪除、排序） -->
@@ -199,6 +225,9 @@
           <label>名稱<input id="cf-name" type="text" autocomplete="off" spellcheck="false" /></label>
           <label>執行檔<span class="cf-path-row"><input id="cf-path" type="text" autocomplete="off" spellcheck="false" /><button id="cf-browse" type="button">瀏覽…</button></span></label>
           <label>參數<input id="cf-args" type="text" autocomplete="off" spellcheck="false" /></label>
+          <!-- 圖示（舊版 CustomConnDialog 的 IconCombo；key 與順序照它的 IconKeys）。
+               HTML 的 <select> 不能畫圖，所以改成一排可點的圖示鈕，選中的框起來。 -->
+          <label><span id="cf-icon-label">圖示</span><span id="cf-icons" class="icon-picker"></span></label>
           <label>關閉鍵
             <span class="cf-close-row">
               <select id="cf-closekey">

@@ -8,7 +8,8 @@
 
 import { invoke } from '@tauri-apps/api/core';
 
-import { T, fmt, iconSvg } from './strings.js';
+import { T, fmt } from './strings.js';
+import { iconImg, setToolLabel } from './icons.js';
 import { onLangChange } from './i18n.js';
 import { log } from './bridge.js';
 
@@ -24,7 +25,7 @@ function $(id) {
 
 /** 把介面文字重設一次（切語言時會被叫；註冊在 `i18n.js`）。 */
 function applyTexts() {
-  el.btn.textContent = T['tb.favorites'] + ' ▾';
+  setToolLabel(el.btn, T['tb.favorites'] + ' ▾');
   el.btn.title = T['tip.favorites'];
   $('favs-title').textContent = T['fav.settings'];
   el.up.textContent = T['fav.up'];
@@ -74,11 +75,19 @@ function detailOf(f) {
 }
 
 /** 種類 → 圖示 key（沿用分頁列那組 SVG）。 */
+/**
+ * 這一筆最愛用哪個圖示 key（舊版 `FavoriteIcon` → `HistoryIcon`，和 New 下拉同一組圖）。
+ *
+ * 自訂連線用那條連線自己的圖示；找不到那條連線（被刪掉了）就退回通用的 `run.png`。
+ */
 function iconOf(f) {
-  // Telnet 沿用 SSH 的圖示（舊版的分頁圖示也是同一個「遠端連線」概念）
+  // Telnet 沿用 SSH 的圖示（舊版 HistoryIcon 的 `"ssh" or "telnet" => "ssh-telnet.png"`）
   if (f.kind === 'com') return 'com';
-  if (f.kind === 'ssh' || f.kind === 'telnet') return 'ssh';
-  if (f.kind === 'conn') return 'custom';
+  if (f.kind === 'ssh' || f.kind === 'telnet') return 'ssh-telnet';
+  if (f.kind === 'conn') {
+    const c = (hooks.conns ? hooks.conns() : []).find((x) => x.name === f.connName);
+    return (c && c.icon) || 'run';
+  }
   return 'powershell';
 }
 
@@ -92,13 +101,12 @@ function renderMenu(candidate) {
   }
   for (const f of items) {
     const item = document.createElement('div');
-    item.className = 'menu-item';
+    item.className = 'menu-item with-icon';
     item.dataset.favName = f.name;
     item.title = detailOf(f);
-    const icon = document.createElement('span');
-    icon.className = 'menu-icon';
-    icon.innerHTML = iconSvg(iconOf(f));
+    const icon = iconImg(iconOf(f), 'menu-ico');
     const text = document.createElement('span');
+    text.className = 'menu-label';
     text.textContent = f.name;
     item.append(icon, text);
     el.menuItems.appendChild(item);
@@ -126,9 +134,7 @@ function renderList() {
     const row = document.createElement('div');
     row.className = 'conns-row' + (f.name === selected ? ' active' : '');
     row.dataset.favName = f.name;
-    const icon = document.createElement('span');
-    icon.className = 'menu-icon';
-    icon.innerHTML = iconSvg(iconOf(f));
+    const icon = iconImg(iconOf(f), 'menu-ico');
     const name = document.createElement('span');
     name.className = 'conns-row-name';
     name.textContent = f.name;

@@ -244,7 +244,7 @@ function applyTexts() {
   el.reset.textContent = T['common.reset'];
   el.ok.textContent = T['common.ok'];
   el.cancel.textContent = T['common.cancel'];
-  el.btn.textContent = T['tb.settings'];
+  setToolLabel(el.btn, T['tb.settings']);
   el.btn.title = T['tip.settings'];
 }
 

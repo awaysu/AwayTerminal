@@ -259,6 +259,7 @@ export default {
   'conn.sandboxOn': 'Bac à sable',
   'conn.sandboxOff': 'Sans bac à sable',
   'conn.hiddenTag': 'Masquée',
+  'conn.icon': 'Icône',
   'dlg.close': 'Fermer',
   'tb.manageConns': 'Connexions personnalisées…',
 

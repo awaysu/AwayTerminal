@@ -264,6 +264,7 @@ export default {
   'conn.sandboxOn': '沙盒',
   'conn.sandboxOff': '無沙盒',
   'conn.hiddenTag': '隱藏',
+  'conn.icon': '圖示',
   'dlg.close': '關閉',
   'tb.manageConns': '自訂連線設定…',
 

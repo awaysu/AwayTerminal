@@ -259,6 +259,7 @@ export default {
   'conn.sandboxOn': '沙箱',
   'conn.sandboxOff': '无沙箱',
   'conn.hiddenTag': '隐藏',
+  'conn.icon': '图标',
   'dlg.close': '关闭',
   'tb.manageConns': '自定义连接设置…',
 

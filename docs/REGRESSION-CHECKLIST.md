@@ -52,7 +52,7 @@
 | A12 | 關掉**作用中**的分頁 | 自動選到原位置的那個分頁（沒有就選最後一個），畫面不會變空白 | `RemoveTabSilently`：`Tabs[Math.Min(idx, Count-1)]` | | | |
 | A13 | 關分頁之後查行程 | `pwsh` 與對應的 `OpenConsole.exe` 都不見了（先送 Ctrl+C ×3、等 60ms 再強制收尾） | `ConPtySession.Dispose` / `GracefulExitBytes = {0x03,0x03,0x03}` | | | |
 | A14 | 關掉整個程式之後查行程 | 沒有殘留的 `OpenConsole.exe` 鎖住資料夾 | 踩雷：「強殺會留殭屍 conhost」；新版 `RunEvent::Exit` → `close_all()` | | | |
-| A15 | 分頁列狀態燈：閒置的 shell | 圖示是**淡綠 #A5D6A7** | `TerminalTab.ReadyColor` | PASS | | |
+| A15 | 分頁列狀態燈：閒置的 shell | 圖示是**淡綠 #A5D6A7**（同一組 PNG，用 `index.html` 的 SVG filter 染色：`tint × 亮度^0.7`，公式同舊版 `IconTint`） | `TerminalTab.ReadyColor` | PASS | | |
 | A16 | 在 shell 裡跑會持續輸出的東西（例 `ping -t`） | 圖示變**淡紅 #EF9A9A**；停下來後 1.5 秒內變回綠 | `UpdateStatuses`：有子行程**且**近 1.5 秒有輸出 | | | |
 | A17 | shell 裡**停在等輸入**（例跑完一個指令） | 綠。行程還活著但不再送資料＝不算忙 | 同上（這是「且」的重點） | | | |
 | A18 | 直接跑 claude 的分頁 | 近 1.2 秒有輸出＝紅，否則綠（沒有子行程判斷） | `UpdateStatuses` 的 Claude/Custom 分支 | | | |
@@ -132,6 +132,11 @@
 | D12 | 按「清除畫面」 | **先跳「確定要清除「分頁名稱」的畫面嗎？」**是／否；按否什麼都不會發生 | v1.0.27 起一律先問（使用者指定） | | | |
 | D13 | 在 PowerShell 分頁確認清除 | 畫面清空但 **scrollback 還在**（用「翻頁」捲得回去）——走的是 Esc → 60ms → Ctrl+L，不是 `term.clear()` | `Clear_Click` 的 PowerShell/SSH 分支 | | | |
 | D14 | （之後做 Telnet/COM 時）確認清除 | 走 `c` 協定 → `term.clear()`，**scrollback 會被洗掉**，這就是為什麼一律先問 | 同上的 else 分支 | - | - | - |
+| D15 | 👤 **和舊版並排看工具列** | 每顆按鈕都是**圖上字下**：圖 26×26、字 11px、按鈕寬 72（繁中／簡中的字都短於 72，所以整排和舊版一樣寬）、圓角 4、底 #3A3A3D、滑鼠移上去 #50505A。圖就是舊版那一組 PNG（`new-connecting`／`favorite`／`compose`／`copy`／`paste`／`copy-all`／`clear`／`page-scroll`／`arrange`／`settings`／`about`） | `MainWindow.xaml` 的 `ToolBtn` 樣式（第 16～49 行）與各 Button 的 `Tag` | | | |
+| D16 | `npm run verify` 看 `[verify] 圖示` 那幾行 | 工具列「沒圖 0、沒字 0、圖載不到 0」；下拉選單、分頁列、自訂連線挑選器都「載不到 0」；分頁列圖示有 `#tint-ready`／`#tint-busy` 的 filter | 新增（TASK-027） | PASS | | |
+| D17 | 切成德文／法文／日文（`Bildschirm löschen`、`Effacer l’écran`、`テキストとして貼り付け`） | 放不下 72 的按鈕會**變寬**（不是截字、也不是換行），工具列放不下時可以橫向捲；圖示照樣置中、整排高度一致 | 刻意與舊版不同（見下方表；舊版固定 72、長字會溢出蓋到隔壁） | | | |
+| D18 | 👤 按「新分頁 ▾」／「我的最愛 ▾」 | 每一項都是**圖左字右**（圖 26×26、右邊距 10）：PowerShell／SSH／連接埠／代理團隊／AI聊天室／自訂連線各自的圖／自訂連線設定…（齒輪） | `MakeNewItemRaw`、`New_Click`、`Favorites_Click` | | | |
+| D19 | 👤 自訂連線設定 → 看「圖示」那一列 | 舊版 `IconKeys` 那 14 個圖（powershell／ssh-telnet／adb／wsl／git／docker／claude-code／codex／opencode／geminicli／qwen／python／run／none），點一個會框起來，存檔後「新分頁 ▾」與分頁列都換成那個圖 | `CustomConnDialog.IconKeys`／`DefaultIcon = run` | | | |
 
 ## E. 複製 / 存檔
 
@@ -1043,7 +1048,9 @@ TEMP 路徑印出完整結果，Documents 路徑印完 `path = …` 就停住。
 
 | 項目 | 舊版 | 新版 | 為什麼 |
 |---|---|---|---|
-| 分頁列狀態燈圖示 | `icon/*.png` 灰階圖，`IconTint` 逐像素染色 | inline SVG + `currentColor` | 同一組顏色（`#A5D6A7`／`#EF9A9A`）、同樣「連線種類圖示染綠紅」的語意，但不必把二進位圖檔搬進 repo，也不必在瀏覽器做 canvas 逐像素處理 |
+| 分頁列狀態燈圖示 | `icon/*.png`，`IconTint` 逐像素 `tint × 亮度^0.7` | **同一組 PNG**（`public/icon/`），用 SVG filter 做同一條公式 | TASK-027 改回舊版那組圖（本來自畫 inline SVG，外觀對不起來、使用者一眼看出）。**不能用 CSS mask 染色**：這組圖的 alpha 是整塊圓角底圖、圖形畫在顏色裡，mask 會變成一塊純色方塊 |
+| 工具列按鈕寬度 | 固定 72，不換行也不截字（長字直接溢出蓋到隔壁） | `min-width: 72px`，長字把按鈕撐寬，工具列可橫向捲 | 繁中／簡中的字都短於 72＝整排和舊版一模一樣；英文的 `Paste as text`、日文的 `テキストとして貼り付け`、德文的 `Bildschirm löschen` 這幾顆才會變寬。舊版只有中／英兩種語言，碰不到這個問題，而「溢出蓋到隔壁」在網頁上只會更糟 |
+| 自訂連線的圖示挑選 | ComboBox 下拉（圖＋key） | 一排可點的圖示鈕 | HTML 的 `<select>` 不能畫圖；key 與順序照舊版 `IconKeys` |
 | 確認／輸入／log 對話框 | WPF `MessageBox`／`InputDialog`／`LogDialog` | 頁內深色對話框 | 不加 dialog plugin 的 JS 端，也不用 `window.confirm`（webview 原生對話框會擋住事件迴圈、樣式也對不起來）。文字、按鈕、驗證行為照舊版 |
 | 存檔／選資料夾／選 log 位置 | WPF / WinForms 對話框 | 系統原生對話框（`tauri-plugin-dialog`，從 Rust 端叫） | 這幾個要的就是系統檔案瀏覽器 |
 | 視窗大小／位置 | 不存（XAML 固定 `WindowState="Maximized"`） | 存進 `settings.json` | **新增功能、舊版沒有這個行為** |

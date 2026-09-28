@@ -14,6 +14,7 @@
 import { invoke } from '@tauri-apps/api/core';
 
 import { T, LANGS, getLang } from './strings.js';
+import { setToolLabel } from './icons.js';
 import { onLangChange } from './i18n.js';
 
 const el = {};
@@ -190,7 +191,7 @@ function showUpdate(r) {
 
 /** 把介面文字重設一次（切語言時會被叫）。 */
 function applyTexts() {
-  el.btn.textContent = T['tb.about'];
+  setToolLabel(el.btn, T['tb.about']);
   el.btn.title = T['tip.about'];
   el.noticesLabel.textContent = T['about.noticesLink'];
   el.check.textContent = T['update.check'];

@@ -9,6 +9,7 @@
 import { invoke } from '@tauri-apps/api/core';
 
 import { T } from './strings.js';
+import { CUSTOM_ICON_KEYS, iconImg } from './icons.js';
 import { onLangChange } from './i18n.js';
 import { log } from './bridge.js';
 
@@ -17,6 +18,8 @@ let conns = [];
 /** 目前在編輯哪一條（`null`＝新增中）。用名稱記，改名時當 `originalName` 送回後端。 */
 let editingName = null;
 let onChanged = () => {};
+/** 編輯區目前選的圖示 key（舊版 CustomConnDialog 的 IconCombo）。 */
+let editingIcon = 'run';
 
 function $(id) {
   return document.getElementById(id);
@@ -29,6 +32,7 @@ function applyTexts() {
   el.detect.textContent = T['conn.detect'];
   el.new.textContent = T['conn.new'];
   el.close.textContent = T['dlg.close'];
+  $('cf-icon-label').textContent = T['conn.icon'];
   el.save.textContent = T['conn.save'];
   el.delete.textContent = T['conn.delete'];
   el.browse.textContent = T['log.browse'];
@@ -82,6 +86,20 @@ function renderList() {
   }
 }
 
+/** 圖示挑選器：舊版 `IconKeys` 那 14 個 key，選中的框起來。 */
+function renderIcons() {
+  el.icons.textContent = '';
+  for (const key of CUSTOM_ICON_KEYS) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.dataset.icon = key;
+    b.title = key;
+    b.className = key === editingIcon ? 'active' : '';
+    b.appendChild(iconImg(key, ''));
+    el.icons.appendChild(b);
+  }
+}
+
 function loadForm(c) {
   el.name.value = c.name || '';
   el.path.value = c.path || '';
@@ -93,6 +111,9 @@ function loadForm(c) {
   el.hidden.checked = !!c.hidden;
   // 新增時預設開沙盒（後端 CustomConn::default 也是 true，兩邊要一致）
   el.sandbox.checked = c.sandbox === undefined ? true : !!c.sandbox;
+  // 新增時預設 `run`（同舊版 `CustomConnDialog.DefaultIcon`）
+  editingIcon = c.icon || 'run';
+  renderIcons();
   el.delete.disabled = editingName === null;
 }
 
@@ -101,7 +122,7 @@ function formToConn() {
     name: el.name.value.trim(),
     path: el.path.value.trim(),
     args: el.args.value.trim(),
-    icon: (conns.find((c) => c.name === editingName) || {}).icon || 'run',
+    icon: editingIcon || 'run',
     closeKey: el.closeKey.value,
     closeCount: Math.min(5, Math.max(1, Number(el.closeCount.value) || 3)),
     pickDir: el.pickDir.checked,
@@ -146,11 +167,20 @@ export function initConns(onChangedCb) {
   el.save = $('cf-save');
   el.delete = $('cf-delete');
   el.browse = $('cf-browse');
+  el.icons = $('cf-icons');
+  renderIcons(); // 一開始就畫出來（挑選器不隨清單變，只有「選中哪一個」會變）
   el.detect = $('conns-detect');
   el.new = $('conns-new');
   el.close = $('conns-close');
 
   onLangChange(applyTexts);
+
+  el.icons.addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-icon]');
+    if (!b) return;
+    editingIcon = b.dataset.icon;
+    renderIcons();
+  });
 
   el.list.addEventListener('click', (e) => {
     const row = e.target.closest('.conns-row');

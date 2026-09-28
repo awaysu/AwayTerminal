@@ -85,9 +85,10 @@ html, body { height: 100%; margin: 0; background: #1e1e1e; overflow: hidden; }
 
 /* 功能列（舊版 Border Background="#2D2D30" Padding="4"）*/
 #toolbar {
-  flex: 0 0 auto; display: flex; align-items: center; gap: 4px; padding: 4px 6px;
+  /* 舊版 MainWindow.xaml：Border Background #2D2D30、Padding 4；按鈕 Margin 2,0 → gap 4 */
+  flex: 0 0 auto; display: flex; align-items: stretch; gap: 4px; padding: 4px;
   background: #2d2d30; user-select: none;
-  font: 12px "Microsoft JhengHei", "微軟正黑體", sans-serif;
+  font: 11px "Microsoft JhengHei", "微軟正黑體", sans-serif;
   /* 德文／法文的按鈕文字比中文長很多（「Einstellungen」「Paramètres」）：
      視窗窄的時候讓工具列橫向捲，而不是把最右邊的分頁列箭頭擠出去。
      `overflow-y: hidden` 是為了不要冒出垂直捲軸（下拉選單是 position:fixed，不受影響）。 */
@@ -98,13 +99,28 @@ html, body { height: 100%; margin: 0; background: #1e1e1e; overflow: hidden; }
 #toolbar::-webkit-scrollbar { height: 6px; }
 #toolbar::-webkit-scrollbar-thumb { background: #4a4a50; border-radius: 3px; }
 .tool-spacer { flex: 1 1 auto; min-width: 8px; }
+/* 圖上字下，數字全部照舊版 `ToolBtn` 樣式（MainWindow.xaml 第 16～49 行）：
+   Width 72、Padding 4,4、CornerRadius 4、Background #3A3A3D、hover #50505A、
+   Foreground #E0E0E0、FontSize 11、Image 26×26 且下邊距 3、停用時字色 #666。
+   `min-width` 而不是固定 72：中文／英文／日文／韓文的字都比 72 短，看起來和舊版一樣；
+   德文（Bildschirm löschen）與法文才會把按鈕撐寬，工具列照舊可橫向捲。
+   舊版 WPF 是固定 72 不換行也不截字，長字會**溢出蓋到隔壁按鈕**——那個行為在網頁上
+   只會更難看，所以這裡刻意不照抄（舊版只有中／英兩種語言，長字問題碰不到）。 */
 .tool-btn {
   background: #3a3a3d; color: #e0e0e0; border: 0; border-radius: 4px;
-  padding: 5px 12px; cursor: pointer; font-size: 12px; font-family: inherit;
-  /* 長文字不要被壓成兩行或被截掉（按鈕會變寬，工具列則可橫向捲） */
-  flex: 0 0 auto; white-space: nowrap;
+  padding: 4px; cursor: pointer; font-size: 11px; font-family: inherit;
+  flex: 0 0 auto; min-width: 72px; box-sizing: border-box;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  white-space: nowrap;
 }
+.tool-btn .tool-ico {
+  width: 26px; height: 26px; margin-bottom: 3px; flex: 0 0 auto;
+  -webkit-user-drag: none; user-select: none;
+}
+.tool-btn .tool-label { line-height: 1.2; }
 .tool-btn:hover { background: #50505a; }
+/* 停用時整顆變灰（舊版只有字變 #666，圖是同一張；用 opacity 讓圖也跟著灰） */
+.tool-btn:disabled .tool-ico { opacity: .45; }
 /* 分頁列顯示／隱藏的小箭頭（舊版 TabPanelToggle，壓在工具列最右端）*/
 .tool-arrow {
   width: 30px; height: 18px; padding: 0; border: 0; border-radius: 3px;
@@ -145,12 +161,13 @@ body.col-resizing { cursor: col-resize; user-select: none; }
 .tab-row.active { background: #1e1e1e; border-color: #FDFFB0; }
 .tab-row.drag-over { outline: 1px dashed #FDFFB0; outline-offset: -2px; }
 .tab-row .tab-icon {
+  /* 舊版 MainWindow.xaml 的分頁列：Image 20×20、Margin 0,0,7,0 */
   flex: 0 0 auto; display: flex; width: 20px; height: 20px; margin-right: 7px;
-  /* 閒置＝淡綠、忙碌＝淡紅（舊版 TerminalTab.ReadyColor / BusyColor，Material 200 級）*/
-  color: #A5D6A7;
 }
-.tab-row .tab-icon.busy { color: #EF9A9A; }
-.tab-row .tab-icon svg { width: 100%; height: 100%; fill: currentColor; }
+/* 閒置＝淡綠 #A5D6A7、忙碌＝淡紅 #EF9A9A（舊版 TerminalTab.ReadyColor / BusyColor）。
+   染色用 index.html 的 SVG filter，公式同舊版 IconTint（tint × 亮度^0.7，alpha 照抄）。 */
+.tab-row .tab-icon .tab-ico { width: 100%; height: 100%; filter: url(#tint-ready); }
+.tab-row .tab-icon.busy .tab-ico { filter: url(#tint-busy); }
 .tab-row .tab-title {
   flex: 1 1 auto; min-width: 0; color: #888888; font-size: 14px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -400,8 +417,16 @@ body.col-resizing { cursor: col-resize; user-select: none; }
 /* 我的最愛 */
 .popup-menu .menu-item.disabled { color: #666; cursor: default; }
 .popup-menu .menu-item.disabled:hover { background: transparent; color: #666; }
-.popup-menu .menu-icon { display: inline-flex; width: 16px; height: 16px; margin-right: 6px; vertical-align: -3px; color: #A5D6A7; }
-.popup-menu .menu-icon svg { width: 100%; height: 100%; fill: currentColor; }
+/* 下拉選單的圖示（舊版 `MakeNewItemRaw`：Image 26×26、Margin 0,0,10,0、文字 11px，
+   而且**不染色**——染色只有分頁列在做）。 */
+.popup-menu .menu-item.with-icon { display: flex; align-items: center; }
+.popup-menu .menu-ico {
+  flex: 0 0 auto; width: 26px; height: 26px; margin-right: 10px;
+  -webkit-user-drag: none;
+}
+.popup-menu .menu-item.with-icon .menu-label { flex: 1 1 auto; }
+/* 「我的最愛」設定視窗的清單也用同一組圖 */
+.conns-row .menu-ico { flex: 0 0 auto; width: 20px; height: 20px; margin-right: 8px; }
 #favs {
   position: fixed; inset: 0; z-index: 320; display: flex; align-items: center; justify-content: center;
   background: rgba(0,0,0,.45);
@@ -779,3 +804,14 @@ body.col-resizing { cursor: col-resize; user-select: none; }
 }
 .tab-team-badge.paused { color: #E0C36A; border-color: #6a5a2a; }
 .tab-row.tab-team .tab-title { font-weight: bold; }
+
+/* 自訂連線的圖示挑選器（舊版 CustomConnDialog 的 IconCombo 是下拉；
+   HTML 的 <select> 不能畫圖，所以攤成一排可點的圖示鈕）。 */
+.icon-picker { display: flex; flex-wrap: wrap; gap: 4px; }
+.icon-picker button {
+  width: 34px; height: 34px; padding: 3px; cursor: pointer;
+  background: #3a3a3d; border: 1px solid transparent; border-radius: 4px;
+}
+.icon-picker button:hover { background: #50505a; }
+.icon-picker button.active { border-color: #FDFFB0; background: #45472e; }
+.icon-picker img { width: 26px; height: 26px; display: block; -webkit-user-drag: none; }
