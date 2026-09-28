@@ -430,7 +430,85 @@ async function verifyToolbarButtons() {
     if (!toggled || !back) bad++;
   }
 
+  // 順序也要對（舊版 MainWindow.xaml 的排法）。TASK-029 之前「輸入文字」跑到「翻頁」右邊，
+  // 自動檢查沒有人看順序，是 PM 用 CDP 讀出來才發現的 → 現在寫成斷言。
+  const WANT = [
+    'btn-new', 'btn-favs',
+    'btn-compose', 'btn-copy', 'btn-paste', 'btn-copyall', 'btn-clear', 'btn-page',
+    'btn-view',
+    'btn-remote', 'btn-settings',
+    'btn-about',
+  ];
+  const got = [...document.querySelectorAll('#toolbar .tool-btn')].map((b) => b.id);
+  const sameOrder = got.length === WANT.length && got.every((id, i) => id === WANT[i]);
+  lines.push(`[verify] 按鈕順序照舊版 xaml：${sameOrder ? 'PASS' : `FAIL ${got.join(' ')}`}`);
+  if (!sameOrder) bad++;
+
   lines.push(`[verify] 工具列按鈕總計：失敗 ${bad} 項`);
+  log(lines.join('\n'));
+}
+
+/**
+ * 設定視窗排版（TASK-030）：**八種語言都要一頁放得下**。
+ *
+ * 使用者回報「設定太長了」，所以視窗改成兩欄。這一段把「會不會需要捲」變成可以測的數字：
+ * `#setdlg-box` 有 `max-height: 88vh` + `overflow: auto`，所以
+ * **`scrollHeight > clientHeight` 就是「要捲」**。德文／法文的標籤最長，八種語言逐一量。
+ *
+ * ⚠️ 量到的高度和視窗大小有關：`--verify` 的視窗是預設大小，不是最大化。
+ * 所以這裡同時印 `window.innerHeight`，判斷用的是「內容高 vs 視窗可用高（88vh）」，
+ * 而不是寫死的數字。
+ */
+async function verifySettingsLayout() {
+  const lines = ['[verify] 設定視窗排版（兩欄）'];
+  const before = getLang();
+  const box = document.getElementById('setdlg-box');
+  const dlg = document.getElementById('setdlg');
+  let bad = 0;
+  try {
+    for (const { code } of LANGS) {
+      applyLang(code);
+      await wait(120);
+      document.getElementById('btn-settings').click();
+      for (let i = 0; i < 20 && dlg.hidden; i++) await wait(100);
+      await wait(150);
+      const avail = Math.round(window.innerHeight * 0.92); // #setdlg-box 的 max-height
+      const need = box.scrollHeight;
+      const shown = box.clientHeight;
+      const fits = need <= shown + 1; // 捲軸算 1px 的誤差
+      if (!fits) bad++;
+      const cols = [...document.querySelectorAll('#setdlg-box .sd-col')].map((c) =>
+        Math.round(c.getBoundingClientRect().height)
+      );
+      lines.push(
+        `[verify]   ${code.padEnd(6)} 內容高 ${need}px　顯示高 ${shown}px　` +
+          `視窗 ${window.innerHeight}px（可用 ${avail}px）　左右欄 ${cols.join('/')}px　` +
+          `${fits ? '不用捲' : '**要捲**'}`
+      );
+      // 最高的那一種語言把每一組的高度也印出來，才知道要動哪一組
+      if (code === 'ja') {
+        for (const fs of document.querySelectorAll('#setdlg-box fieldset')) {
+          const legend = fs.querySelector('legend');
+          lines.push(
+            `[verify]     ${(legend ? legend.id : '?').padEnd(14)} ` +
+              `${Math.round(fs.getBoundingClientRect().height)}px　${JSON.stringify(legend ? legend.textContent : '')}`
+          );
+        }
+      }
+      for (const t of [document, window]) {
+        t.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      }
+      await wait(150);
+    }
+    lines.push(`[verify] 八種語言都不用捲：${bad === 0}（要捲的有 ${bad} 種）`);
+    lines.push(
+      '[verify] ※ 這是 --verify 的預設視窗大小；使用者的螢幕是 1536x864 邏輯像素，' +
+        '最大化時可用高度更大 → 更放得下'
+    );
+  } finally {
+    applyLang(before);
+    await wait(120);
+  }
   log(lines.join('\n'));
 }
 
@@ -493,6 +571,7 @@ async function awayVerify() {
   // 看起來像「跑完了、都沒問題」。
   const sections = [
     ['圖示', verifyIcons],
+    ['設定視窗排版', verifySettingsLayout],
     ['工具列按鈕', verifyToolbarButtons],
     ['SSH', verifySshPath],
     ['Telnet', verifyTelnetPath],

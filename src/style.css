@@ -397,7 +397,7 @@ body.col-resizing { cursor: col-resize; user-select: none; }
 #sd-port { width: 76px; }
 #sd-keep { width: 76px; }
 .sd-hint { color: #888; font-size: 11px; }
-.sd-check { display: flex; align-items: center; gap: 6px; margin-top: 8px; cursor: pointer; }
+.sd-check { display: flex; align-items: center; gap: 6px; margin-top: 6px; cursor: pointer; }
 #sd-adv { margin-top: 12px; border-top: 1px solid #555; padding-top: 8px; }
 #sd-adv > summary { cursor: pointer; color: #FDFFB0; font-size: 12px; }
 #sd-algos { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 8px 0; }
@@ -611,10 +611,35 @@ body.col-resizing { cursor: col-resize; user-select: none; }
   padding: 16px;
   color: #E0E0E0;
 }
+/* 設定視窗是兩欄（TASK-030）：八個區塊單欄排在 864 高的螢幕上要捲才看得完。
+   舊版只有四個區塊、470px 單欄就夠——新版多了渲染器／沙盒／匯入舊版／檔案總管。 */
+#setdlg-box {
+  width: 920px;
+  /* 其他對話框是 88vh；設定視窗內容最多，用滿一點（螢幕只有 864 邏輯像素高） */
+  max-height: 92vh;
+}
+.sd-cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 14px;
+  align-items: start;
+}
+.sd-col {
+  min-width: 0;
+}
+/* 視窗（或螢幕）不夠寬就退回單欄，內容照樣可以捲——不要爆版 */
+@media (max-width: 980px) {
+  #setdlg-box {
+    width: 470px;
+  }
+  .sd-cols {
+    grid-template-columns: 1fr;
+  }
+}
 #setdlg-title,
 #remotedlg-title {
   font-weight: bold;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
 }
 
 /* 遠端設定（舊版 RemoteDialog 是 460 寬、欄位上下排：標籤一行、輸入一行）*/
@@ -633,11 +658,13 @@ body.col-resizing { cursor: col-resize; user-select: none; }
 #remotedlg.rm-off .rm-field,
 #remotedlg.rm-off #rm-hint,
 #remotedlg.rm-off .rm-notify-row { opacity: .45; }
+/* 間距收緊一點（TASK-030）：兩欄之後還差幾十像素才一頁放得下，
+   每一組省 6px × 四組 × 兩欄就回來了。再小就會擠。 */
 #setdlg fieldset {
   border: 1px solid #555;
   border-radius: 3px;
-  margin: 0 0 12px;
-  padding: 8px 10px 10px;
+  margin: 0 0 8px;
+  padding: 6px 10px 8px;
 }
 #setdlg legend {
   color: #CFCFCF;

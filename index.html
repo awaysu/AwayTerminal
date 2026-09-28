@@ -67,12 +67,12 @@
       <button id="btn-new" type="button" class="tool-btn"><img class="tool-ico" src="icon/new-connecting.png" alt="" draggable="false" /><span class="tool-label">新分頁 ▾</span></button>
       <button id="btn-favs" type="button" class="tool-btn"><img class="tool-ico" src="icon/favorite.png" alt="" draggable="false" /><span class="tool-label">我的最愛 ▾</span></button>
       <span class="tool-sep"></span>
+      <button id="btn-compose" type="button" class="tool-btn"><img class="tool-ico" src="icon/compose.png" alt="" draggable="false" /><span class="tool-label">輸入文字</span></button>
       <button id="btn-copy" type="button" class="tool-btn"><img class="tool-ico" src="icon/copy.png" alt="" draggable="false" /><span class="tool-label">複製</span></button>
       <button id="btn-paste" type="button" class="tool-btn"><img class="tool-ico" src="icon/paste.png" alt="" draggable="false" /><span class="tool-label">純文字貼上</span></button>
       <button id="btn-copyall" type="button" class="tool-btn"><img class="tool-ico" src="icon/copy-all.png" alt="" draggable="false" /><span class="tool-label">複製全部</span></button>
       <button id="btn-clear" type="button" class="tool-btn"><img class="tool-ico" src="icon/clear.png" alt="" draggable="false" /><span class="tool-label">清除畫面</span></button>
       <button id="btn-page" type="button" class="tool-btn"><img class="tool-ico" src="icon/page-scroll.png" alt="" draggable="false" /><span class="tool-label">翻頁 ▾</span></button>
-      <button id="btn-compose" type="button" class="tool-btn"><img class="tool-ico" src="icon/compose.png" alt="" draggable="false" /><span class="tool-label">輸入文字</span></button>
       <span class="tool-sep"></span>
       <button id="btn-view" type="button" class="tool-btn"><img class="tool-ico" src="icon/arrange.png" alt="" draggable="false" /><span class="tool-label">視窗分割</span></button>
       <span class="tool-sep"></span>
@@ -527,6 +527,13 @@
     <form id="setdlg-box">
       <div id="setdlg-title"></div>
 
+      <!-- 兩欄（TASK-030）：使用者的螢幕是 1536×864 邏輯像素，單欄八個區塊要捲才看得完。
+           左欄＝語言／字型顏色／Claude 輸入／渲染器／檔案總管，
+           右欄＝其他／沙盒／匯入舊版。這樣分是**量出來的**：日文最長，原本左 416／右 693
+           差太多（總高 824 > 可用 738 要捲），把「檔案總管」挪到左欄之後兩欄才拉平。
+           視窗窄於 980px 時 `.sd-cols` 退回單欄（見 style.css 的 @media）。 -->
+      <div class="sd-cols">
+        <div class="sd-col">
       <fieldset>
         <legend id="st-l-lang"></legend>
         <!-- 八種語言（選項由 strings.js 的 LANGS 產生，各自用自己的語言寫） -->
@@ -536,7 +543,6 @@
         </div>
         <div id="st-lang-note" class="sd-hint"></div>
       </fieldset>
-
       <fieldset>
         <legend id="st-l-font"></legend>
         <div class="st-grid">
@@ -556,7 +562,6 @@
             <input id="st-bg-pick" type="color" /></span>
         </div>
       </fieldset>
-
       <fieldset>
         <legend id="st-l-ime"></legend>
         <div class="st-grid">
@@ -565,7 +570,28 @@
             <button id="st-imehelp" type="button" class="link-btn"></button></span>
         </div>
       </fieldset>
-
+      <fieldset>
+        <legend id="st-l-render"></legend>
+        <div class="st-grid">
+          <label id="st-l-renderpick" for="st-renderer"></label>
+          <span class="sd-row">
+            <select id="st-renderer">
+              <option value="auto"></option>
+              <option value="webgl"></option>
+              <option value="canvas"></option>
+              <option value="dom"></option>
+            </select>
+          </span>
+        </div>
+        <div id="st-render-note" class="sd-hint"></div>
+      </fieldset>
+      <fieldset>
+        <legend id="st-l-shell"></legend>
+        <label class="sd-check"><input id="st-shellmenu" type="checkbox" /><span id="st-l-shellmenu"></span></label>
+        <div id="st-shell-note" class="sd-hint"></div>
+      </fieldset>
+        </div>
+        <div class="sd-col">
       <fieldset>
         <legend id="st-l-more"></legend>
         <div class="st-grid">
@@ -585,7 +611,6 @@
         <label class="sd-check"><input id="st-logts" type="checkbox" /><span id="st-l-logts"></span></label>
         <label class="sd-check"><input id="st-logappend" type="checkbox" /><span id="st-l-logappend"></span></label>
       </fieldset>
-
       <fieldset>
         <legend id="st-l-sandbox"></legend>
         <label class="sd-check"><input id="st-sandboxdefault" type="checkbox" /><span id="st-l-sandboxdefault"></span></label>
@@ -595,7 +620,6 @@
           <span id="st-weak-count" class="sd-hint"></span>
         </div>
       </fieldset>
-
       <fieldset>
         <legend id="st-l-migrate"></legend>
         <div class="sd-row st-weak">
@@ -603,29 +627,8 @@
           <span id="st-migrate-note" class="sd-hint"></span>
         </div>
       </fieldset>
-
-      <!-- 終端機渲染器（CLAUDE.md 風險 2 解法 c）：auto 會實測決定，選錯時使用者能自救 -->
-      <fieldset>
-        <legend id="st-l-render"></legend>
-        <div class="st-grid">
-          <label id="st-l-renderpick" for="st-renderer"></label>
-          <span class="sd-row">
-            <select id="st-renderer">
-              <option value="auto"></option>
-              <option value="webgl"></option>
-              <option value="canvas"></option>
-              <option value="dom"></option>
-            </select>
-          </span>
         </div>
-        <div id="st-render-note" class="sd-hint"></div>
-      </fieldset>
-
-      <fieldset>
-        <legend id="st-l-shell"></legend>
-        <label class="sd-check"><input id="st-shellmenu" type="checkbox" /><span id="st-l-shellmenu"></span></label>
-        <div id="st-shell-note" class="sd-hint"></div>
-      </fieldset>
+      </div>
 
       <div id="st-note" class="sd-hint"></div>
       <div class="modal-buttons">
