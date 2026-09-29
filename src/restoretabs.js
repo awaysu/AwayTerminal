@@ -13,8 +13,9 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 
-import { T } from './strings.js';
+import { T, fmt } from './strings.js';
 import { onLangChange } from './i18n.js';
+import { currentTabState } from './tabbar.js';
 
 /**
  * 照上次存下的清單重開分頁。回傳成功恢復幾個（0＝沒有紀錄，呼叫端要開預設分頁）。
@@ -131,6 +132,7 @@ function $(id) {
  */
 export async function initExitDialog() {
   el.root = $('exitdlg');
+  el.warn = $('exitdlg-warn');
   el.restore = $('ex-restore');
   el.md = $('ex-md');
   el.mdLabel = $('ex-l-md');
@@ -179,6 +181,17 @@ export async function initExitDialog() {
     // payload：`{ restore, updateMd }`（上次的勾選狀態）
     const p = e.payload && typeof e.payload === 'object' ? e.payload : {};
     el.restore.checked = p.restore !== false;
+    // 有連線中的分頁（SSH／Telnet／連接埠，且不是斷線等重連狀態）→ 紅字提醒（TASK-030）
+    let live = 0;
+    try {
+      live = currentTabState().tabs.filter(
+        (t) => ['ssh', 'telnet', 'com'].includes(t.kind) && !t.reconnectable
+      ).length;
+    } catch {
+      live = 0;
+    }
+    el.warn.hidden = live === 0;
+    el.warn.textContent = live > 0 ? fmt('exit.connected', live) : '';
     leaving = false;
     el.busy.hidden = true;
     el.go.disabled = el.cancel.disabled = false;

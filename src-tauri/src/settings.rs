@@ -308,34 +308,33 @@ fn default_renderer() -> String {
 /// 舊版那一組是 `Consolas, "Microsoft JhengHei", "微軟正黑體", monospace`，
 /// Windows 這一欄逐字沿用（多了 Cascadia Mono 當第一順位，那是新版的預設字型）。
 pub fn font_fallback() -> &'static str {
+    // ⚠️ **自帶的兩套排在系統字型前面**（TASK-033）：`Sarasa Mono TC` 是我們打包進去的
+    // 中英文等寬中文字型（中文剛好兩個英文字寬），`Cascadia Mono` 是自帶的英文等寬。
+    // 它們一定在（跟著安裝檔走），所以「新機器上中文變成不等寬」這件事不會再發生。
     #[cfg(target_os = "macos")]
     {
-        "Menlo, \"SF Mono\", \"PingFang TC\", \"Heiti TC\", monospace"
+        "\"Cascadia Mono\", \"Sarasa Mono TC\", Menlo, \"SF Mono\", \"PingFang TC\", \"Heiti TC\", monospace"
     }
     #[cfg(target_os = "linux")]
     {
-        "\"DejaVu Sans Mono\", \"Liberation Mono\", \"Noto Sans Mono CJK TC\", \"Noto Sans CJK TC\", monospace"
+        "\"Cascadia Mono\", \"Sarasa Mono TC\", \"DejaVu Sans Mono\", \"Liberation Mono\", \"Noto Sans Mono CJK TC\", \"Noto Sans CJK TC\", monospace"
     }
     #[cfg(not(any(target_os = "macos", target_os = "linux")))]
     {
-        "Consolas, \"Microsoft JhengHei\", \"微軟正黑體\", monospace"
+        "\"Cascadia Mono\", \"Sarasa Mono TC\", Consolas, \"Microsoft JhengHei\", \"微軟正黑體\", monospace"
     }
 }
 
-/// 預設字型（設定檔第一次建立時用）。Windows 的 Cascadia Mono 在 mac／Linux 沒有。
+/// 預設字型（**設定檔第一次建立時**才會用到）。
+///
+/// TASK-033 起是**自帶的 `JetBrains Mono`**，三個平台一樣——以前是依平台猜一個系統字型
+/// （Windows `Cascadia Mono`／mac `Menlo`／Linux `DejaVu Sans Mono`），
+/// 三台機器長得不一樣，而且 Linux 上那套不一定裝了。
+///
+/// ⚠️ **已經有 settings.json 的使用者不會被改到**：`font_family` 是從檔案讀出來的，
+/// 這個函式只在「檔案不存在」或「舊檔案裡根本沒有這個欄位」時才會被問到。
 pub fn default_font_family() -> &'static str {
-    #[cfg(target_os = "macos")]
-    {
-        "Menlo"
-    }
-    #[cfg(target_os = "linux")]
-    {
-        "DejaVu Sans Mono"
-    }
-    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
-    {
-        "Cascadia Mono"
-    }
+    "JetBrains Mono"
 }
 
 impl AppSettings {

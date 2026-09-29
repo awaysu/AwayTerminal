@@ -175,7 +175,15 @@ TASK-019 的 AI 聊天室**沒有用到新的協定**：它和代理團隊共用
 | `system_locale()` | 系統語言（例 `zh-Hant-TW`）。**只有第一次啟動**用它挑介面語言 |
 | `settings_apply(patch)` | 設定視窗按「確定」：每個欄位都是 `Option`（沒帶的不動），夾好範圍後寫檔、**重送 `T{json}`**、設定 Rust 端的語言，回傳套用後的完整設定。見 `docs/SETTINGS.md` |
 | `ssh_weak_clear()` | 清掉「已接受的弱演算法」記錄，回傳清了幾筆（設定視窗的按鈕） |
-| `font_list()` | 設定視窗字型下拉的候選（**只回這台機器真的有的**；瀏覽器沒有列出系統字型的標準做法，所以是候選清單 ∩ `%WINDIR%\Fonts`） |
+| `font_list()` | 字型下拉的內容：`[{name, mono, source}]`，`source` 是 `builtin`／`user`／`system`，等寬排前面。走字型目錄讀 `name`／`post` 表（`ttf-parser`），**符號字型不列**（沒有 Unicode cmap 或打不出 `A`／`a`）。有快取、啟動時背景暖機。前端用 `<select>`＋`<optgroup>` 呈現，**不可以用 `<datalist>`**（會被輸入框目前的值過濾，TASK-032） |
+| `font_faces()` | 要載進 webview 的字型檔清單（自帶＋使用者下載／匯入）：`[{family, path, weight, style, builtin, bytes}]` |
+| `font_face_bytes(path)` | 一個字型檔的內容（raw bytes，不經 JSON）。**只給自帶與使用者字型資料夾底下的檔案** |
+| `font_catalog()` | 可下載的中文等寬字型清單（寫死在 `fontstore.rs` 的 `CATALOG`，一律 https） |
+| `font_download(id)` / `font_download_cancel(id)` | 下載／取消。進度走 `font-download` 事件 `{id, got, total, done, error}` |
+| `font_pick_files()` / `font_import(paths)` | 選檔／把字型複製進 `<設定資料夾>/fonts/`（**不安裝到系統**） |
+| `font_remove(family)` | 移除使用者自己下載／匯入的字型（自帶的刪不掉） |
+| `window_icon_probe()` | 主視窗的圖示與工作列身分（`WM_GETICON` 的 ICON_BIG／SMALL、類別 HICON、AppUserModelID）。**只讀**，給 `--verify` 用；非 Windows 回 `null`（TASK-035） |
+| `telegram-fatal`（事件） | Telegram 的 token 失效（401／404）：後端已自動停掉輪詢並把 `remoteEnabled` 存回 false，payload 是要顯示給使用者的那句話（八語）。前端顯示**一次**（TASK-036） |
 | `about_info()` | 關於頁：版本、編譯時間（exe 的檔案時間）、**實際的** xterm.js 版本（`build.rs` 從 `node_modules` 讀）、Tauri 版本、下載／原始碼網址、作者字串（拆三段，前端用 canvas 畫） |
 | `third_party_notices()` | `THIRD-PARTY-NOTICES.md` 的內容（**不複製一份**：dev 讀 repo 根目錄、安裝後讀 `resources/`） |
 | `update_check(current, base?)` | 檢查更新（`awaysu.cc/software/api.php`，10 秒逾時）。失敗一律回 `null`＝**安靜失敗**（照舊版）。`base` 只給 `--verify` 用 |

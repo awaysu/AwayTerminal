@@ -59,6 +59,11 @@ tauri-plugin-single-instance = "2.4.5"
 # russh 已經把同一個版本拉進依賴樹，所以不會多編一份。
 sha2 = "0.10"
 tauri-plugin-updater = "2.12.0"
+# 設定視窗的字型下拉：列出**這台機器實際裝了哪些字型**（TASK-031）。
+# 讀字型檔的 `name` 表拿家族名、`post` 表的 isFixedPitch 判斷等寬。MIT OR Apache-2.0，
+# 預設功能全關（只留 `std`）——我們只要 name／post 兩張表，不需要字形輪廓／排版特性。
+# 見 THIRD-PARTY-NOTICES.md。
+ttf-parser = { version = "0.25.1", default-features = false, features = ["std"] }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = [
@@ -70,6 +75,11 @@ windows-sys = { version = "0.61", features = [
   "Win32_System_JobObjects",
   "Win32_System_Pipes",
   "Win32_System_Threading",
+  # 工作列／視窗圖示與 AppUserModelID（TASK-035）
+  "Win32_UI_WindowsAndMessaging",
+  "Win32_UI_Shell",
+  "Win32_System_Com",
+  "Win32_System_LibraryLoader",
 ] }
 libloading = "0.8"
 winreg = "0.56.0"

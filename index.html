@@ -145,17 +145,19 @@
 
   <!-- 新分頁下拉（舊版 New 下拉；SSH / 連接埠 / WSL / ADB 之後補在這裡） -->
   <!-- 新分頁下拉（舊版 New 下拉的結構：預設區 → 分隔線 → 使用者的自訂連線 → 分隔線 → 管理）。
-       #new-conns 由 settings.customConns 填；連線沒開沙盒的會標「無沙盒」。 -->
+       #new-conns 由 settings.customConns 填；連線沒開沙盒的會標「無沙盒」。
+       TASK-030：代理團隊與 AI 聊天室自成一組，放在「自訂連線設定…」上面、上下各一條分隔線。 -->
   <div id="new-menu" class="popup-menu" hidden>
     <div class="menu-item with-icon" data-kind="shell"><img class="menu-ico" src="icon/powershell.png" alt="" draggable="false" /><span class="menu-label">PowerShell</span></div>
     <div class="menu-item with-icon" data-kind="ssh"><img class="menu-ico" src="icon/ssh-telnet.png" alt="" draggable="false" /><span class="menu-label">SSH…</span></div>
     <div class="menu-item with-icon" data-kind="ssh-quick"><img class="menu-ico" src="icon/ssh-telnet.png" alt="" draggable="false" /><span class="menu-label">快速連線（host[:port]）…</span></div>
     <div class="menu-item with-icon" data-kind="com"><img class="menu-ico" src="icon/com.png" alt="" draggable="false" /><span class="menu-label">連接埠…</span></div>
-    <div class="menu-item with-icon" data-kind="multiagent"><img class="menu-ico" src="icon/multi-agent.png" alt="" draggable="false" /><span class="menu-label">代理團隊…</span></div>
-    <div class="menu-item with-icon" data-kind="chatroom"><img class="menu-ico" src="icon/chatroom.png" alt="" draggable="false" /><span class="menu-label">AI聊天室…</span></div>
     <div class="menu-sep"></div>
     <div id="new-conns"></div>
     <div class="menu-item with-icon" data-kind="custom"><img class="menu-ico" src="icon/run.png" alt="" draggable="false" /><span class="menu-label">自訂指令…</span></div>
+    <div class="menu-sep"></div>
+    <div class="menu-item with-icon" data-kind="multiagent"><img class="menu-ico" src="icon/multi-agent.png" alt="" draggable="false" /><span class="menu-label">代理團隊…</span></div>
+    <div class="menu-item with-icon" data-kind="chatroom"><img class="menu-ico" src="icon/chatroom.png" alt="" draggable="false" /><span class="menu-label">AI聊天室…</span></div>
     <div class="menu-sep"></div>
     <div class="menu-item with-icon" data-kind="manage"><img class="menu-ico" src="icon/settings.png" alt="" draggable="false" /><span class="menu-label">自訂連線設定…</span></div>
   </div>
@@ -472,6 +474,8 @@
     <div id="exitdlg-box">
       <div id="exitdlg-title"></div>
       <div id="exitdlg-body"></div>
+      <!-- 有連線中的分頁（SSH／Telnet／連接埠）時的紅字提醒（TASK-030；照舊版 1.x） -->
+      <div id="exitdlg-warn" hidden></div>
       <label class="sd-check"><input id="ex-restore" type="checkbox" /><span id="ex-l-restore"></span></label>
       <label class="sd-check"><input id="ex-md" type="checkbox" /><span id="ex-l-md"></span></label>
       <div id="ex-busy" class="sd-hint" hidden></div>
@@ -546,9 +550,28 @@
       <fieldset>
         <legend id="st-l-font"></legend>
         <div class="st-grid">
-          <label id="st-l-family" for="st-family"></label>
-          <span class="sd-row"><input id="st-family" list="st-fonts" autocomplete="off" spellcheck="false" />
-            <datalist id="st-fonts"></datalist></span>
+          <!-- 字型（TASK-032）：**不能用 `<input list>` ＋ `<datalist>`**——Chromium 會拿輸入框
+               目前的值去過濾候選，而輸入框一開啟就填著目前字型，所以下拉只剩符合的那一個
+               （使用者回報「只看得到一個字型」）。改成真正的 `<select>`＋`<optgroup>`：
+               點開一定是全部。最後一項「自訂…」會把旁邊的輸入框叫出來，
+               清單以外的字型名稱照樣可以自己打。 -->
+          <label id="st-l-family" for="st-family-sel"></label>
+          <span class="sd-row st-fontrow">
+            <select id="st-family-sel"></select>
+            <input id="st-family" autocomplete="off" spellcheck="false" hidden />
+          </span>
+
+          <!-- 字型的下載／匯入／移除（TASK-033）。中文等寬字型十幾 MB，所以不全部自帶，
+               要更多的就從官方 GitHub 下載（網址寫死在 fontstore.rs 的 CATALOG）。 -->
+          <span></span>
+          <span class="sd-row st-fontbtns">
+            <button id="st-font-download" type="button"></button>
+            <button id="st-font-import" type="button"></button>
+            <button id="st-font-remove" type="button"></button>
+            <button id="st-font-cancel" type="button" hidden></button>
+          </span>
+          <span></span>
+          <div id="st-font-note" class="sd-hint"></div>
 
           <label id="st-l-size" for="st-size"></label>
           <span class="sd-row"><input id="st-size" type="number" min="6" max="40" step="1" /></span>

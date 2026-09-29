@@ -19,8 +19,9 @@ import { invoke, Channel } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 
 import { bridgeReady, log, createSession } from './bridge.js';
+import { loadAppFonts, fontReady } from './appfonts.js';
 import { loadAdapter as loadImeAdapter, engineInfo } from './ime/detect.js';
-import { initTabBar, currentTabState, askYesNo, showInfo } from './tabbar.js';
+import { initTabBar, currentTabState, askYesNo, showInfo, showUrlMenu, toast } from './tabbar.js';
 import { T, fmt } from './strings.js';
 import { CUSTOM_ICON_KEYS } from './icons.js';
 import { applyLang, getLang, pushToBackend } from './i18n.js';
@@ -449,6 +450,266 @@ async function verifyToolbarButtons() {
 }
 
 /**
+ * 對話框／覆蓋層的「真的看得見、而且在最上面」檢查（TASK-031）。
+ *
+ * **為什麼要有這一段**：「按了沒反應」已經是第三次了，而且三次的根因都不一樣——
+ *   * TASK-030 `#exitdlg`：`style.css` 裡**一條規則都沒有** → `hidden` 拿掉之後它是文流裡的
+ *     普通 `<div>`，被 `position:absolute` 的 `#app` 整個蓋住（定位元素畫在非定位區塊之上）。
+ *   * TASK-030 `#modal`：z-index 300 疊在 `#favs`（320）底下 → 「刪除確認」看不到也點不到。
+ *   * TASK-031 `#color-menu`：子選單自己也是 `.popup-menu`（`position: fixed`），
+ *     所以 `left: 100%` 變成「視窗寬度的 100%」＝整個丟到螢幕外面。
+ * 三種都**不會丟例外**，`hidden` 也確實變成 false——只看 `hidden` 的檢查全部會放行。
+ *
+ * 所以這裡問的是**畫面上的事實**，逐一打開每個對話框／選單後檢查三件事：
+ *   1. `display` 不是 none（computed，不是看 `hidden` 屬性）
+ *   2. 有面積，而且**和視窗有交集**（整個被推到螢幕外面就抓得到）
+ *   3. 取可見範圍的中心點做 `elementFromPoint`，回來的元素要**屬於這個對話框**
+ *      （被別的東西蓋住就抓得到）
+ *
+ * 開啟方式盡量用**使用者真的會按的入口**（按鈕、右鍵、滑過父選單）。
+ * 只有「程式流程中途才會出現」的那幾個（主機金鑰、弱演算法、離開程式、更新、巨集、
+ * 代理團隊設定）沒有辦法從 UI 直接叫出來——它們前面要嘛是原生檔案／資料夾對話框
+ * （會卡住整個驗證），要嘛要真的去連線，所以改成直接把 `hidden` 拿掉量幾何，
+ * 報告裡標成「直接顯示」。那也正是 `#exitdlg` 那一類 bug 會出現的地方。
+ */
+async function verifyDialogs() {
+  const lines = ['[verify] 對話框可見性'];
+  const $id = (id) => document.getElementById(id);
+  const clickSel = (sel) => {
+    const n = document.querySelector(sel);
+    if (n) n.click();
+    return !!n;
+  };
+  const fire = (node, type, init) => {
+    if (!node) return false;
+    node.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, ...(init || {}) }));
+    return true;
+  };
+  const esc = () => {
+    for (const t of [document, window]) {
+      t.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    }
+  };
+  /** 看得見＝computed display 不是 none（`hidden` 屬性不夠：子選單靠 class 切換）。 */
+  const shown = (n) => getComputedStyle(n).display !== 'none';
+
+  /** 分頁右鍵選單：在第一列分頁上送一個 contextmenu。 */
+  const openTabMenu = () => {
+    const row = document.querySelector('#tabstrip .tab-row');
+    if (!row) return false;
+    const rr = row.getBoundingClientRect();
+    return fire(row, 'contextmenu', {
+      clientX: Math.round(rr.left + rr.width / 2),
+      clientY: Math.round(rr.top + rr.height / 2),
+    });
+  };
+
+  /** 把所有 popup 選單收起來（它們是點別的地方才關，Esc 不一定收得掉）。 */
+  const hideAllMenus = () => {
+    for (const m of document.querySelectorAll('.popup-menu')) {
+      if (!m.classList.contains('submenu')) m.hidden = true;
+      m.removeAttribute('style');
+    }
+    for (const it of document.querySelectorAll('.menu-item.has-sub.sub-open')) {
+      it.classList.remove('sub-open');
+    }
+  };
+
+  /** 三項檢查（display ／ 在畫面內 ／ 中心點最上層是自己）。 */
+  const check = (node) => {
+    const cs = getComputedStyle(node);
+    if (cs.display === 'none') return { ok: false, why: 'computed display 是 none（樣式沒生效？）' };
+    if (cs.visibility === 'hidden') return { ok: false, why: 'visibility 是 hidden' };
+    if (Number(cs.opacity) === 0) return { ok: false, why: 'opacity 是 0' };
+    const r = node.getBoundingClientRect();
+    if (r.width <= 0 || r.height <= 0) {
+      return { ok: false, why: `沒有面積（${Math.round(r.width)}x${Math.round(r.height)}）` };
+    }
+    const W = window.innerWidth;
+    const H = window.innerHeight;
+    const x0 = Math.max(r.left, 0);
+    const y0 = Math.max(r.top, 0);
+    const x1 = Math.min(r.right, W);
+    const y1 = Math.min(r.bottom, H);
+    if (x1 - x0 <= 1 || y1 - y0 <= 1) {
+      return {
+        ok: false,
+        why:
+          `整個在視窗外面（left=${Math.round(r.left)} top=${Math.round(r.top)} ` +
+          `right=${Math.round(r.right)} bottom=${Math.round(r.bottom)}，視窗 ${W}x${H}）`,
+      };
+    }
+    const cx = Math.round((x0 + x1) / 2);
+    const cy = Math.round((y0 + y1) / 2);
+    // `pointer-events: none` 的覆蓋層（#toast＝舊版的 CopyPopup）**故意**讓點擊穿過去，
+    // `elementFromPoint` 對它沒有意義 → 只驗前兩項。
+    if (cs.pointerEvents === 'none') {
+      return {
+        ok: true,
+        why:
+          `${Math.round(r.width)}x${Math.round(r.height)} @ (${Math.round(r.left)},${Math.round(r.top)})` +
+          `　z-index=${cs.zIndex}　pointer-events:none（刻意讓點擊穿過去，不驗最上層）`,
+      };
+    }
+    const top = document.elementFromPoint(cx, cy);
+    if (!top) return { ok: false, why: `中心點 (${cx},${cy}) 上面沒有任何元素` };
+    if (top !== node && !node.contains(top)) {
+      const cls = typeof top.className === 'string' && top.className.trim();
+      const who = `${top.tagName.toLowerCase()}${top.id ? '#' + top.id : ''}${cls ? '.' + cls.split(/\s+/).join('.') : ''}`;
+      return { ok: false, why: `中心點 (${cx},${cy}) 最上層是 ${who}（被蓋住了）` };
+    }
+    return {
+      ok: true,
+      why:
+        `${Math.round(r.width)}x${Math.round(r.height)} @ (${Math.round(r.left)},${Math.round(r.top)})` +
+        `　z-index=${cs.zIndex}　中心點最上層正確`,
+    };
+  };
+
+  // 開啟方式：null ＝沒有 UI 入口，直接把 hidden 拿掉（見函式說明）
+  const cases = [
+    ['new-menu', '新分頁 ▾', () => clickSel('#btn-new')],
+    ['favs-menu', '我的最愛 ▾', () => clickSel('#btn-favs')],
+    ['page-menu', '翻頁 ▾', () => clickSel('#btn-page')],
+    [
+      'term-menu',
+      '終端機右鍵選單',
+      () => fire($id('termframe'), 'contextmenu', { clientX: 200, clientY: 200 }),
+    ],
+    ['url-menu', '網址選單', () => showUrlMenu('https://example.invalid/', 200, 200)],
+    ['tab-menu', '分頁右鍵選單', openTabMenu],
+    // 子選單：先開分頁右鍵選單，再滑到「配色 ▸」上面。CSS `:hover` 沒辦法用程式觸發，
+    // 所以 tabbar.js 改成 `mouseover` → `.sub-open`，這裡才驗得到（TASK-031 的根因就在這）。
+    [
+      'color-menu',
+      '配色 ▸ 子選單',
+      async () => {
+        if (!openTabMenu()) return false;
+        await wait(120);
+        return fire(document.querySelector('#tab-menu [data-act="color"]'), 'mouseover');
+      },
+    ],
+    [
+      'conns',
+      '自訂連線設定',
+      async () => {
+        clickSel('#btn-new');
+        await wait(150);
+        return clickSel('#new-menu [data-kind="manage"]');
+      },
+    ],
+    [
+      'sshdlg',
+      'SSH／Telnet 連線',
+      async () => {
+        clickSel('#btn-new');
+        await wait(150);
+        return clickSel('#new-menu [data-kind="ssh"]');
+      },
+    ],
+    [
+      'comdlg',
+      '連接埠（COM）',
+      async () => {
+        clickSel('#btn-new');
+        await wait(150);
+        return clickSel('#new-menu [data-kind="com"]');
+      },
+    ],
+    [
+      'favs',
+      '我的最愛設定',
+      async () => {
+        clickSel('#btn-favs');
+        await wait(150);
+        return clickSel('#favs-menu [data-fav="manage"]');
+      },
+    ],
+    ['composedlg', '輸入文字', () => clickSel('#btn-compose')],
+    ['remotedlg', '遠端設定', () => clickSel('#btn-remote')],
+    ['setdlg', '其他設定', () => clickSel('#btn-settings')],
+    ['aboutdlg', '關於', () => clickSel('#btn-about')],
+    ['modal', '確認框（清除畫面）', () => clickSel('#btn-clear')],
+    // 以下沒有能直接按的入口（前面卡著原生檔案／資料夾對話框，或要真的連線）
+    ['toast', '複製提示', () => toast('AWAY_VERIFY_TOAST')],
+    ['macrostatus', '巨集狀態', null],
+    ['macrodlg', '巨集問答', null],
+    ['madlg', '代理團隊設定', null],
+    ['hostkey', '主機金鑰確認', null],
+    ['weakalgo', '弱演算法警告', null],
+    ['exitdlg', '離開程式', null],
+    ['updatedlg', '更新檢查', null],
+  ];
+
+  let bad = 0;
+  for (const [id, name, open] of cases) {
+    const node = $id(id);
+    if (!node) {
+      lines.push(`[verify] FAIL ${name}（#${id}）：index.html 裡找不到這個元素`);
+      bad++;
+      continue;
+    }
+    let err = null;
+    const onErr = (e) => {
+      err = e.error || e.message || e.reason;
+    };
+    window.addEventListener('error', onErr);
+    window.addEventListener('unhandledrejection', onErr);
+    // ⚠️ 「有沒有顯示」要看 **computed display**，不是 `hidden` 屬性：
+    // 子選單（`#color-menu`）根本沒有 `hidden`，它是靠 `.sub-open` 才 `display: block` 的。
+    const wasHidden = node.hidden;
+    let byEntry = true;
+    try {
+      if (open) {
+        await open();
+        for (let i = 0; i < 25 && !shown(node); i++) await wait(100);
+      }
+      if (!shown(node) && node.hidden) {
+        // 沒有 UI 入口（open === null），或入口沒把它打開 → 直接顯示，至少把幾何量出來
+        byEntry = false;
+        node.hidden = false;
+        await wait(80);
+      } else if (!shown(node)) {
+        byEntry = false;
+      }
+      const how = open ? (byEntry ? '入口' : '入口沒打開它→直接顯示') : '直接顯示';
+      const r = check(node);
+      // 有入口的就一定要是入口打開的；沒有入口的只看幾何
+      const pass = r.ok && (byEntry || !open) && !err;
+      lines.push(
+        `[verify] ${pass ? 'PASS' : 'FAIL'} ${name}（#${id}，${how}）：${r.why}` +
+          (err ? `　例外：${err && err.stack ? String(err.stack).split('\n')[0] : err}` : '')
+      );
+      if (!pass) bad++;
+    } catch (e) {
+      lines.push(
+        `[verify] FAIL ${name}（#${id}）：丟出例外 ${e && e.stack ? e.stack.split('\n')[0] : e}`
+      );
+      bad++;
+    } finally {
+      window.removeEventListener('error', onErr);
+      window.removeEventListener('unhandledrejection', onErr);
+      // 彈出選單是「點別的地方才收」（同舊版）、`#toast` 是計時器自己收（`pointer-events: none`，
+      // 根本不收鍵盤）→ 兩者都不驗 Esc，只有真正的對話框才驗
+      const passive = getComputedStyle(node).pointerEvents === 'none';
+      if (!node.classList.contains('popup-menu') && !passive) {
+        esc();
+        await wait(150);
+        if (open && shown(node)) {
+          lines.push(`[verify]   ※ ${name} 按 Esc 沒關掉，改由驗證自己收起來`);
+        }
+      }
+      node.hidden = wasHidden; // 還原成這一輪之前的樣子（子選單本來就沒有 hidden）
+      hideAllMenus();
+      await wait(80);
+    }
+  }
+
+  lines.push(`[verify] 對話框可見性總計：失敗 ${bad} 項（共 ${cases.length} 個）`);
+  log(lines.join('\n'));
+}
+
+/**
  * 設定視窗排版（TASK-030）：**八種語言都要一頁放得下**。
  *
  * 使用者回報「設定太長了」，所以視窗改成兩欄。這一段把「會不會需要捲」變成可以測的數字：
@@ -573,12 +834,16 @@ async function awayVerify() {
     ['圖示', verifyIcons],
     ['設定視窗排版', verifySettingsLayout],
     ['工具列按鈕', verifyToolbarButtons],
+    ['對話框可見性', verifyDialogs],
     ['SSH', verifySshPath],
     ['Telnet', verifyTelnetPath],
     ['COM', verifyComPath],
     ['巨集', verifyMacro],
     ['輸入文字', verifyCompose],
     ['設定', verifySettings],
+    ['工作列圖示', verifyWindowIcon],
+    ['自帶字型', verifyBuiltinFonts],
+    ['字型下拉', verifyFontPicker],
     ['語言', verifyLanguage],
     ['八語', verifyAllLanguages],
     ['更新檢查', verifyUpdate],
@@ -1127,6 +1392,299 @@ async function waitUntil(ms, f) {
 
 
 /**
+ * 工作列／視窗圖示與工作列身分（TASK-035）。
+ *
+ * 使用者回報「工作列上是 Windows 預設的空白圖示」。exe 內嵌的檔案圖示是對的
+ *（檔案總管看得到），所以能出錯的只剩**執行中的那個視窗**：
+ *   * `WM_GETICON` 的 ICON_BIG／ICON_SMALL 是 0，而且視窗類別也沒有圖示
+ *     → Windows 只好畫預設的空白圖示；
+ *   * AppUserModelID 沒設 → Windows 拿 exe 路徑猜，開發版／安裝版／1.x 可能被歸成同一堆。
+ *
+ * 這一段**只讀**（`GetClassLongPtr`／`WM_GETICON`／`GetCurrentProcessExplicitAppUserModelID`），
+ * 不碰滑鼠鍵盤、不截圖，所以共用桌面也能跑。非 Windows 會回 null，直接跳過。
+ */
+async function verifyWindowIcon() {
+  const lines = ['[verify] 工作列圖示'];
+  let p = null;
+  try {
+    p = await invoke('window_icon_probe');
+  } catch (e) {
+    lines.push(`[verify] FAIL 讀不到視窗圖示狀態：${e}`);
+    log(lines.join('\n'));
+    return;
+  }
+  if (!p) {
+    lines.push('[verify] SKIP 非 Windows（mac 的 Dock 用 .icns、Linux 用 .desktop）');
+    log(lines.join('\n'));
+    return;
+  }
+  let bad = 0;
+  const ok = (cond, text) => {
+    lines.push(`[verify] ${cond ? 'PASS' : 'FAIL'} ${text}`);
+    if (!cond) bad++;
+  };
+  const set = (v) => !!v && v !== '0x0';
+  lines.push(
+    `[verify] hwnd=${p.hwnd}　ICON_BIG=${p.iconBig}　ICON_SMALL=${p.iconSmall}　` +
+      `ICON_SMALL2=${p.iconSmall2}　類別 HICON=${p.classIcon}／${p.classIconSmall}`
+  );
+  ok(set(p.iconBig), `視窗大圖示（ICON_BIG）有掛上去：${p.iconBig}`);
+  ok(set(p.iconSmall), `視窗小圖示（ICON_SMALL）有掛上去：${p.iconSmall}`);
+  ok(
+    p.appUserModelId === p.wantAppUserModelId,
+    `AppUserModelID＝${JSON.stringify(p.appUserModelId)}（要 ${JSON.stringify(p.wantAppUserModelId)}）`
+  );
+  lines.push(`[verify] 工作列圖示總計：失敗 ${bad} 項　※ 圖案長什麼樣要目視（D33）`);
+  log(lines.join('\n'));
+}
+
+/**
+ * 自帶字型（TASK-033）：安裝檔帶著 JetBrains Mono／Cascadia Mono／Sarasa Mono TC，
+ * **不安裝到系統**，而是在啟動時用 `FontFace` 載進 webview。
+ *
+ * 為什麼要驗這個：字型沒載進來時畫面**不會報錯**，只是退回系統字型——
+ * 在使用者的機器上看起來「好像有換」，到了沒有中文等寬字型的新電腦才會發現中文不等寬。
+ * 而且 xterm 是用「量一個字有多寬」決定每一格大小，字型晚到就整片對不準。
+ * 所以這裡問三件事：檔案在不在、`document.fonts` 認不認得、清單裡有沒有標成「內建」。
+ */
+async function verifyBuiltinFonts() {
+  const lines = ['[verify] 自帶字型'];
+  let bad = 0;
+  const ok = (cond, text) => {
+    lines.push(`[verify] ${cond ? 'PASS' : 'FAIL'} ${text}`);
+    if (!cond) bad++;
+  };
+  const WANT = ['JetBrains Mono', 'Cascadia Mono', 'Sarasa Mono TC'];
+  try {
+    // 1) 檔案有沒有被打包／找得到
+    const faces = await invoke('font_faces');
+    const builtin = faces.filter((f) => f.builtin);
+    const mb = (n) => `${(n / 1048576).toFixed(2)} MB`;
+    ok(
+      builtin.length >= 5,
+      `自帶字型檔 ${builtin.length} 個（要 5：JetBrains R/B、Cascadia R/B、Sarasa R）` +
+        `　共 ${mb(builtin.reduce((a, f) => a + f.bytes, 0))}`
+    );
+    for (const f of builtin) {
+      lines.push(
+        `[verify]   ${f.family.padEnd(16)} ${String(f.weight).padEnd(4)} ${f.style.padEnd(7)} ` +
+          `${mb(f.bytes).padStart(9)}  ${f.path}`
+      );
+    }
+
+    // 2) webview 真的認得（`document.fonts.check`）——這一條才是「畫得出來」
+    for (const fam of WANT) {
+      ok(fontReady(fam), `webview 載入成功：${fam}（document.fonts.check）`);
+    }
+
+    // 3) 字型清單裡標成「內建」
+    const list = await invoke('font_list');
+    for (const fam of WANT) {
+      const hit = list.find((f) => f.name === fam);
+      ok(
+        !!hit && hit.source === 'builtin' && hit.mono,
+        `字型清單有「${fam}」且 source=builtin、等寬（實際 ${hit ? `${hit.source}/${hit.mono}` : '不在清單裡'}）`
+      );
+    }
+
+    // 4) 預設字型鏈：終端機實際用的 fontFamily 要含自帶的中文等寬
+    const id = currentTabState().activeId;
+    const scr = window.AwayTerm && id !== null ? window.AwayTerm.screen(id) : null;
+    ok(
+      !!scr && String(scr.fontFamily).includes('Sarasa Mono TC'),
+      `終端機的字型鏈含自帶中文等寬：${scr ? scr.fontFamily : '?'}`
+    );
+
+    // 5) 可下載的清單：一律 https、家族名不和自帶的撞
+    const catalog = await invoke('font_catalog');
+    ok(
+      catalog.length > 0 && catalog.every((c) => c.url.startsWith('https://')),
+      `可下載 ${catalog.length} 套、全部 https：${catalog.map((c) => `${c.family}(${mb(c.bytes)})`).join('、')}`
+    );
+    ok(
+      catalog.every((c) => !WANT.includes(c.family)),
+      '可下載的清單沒有和自帶的撞名'
+    );
+
+    // 6) 字型資料夾以外的檔案不給讀（`font_face_bytes` 的防線）
+    let refused = false;
+    try {
+      await invoke('font_face_bytes', { path: 'C:/Windows/System32/drivers/etc/hosts' });
+    } catch {
+      refused = true;
+    }
+    ok(refused, 'font_face_bytes 只讀自己的字型資料夾（其他路徑拒絕）');
+  } catch (e) {
+    lines.push(`[verify] FAIL 丟出例外：${e && e.stack ? e.stack.split('\n')[0] : e}`);
+    bad++;
+  }
+  lines.push(`[verify] 自帶字型總計：失敗 ${bad} 項`);
+  log(lines.join('\n'));
+}
+
+/**
+ * 字型下拉（TASK-032）。
+ *
+ * **為什麼要有這一段**：TASK-031 把字型清單換成「系統實際安裝的全部家族」，後端 log
+ * 也確實印 196 個——但使用者打開下拉**只看得到一個**。原因是當時的 UI 是
+ * `<input list>` ＋ `<datalist>`：Chromium 拿**輸入框目前的值**去過濾候選，而輸入框
+ * 一開啟就填著目前字型。後端數字是對的、前端也不丟例外，所以「後端回幾個」這種檢查
+ * 永遠抓不到 → 這裡改成問 **UI 上真的有幾個 `<option>`**。
+ *
+ * 一併驗：分兩組且組標題有字、目前字型有選起來也有標示、每一項用自己的字型畫（預覽）、
+ * 「自訂…」會把輸入框叫出來、選了字型按確定會存進設定並即時套到終端機。
+ */
+async function verifyFontPicker() {
+  const lines = ['[verify] 字型下拉'];
+  const $id = (id) => document.getElementById(id);
+  const sel = $id('st-family-sel');
+  const input = $id('st-family');
+  const dlg = $id('setdlg');
+  const btn = $id('btn-settings');
+  const esc = () => {
+    for (const t of [document, window]) {
+      t.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    }
+  };
+  const before = await invoke('settings_get');
+  const fonts = await invoke('font_list');
+  let bad = 0;
+  const ok = (cond, text) => {
+    lines.push(`[verify] ${cond ? 'PASS' : 'FAIL'} ${text}`);
+    if (!cond) bad++;
+  };
+
+  try {
+    if (!sel || !input) {
+      lines.push('[verify] FAIL 找不到 #st-family-sel／#st-family');
+      log(lines.join('\n'));
+      return;
+    }
+    btn.click();
+    for (let i = 0; i < 25 && dlg.hidden; i++) await wait(100);
+    await wait(150);
+
+    // ---- 1. UI 上看得到的選項數 = 後端回的家族數（**這條就是使用者回報的 bug**）----
+    const all = [...sel.querySelectorAll('option')];
+    const custom = all.filter((o) => o.dataset.k === 'font.custom');
+    const real = all.filter((o) => o.dataset.k !== 'font.custom');
+    ok(
+      real.length === fonts.length,
+      `UI 看得到 ${real.length} 個字型 = 後端 ${fonts.length} 個家族　` +
+        `（輸入框裡是 "${input.value}"，**不可以**拿它過濾清單——datalist 就是死在這）`
+    );
+    ok(custom.length === 1, `清單最後一項是「自訂…」（${custom.length} 個，要 1 個）`);
+
+    // ---- 2. 分組（內建／已下載匯入／系統等寬／系統其他），組標題都要有字 ----
+    // 沒有下載／匯入過任何字型時「已下載／已匯入」那一組不會出現，所以組數是 2～4。
+    const groups = [...sel.querySelectorAll('optgroup')];
+    const count = (g) => g.querySelectorAll('option').length;
+    const want = [
+      ['builtin', fonts.filter((f) => f.source === 'builtin').length],
+      ['user', fonts.filter((f) => f.source === 'user').length],
+      ['system 等寬', fonts.filter((f) => f.source === 'system' && f.mono).length],
+      ['system 其他', fonts.filter((f) => f.source === 'system' && !f.mono).length],
+    ].filter(([, n]) => n > 0);
+    ok(
+      groups.length === want.length && groups.every((g) => !!g.label.trim()),
+      `分 ${groups.length} 組（後端說該有 ${want.length} 組）且組標題都有字：` +
+        groups.map((g) => `「${g.label}」${count(g)} 個`).join('　')
+    );
+    ok(
+      groups.length === want.length && groups.every((g, i) => count(g) === want[i][1]),
+      `每一組的數量與來源對得起來：${want.map(([k, n]) => `${k}=${n}`).join('　')}`
+    );
+    ok(
+      groups.length > 0 && count(groups[0]) === want[0][1] && want[0][0] === 'builtin',
+      `自帶字型排在最前面那一組（${groups.length ? `「${groups[0].label}」${count(groups[0])} 個` : '沒有任何一組'}）`
+    );
+
+    // ---- 3. 目前字型：選起來、而且有標示 ----
+    const cur = sel.querySelector('option[data-current]');
+    ok(
+      sel.value === before.fontFamily,
+      `目前字型 "${before.fontFamily}" 是選起來的狀態（select.value="${sel.value}"）`
+    );
+    ok(
+      !!cur && cur.value === before.fontFamily && cur.textContent !== cur.value,
+      `目前字型有標示：「${cur ? cur.textContent : '(沒有標示)'}」` +
+        '　※ 原生 `<select>` 打開時會自己捲到選取的那一項'
+    );
+    // 鍵盤可操作：開啟時焦點就在下拉上（上下鍵／Enter／Esc／首字母跳選都是原生行為）
+    ok(document.activeElement === sel, `開啟時焦點在字型下拉上（${document.activeElement?.id || '?'}）`);
+
+    // ---- 4. 每一項用自己的字型畫（預覽）----
+    const sample = real.slice(0, 3);
+    const previewed = sample.every((o) => getComputedStyle(o).fontFamily.includes(o.value));
+    ok(
+      previewed,
+      `選項用自己的字型顯示：${sample.map((o) => `${o.value} → ${getComputedStyle(o).fontFamily}`).join('｜')}` +
+        '　※ 下拉打開後長什麼樣要目視（D28）'
+    );
+
+    // ---- 5. 「自訂…」把輸入框叫出來，選回真的字型又收起來 ----
+    sel.value = '__custom__';
+    sel.dispatchEvent(new Event('change', { bubbles: true }));
+    await wait(120);
+    ok(!input.hidden, `選「自訂…」後輸入框出現（hidden=${input.hidden}）`);
+    const pick = (real.find((o) => o.value !== before.fontFamily) || real[0]).value;
+    sel.value = pick;
+    sel.dispatchEvent(new Event('change', { bubbles: true }));
+    await wait(120);
+    ok(
+      input.hidden && input.value === pick,
+      `選回清單裡的字型後輸入框收起來、值同步成 "${input.value}"（要 "${pick}"）`
+    );
+
+    // ---- 6. 按「確定」→ 存進設定 ＋ 即時套到終端機 ----
+    $id('st-ok').click();
+    const applied = await waitUntil(4000, async () => {
+      const s = await invoke('settings_get');
+      return s.fontFamily === pick;
+    });
+    const now = await invoke('settings_get');
+    ok(applied, `按確定後存進設定：fontFamily="${now.fontFamily}"（要 "${pick}"）`);
+    const id = currentTabState().activeId;
+    const scr = window.AwayTerm && id !== null ? window.AwayTerm.screen(id) : null;
+    ok(
+      !!scr && String(scr.fontFamily).includes(pick),
+      `即時套到終端機（terminal.js 的 cfg.fontFamily="${scr ? scr.fontFamily : '?'}"）`
+    );
+    ok(dlg.hidden, '按確定後設定視窗關起來');
+
+    // ---- 7. 自己打清單以外的字型名稱也存得進去 ----
+    const madeUp = 'AwayVerify No Such Font';
+    await invoke('settings_apply', { patch: { fontFamily: madeUp } });
+    const typed = await invoke('settings_get');
+    ok(typed.fontFamily === madeUp, `清單以外的名稱照樣收（"${typed.fontFamily}"）`);
+    // 再開一次：認不得的名稱要落在「自訂…」上，而且輸入框看得到
+    btn.click();
+    for (let i = 0; i < 25 && dlg.hidden; i++) await wait(100);
+    await wait(150);
+    ok(
+      sel.value === '__custom__' && !input.hidden && input.value === madeUp,
+      `重開後認不得的字型落在「自訂…」、輸入框看得到（select="${sel.value}" input="${input.value}"）`
+    );
+    esc();
+    await wait(200);
+  } catch (e) {
+    lines.push(`[verify] FAIL 丟出例外：${e && e.stack ? e.stack.split('\n')[0] : e}`);
+    bad++;
+  } finally {
+    // 驗完一律還原（不要把驗證挑的字型留在使用者的設定裡）
+    if (!dlg.hidden) {
+      esc();
+      await wait(150);
+      dlg.hidden = true;
+    }
+    await invoke('settings_apply', { patch: { fontFamily: before.fontFamily } }).catch(() => {});
+    lines.push(`[verify] 還原字型設定 → "${before.fontFamily}"`);
+  }
+  lines.push(`[verify] 字型下拉總計：失敗 ${bad} 項`);
+  log(lines.join('\n'));
+}
+
+/**
  * 設定視窗驗證（TASK-015 A）：改字級 → Rust 重送 `T{json}` → **前端的字級真的變了**。
  *
  * 這一條在驗的是「設定改了之後真的套到所有分頁」那條路
@@ -1171,9 +1729,20 @@ async function verifySettings() {
       `[verify] 清除弱演算法記錄：清掉 ${cleared} 筆、現在 ${afterClear.sshWeakAccepted.length} 筆：` +
         `${afterClear.sshWeakAccepted.length === 0}`,
     );
-    // 字型清單（下拉用；這台機器真的有的）
+    // 字型清單（下拉用）：TASK-031 起是**這台機器實際裝的所有家族**，
+    // 不再是寫死候選裡挑有裝的。等寬要排在前面、名稱不可以空的。
     const fonts = await invoke('font_list');
-    lines.push(`[verify] 字型清單 ${fonts.length} 個：${fonts.slice(0, 4).join('、')}…`);
+    const mono = fonts.filter((f) => f.mono).length;
+    const firstOther = fonts.findIndex((f) => !f.mono);
+    const monoFirst = firstOther === -1 || fonts.slice(firstOther).every((f) => !f.mono);
+    lines.push(
+      `[verify] 字型清單 ${fonts.length} 個家族（等寬 ${mono}）：` +
+        `${fonts.slice(0, 5).map((f) => f.name).join('、')}…`,
+    );
+    lines.push(
+      `[verify] 字型清單 等寬排前面=${monoFirst}　每個都有名稱=${fonts.every((f) => !!f.name)}　` +
+        `沒有重複=${new Set(fonts.map((f) => f.name.toLowerCase())).size === fonts.length}`,
+    );
   } catch (e) {
     lines.push(`[verify] 失敗：${e}`);
   } finally {
@@ -2109,6 +2678,15 @@ async function openDirTab(dir) {
     const dir = typeof e.payload === 'string' ? e.payload : '';
     if (dir) openDirTab(dir);
   });
+
+  // ⚠️ **自帶字型要在 terminal.js 之前載完**（TASK-033）：xterm 是用「量一個字有多寬」
+  // 決定每一格的大小，字型還沒到就會拿 fallback 量出錯的寬度，然後整個畫面的欄位
+  // 都對不準——而且之後不會自己重量。載不到只是退回系統字型，不擋啟動。
+  try {
+    await loadAppFonts();
+  } catch (e) {
+    log(`[main] 載入自帶字型失敗（改用系統字型）：${e}`);
+  }
 
   // terminal.js 是舊版原檔（IIFE），載入即執行並在最後送 `ready`
   try {

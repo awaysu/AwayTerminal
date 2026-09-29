@@ -163,6 +163,60 @@ function openManager() {
   el.root.hidden = false;
 }
 
+/**
+ * 就地改名（TASK-030）：把選中那一列的名稱換成輸入框。
+ * Enter 確認、Esc 取消、失焦＝確認；存進 settings 後立刻重畫清單（下拉每次開都重讀，會跟上）。
+ */
+function startRename() {
+  if (!selected) return;
+  const row = el.list.querySelector(
+    `[data-fav-name="${CSS.escape(selected)}"]`
+  );
+  const span = row && row.querySelector('.conns-row-name');
+  if (!span || row.querySelector('input')) return;
+  const old = selected;
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'favs-rename-input';
+  input.value = old;
+  input.spellcheck = false;
+  span.replaceWith(input);
+  input.focus();
+  input.select();
+  let done = false;
+  const finish = async (commit) => {
+    if (done) return;
+    done = true;
+    const name = input.value.trim();
+    if (!commit || !name || name === old) {
+      renderList(); // 取消／沒改：畫回原樣
+      return;
+    }
+    try {
+      await invoke('fav_rename', { name: old, newName: name });
+      selected = name;
+      el.note.textContent = '';
+      await refreshAll();
+    } catch (e) {
+      // 名稱重複之類：顯示原因並留在原名（同舊版）
+      el.note.textContent = String(e);
+      renderList();
+    }
+  };
+  input.addEventListener('keydown', (e) => {
+    // 不讓 Esc 冒泡到 document（那個 listener 會把整個設定視窗關掉）
+    e.stopPropagation();
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      finish(true);
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      finish(false);
+    }
+  });
+  input.addEventListener('blur', () => finish(true));
+}
+
 async function refreshAll() {
   await reloadFavs();
   renderList();
@@ -284,24 +338,26 @@ export function initFavs(injected) {
   });
 
   el.list.addEventListener('click', (e) => {
+    // 就地改名的輸入框在列裡面：點它不可以觸發重新選取（renderList 會把輸入框拆掉）
+    if (e.target.tagName === 'INPUT') return;
     const row = e.target.closest('[data-fav-name]');
     if (!row) return;
+    if (selected === row.dataset.favName) return;
     selected = row.dataset.favName;
     el.note.textContent = '';
     renderList();
   });
 
-  el.rename.addEventListener('click', async () => {
-    if (!selected) return;
-    const name = await hooks.askText(T['fav.nameTitle'], T['fav.namePrompt'], selected);
-    if (name === null || !name.trim()) return;
-    try {
-      await invoke('fav_rename', { name: selected, newName: name.trim() });
-      selected = name.trim();
-      await refreshAll();
-    } catch (e) {
-      el.note.textContent = String(e);
-    }
+  // 改名＝就地編輯（TASK-030）：原本用 askText 對話框，但 #modal 疊在 #favs 底下
+  // （z-index 300 < 320）根本看不到、也點不到 → 使用者以為「改名沒作用」。
+  // 雙擊那一列、或選取後按「改名」都會進編輯；Enter 確認、Esc 取消、失焦＝確認。
+  el.rename.addEventListener('click', () => startRename());
+  el.list.addEventListener('dblclick', (e) => {
+    if (e.target.tagName === 'INPUT') return;
+    const row = e.target.closest('[data-fav-name]');
+    if (!row) return;
+    selected = row.dataset.favName;
+    startRename();
   });
 
   el.delete.addEventListener('click', async () => {

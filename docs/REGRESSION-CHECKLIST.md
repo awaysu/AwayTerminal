@@ -142,6 +142,14 @@
 | D23 | 👤 填好 token、先用手機傳一則訊息給 bot，再按「取得 chat id」 | Chat ID 欄自動填上，跳「已取得 chat id：<數字>」；沒有訊息時跳「找不到訊息…」；token 空白且設定裡也沒有時跳「請先填入 Bot Token。」 | `RemoteDialog.GetId_Click` ／ `TryGetLatestChatId` | | | |
 | D24 | `--verify` 的 Telegram 那一段（假 Bot API） | 多一條「取得 chat id 抓到最近一則訊息的 chat」PASS；token 仍然不出現在任何一行輸出 | 新增（TASK-029） | PASS | — | — |
 | D25 | 👤 開「其他設定」 | **沒有** Telegram 區塊了（搬回獨立的遠端視窗；兩個地方改同一組欄位會互相蓋） | 舊版 `SettingsDialog` 本來就沒有這一區 | | | |
+| D26 | `npm run verify` 看 `[verify] 對話框可見性` 那幾行 | **24 個對話框／選單逐一打開**，每一個都要 PASS：computed `display` 不是 none、和視窗有交集、中心點 `elementFromPoint` 回來的元素屬於它自己。能用使用者入口（按鈕／右鍵／滑過父項）打開的就一定要用入口打開，入口沒打開它也算 FAIL。`#toast` 是 `pointer-events: none`（刻意讓點擊穿過去），只驗前兩項 | 新增（TASK-031：`#color-menu` 被 `position: fixed` 丟到螢幕外、`#comdlg` 在 style.css 裡沒有任何規則——兩個都不丟例外、`hidden` 也確實是 false，只看 `hidden` 的檢查全部會放行） | PASS | | |
+| D27 | 👤 在**最右邊**的分頁列上按右鍵 →「配色 ▸」 | 子選單當場展開在父項**左邊**（右邊放不下會自動翻邊），點任一色票立刻只套到那一條分頁；「預設（設定顏色）」還原 | 舊版 `MainWindow.xaml` 的「配色」子選單 ＋ `MenuColor_Click` | | | |
+| D28 | 👤 「其他設定」→ 點開字型下拉 | **一次看得到全部字型**（這台機器 196 個），分兩組：「等寬字型（建議用於終端機）」在上、「其他字型（中英文字寬可能不齊）」在下；每一項用**自己的字型**畫自己的名字；目前用的那一項寫著「（目前使用）」而且打開就捲到它；最後一項「自訂…」會叫出輸入框讓你自己打。上下鍵／Enter／Esc／首字母跳選都能用 | ⬜ 新增（TASK-032，使用者回報「下拉只看得到一個字型」） | | | |
+| D29 | 👤 「其他設定」→ 字型下拉最上面那一組 | 「程式內建（跨平台一致，不必安裝）」裡有 **JetBrains Mono／Cascadia Mono／Sarasa Mono TC** 三套；選 Sarasa Mono TC 按確定，終端機裡**中文剛好是英文的兩倍寬**（打 `你好abcd` 對齊看得出來） | ⬜ 新增（TASK-033；舊版完全依賴系統裝了什麼） | | | |
+| D30 | 👤 按「下載更多中文等寬字型…」→ 選一套 → 看提示列 | 進度一路從 0% 跑到 100%（十幾 MB），完成後那套**立刻**出現在「已下載／已匯入」那一組並且可以選；下載中按「取消」會停下來而且**不留下半個檔案**；拔網路會顯示錯誤而不是卡住 | ⬜ 新增（TASK-033） | | | |
+| D31 | 👤 按「匯入字型…」選一個 `.ttf` | 複製進設定資料夾、立刻出現在「已下載／已匯入」；選不是字型的檔案會說「讀不出字型家族名」；選到自帶或系統字型時「移除」是灰的，選到自己匯入的才能按，按了會再問一次 | ⬜ 新增（TASK-033） | | | |
+| D32 | 👤 **全新安裝**（或把 settings.json 移走）第一次啟動 | 預設字型是 **JetBrains Mono**、中文用 Sarasa Mono TC 畫（三個平台一樣）。**已經有 settings.json 的人不受影響**，原本選的字型照舊 | ⬜ 新增（TASK-033） | | | |
+| D33 | 👤 程式開著時看 **Windows 工作列**（以及 Alt+Tab、視窗左上角） | 都是 AwayTerminal 的圖示，**不是** Windows 的空白預設圖示；和 1.x 同時開著時是**兩個分開的群組**（AppUserModelID 不同） | ⬜ 新增（TASK-035：實測 `WM_GETICON` 的 ICON_BIG 是 0 → Windows 只好畫預設圖示） | | | |
 | D15 | 👤 **和舊版並排看工具列** | 每顆按鈕都是**圖上字下**：圖 26×26、字 11px、按鈕寬 72（繁中／簡中的字都短於 72，所以整排和舊版一樣寬）、圓角 4、底 #3A3A3D、滑鼠移上去 #50505A。圖就是舊版那一組 PNG（`new-connecting`／`favorite`／`compose`／`copy`／`paste`／`copy-all`／`clear`／`page-scroll`／`arrange`／`settings`／`about`） | `MainWindow.xaml` 的 `ToolBtn` 樣式（第 16～49 行）與各 Button 的 `Tag` | | | |
 | D16 | `npm run verify` 看 `[verify] 圖示` 那幾行 | 工具列「沒圖 0、沒字 0、圖載不到 0」；下拉選單、分頁列、自訂連線挑選器都「載不到 0」；分頁列圖示有 `#tint-ready`／`#tint-busy` 的 filter | 新增（TASK-027） | PASS | | |
 | D17 | 切成德文／法文／日文（`Bildschirm löschen`、`Effacer l’écran`、`テキストとして貼り付け`） | 放不下 72 的按鈕會**變寬**（不是截字、也不是換行），工具列放不下時可以橫向捲；圖示照樣置中、整排高度一致 | 刻意與舊版不同（見下方表；舊版固定 72、長字會溢出蓋到隔壁） | | | |
@@ -565,7 +573,7 @@ TEMP 路徑印出完整結果，Documents 路徑印完 `path = …` 就停住。
 | ST8 | 👤 打一個不合法的顏色（例 `Red`、`#12345`）按確定 | 退回預設色，**不跳錯誤** | `ValidColor` | PASS（單元測試＋`--verify`） | | |
 | ST9 | 👤 **改字級按確定** | 所有分頁的字**立刻變大／變小**，而且欄數跟著變（`vi`／`top` 不會畫錯） | `PostTheme()` → `applyTheme()` | ⬜ **只能目視**（見下） | | |
 | ST10 | 👤 Ctrl+滾輪縮放 | 同 ST9（走同一條 `applyTheme`） | 舊版同 | ⬜ 只能目視 | | |
-| ST11 | 👤 改字型成「Consolas」 | 立刻換字型；下拉列得出這台機器有的等寬字型，也可以自己打沒列到的 | `Fonts.SystemFontFamilies` | | | |
+| ST11 | 👤 改字型成「Consolas」 | 立刻換字型；下拉列得出這台機器**實際安裝的所有字型**（等寬排最前面並標示），也可以自己打沒列到的 | `Fonts.SystemFontFamilies` | | | |
 | ST12 | 👤 「送出前等待靜止 (ms)」旁的「這是什麼？」 | 跳說明，文字**逐字**和舊版一樣 | `settings.imeQuietHelp` | | | |
 | ST13 | 👤 改 imeQuiet 之後在 Claude 分頁打注音 | 行為跟著改（0＝立刻送） | `terminal.js` 的 `QUIET_MS` | | | |
 | ST14 | 👤 改 log 預設資料夾 → 開 log | 新位置生效 | `AppSettings.LogDir` | | | |
@@ -578,6 +586,10 @@ TEMP 路徑印出完整結果，Documents 路徑印完 `path = …` 就停住。
 | ST19 | 👤 在 1536×864 的螢幕上**把視窗最大化**再開「其他設定」 | **不用捲動**就看得完：左欄＝語言／字型與顏色／Claude 輸入／渲染器，右欄＝其他／沙盒／匯入舊版／檔案總管，底下「回到預設／確定／取消」橫跨兩欄靠右 | ⬜ 新增（TASK-030，使用者回報「設定太長了」） | | | |
 | ST20 | 👤 把視窗拉窄到 980px 以下再開設定 | 自動退回**單欄**、可以捲動，欄位不會被擠爆（輸入框仍看得到） | ⬜ 新增（TASK-030） | | | |
 | ST21 | `npm run verify` 看 `[verify] 設定視窗排版（兩欄）` 那幾行 | 八種語言的「內容高」都 ≤「顯示高」（`scrollHeight <= clientHeight`＝不用捲）。德文／法文的標籤最長，是這條的重點 | ⬜ 新增（TASK-030） | PASS | | |
+| ST22 | `npm run verify` 看 `[verify] 字型清單` 那兩行 | 後端列出的是**這台機器實際安裝的所有字型家族**（不是寫死的候選），等寬排前面、每個都有名稱、沒有重複。這台機器上是 196 個家族（等寬 13），啟動時背景掃描約 0.4–0.6 秒 | ⬜ 新增（TASK-031，使用者回報「字型太少」；舊版是 `Fonts.SystemFontFamilies`） | PASS | | |
+| ST23 | `npm run verify` 看 `[verify] 字型下拉` 那一段 | **UI 上真的有幾個 `<option>`** ＝後端的家族數（196＝196）——這條才抓得到 TASK-032 的 bug，「後端回幾個」是對的但畫面上只剩一個。另外驗：分兩組且組標題有字、目前字型選起來並標示、焦點開啟時就在下拉上、選項用自己的字型畫、「自訂…」叫得出輸入框、按確定後存進設定並即時套到 `terminal.js` 的 `cfg.fontFamily`、清單以外的名稱重開後落在「自訂…」 | ⬜ 新增（TASK-032） | PASS | | |
+| ST24 | `npm run verify` 看 `[verify] 自帶字型` 那一段 | 五個字型檔都找得到（共 15.18 MB）、`document.fonts.check` 三套都回 true、字型清單裡三套都標 `source=builtin` 且等寬、終端機的字型鏈含 `Sarasa Mono TC`、可下載清單全部 https 且不和自帶的撞名、`font_face_bytes` 拒絕字型資料夾以外的路徑 | ⬜ 新增（TASK-033） | PASS | | |
+| ST25 | `npm run verify` 看 `[verify] 工作列圖示` 那幾行 | `ICON_BIG` 與 `ICON_SMALL` 都**不是 0x0**、`AppUserModelID` 是 `com.awaysu.awayterminal2`。只讀 Win32（`WM_GETICON`／`GetClassLongPtr`／`GetCurrentProcessExplicitAppUserModelID`），不碰滑鼠鍵盤也不截圖 | ⬜ 新增（TASK-035） | PASS | | |
 
 
 ⚠️ **ST9／ST10 為什麼只能目視**：`--verify` 跑到設定那一步時 pane 的方框是 **0×0**
@@ -935,6 +947,8 @@ TEMP 路徑印出完整結果，Documents 路徑印完 `path = …` 就停住。
 | TG33 | probe：`/new 999` | 只回「1~n」提示，**不開任何分頁** | `OpenFromList` | PASS | — | — |
 
 | TG34 | probe：`/new 1` | 真的開了分頁（PowerShell 桌面）並自動附著 | `AttachAndReport` | PASS | — | — |
+| TG35 | `npm run verify` 看 Telegram 那一段的 401／409 幾行 | `409 會重試而且退避遞增（3→6→12 秒）`、`409 結束後輪詢恢復，而且退避歸零`、`401 之後遠端自己停了`、`401 之後只打了幾次就放棄`（實測 1 次）、`記下停止原因`、`設定裡的 remoteEnabled 被關掉`，最後會**把使用者原本的 remoteEnabled 放回去** | ⬜ 新增（TASK-036；舊版所有錯誤一視同仁、固定 3 秒、無限重試，token 失效時 12 分鐘打了 240 次） | PASS | | |
+| TG36 | 👤 把遠端設定的 Bot Token 改成亂打的字串 → 儲存 | 幾秒內跳**一次**「Bot Token 無效或已被撤銷（HTTP 401），遠端控制已自動停止…」；之後**不再重試**；重開「遠端設定」時上面那行原因還在（紅字）、「啟用遠端控制」已經自己取消勾選 | ⬜ 新增（TASK-036） | | | |
 
 | TG35 | probe：`/ssh`／`/telnet` 不帶參數且沒有對應的我的最愛 | 回用法說明，**不連任何主機** | `DoSsh`／`DoTelnet` | PASS | — | — |
 
@@ -1188,6 +1202,13 @@ TEMP 路徑印出完整結果，Documents 路徑印完 `path = …` 就停住。
 | **`--verify` 的每一段要各自包 try/catch** | 一段丟例外會讓**後面整批不跑**，而且畫面上看不出來（那幾段的 `[verify]` 行根本不存在），看起來像「跑完了、都沒問題」。TASK-021 在 release exe 上踩到：代理團隊／聊天室／Telegram 三段完全沒跑。現在每段各自包起來、最後印一行「幾段丟例外」 | 全部 |
 | **視窗位置存檔前一定要先問 `is_minimized()`** | Windows 最小化時把視窗移到實體座標 `(-32000,-32000)` 並照樣發 `Moved`／`Resized`（125% DPI 下換算成 −25600）。存進去之後下次啟動 `set_position` 到螢幕外 → 又發 `Moved` → 再存一次同樣的座標，**自我延續，使用者重開也救不回來**（工作列有圖示、點了沒畫面）。同理 `maximized` 這時候也讀不準，所以最小化時整個不記。啟動端要再驗一次「這個矩形還在某台螢幕上嗎」，不然拔掉外接螢幕也會中 | C11、C12、C13 |
 | **使用者用按鈕觸發的功能，驗證就要真的按那顆按鈕** | 只驗底下的 command 會漏掉「按鈕→處理函式→開視窗」那一段。實際案例：`verifySettings` 只呼叫 `settings_get`／`settings_apply`，所以 `setdlg.js` 少一行 `el.shellMenu = $('st-shellmenu')` 造成的「按了沒反應」，從 TASK-016 一路活到 TASK-027（十幾個 commit、每次 `--verify` 全綠）。而且那個例外是在 `el.root.hidden = false` **之前**丟的 → 畫面完全沒動靜。現在 D20 會逐顆按，收尾也會數「沒人接住的例外／console.error」 | D20 |
+| **Windows 工作列看的是 `ICON_BIG`，Tauri 只掛了 `ICON_SMALL`** | 實測（TASK-035）：`WM_GETICON/ICON_BIG` 回 **0x0**、`GetClassLongPtr(GCLP_HICON)` 也是 0 → Windows 只好畫預設的空白圖示，而 exe 內嵌的檔案圖示其實是對的（所以在檔案總管看起來正常，只有**執行中**才怪）。修法是自己用 `LoadImageW` 從 exe 的 `.ico` 資源載 `SM_CXICON`／`SM_CXSMICON` 兩種尺寸再 `WM_SETICON` 各掛一次——從 `.ico` 拿是因為那裡面每個尺寸都有做好的圖，不是從一張 PNG 縮的 | ST25、D33 |
+| **重試之前先問「這個錯誤重試有意義嗎」** | `401`（token 無效）／`404`（bot 不存在）重試**永遠不會成功**，和 `409`（別的程式在 poll）／5xx／逾時是完全不同的東西。舊做法一視同仁、固定 3 秒、無限重試 → 使用者的 token 失效時 12 分鐘打了 240 次（TASK-036 實測），而且畫面上**完全沒有訊息**，遠端看起來開著卻永遠沒反應。現在 401／404 直接停掉輪詢、把 `remoteEnabled` 存回 false、通知一次；其餘退避 3→6→12→…→60 秒，成功歸零 | TG35、TG36 |
+| **`--verify` 不可以啟動使用者真正的 Telegram 遠端** | `start_if_enabled` 會用**使用者真的 token** 連上真的 Telegram，只為了跑自動驗證；而且 `telegram_probe` 第一項斷言就是「開始前遠端沒在跑」，使用者把遠端打開之後那一項必然 FAIL（看起來像程式壞了，其實是驗證自己拉起來的）。TASK-035 實際踩到 → `--verify` 時整段跳過，那條路本來就由 `telegram_probe` 的假 Bot API 完整驗過 | TG1 |
+| **自帶字型一定要在 `terminal.js` 載入之前載完** | xterm 是用「量一個字有多寬」決定每一格的大小，字型還沒到就會拿 fallback 量出**錯的寬度**，然後整個畫面的欄位都對不準——而且它之後不會自己重量。所以 `main.js` 在 `await import('./terminal.js')` **之前** `await loadAppFonts()`，`@font-face` 也用 `display: 'block'`（不要 swap）。下載／匯入新字型之後也要再呼叫一次 | ST24、D29 |
+| **`font_face_bytes` 只能讀自己的兩個字型資料夾** | 它是「前端給路徑、後端回檔案內容」，不擋的話就等於「前端可以叫後端讀任何檔案」。用 `canonicalize` 之後比對是不是落在 resources/fonts 或 `<設定資料夾>/fonts` 底下，有單元測試與 ST24 各守一道 | ST24 |
+| **選項很多的清單不要用 `<input list>` ＋ `<datalist>`** | Chromium 會拿**輸入框目前的值**去過濾候選，而我們的輸入框一開啟就填著目前的值 → 下拉只剩符合的那一個。實際案例：TASK-031 把字型清單做成 196 個家族、後端 log 也印 196，使用者打開卻**只看得到一個**（TASK-032）。而且它不丟例外、`datalist.children.length` 也是 196，所以「後端回幾個」「datalist 裡有幾個」兩種檢查都放行。改用 `<select>` ＋ `<optgroup>`（要自己打的走最後一項「自訂…」），`--verify` 改成數 **`<select>` 裡真的有幾個 `<option>`** | ST23、D28 |
+| **新的覆蓋層一定要在 `style.css` 裡有自己的規則，而且 `position` 不可以被父規則帶走** | 「按了沒反應」到 TASK-031 已經第三次，三次根因都不同、三次都**不丟例外**而且 `hidden` 確實變成 false：①`#exitdlg` 一條 CSS 都沒有 → 拿掉 `hidden` 就是文流裡的普通 `<div>`，被 `position:absolute` 的 `#app` 整個蓋住（定位元素畫在非定位區塊之上）；②`#modal` z-index 300 疊在 `#favs`（320）底下；③`#color-menu` 自己也掛著 `.popup-menu`（`position: fixed`）→ `left: 100%` 變成「視窗寬度的 100%」，整個丟到螢幕外面。只看 `hidden` 的檢查三次全部放行 → D26 改成量 computed `display`＋視窗交集＋`elementFromPoint` | D26 |
 | **`el.xxx` 用了就要在 init 指定，而且 id 要真的在 `index.html`** | 這一類錯誤 JS 不會在載入時報，要等使用者按下去才炸，而且常常被 try/catch 吃掉變成「安靜地沒反應」。`eslint` 的 `no-undef` 抓得到「用了沒 import」（`setdlg.js` 的 `setToolLabel`），但**抓不到** `el.shellMenu` 這種物件屬性 → 靠 D20 真的按下去 | D20 |
 | **`npm run verify` 的輸出不可以接 `head`／`grep -m`** | 提早關掉管線會 SIGPIPE 掉 `npm` 那一層，但 `scripts/dev-verify.mjs` **不會死**——它底下的 `target\debugwayterminal.exe` 就一直開著。那隻孤兒抓著 `target\debug`（下次 `cargo build` 噴 `os error 32`），而且**占著單一執行個體的鎖**：下一次 `verify:release` 的 release exe 一啟動就 exit 0，log 只有兩行、完全沒有 `[verify]`，看起來像「跑完了、都沒問題」（TASK-027 實際踩到）。做法：`npm run verify > <log> 2>&1` 之後再 grep 那個檔；真的留下孤兒就用 `taskkill /PID <dev-verify 的 pid> /T /F` 依 PID 收整棵，**絕不依名稱** | 全部 |
 | **假伺服器的「等某個呼叫出現」一定要有起點** | 從第 0 筆開始掃會match到**很久以前**的訊息。`telegram_probe` 的 `/new 1` 檢查等含 `/last` 的回覆，結果立刻match到前面 `goto:1` 送的「已進入 …/last 看輸出」→ 分頁還沒建好就回傳（換個順序就會變成**假通過**）。`FakeBot::wait` 現在強制要傳 `from` | TG34 |

@@ -11,6 +11,8 @@ pub mod compose;
 pub mod commands;
 pub mod custom;
 pub mod favorites;
+pub mod fonts;
+pub mod fontstore;
 pub mod host;
 pub mod i18n;
 pub mod logging;
@@ -35,6 +37,7 @@ pub mod telegram;
 pub mod telnet;
 pub mod toolbar;
 pub mod ttl;
+pub mod winicon;
 pub mod winpos;
 
 use std::sync::Arc;
@@ -50,9 +53,14 @@ use tabs::TabManager;
 pub fn run() {
     // 一定要在建立任何執行緒 / 子行程之前（見 startup.rs 的說明）
     startup::prepare_process_environment();
+    // 工作列身分：**一定要在建立視窗之前**（Windows 只認第一次設定的值）。
+    // 不設的話 Windows 拿 exe 路徑去猜，開發版／安裝版／1.x 可能被歸成同一堆（TASK-035）。
+    winicon::set_app_user_model_id();
     println!("[AwayTerminal] ConPTY backend: {}", pty::backend_name());
 
     let args = LaunchArgs::from_env();
+    // `args` 等一下會被 `.manage()` 吃掉，這個旗標要先抄一份給 `setup` 用
+    let verifying = args.verify > 0;
     if args.cmd.is_some() || args.verify > 0 || args.bench {
         println!("[AwayTerminal] 啟動參數：{args:?}");
     }
@@ -118,6 +126,15 @@ pub fn run() {
             prefs::settings_apply,
             prefs::ssh_weak_clear,
             prefs::font_list,
+            winicon::window_icon_probe,
+            fontstore::font_catalog,
+            fontstore::font_faces,
+            fontstore::font_face_bytes,
+            fontstore::font_import,
+            fontstore::font_pick_files,
+            fontstore::font_download,
+            fontstore::font_download_cancel,
+            fontstore::font_remove,
             i18n::i18n_keys,
             i18n::system_locale,
             i18n::i18n_push,
@@ -229,7 +246,7 @@ pub fn run() {
             claudemd::claude_md_available,
             claudemd::claude_md_update,
         ])
-        .setup(|app| {
+        .setup(move |app| {
             // 設定檔要在任何 command 跑起來之前備好（`host_ready` 的 T{json} 直接讀它）
             let dir = app.path().app_config_dir()?;
             // 「這次是不是第一次啟動」要在**任何寫檔之前**問（autosave 很快就會把檔案寫出來，
@@ -253,12 +270,38 @@ pub fn run() {
             let tabs = Arc::new(TabManager::new(&view_mode));
 
             apply_window_bounds(app.handle(), &store);
+            // 工作列圖示（TASK-035）。實測 `WM_GETICON` 回 ICON_BIG=0、類別 HICON 也是 0 →
+            // Windows 只好畫預設的空白圖示。Tauri 的 default_window_icon 只掛上了小圖示。
+            // 這裡直接用 exe 自己的 .ico 資源補上大小兩份（dev 與 release 同一條路）。
+            if let Some(win) = app.get_webview_window("main") {
+                let (big, small) = winicon::apply_window_icon(&win);
+                if !big || !small {
+                    println!("[AwayTerminal] 視窗圖示：大圖示={big} 小圖示={small}（有 false 就是載不到 exe 的 .ico 資源）");
+                }
+            }
             status::spawn(app.handle().clone(), tabs.clone());
             // 代理團隊的投遞 tick（600ms，和狀態燈同一個節奏；沒有團隊時直接 return）
             agent::deliver::spawn(app.handle().clone());
+            // 字型：先把「自帶」與「下載／匯入」兩個資料夾告訴 fonts 模組，再背景掃描。
+            // 自帶的在 Tauri resources 底下；dev 沒有 resources，往上找 repo 的 src-tauri/fonts
+            //（同 `third_party_notices` 與 conpty 的找法）。
+            fonts::init(builtin_font_dir(app.handle()), dir.join("fonts"));
+            // 字型清單先在背景掃好（幾百 MB 的字型資料夾要半秒多）：
+            // 使用者按「其他設定」時下拉要立刻有東西，不能當場才掃（TASK-031）
+            fonts::warm_up();
 
-            // Telegram 遠端：設定裡開著就拉起輪詢（要在 manage 之前拿 store 的值）
-            telegram::start_if_enabled(app.handle(), &store);
+            // Telegram 遠端：設定裡開著就拉起輪詢（要在 manage 之前拿 store 的值）。
+            //
+            // ⚠️ **`--verify` 時不要拉起來**（TASK-035 發現）：那會用**使用者真正的 token**
+            // 連上真正的 Telegram，只為了跑自動驗證——而且 `telegram_probe` 的第一項
+            // 斷言就是「開始前遠端沒在跑」，使用者把遠端打開之後那一項必然 FAIL
+            //（看起來像程式壞了，其實是驗證自己把它拉起來的）。驗證要的那條路
+            // 由 `telegram_probe` 用**只聽 127.0.0.1 的假 Bot API** 完整跑過。
+            if !verifying {
+                telegram::start_if_enabled(app.handle(), &store);
+            } else {
+                println!("[AwayTerminal] --verify：不啟動真的 Telegram 遠端（改由 telegram_probe 用假 Bot API 驗）");
+            }
 
             app.manage(store);
             app.manage(tabs);
@@ -322,6 +365,34 @@ pub fn run() {
 /// 工作列有圖示、點了沒畫面，而且重開也救不回來。驗不過就不套位置、直接置中
 /// （舊版 WPF 根本不記位置，`MainWindow.xaml` 是 `WindowStartupLocation="CenterScreen"`
 /// ——「一定看得到」是舊版的既有行為，不能退步）。
+/// 自帶字型的資料夾。
+///
+/// 安裝之後在 Tauri resources 底下的 `fonts/`；**開發時沒有 resources**，
+/// 所以往上找 repo 的 `src-tauri/fonts`（同 `third_party_notices` 與 conpty 的找法）。
+/// 兩個都沒有就回第一個候選——`fonts::scan` 讀不到就當作沒有自帶字型，不會爆。
+fn builtin_font_dir(app: &tauri::AppHandle) -> std::path::PathBuf {
+    use tauri::Manager;
+    let mut candidates: Vec<std::path::PathBuf> = Vec::new();
+    if let Ok(dir) = app.path().resource_dir() {
+        candidates.push(dir.join("fonts"));
+        candidates.push(dir.join("resources/fonts"));
+    }
+    if let Ok(exe) = std::env::current_exe() {
+        for up in 1..=4 {
+            if let Some(d) = exe.ancestors().nth(up) {
+                candidates.push(d.join("fonts"));
+                candidates.push(d.join("src-tauri/fonts"));
+            }
+        }
+    }
+    for c in &candidates {
+        if c.is_dir() {
+            return c.clone();
+        }
+    }
+    candidates.into_iter().next().unwrap_or_default()
+}
+
 fn apply_window_bounds(app: &tauri::AppHandle, store: &SettingsStore) {
     let Some(win) = app.get_webview_window("main") else {
         return;

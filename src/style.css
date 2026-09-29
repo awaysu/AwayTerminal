@@ -179,6 +179,24 @@ body.col-resizing { cursor: col-resize; user-select: none; }
 }
 .tab-row .tab-close:hover { color: #ffffff; }
 
+/* ---------------------------------------------------------------------------
+   覆蓋層的疊放順序（TASK-031 掃過一次，由下往上）。改 z-index 前先看這張表：
+     50   #searchbar／#macrostatus      （黏在終端機上的小東西）
+     60   #composedlg／#macrodlg        （輸入文字、巨集問答）
+     62   #setdlg／#remotedlg／#aboutdlg／#updatedlg／#madlg
+     200  .popup-menu                    （子選單是它的 `absolute` 子元素，見下面）
+     305+ #conns 320／#favs 320／#sshdlg 330／#comdlg 330／#weakalgo 340／#hostkey 350
+     400  #toast                         （操作回饋，壓在對話框上面是刻意的）
+     480  #exitdlg                       （離開程式：任何對話框都蓋不住它）
+     520  #modal                         （「對話框上面再問一句」，一定最上層）
+   60/62 那一族低於 `.popup-menu` 沒有問題：任何一次 `click` 都會經過
+   `document.addEventListener('click', hideMenus)` 把選單收掉，兩者不會同時在畫面上。
+   ⚠️ 新增覆蓋層時**一定要在 style.css 裡給它一條規則**——沒有 `position` 的
+   `<div>` 一旦拿掉 `hidden` 就會被 `position:absolute` 的 `#app` 整個蓋住，
+   看起來就是「按了沒反應」（`#exitdlg` TASK-030、`#comdlg` TASK-031 都栽在這）。
+   `--verify` 的「對話框可見性」那一段會逐一打開來確認，別把新的漏掉。
+   --------------------------------------------------------------------------- */
+
 /* 彈出選單（分頁右鍵、新分頁下拉）*/
 .popup-menu {
   position: fixed; z-index: 200; min-width: 140px; padding: 4px 0;
@@ -190,9 +208,11 @@ body.col-resizing { cursor: col-resize; user-select: none; }
 .popup-menu .menu-item:hover { background: #45472e; color: #ffffff; }
 .popup-menu .menu-sep { height: 1px; margin: 4px 0; background: #555; }
 
-/* 頁內對話框（取代舊版 WPF InputDialog / MessageBox）*/
+/* 頁內對話框（取代舊版 WPF InputDialog / MessageBox）。
+   z-index 要壓過**所有**其他對話框（#favs 320、#hostkey 350…）：它是「對話框上面再問一句」
+   用的（例：我的最愛裡的刪除確認）。原本 300 疊在 #favs 底下，看不到也點不到（TASK-030）。 */
 #modal {
-  position: fixed; inset: 0; z-index: 300; display: flex; align-items: center; justify-content: center;
+  position: fixed; inset: 0; z-index: 520; display: flex; align-items: center; justify-content: center;
   background: rgba(0,0,0,.45);
   font: 13px "Microsoft JhengHei", "微軟正黑體", sans-serif;
 }
@@ -228,11 +248,20 @@ body.col-resizing { cursor: col-resize; user-select: none; }
 /* 分頁列那一列的「記錄 log 中」小紅點 */
 .tab-row .tab-logdot { flex: 0 0 auto; margin-left: 4px; color: #EF9A9A; font-size: 9px; }
 
-/* 子選單（分頁右鍵的「配色 ▸」）*/
+/* 子選單（分頁右鍵的「配色 ▸」「投遞 ▸」）
+   ⚠️ **`position` 一定要壓回 `absolute`**（TASK-031 的「點配色沒反應」就是這個）：
+   子選單自己也掛著 `.popup-menu`，而那條規則是 `position: fixed` →
+   `left: 100%` 會變成「視窗寬度的 100%」而不是「父項的右邊」，
+   整個子選單被丟到螢幕外面，看起來就像按了沒反應。
+   收合／展開改由 JS 加 `.sub-open`（`tabbar.js` 的 `installSubmenus`）：
+   一來 `--verify` 可以用 `mouseover` 打開來檢查（CSS `:hover` 沒辦法用程式觸發），
+   二來展開時要當場量一次、需要的話往左／往上翻（分頁列在畫面最右邊，
+   子選單往右開一定會超出視窗）。`:hover` 那條留著當 JS 掛不上時的退路。 */
 .popup-menu .menu-item.has-sub { position: relative; padding-right: 26px; }
 .popup-menu .menu-arrow { position: absolute; right: 10px; top: 6px; color: #aaa; }
-.popup-menu .submenu { display: none; left: 100%; top: -5px; }
-.popup-menu .menu-item.has-sub:hover > .submenu { display: block; }
+.popup-menu .submenu { position: absolute; display: none; left: 100%; top: -5px; }
+.popup-menu .menu-item.has-sub:hover > .submenu,
+.popup-menu .menu-item.has-sub.sub-open > .submenu { display: block; }
 /* 色票列本身帶自己的前景／背景色（舊版 MenuItem Foreground/Background），hover 不要蓋掉 */
 .popup-menu #color-items .menu-item:hover { outline: 1px solid #FDFFB0; outline-offset: -1px; }
 
@@ -414,6 +443,35 @@ body.col-resizing { cursor: col-resize; user-select: none; }
 #sshdlg .modal-buttons button:hover { background: #50505a; }
 #sd-ok { border-color: #FDFFB0; }
 
+/* 連接埠（COM）對話框（舊版 Dialogs/ComDialog）。
+   ⚠️ TASK-031：這一族本來**在 style.css 裡一條規則都沒有**——和 TASK-030 的 `#exitdlg`
+   同一個病：`hidden` 一拿掉它就變成文流裡的普通 `<div>`，被 `position: absolute` 的
+   `#app` 整個蓋住（定位元素畫在非定位的區塊之上），按了「連接埠…」看起來毫無反應。
+   欄位樣式沿用 `#sshdlg` 那組（`.sd-grid`／`.sd-row` 本來就是共用的）。 */
+#comdlg {
+  position: fixed; inset: 0; z-index: 330; display: flex; align-items: center; justify-content: center;
+  background: rgba(0,0,0,.45);
+  font: 13px "Microsoft JhengHei", "微軟正黑體", sans-serif;
+}
+#comdlg-box {
+  width: 460px; max-width: 92vw; max-height: 88vh; overflow: auto; padding: 16px 18px;
+  background: #2d2d30; border: 1px solid #FDFFB0; border-radius: 6px; color: #e0e0e0;
+}
+#comdlg-title { font-size: 14px; color: #FDFFB0; margin-bottom: 10px; }
+#comdlg input[type="text"], #comdlg select, #comdlg button {
+  background: #1e1e1e; color: #e0e0e0; border: 1px solid #555; outline: none;
+  padding: 4px 6px; font-size: 13px; font-family: inherit;
+}
+#comdlg input:focus, #comdlg select:focus { border-color: #FDFFB0; }
+#cd-ports-note { margin-top: 6px; }
+#cd-note { margin-top: 10px; color: #EF9A9A; font-size: 12px; min-height: 16px; }
+#comdlg .modal-buttons button {
+  min-width: 96px; padding: 5px 12px; cursor: pointer; font-size: 13px; font-family: inherit;
+  background: #3a3a3d; color: #e0e0e0; border: 1px solid #555; border-radius: 4px;
+}
+#comdlg .modal-buttons button:hover { background: #50505a; }
+#cd-ok { border-color: #FDFFB0; }
+
 /* 我的最愛 */
 .popup-menu .menu-item.disabled { color: #666; cursor: default; }
 .popup-menu .menu-item.disabled:hover { background: transparent; color: #666; }
@@ -447,6 +505,34 @@ body.col-resizing { cursor: col-resize; user-select: none; }
   background: #3a3a3d; color: #e0e0e0; border: 1px solid #555; border-radius: 4px;
 }
 #favs .modal-buttons button:hover { background: #50505a; }
+/* 就地改名的輸入框（TASK-030）：占掉名稱那一格，樣式比照其他輸入框 */
+.favs-rename-input {
+  flex: 1 1 auto; min-width: 0; box-sizing: border-box;
+  background: #1e1e1e; color: #e0e0e0; border: 1px solid #FDFFB0; border-radius: 2px;
+  outline: none; padding: 1px 4px; font: inherit;
+}
+
+/* ---------------------------------------------------------------------------
+   TASK-030：離開程式的對話框（舊版 Dialogs/ExitDialog）。
+   之前**完全沒有樣式**：`hidden` 拿掉後它躺在一般文流裡，被 position:absolute 的
+   #app 整個蓋住——使用者按 X 以為沒反應，再按一次就觸發 lib.rs 的逃生門直接關閉，
+   看起來像「沒有確認詢問框」。z-index 在其他對話框之上、#modal（520）之下。
+   --------------------------------------------------------------------------- */
+#exitdlg {
+  position: fixed; inset: 0; z-index: 480; display: flex; align-items: center; justify-content: center;
+  background: rgba(0,0,0,.55);
+  font: 13px "Microsoft JhengHei", "微軟正黑體", sans-serif;
+}
+#exitdlg-box {
+  min-width: 380px; max-width: 72vw; padding: 16px 18px;
+  background: #2d2d30; border: 1px solid #FDFFB0; border-radius: 6px; color: #e0e0e0;
+}
+#exitdlg-title { font-size: 14px; color: #FDFFB0; margin-bottom: 8px; }
+#exitdlg-body { margin-bottom: 6px; }
+/* 有連線中的分頁（SSH／Telnet／連接埠）時的紅字提醒 */
+#exitdlg-warn { color: #EF9A9A; margin-bottom: 4px; }
+#exitdlg .modal-buttons button { min-width: 84px; }
+#ex-go { border-color: #FDFFB0; }
 
 /* 巨集執行中的小標記（分頁列）與 statusbox（右下角常駐提示） */
 .tab-macro {
@@ -590,6 +676,18 @@ body.col-resizing { cursor: col-resize; user-select: none; }
   align-items: center;
   justify-content: center;
   z-index: 62;
+  /* TASK-030：這一族原本沒設字型 → 吃到瀏覽器預設（16px 襯線體），
+     和其他對話框（13px 微軟正黑體）大小不一。固定 13px，不隨語言或元件而變。 */
+  font: 13px "Microsoft JhengHei", "微軟正黑體", sans-serif;
+}
+/* 表單元件不會自動繼承字型（input/select/button 各有 UA 預設）→ 全部押回 13px */
+#setdlg input,
+#setdlg select,
+#setdlg button,
+#remotedlg input,
+#remotedlg select,
+#remotedlg button {
+  font: inherit;
 }
 #setdlg[hidden],
 #remotedlg[hidden],
@@ -622,10 +720,17 @@ body.col-resizing { cursor: col-resize; user-select: none; }
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 0 14px;
-  align-items: start;
+  /* TASK-030：兩欄要一樣高（底部齊平），不要一長一短 */
+  align-items: stretch;
 }
 .sd-col {
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+/* 每欄最後一個群組框拉伸填滿 → 左右欄的底邊對齊 */
+.sd-col > fieldset:last-child {
+  flex: 1 1 auto;
 }
 /* 視窗（或螢幕）不夠寬就退回單欄，內容照樣可以捲——不要爆版 */
 @media (max-width: 980px) {
@@ -653,6 +758,8 @@ body.col-resizing { cursor: col-resize; user-select: none; }
   padding: 3px 4px; font: inherit;
 }
 #rm-chat { flex: 1 1 auto; min-width: 0; }
+/* 遠端被 401 自動停掉時的原因（TASK-036）：和一般的狀態文字要分得出來 */
+#rm-note.rm-error { color: #EF9A9A; }
 #rm-getid { flex: 0 0 auto; }
 /* 未勾「啟用遠端控制」時整組鎖灰（舊版 UpdateEnabledUI 用 Opacity 0.45） */
 #remotedlg.rm-off .rm-field,
@@ -711,6 +818,58 @@ body.col-resizing { cursor: col-resize; user-select: none; }
   border: 1px solid #555;
   background: #1E1E1E;
   cursor: pointer;
+}
+
+/* 字型那一列（TASK-032）：下拉佔滿寬度；選了「自訂…」才會多出後面那個輸入框，
+   兩個並排時各佔一半。`<optgroup>` 的組標題在深色底上要看得出來是標題。 */
+.st-fontrow > select {
+  flex: 1 1 auto;
+  min-width: 0;
+  background: #1E1E1E;
+  color: #E0E0E0;
+  border: 1px solid #555;
+  border-radius: 2px;
+  padding: 3px 4px;
+}
+.st-fontrow > input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.st-fontrow > input[hidden] {
+  display: none;
+}
+#st-family-sel optgroup {
+  color: #FDFFB0;
+  font-style: normal;
+  font-weight: bold;
+  background: #2D2D30;
+}
+#st-family-sel option {
+  color: #E0E0E0;
+  background: #1E1E1E;
+  font-weight: normal;
+}
+
+/* 字型的下載／匯入／移除那一列（TASK-033）。按鈕沿用「瀏覽…」那組樣式。 */
+.st-fontbtns {
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.st-fontbtns button {
+  background: #3F3F46;
+  color: #E0E0E0;
+  border: 1px solid #555;
+  border-radius: 2px;
+  padding: 3px 8px;
+  cursor: pointer;
+  font: inherit;
+}
+.st-fontbtns button:hover:not(:disabled) { background: #50505a; }
+.st-fontbtns button:disabled { color: #777; cursor: default; }
+#st-font-note {
+  min-height: 15px;
+  color: #A5D6A7;      /* 進度／完成是綠的；錯誤訊息照樣顯示在這裡 */
+  word-break: break-all;
 }
 .st-weak {
   margin-top: 8px;

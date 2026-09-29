@@ -13,7 +13,7 @@
 | 舊版欄位 | 舊版控制項 | 新版 | 預設 | 套用時機 |
 |---|---|---|---|---|
 | 語言 中文／English | `ZhRadio`／`EnRadio` | **八種語言的下拉**（舊版只有兩個 radio） | 第一次啟動看系統語言 | **按確定**（不必重啟，見第 2 節） |
-| 字型 | `FontCombo`（可編輯下拉，`Fonts.SystemFontFamilies`） | `<input list>` ＋ `font_list()` | `Cascadia Mono` | 按確定 → `T{json}` 即時套到所有分頁 |
+| 字型 | `FontCombo`（可編輯下拉，`Fonts.SystemFontFamilies`） | `<select>` ＋ `<optgroup>` 四組（內建／已下載匯入／系統等寬／系統其他）＋「自訂…」輸入框，另有下載／匯入／移除三顆按鈕 | `JetBrains Mono`（自帶） | 按確定 → `T{json}` 即時套到所有分頁 |
 | 大小 | `SizeCombo`（8～28，可自己打） | `<input type=number>` 6～40 | `14` | 同上 |
 | 文字顏色 | `FgBox` ＋色塊（`ColorDialog`） | 文字框 ＋ `<input type=color>` | `#E0E0E0` | 同上 |
 | 背景顏色 | `BgBox` ＋色塊 | 同上 | `#1E1E1E` | 同上 |

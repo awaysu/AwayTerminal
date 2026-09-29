@@ -8,11 +8,13 @@
 // 「其他」與「沙盒模式」兩組——哪個是舊版就有的寫在 docs/SETTINGS.md 的對照表。
 
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 
 import { T, fmt, LANGS, getLang as currentLang } from './strings.js';
 import { setToolLabel } from './icons.js';
 import { applyLang, onLangChange } from './i18n.js';
 import { log } from './bridge.js';
+import { loadAppFonts } from './appfonts.js';
 
 const el = {};
 let hooks = {};
@@ -41,6 +43,7 @@ function fill(s) {
   const lang = s.language === 'zh' ? 'zh-TW' : s.language || currentLang();
   el.lang.value = LANGS.some((l) => l.code === lang) ? lang : currentLang();
   el.family.value = s.fontFamily;
+  syncFontSelect(s.fontFamily);
   el.size.value = String(s.fontSize);
   el.fg.value = s.foreground;
   el.bg.value = s.background;
@@ -85,12 +88,217 @@ function fill(s) {
 /** 「回到預設」：只重設**舊版那個按鈕會重設的欄位**（語言與其他組不動，同舊版）。 */
 function resetDefaults() {
   el.family.value = 'Cascadia Mono';
+  syncFontSelect('Cascadia Mono');
   el.size.value = '14';
   el.fg.value = '#E0E0E0';
   el.bg.value = '#1E1E1E';
   el.imeQuiet.value = '20';
   syncPicker(el.fg, el.fgPick);
   syncPicker(el.bg, el.bgPick);
+}
+
+/** 「自訂…」那一項的 value。字型不可能叫這個名字（前後都有底線，不是合法的家族名）。 */
+const CUSTOM_FONT = '__custom__';
+
+/**
+ * 字型下拉。後端 `font_list` 回的是**這台機器實際裝的所有家族**
+ * （`{ name, mono }`，等寬已經排在前面）。
+ *
+ * ⚠️ **不可以用 `<input list>` ＋ `<datalist>`**（TASK-031 用了，TASK-032 使用者回報
+ * 「只看得到一個字型」）：Chromium 會拿**輸入框目前的值**去過濾候選，而設定一開啟
+ * 輸入框就填著目前字型（例 `Cascadia Mono`），所以下拉只剩符合的那一個。
+ * 改成真正的 `<select>` ＋ `<optgroup>`：點開一定是全部，而且鍵盤（上下鍵、Enter、
+ * Esc、首字母跳選）原生就能用。清單以外的字型走最後一項「自訂…」。
+ *
+ * 每一項用**該字型本身**畫自己的名字（所見即所得）；`monospace` 當後備，
+ * 這樣萬一家族名拼不出來也還看得見字。
+ *
+ * @param {string} current 目前生效的字型（標上「（目前使用）」並選起來，下拉一打開就看得到）
+ */
+async function fillFonts(current) {
+  let fonts = [];
+  try {
+    fonts = await invoke('font_list');
+  } catch (e) {
+    log(`[settings] 讀字型清單失敗：${e}`);
+  }
+  el.familySel.textContent = '';
+  fontSources = new Map();
+  // 四組（TASK-033）：自帶的排最前面（一定在、跨平台一樣），再來是使用者自己
+  // 下載／匯入的，最後才是這台機器裝的（等寬優先）。
+  const groups = [
+    ['font.groupBuiltin', fonts.filter((f) => f.source === 'builtin')],
+    ['font.groupUser', fonts.filter((f) => f.source === 'user')],
+    ['font.groupMono', fonts.filter((f) => f.source === 'system' && f.mono)],
+    ['font.groupOther', fonts.filter((f) => f.source === 'system' && !f.mono)],
+  ];
+  let total = 0;
+  for (const [label, list] of groups) {
+    if (!list.length) continue;
+    const g = document.createElement('optgroup');
+    g.label = T[label] || label;
+    g.dataset.k = label; // 換語言時 `applyTexts` 要用這個重貼標題
+    for (const f of list) {
+      // 後端舊版回的是純字串；相容性上拿到字串也要能用
+      const name = typeof f === 'string' ? f : f.name;
+      if (!name) continue;
+      const opt = document.createElement('option');
+      opt.value = name;
+      fontSources.set(name, typeof f === 'string' ? 'system' : f.source);
+      if (name === current) {
+        opt.textContent = fmt('font.current', name);
+        opt.dataset.current = '1';
+      } else {
+        opt.textContent = name;
+      }
+      // 家族名不會含雙引號（`name` 表裡沒看過），保險起見還是拿掉
+      opt.style.fontFamily = `"${name.replace(/"/g, '')}", monospace`;
+      g.appendChild(opt);
+      total++;
+    }
+    el.familySel.appendChild(g);
+  }
+  // 最後一項：打清單以外的字型名稱
+  const custom = document.createElement('option');
+  custom.value = CUSTOM_FONT;
+  custom.textContent = T['font.custom'];
+  custom.dataset.k = 'font.custom';
+  el.familySel.appendChild(custom);
+  log(`[settings] 字型清單 ${total} 個家族（內建/下載匯入/系統等寬/系統其他 = ${groups.map(([, l]) => l.length).join(' / ')}）`);
+}
+
+/**
+ * 下拉與輸入框對齊。`el.family`（輸入框）**永遠是真正的值**——`save()` 只讀它，
+ * 所以「從下拉選」與「自己打」兩條路最後都收斂到同一個地方。
+ */
+function syncFontSelect(name) {
+  const known = [...el.familySel.options].some((o) => o.value === name);
+  el.familySel.value = known ? name : CUSTOM_FONT;
+  el.family.hidden = known;
+  updateFontButtons();
+}
+
+/**
+ * 換語言時把字型下拉的**組標題／「自訂…」／「（目前使用）」**重貼一次。
+ * 字型名稱本身不翻譯（那是家族名，翻了就選不到字型）。
+ * 對話框沒開過時 `<select>` 是空的，這裡自然什麼都不做。
+ */
+function relabelFonts() {
+  if (!el.familySel) return;
+  for (const g of el.familySel.querySelectorAll('optgroup[data-k]')) {
+    g.label = T[g.dataset.k] || g.label;
+  }
+  const custom = el.familySel.querySelector('option[data-k]');
+  if (custom) custom.textContent = T[custom.dataset.k] || custom.textContent;
+  const cur = el.familySel.querySelector('option[data-current]');
+  if (cur) cur.textContent = fmt('font.current', cur.value);
+}
+
+/** 目前選到的家族來源（`builtin`／`user`／`system`）——「移除」只對 `user` 開放。 */
+let fontSources = new Map();
+
+/** 正在下載的那一套（`font-download` 事件的 id）。 */
+let downloading = null;
+
+/** 下拉重畫＋維持目前選擇（匯入／下載／移除之後用）。 */
+async function refreshFonts(keep) {
+  const want = keep || el.family.value;
+  await fillFonts(opened ? opened.fontFamily : want);
+  syncFontSelect(want);
+  el.family.value = want;
+  updateFontButtons();
+}
+
+/** 「移除」只有在選到使用者自己下載／匯入的字型時才能按。 */
+function updateFontButtons() {
+  const src = fontSources.get(el.familySel.value);
+  el.fontRemove.disabled = src !== 'user';
+}
+
+/** 位元組數寫成人看的（下載清單與進度都用）。 */
+function mb(n) {
+  return `${(Number(n) / 1048576).toFixed(1)} MB`;
+}
+
+/** 「下載更多中文等寬字型…」 */
+async function downloadFont() {
+  let list = [];
+  try {
+    list = await invoke('font_catalog');
+  } catch (e) {
+    el.fontNote.textContent = String(e);
+    return;
+  }
+  const have = new Set(fontSources.keys());
+  const items = list.map((c) => ({
+    value: c.id,
+    label: `${c.family}　${mb(c.bytes)}　${c.by}　${c.license}${have.has(c.family) ? `　${T['font.already']}` : ''}`,
+    disabled: have.has(c.family),
+  }));
+  const id = await hooks.askFromList?.(T['font.downloadTitle'], items);
+  if (!id) return;
+  const entry = list.find((c) => c.id === id);
+  downloading = id;
+  el.fontDownload.disabled = true;
+  el.fontImport.disabled = true;
+  el.fontCancel.hidden = false;
+  el.fontNote.textContent = fmt('font.downloading', entry.family, '0', mb(entry.bytes));
+  try {
+    const family = await invoke('font_download', { id });
+    el.fontNote.textContent = fmt('font.downloaded', family);
+    // 新字型也要載進 webview，不然下拉裡看得到、畫面上卻是 fallback
+    await loadAppFonts();
+    await refreshFonts(family);
+  } catch (e) {
+    el.fontNote.textContent = String(e);
+  } finally {
+    downloading = null;
+    el.fontDownload.disabled = false;
+    el.fontImport.disabled = false;
+    el.fontCancel.hidden = true;
+  }
+}
+
+/** 「匯入字型…」：複製到設定資料夾底下的 `fonts/`，不安裝到系統。 */
+async function importFonts() {
+  let paths = null;
+  try {
+    paths = await invoke('font_pick_files', { title: T['font.importTitle'] });
+  } catch (e) {
+    el.fontNote.textContent = String(e);
+    return;
+  }
+  if (!paths || !paths.length) return;
+  el.fontImport.disabled = true;
+  try {
+    const added = await invoke('font_import', { paths });
+    el.fontNote.textContent = added.length
+      ? fmt('font.imported', added.length, added.join('、'))
+      : T['font.importedNone'];
+    await loadAppFonts();
+    await refreshFonts(added[0] || el.family.value);
+  } catch (e) {
+    el.fontNote.textContent = String(e);
+  } finally {
+    el.fontImport.disabled = false;
+  }
+}
+
+/** 「移除」：只刪使用者自己下載／匯入的（自帶的刪不掉，按鈕會是灰的）。 */
+async function removeFont() {
+  const family = el.familySel.value;
+  if (fontSources.get(family) !== 'user') return;
+  const ok = await hooks.askYesNo?.(T['settings.title'], fmt('font.removeAsk', family));
+  if (!ok) return;
+  try {
+    const n = await invoke('font_remove', { family });
+    el.fontNote.textContent = fmt('font.removed', family, n);
+    // 移掉的正好是選著的那一套 → 退回預設，不要留一個選不到的名字
+    const next = el.family.value === family ? '' : el.family.value;
+    await refreshFonts(next);
+  } catch (e) {
+    el.fontNote.textContent = String(e);
+  }
 }
 
 export async function openSettings() {
@@ -100,16 +308,12 @@ export async function openSettings() {
     hooks.showInfo?.(T['settings.title'], String(e));
     return;
   }
-  // 字型清單（後端只回這台機器真的有的；輸入框是 datalist，可以自己打）
-  try {
-    const fonts = await invoke('font_list');
-    el.fonts.innerHTML = fonts.map((f) => `<option value="${f}"></option>`).join('');
-  } catch {
-    el.fonts.innerHTML = '';
-  }
+  await fillFonts(opened.fontFamily);
+  el.fontNote.textContent = '';
   fill(opened);
+  updateFontButtons();
   el.root.hidden = false;
-  el.family.focus();
+  el.familySel.focus();
 }
 
 function close() {
@@ -178,6 +382,11 @@ function applyTexts() {
   el.langNote.textContent = T['settings.langNote'];
   el.lFont.textContent = T['settings.groupFont'];
   el.lFamily.textContent = T['font.family'];
+  el.fontDownload.textContent = T['font.download'];
+  el.fontImport.textContent = T['font.import'];
+  el.fontRemove.textContent = T['font.remove'];
+  el.fontCancel.textContent = T['dlg.cancel'];
+  relabelFonts();
   el.lSize.textContent = T['font.size'];
   el.lFg.textContent = T['font.fg'];
   el.lBg.textContent = T['font.bg'];
@@ -238,7 +447,12 @@ export function initSettings(injected) {
   el.lFg = $('st-l-fg');
   el.lBg = $('st-l-bg');
   el.family = $('st-family');
-  el.fonts = $('st-fonts');
+  el.familySel = $('st-family-sel');
+  el.fontDownload = $('st-font-download');
+  el.fontImport = $('st-font-import');
+  el.fontRemove = $('st-font-remove');
+  el.fontCancel = $('st-font-cancel');
+  el.fontNote = $('st-font-note');
   el.size = $('st-size');
   el.fg = $('st-fg');
   el.bg = $('st-bg');
@@ -301,6 +515,36 @@ export function initSettings(injected) {
   el.reset.addEventListener('click', resetDefaults);
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && !el.root.hidden) close();
+  });
+
+  // 字型下拉：選「自訂…」才把輸入框叫出來；選真的字型就把值收回輸入框
+  //（`save()` 只讀 `el.family`，兩條路收斂在同一個地方）
+  el.fontDownload.addEventListener('click', downloadFont);
+  el.fontImport.addEventListener('click', importFonts);
+  el.fontRemove.addEventListener('click', removeFont);
+  el.fontCancel.addEventListener('click', () => {
+    if (downloading) invoke('font_download_cancel', { id: downloading }).catch(() => {});
+  });
+  // 下載進度（Rust 每 200ms 送一次）
+  listen('font-download', (e) => {
+    const p = e.payload || {};
+    if (!downloading || p.id !== downloading) return;
+    if (p.done) return; // 結束的訊息由 downloadFont 的 then/catch 寫
+    const pct = p.total ? Math.round((p.got / p.total) * 100) : 0;
+    el.fontNote.textContent = fmt('font.downloading', p.id, String(pct), mb(p.total || 0));
+  }).catch((e) => log(`[settings] 掛下載進度 listener 失敗：${e}`));
+
+  el.familySel.addEventListener('change', () => {
+    updateFontButtons();
+    const v = el.familySel.value;
+    if (v === CUSTOM_FONT) {
+      el.family.hidden = false;
+      el.family.focus();
+      el.family.select();
+      return;
+    }
+    el.family.value = v;
+    el.family.hidden = true;
   });
 
   el.fg.addEventListener('input', () => syncPicker(el.fg, el.fgPick));

@@ -90,6 +90,35 @@ MPL-2.0、TeraTerm 是 BSD-3，散布時必須附授權全文。`cargo test --li
 
 舊版是同樣的結論。解除安裝時清掉才是必要的——不清的話選單會指向一個已經被刪掉的 exe。
 
+### ⬜ 待辦（階段 5）：捷徑要帶和程式一樣的 AppUserModelID
+
+TASK-035 起，程式在啟動時（建立視窗之前）設了明確的工作列身分：
+
+```rust
+// src-tauri/src/winicon.rs
+pub const APP_USER_MODEL_ID: &str = "com.awaysu.awayterminal2";
+```
+
+**但 NSIS 建立的開始功能表／桌面捷徑沒有帶同一個值。** Windows 對
+「捷徑的 AUMID ≠ 執行中行程的 AUMID」的處理是**把它們當成兩個不同的程式**：
+
+* 釘選在工作列的那一顆，和程式跑起來之後的那一顆**不會合併**（工作列上會有兩顆）；
+* 跳躍清單（Jump List）掛在捷徑的身分上，執行中的視窗貢獻不進去。
+
+要根治得在 `src-tauri/installer/hooks.nsh` 幫捷徑寫入
+`System.AppUserModel.ID`（Shell 屬性 `PKEY_AppUserModel_ID`）。NSIS 本身沒有這個能力，
+兩條路：
+
+1. 用 NSIS 外掛（例如 `WinShell`／`ApplicationID`）——要把外掛 DLL 一起帶進 repo；
+2. 安裝後呼叫一小段 PowerShell 改捷徑的屬性——不必帶外掛，但要多開一個行程。
+
+**為什麼現在不做**：它只影響「釘選」的體驗，不影響圖示本身（圖示已經在 TASK-035 修好，
+`ICON_BIG`／`ICON_SMALL` 都有值）；而且要動安裝檔，得和簽章、MSI 一起驗才有意義 →
+留到階段 5 做安裝檔的時候一併處理。
+
+驗收方式：安裝之後把程式釘選到工作列 → 關掉 → 從釘選的圖示啟動 →
+工作列上應該只有**一顆**，不是兩顆。
+
 ---
 
 ## 3. 程式碼簽章
@@ -255,12 +284,14 @@ signtool verify /pa /v <檔案>
 [ ] cd src-tauri && cargo deny check      advisories/bans/licenses/sources 全 ok
 [ ] npm audit --omit=dev                  0 vulnerabilities
 [ ] 重看 deny.toml 的 ignore 清單          上游修好了就拿掉（目前只有 RUSTSEC-2023-0071）
-[ ] THIRD-PARTY-NOTICES.md 第 13 節的授權盤點與 cargo deny list 一致
+[ ] THIRD-PARTY-NOTICES.md 第 17 節的授權盤點與 cargo deny list 一致
+[ ] THIRD-PARTY-NOTICES.md 第 13/14 節的字型與 src-tauri/fonts/ 的檔案一致（OFL 全文在第 15 節）
+[ ] 捷徑的 AppUserModelID 與 winicon.rs 的 APP_USER_MODEL_ID 一致（見 §2 的待辦；還沒做）
 [ ] 各 probe：pty / ssh / telnet / com / ttl / agent / chat / sandbox / job
 [ ] npm run verify                  0 FAIL
 [ ] npm run tauri build             msi + nsis 都出來
 [ ] release exe 的 --verify 跑過（AwayTerminal.exe --verify 1）
-[ ] 7z l 看 NSIS 內容：THIRD-PARTY-NOTICES.md + conpty 三個檔都在
+[ ] 7z l 看 NSIS 內容：THIRD-PARTY-NOTICES.md + conpty 三個檔 + fonts 五個字型檔都在
 [ ] msiexec /a 看 MSI 內容：同上
 [ ] 安裝檔有簽章（signtool verify /pa）
 [ ] docs/MANUAL-TEST-PLAN.md 的 P0 一節由使用者跑過

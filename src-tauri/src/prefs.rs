@@ -153,54 +153,16 @@ pub fn ssh_weak_clear(settings: State<'_, Arc<SettingsStore>>) -> usize {
     n
 }
 
-/// 系統上的等寬字型清單（設定視窗的字型下拉）。
+/// 字型清單（設定視窗的字型下拉）。
 ///
-/// 舊版用 `Fonts.SystemFontFamilies`（WPF）。Tauri 沒有這個 API，瀏覽器也沒有
-/// 「列出所有字型」的標準做法（`queryLocalFonts` 要權限、WebView2 上不一定有）。
-/// 所以這裡回**一份候選清單**，只留這台機器上真的有的：
-/// Windows 從 `%WINDIR%\Fonts` 的檔名判斷，其他平台之後再補。
-/// 字型下拉是 `<input list=…>`，所以清單不完整也能自己打。
+/// 實作在 [`crate::fonts`]：自帶字型（`builtin`）、使用者下載／匯入的（`user`）、
+/// 這台機器裝的（`system`），每一筆都帶 `mono` 與 `source`，等寬排前面。
+/// 掃描結果有快取，而且啟動時就在背景暖機，所以這個 command 幾乎是立即回。
+///
+/// 下拉最後一項是「自訂…」，清單之外的名稱使用者仍然可以自己打。
 #[tauri::command]
-pub fn font_list() -> Vec<String> {
-    let mut out: Vec<String> = Vec::new();
-    #[cfg(windows)]
-    {
-        // (顯示名稱, 字型檔名的開頭)
-        const CANDIDATES: &[(&str, &str)] = &[
-            ("Cascadia Mono", "CascadiaMono"),
-            ("Cascadia Code", "CascadiaCode"),
-            ("Consolas", "consola"),
-            ("Courier New", "cour"),
-            ("Lucida Console", "lucon"),
-            ("MS Gothic", "msgothic"),
-            ("NSimSun", "simsun"),
-            ("DejaVu Sans Mono", "DejaVuSansMono"),
-            ("Microsoft JhengHei", "msjh"),
-            ("Microsoft YaHei", "msyh"),
-        ];
-        let dir = std::env::var("WINDIR").unwrap_or_else(|_| "C:\\Windows".into()) + "\\Fonts";
-        let names: Vec<String> = std::fs::read_dir(&dir)
-            .map(|rd| {
-                rd.flatten()
-                    .map(|e| e.file_name().to_string_lossy().to_lowercase())
-                    .collect()
-            })
-            .unwrap_or_default();
-        for (show, file) in CANDIDATES {
-            let f = file.to_lowercase();
-            if names.iter().any(|n| n.starts_with(&f)) {
-                out.push((*show).to_string());
-            }
-        }
-    }
-    if out.is_empty() {
-        // 找不到就給一份合理的（使用者仍可自己打）
-        out = ["Cascadia Mono", "Consolas", "Courier New", "monospace"]
-            .iter()
-            .map(|s| (*s).to_string())
-            .collect();
-    }
-    out
+pub fn font_list() -> Vec<crate::fonts::FontFamily> {
+    crate::fonts::families()
 }
 
 #[cfg(test)]
@@ -221,6 +183,7 @@ mod tests {
     }
 
     /// 字型清單不會是空的（不然下拉會是空白，使用者以為壞了）。
+    /// 內容本身的斷言在 `crate::fonts` 的測試裡。
     #[test]
     fn font_list_is_never_empty() {
         assert!(!font_list().is_empty());

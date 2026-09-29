@@ -877,8 +877,72 @@ function installStripEvents() {
 
 function hideMenus() {
   for (const m of [el.tabMenu, el.newMenu, el.pageMenu, el.termMenu, el.urlMenu, el.favsMenu]) {
-    if (m) m.hidden = true;
+    if (!m) continue;
+    m.hidden = true;
+    closeSubmenus(m);
   }
+}
+
+/** 收掉選單裡所有展開的子選單（下次打開時要從頭量位置）。 */
+function closeSubmenus(menu) {
+  for (const it of menu.querySelectorAll('.menu-item.has-sub.sub-open')) {
+    it.classList.remove('sub-open');
+    const sub = it.querySelector(':scope > .submenu');
+    if (sub) sub.removeAttribute('style');
+  }
+}
+
+/**
+ * 子選單（「配色 ▸」「投遞 ▸」）的展開與定位。
+ *
+ * **為什麼不只靠 CSS `:hover`**（TASK-031 的「點配色沒反應」）：
+ *  1. 分頁列在畫面**最右邊**，子選單往右開一定超出視窗 → 要能往左翻，而 CSS 量不到。
+ *  2. `:hover` 沒辦法用程式觸發，`--verify` 就永遠檢查不到子選單有沒有真的出現。
+ * 所以改成 `mouseover` 委派 → 加 `.sub-open` → 當場量一次、需要就翻邊。
+ */
+function installSubmenus(menu) {
+  if (!menu) return;
+  menu.addEventListener('mouseover', (e) => {
+    const parent = e.target.closest ? e.target.closest('.menu-item.has-sub') : null;
+    for (const it of menu.querySelectorAll('.menu-item.has-sub.sub-open')) {
+      if (it !== parent) {
+        it.classList.remove('sub-open');
+        const sub = it.querySelector(':scope > .submenu');
+        if (sub) sub.removeAttribute('style');
+      }
+    }
+    if (parent && !parent.classList.contains('sub-open')) {
+      parent.classList.add('sub-open');
+      placeSubmenu(parent);
+    }
+  });
+}
+
+/** 子選單擺哪裡：預設在父項右邊（CSS 的 `left:100%`），超出視窗就翻到左邊／往上收。 */
+function placeSubmenu(item) {
+  const sub = item.querySelector(':scope > .submenu');
+  if (!sub) return;
+  sub.removeAttribute('style'); // 先回到 CSS 的預設位置再量
+  const pad = 4;
+  let r = sub.getBoundingClientRect();
+  if (r.right > window.innerWidth - pad) {
+    // 往左翻（父項的左邊）；左邊也放不下就貼著視窗右緣
+    sub.style.left = 'auto';
+    sub.style.right = '100%';
+    r = sub.getBoundingClientRect();
+    if (r.left < pad) {
+      sub.style.right = 'auto';
+      sub.style.left = `${pad - item.getBoundingClientRect().left}px`;
+      r = sub.getBoundingClientRect();
+    }
+  }
+  // CSS 的 `top: -5px` 是相對父項的；超出下緣就往上移同樣的差距
+  if (r.bottom > window.innerHeight - pad) {
+    const shift = window.innerHeight - pad - r.bottom;
+    sub.style.top = `${-5 + Math.round(shift)}px`;
+    r = sub.getBoundingClientRect();
+  }
+  if (r.top < pad) sub.style.top = `${-5 + Math.round(pad - r.top)}px`;
 }
 
 function showMenu(menu, x, y, data) {
@@ -958,6 +1022,10 @@ export function noSelectionToast(id) {
 }
 
 function installMenus() {
+  // 有子選單的選單（目前只有分頁右鍵）：滑過父項才展開，並且當場量位置
+  for (const m of [el.tabMenu, el.newMenu, el.pageMenu, el.termMenu, el.urlMenu, el.favsMenu]) {
+    installSubmenus(m);
+  }
   el.tabMenu.addEventListener('click', (e) => {
     const color = e.target.closest('[data-color]');
     const id = Number(el.tabMenu.dataset.id);
@@ -1570,7 +1638,7 @@ export async function initTabBar() {
   initComDialog();
   await initMacro({ askYesNo, showInfo });
   await initCompose({ toast });
-  initSettings({ showInfo, hideMenus });
+  initSettings({ showInfo, hideMenus, askYesNo, askFromList });
   initAbout({ showInfo, hideMenus });
   // 遠端設定（Telegram）：舊版就是工具列獨立一顆按鈕 ＋ 獨立視窗
   initRemoteDialog({ showInfo, hideMenus });
@@ -1600,6 +1668,14 @@ export async function initTabBar() {
     teams = Array.isArray(e.payload) ? e.payload : [];
     render();
   });
+  // Telegram 的致命錯誤（token 失效）：後端已經自己停掉遠端並關掉設定裡的開關，
+  // 這裡只負責讓使用者**看到一次**——不然遠端會安靜地不動，沒有人知道為什麼（TASK-036）。
+  await listen('telegram-fatal', (e) => {
+    const msg = typeof e.payload === 'string' ? e.payload : String(e.payload);
+    log(`[tabbar] Telegram 遠端停止：${msg}`);
+    showInfo(T['remote.title'], msg);
+  }).catch((err) => log(`[tabbar] 掛 telegram-fatal listener 失敗：${err}`));
+
   try {
     teams = await invoke('agent_teams');
   } catch (err) {

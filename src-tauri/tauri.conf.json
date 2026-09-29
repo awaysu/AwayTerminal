@@ -54,7 +54,8 @@
     ],
     "resources": {
       "resources/conpty/*": "conpty/",
-      "../THIRD-PARTY-NOTICES.md": "THIRD-PARTY-NOTICES.md"
+      "../THIRD-PARTY-NOTICES.md": "THIRD-PARTY-NOTICES.md",
+      "fonts/*": "fonts/"
     },
     "windows": {
       "webviewInstallMode": {
