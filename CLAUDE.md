@@ -88,6 +88,8 @@ AwayTerminal（https://github.com/awaysu/AwayTerminal ，C# WPF + WebView2 + xte
 5. **發佈**：Windows 安裝檔／MSIX、mac dmg + 公證、Linux AppImage/.deb；settings.json 匯入
 
 ## 慣例 / 注意
+- ⚠️ **所有 agent 都跑在 AwayTerminal 1.x 裡面**（2026-09-29 測試時誤刪過 1.x 行程）：新版 exe 也叫 `AwayTerminal.exe`，也會開 OpenConsole／pwsh／node → 測試收尾**絕不用名稱砍行程**（`taskkill /IM`、`Stop-Process -Name`、`Get-Process <名稱> | Stop-Process`），只能砍自己啟動的 PID（`taskkill /PID <pid> /T /F`，同 `scripts/dev-verify.mjs`），或以完整路徑篩在 `src-tauri\target\` 底下的行程。
+- ⚠️ **`--verify` 收尾也不可以砍不是自己啟動的行程**（2026-09-29 TASK-034；當天 Agent-22 的 verify 把 Agent-21 開著給使用者看的 `npm run tauri dev` 收掉了）：`src-tauri\target\` 底下也可能是**同一個 repo 裡另一個 agent 或使用者**開的 dev，光用路徑篩不夠。`scripts/dev-verify.mjs` 現在：啟動前發現 target 底下已有行程、或 vite 1420 被佔住就**直接中止**（一個都不碰）；收尾只收 `killTree()` 動手前記下的自己那棵樹的子孫，其餘只印警告與 PID，要不要砍由人決定。
 - 舊版原始碼與其 CLAUDE.md（185KB，含大量踩雷紀錄）是**行為規格與回歸測試清單**：每搬完一個功能就對照一次。舊版 repo：https://github.com/awaysu/AwayTerminal
 - 舊版的 Win10 conhost / WebView2 特有的雷在 mac/Linux 不會出現，但 Unix PTY 下 Claude Code 的輸入時序、alt-screen 行為要重新驗證。
 - 授權：本專案 MIT；PuTTY（MIT）、TeraTerm（BSD-3）、microsoft/terminal（MIT）、xterm.js（MIT）都相容，引用的部分要寫進 THIRD-PARTY-NOTICES。**`russh` 是 Apache-2.0（不是 MIT）**，連帶 `ring`（Apache-2.0 AND ISC）、`pageant`：可以進 MIT 專案，但散布時要附授權全文與上游 NOTICE → 階段 5 安裝檔要附 THIRD-PARTY-NOTICES（2026-09-26 TASK-006 查證）。**`serialport-rs` 是 MPL-2.0**（檔案層級 copyleft；未修改地連結即可，散布要附授權全文；2026-09-27 TASK-011 查證）。

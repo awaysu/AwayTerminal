@@ -15,6 +15,15 @@
 // （**依 PID 收整棵樹，不是依名稱**——依名稱會把使用者的 AwayTerminal 和這個團隊一起砍掉）。
 // 另外把 `%TEMP%` 底下自己留下的驗證資料夾清掉。
 //
+// ⚠️ **只收自己啟動的東西**（TASK-034）。原本的收尾掃描是「`src-tauri\target\` 底下的
+// 行程一律依 PID 收掉」——路徑條件擋得住使用者裝在 `C:\Program Files` 的 1.x，卻擋不住
+// **同一個 repo 裡的另一個 agent**：2026-09-29 Agent-22 的 verify 就這樣把 Agent-21 開著
+// 給使用者看的 `npm run tauri dev`（PID 16556）收掉了。現在：
+//   * 啟動前先看 1420 有沒有人在用、target 底下有沒有別人的行程 → 有就**直接中止**，一個都不碰；
+//   * 收尾只收「自己這棵樹」（`killTree` 動手前先記下子孫 PID）與自己建立的 `%TEMP%` 資料夾；
+//   * 掃到其他 target 行程只**印警告**（附 PID、路徑、啟動時間與可以自己下的 taskkill 指令），
+//     絕不自動砍。
+//
 // 用法：
 //   node scripts/dev-verify.mjs [分頁數=2] [逾時秒=600] [--release]
 //
@@ -65,9 +74,55 @@ function cleanTemp() {
   return removed;
 }
 
-/** 依 PID 收掉整棵行程樹。**絕不依名稱。** */
+/**
+ * 「這些是我啟動的」——收尾掃描只會動這裡面的 PID。
+ *
+ * 每次 `killTree()` 動手**之前**先把那棵樹的子孫記進來：`taskkill /T` 之後父子關係就沒了，
+ * 事後再問就認不出誰是誰（tauri dev 的 watcher 重啟過 app 時尤其明顯）。
+ */
+const ourPids = new Set();
+
+/** `pid` 的所有子孫（含自己）。只在 Windows 上用得到。 */
+function collectDescendants(pid) {
+  const out = new Set([Number(pid)]);
+  if (!isWindows) return out;
+  let text = '';
+  try {
+    text = execFileSync(
+      'powershell',
+      [
+        '-NoProfile',
+        '-Command',
+        'Get-CimInstance Win32_Process | ForEach-Object { "$($_.ProcessId) $($_.ParentProcessId)" }',
+      ],
+      { encoding: 'utf8' }
+    );
+  } catch {
+    return out;
+  }
+  const parents = new Map();
+  for (const line of text.split(/\r?\n/)) {
+    const [a, b] = line.trim().split(/\s+/).map(Number);
+    if (a > 0) parents.set(a, b);
+  }
+  // 廣度優先展開（行程數量頂多幾百，直接掃）
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const [child, parent] of parents) {
+      if (out.has(parent) && !out.has(child)) {
+        out.add(child);
+        grew = true;
+      }
+    }
+  }
+  return out;
+}
+
+/** 依 PID 收掉整棵行程樹。**絕不依名稱，也絕不收不是自己啟動的樹。** */
 function killTree(pid) {
   if (!pid) return;
+  for (const p of collectDescendants(pid)) ourPids.add(p);
   try {
     if (isWindows) {
       // /T ＝連子孫一起；/F ＝強制。只認 PID。
@@ -79,6 +134,51 @@ function killTree(pid) {
     console.log(`[dev-verify] 已收掉行程樹 PID ${pid}`);
   } catch {
     // 已經自己結束了就沒事
+  }
+}
+
+/** `src-tauri/target/{debug,release}` 底下活著的行程（PID、路徑、啟動時間）。 */
+function listTargetProcesses() {
+  if (!isWindows) return []; // mac/Linux 用 process group（detached），這裡不重複做
+  const target = join(process.cwd(), 'src-tauri', 'target');
+  let out = '';
+  try {
+    out = execFileSync(
+      'powershell',
+      [
+        '-NoProfile',
+        '-Command',
+        `Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -like '${target}\\*' } | ` +
+          'ForEach-Object { "$($_.ProcessId)`t$($_.CreationDate.ToString(\'HH:mm:ss\'))`t$($_.ExecutablePath)" }',
+      ],
+      { encoding: 'utf8' }
+    );
+  } catch {
+    return [];
+  }
+  const rows = [];
+  for (const line of out.split(/\r?\n/)) {
+    const [pid, started, ...rest] = line.trim().split('\t');
+    const n = Number(pid);
+    if (n > 0) rows.push({ pid: n, started: started || '?', path: rest.join('\t') });
+  }
+  return rows;
+}
+
+/**
+ * 啟動前的安全檢查：**別人正在跑就直接中止，一個行程都不碰。**
+ *
+ * 兩種「別人」：同 repo 的另一個 agent（他的 exe 也在 `target\` 底下）、
+ * 以及任何佔著 vite 1420 的東西。撞上了硬跑下去只會兩敗俱傷
+ *（`beforeDevCommand` 失敗 → 什麼都沒驗到，收尾還把對方砍了）。
+ */
+function preflight() {
+  const running = listTargetProcesses();
+  if (running.length) {
+    console.log('[dev-verify] 中止：這個 repo 的 target 底下已經有行程在跑（不是我啟動的，我不會碰它）：');
+    for (const r of running) console.log(`[dev-verify]   PID ${r.pid}　啟動 ${r.started}　${r.path}`);
+    console.log('[dev-verify] 可能是同一個團隊的另一個 agent 或使用者開著 dev。請先協調好再跑 verify。');
+    process.exit(1);
   }
 }
 
@@ -98,37 +198,32 @@ try {
 /**
  * 收尾掃描：`src-tauri/target/{debug,release}` 底下還有沒有活著的行程。
  *
- * **只認路徑**（這個 repo 的 target 目錄），所以絕不會碰到使用者安裝在
- * `C:\Program Files\AwayTerminal` 的舊版；找到的一律依 PID 收掉。
- * 回傳收掉的 PID 清單（空的＝乾淨）。
+ * **只收自己啟動的那些**（`ourPids`＝`killTree` 動手前記下的子孫）。
+ * 掃到別人的（同 repo 的另一個 agent、使用者自己開的 dev）**只印警告、不砍**——
+ * 路徑條件擋得住 `C:\Program Files` 的 1.x，擋不住同一個 repo 裡的另一個人（TASK-034）。
+ * 回傳 `{ killed, others }`。
  */
 function sweepStrays() {
-  if (!isWindows) return []; // mac/Linux 用 process group（detached），這裡不重複做
-  const target = join(process.cwd(), 'src-tauri', 'target');
-  let out = '';
-  try {
-    out = execFileSync(
-      'powershell',
-      [
-        '-NoProfile',
-        '-Command',
-        `Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -like '${target}\\*' } | ForEach-Object { $_.ProcessId }`,
-      ],
-      { encoding: 'utf8' }
-    );
-  } catch {
-    return [];
-  }
-  const pids = out.split(/\s+/).map((x) => Number(x)).filter((x) => x > 0);
-  for (const pid of pids) {
+  const rows = listTargetProcesses();
+  const killed = [];
+  const others = [];
+  for (const r of rows) {
+    if (!ourPids.has(r.pid)) {
+      others.push(r);
+      continue;
+    }
     try {
-      execFileSync('taskkill', ['/PID', String(pid), '/T', '/F'], { stdio: 'ignore' });
+      execFileSync('taskkill', ['/PID', String(r.pid), '/T', '/F'], { stdio: 'ignore' });
+      killed.push(r.pid);
     } catch {
       // 已經自己結束了
     }
   }
-  return pids;
+  return { killed, others };
 }
+
+// 別人正在跑就直接中止（TASK-034）。要在 spawn 之前，才不會白跑一輪又把對方收掉。
+preflight();
 
 const what = release ? 'release exe' : 'dev';
 console.log(
@@ -161,11 +256,29 @@ const child = release
 
 // 驗證的最後一行（`awayVerify` 的收尾）。看到它就代表「該驗的都驗完了」。
 const DONE_MARK = '[verify] 收尾：整段沒人接住的例外';
+// `beforeDevCommand`（vite）起不來的樣子。最常見的是 1420 被別人佔著——
+// 那代表**有人正在跑 dev**，硬跑下去什麼都驗不到，而且收尾掃描還可能動到對方（TASK-034）。
+const BOOT_FAIL = [
+  'Port 1420 is already in use',
+  'The "beforeDevCommand" terminated with a non-zero status code',
+];
 let done = false;
+let bootFailed = false;
 let tail = '';
 const watch = (buf) => {
   if (done) return;
   tail = (tail + buf).slice(-4000);
+  const hit = BOOT_FAIL.find((m) => tail.includes(m));
+  if (hit && !bootFailed) {
+    bootFailed = true;
+    done = true;
+    console.log(`[dev-verify] 中止：前置指令起不來（${hit}）`);
+    console.log('[dev-verify] 1420 被佔住通常是有人正在跑 dev（同團隊的另一個 agent 或使用者）。');
+    console.log('[dev-verify] 我只收自己啟動的行程，不會去動對方；請先協調好再跑一次。');
+    clearTimeout(timer);
+    killTree(child.pid);
+    return;
+  }
   if (!tail.includes(DONE_MARK)) return;
   done = true;
   // 收尾那一行之後還有幾行輸出（log 是非同步送出的），等一下再收
@@ -208,16 +321,22 @@ child.on('exit', (code) => {
   // 正常結束也要確認一次：tauri dev 的 watcher 可能已經重新啟動過 app，
   // 那個新的 app 行程不是 npx 的直接子行程，但仍在同一棵樹裡
   killTree(child.pid);
-  const strays = sweepStrays();
+  const { killed, others } = sweepStrays();
   const removed = cleanTemp();
   console.log(
-    `[AwayTerminal] ${what} 結束（exit ${timedOut ? 'timeout' : code}）` +
+    `[AwayTerminal] ${what} 結束（exit ${timedOut ? 'timeout' : bootFailed ? 'boot-fail' : code}）` +
       `；清掉 %TEMP% 驗證資料夾 ${removed.length} 個${removed.length ? '：' + removed.join(', ') : ''}`
   );
   console.log(
-    strays.length
-      ? `[dev-verify] 收尾掃描：target 底下還有 ${strays.length} 隻，已依 PID 收掉（${strays.join(', ')}）`
-      : '[dev-verify] 收尾掃描：target 底下沒有殘留行程'
+    killed.length
+      ? `[dev-verify] 收尾掃描：我自己啟動的還有 ${killed.length} 隻，已依 PID 收掉（${killed.join(', ')}）`
+      : '[dev-verify] 收尾掃描：我自己啟動的行程都收乾淨了'
   );
-  process.exit(timedOut ? 124 : (code ?? 1));
+  // 別人的：**只報告，不動手**（TASK-034）
+  if (others.length) {
+    console.log(`[dev-verify] ⚠ target 底下還有 ${others.length} 隻**不是我啟動的**，我不會碰：`);
+    for (const r of others) console.log(`[dev-verify]     PID ${r.pid}　啟動 ${r.started}　${r.path}`);
+    console.log('[dev-verify]     確定要收的話自己下：taskkill /PID <pid> /T /F');
+  }
+  process.exit(timedOut ? 124 : bootFailed ? 1 : (code ?? 1));
 });
