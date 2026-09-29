@@ -27,8 +27,13 @@ use super::api::{Api, Incoming};
 use super::cmd::{self, Action};
 use super::tidy;
 
-/// 輪詢錯誤的退避（舊版固定 3 秒）。
+/// 輪詢錯誤的退避起點（舊版固定 3 秒，沒有上限也不遞增）。
+///
+/// TASK-036 改成**遞增**：每失敗一次乘二，最多 [`BACKOFF_MAX`]，成功就歸零。
+/// 舊做法在 token 失效時 12 分鐘打了 240 次，既吵又沒有用。
 const BACKOFF: Duration = Duration::from_secs(3);
+/// 退避上限。再久使用者會覺得「怎麼都沒反應」，再短就變成洗版。
+const BACKOFF_MAX: Duration = Duration::from_secs(60);
 /// 等前端回畫面文字的上限。
 const SCREEN_TIMEOUT: Duration = Duration::from_millis(2500);
 /// 附著分頁閒置多久之後靜默離開（舊版 10 分鐘，9 分鐘先警告）。
@@ -99,6 +104,9 @@ pub struct Status {
     pub running: bool,
     /// 有沒有設定 token（**不回 token 本身**）。
     pub has_token: bool,
+    /// 上一次**不是使用者按的**停止原因（目前只有 401／404），沒有就是 `None`。
+    /// 遠端設定視窗打開時顯示它，不然使用者只會看到「已停止」而不知道為什麼。
+    pub stopped_reason: Option<String>,
     pub chat_id: i64,
     pub current_tab: Option<u32>,
     pub follow: bool,
@@ -115,6 +123,7 @@ pub fn status(settings: &crate::settings::SettingsStore) -> Status {
             Status {
                 running: true,
                 has_token: !s.telegram_bot_token.trim().is_empty(),
+                stopped_reason: None, // 正在跑就沒有「為什麼停了」
                 chat_id: r.chat_id,
                 current_tab: st.current,
                 follow: st.follow,
@@ -125,6 +134,7 @@ pub fn status(settings: &crate::settings::SettingsStore) -> Status {
         None => Status {
             running: false,
             has_token: !s.telegram_bot_token.trim().is_empty(),
+            stopped_reason: stopped_reason(),
             chat_id: s.telegram_chat_id,
             current_tab: None,
             follow: true,
@@ -161,9 +171,50 @@ pub fn start(app: &AppHandle, token: &str, chat_id: i64, notify: bool, base: Opt
 }
 
 pub fn stop() {
+    clear_stopped_reason(); // 使用者自己停的，不是錯誤
     if let Some(r) = lock().take() {
         r.stop.store(true, Ordering::Relaxed);
         println!("[AwayTerminal] Telegram 遠端：已停止");
+    }
+}
+
+/// 「上一次**不是使用者按的**停止原因」。只活在這一次執行期間
+/// （重開程式之後 `remoteEnabled` 已經是 false，不會再去打 Telegram，所以不必持久化）。
+fn reason_slot() -> &'static Mutex<Option<String>> {
+    static R: OnceLock<Mutex<Option<String>>> = OnceLock::new();
+    R.get_or_init(|| Mutex::new(None))
+}
+
+/// 遠端設定視窗要顯示的停止原因（沒有就是 `None`）。
+pub fn stopped_reason() -> Option<String> {
+    reason_slot().lock().unwrap_or_else(|e| e.into_inner()).clone()
+}
+
+fn clear_stopped_reason() {
+    *reason_slot().lock().unwrap_or_else(|e| e.into_inner()) = None;
+}
+
+/// **致命錯誤**（token 無效／bot 不存在）：停掉輪詢、把設定裡的開關關掉、通知前端一次。
+///
+/// 為什麼要把 `remote_enabled` 設回 false：不然下次啟動又會拿同一個壞掉的 token
+/// 再打 240 次。使用者到「遠端設定」重新填 token 時會自己再打開。
+///
+/// 通知走 `telegram-fatal` 事件，前端顯示一次。**這個函式一輪只會被呼叫一次**
+/// （呼叫完 `poll_loop` 就 return 了），所以不會洗版。
+fn fatal_stop(app: &AppHandle, err: &str, status: u16) {
+    let reason = crate::i18n::tf("tg.fatalToken", &[&status.to_string()]);
+    println!("[AwayTerminal] Telegram 遠端：{err} → 停止輪詢（token 無效，不再重試）");
+    *reason_slot().lock().unwrap_or_else(|e| e.into_inner()) = Some(reason.clone());
+    // 先把自己從「正在跑」名單拿掉（`stop()` 會清掉原因，所以這裡自己來）
+    if let Some(r) = lock().take() {
+        r.stop.store(true, Ordering::Relaxed);
+    }
+    // 設定裡的開關也關掉並存檔
+    if let Some(store) = app.try_state::<Arc<crate::settings::SettingsStore>>() {
+        store.update(|s| s.remote_enabled = false);
+    }
+    if let Err(e) = app.emit("telegram-fatal", reason) {
+        println!("[AwayTerminal] Telegram 遠端：通知前端失敗：{e}");
     }
 }
 
@@ -195,6 +246,7 @@ fn poll_loop(
     let _ = api.set_my_commands(&cmd::command_menu());
     let _ = api.send_message(chat_id, &crate::i18n::t("tg.online"), false, &[]);
     let mut errors = 0u32;
+    let mut backoff = BACKOFF;
 
     while !stop.load(Ordering::Relaxed) {
         // getUpdates 最多阻塞 30 秒 → 每輪至少檢查一次閒置
@@ -204,6 +256,7 @@ fn poll_loop(
                 if errors > 0 {
                     println!("[AwayTerminal] Telegram 遠端：輪詢在 {errors} 次錯誤後恢復");
                     errors = 0;
+                    backoff = BACKOFF; // 恢復了就把退避歸零，下次出問題重新從 3 秒開始
                 }
                 offset = next;
                 for m in msgs {
@@ -221,12 +274,23 @@ fn poll_loop(
                 }
             }
             Err(e) => {
-                // 409＝同一個 bot 有別的程式在 poll、401＝token 失效：都會「沒動作」，記下來才查得到
+                // **401／404 ＝ 重試永遠不會成功**（token 無效或 bot 不存在）→ 停掉，別再打。
+                // 舊做法一視同仁重試，實測 12 分鐘打了 240 次還是 401（TASK-036）。
+                if super::api::is_fatal(&e) {
+                    let status = super::api::http_status(&e).unwrap_or(0);
+                    fatal_stop(&app, &e, status);
+                    return;
+                }
+                // 其餘（409＝別的程式在 poll、5xx、逾時、斷線）都是暫時性 → 重試，但退避遞增
                 errors += 1;
                 if errors == 1 || errors.is_multiple_of(20) {
-                    println!("[AwayTerminal] Telegram 遠端：輪詢失敗 #{errors}（{e}）");
+                    println!(
+                        "[AwayTerminal] Telegram 遠端：輪詢失敗 #{errors}（{e}），{} 秒後重試",
+                        backoff.as_secs()
+                    );
                 }
-                std::thread::sleep(BACKOFF);
+                std::thread::sleep(backoff);
+                backoff = (backoff * 2).min(BACKOFF_MAX);
             }
         }
     }

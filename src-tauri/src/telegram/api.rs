@@ -84,7 +84,8 @@ impl Api {
             .map_err(|e| describe(&e))?;
         let status = resp.status().as_u16();
         if status != 200 {
-            return Err(format!("getUpdates HTTP {status}"));
+            // 和 `describe()` 用同一個寫法，`http_status()` 才認得（見那兩個函式的註解）
+            return Err(format!("HTTP {status}"));
         }
         // i18n-audit:log-only-begin 錯誤字串只會進 println! 的診斷行，使用者看不到
         let body = resp
@@ -244,7 +245,9 @@ impl Api {
 
 /// 錯誤訊息**只留型別與狀態**，不要把 URL（含 token）帶進去。
 ///
-/// 回傳值只會被 `println!` 的診斷行用掉（遠端輪詢失敗、prime 失敗），不進介面。
+/// 回傳值有兩個用途：`println!` 的診斷行，以及 [`http_status`] 的分類
+/// （401 要當成致命錯誤停掉輪詢，見 `remote::poll_loop`）。
+/// ⚠️ **`HTTP <code>` 這個寫法是契約**：改了要一起改 [`http_status`] 與它的測試。
 // i18n-audit:log-only-begin 只給 println! 的診斷用
 fn describe(e: &ureq::Error) -> String {
     match e {
@@ -258,6 +261,28 @@ fn describe(e: &ureq::Error) -> String {
     }
 }
 // i18n-audit:log-only-end
+
+/// 從錯誤訊息裡取出 HTTP 狀態碼（沒有就是 `None`＝不是伺服器回的錯，例如逾時／斷線）。
+///
+/// [`describe`] 與 [`Api::get_updates`] 的非 200 分支都把狀態寫成 `HTTP <code>`，
+/// 這裡就認那個寫法。**呼叫端要拿它分「重試有沒有意義」**：
+///
+/// | 狀態 | 意思 | 該怎麼辦 |
+/// |---|---|---|
+/// | 401 | token 無效或被撤銷 | **致命**，重試永遠不會成功 |
+/// | 404 | bot 不存在（token 格式對但查無此 bot） | **致命**，同上 |
+/// | 409 | 同一個 bot 有別的程式在 poll | 暫時性，重試 |
+/// | 5xx／逾時／斷線 | Telegram 那邊或網路 | 暫時性，重試 |
+pub fn http_status(err: &str) -> Option<u16> {
+    let rest = err.strip_prefix("HTTP ")?;
+    let digits: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
+    digits.parse().ok()
+}
+
+/// 這個錯誤重試也不會成功嗎（401／404）。
+pub fn is_fatal(err: &str) -> bool {
+    matches!(http_status(err), Some(401) | Some(404))
+}
 
 /// 解析 `getUpdates` 的回覆。
 pub fn parse_updates(body: &str, offset: i64) -> Result<(Vec<Incoming>, i64), String> {
@@ -312,6 +337,25 @@ pub fn parse_updates(body: &str, offset: i64) -> Result<(Vec<Incoming>, i64), St
 
 #[cfg(test)]
 mod tests {
+    /// `HTTP <code>` 這個寫法是 `describe()` 與 `get_updates()` 的契約。
+    #[test]
+    fn http_status_parses_the_canonical_form() {
+        use super::{http_status, is_fatal};
+        assert_eq!(http_status("HTTP 401"), Some(401));
+        assert_eq!(http_status("HTTP 409"), Some(409));
+        assert_eq!(http_status("HTTP 500"), Some(500));
+        // 不是伺服器回的錯
+        assert_eq!(http_status("逾時"), None);
+        assert_eq!(http_status("Transport"), None);
+        assert_eq!(http_status(""), None);
+        // 只有 401／404 是致命的
+        assert!(is_fatal("HTTP 401"));
+        assert!(is_fatal("HTTP 404"));
+        assert!(!is_fatal("HTTP 409"));
+        assert!(!is_fatal("HTTP 500"));
+        assert!(!is_fatal("逾時"));
+    }
+
     use super::*;
 
     #[test]

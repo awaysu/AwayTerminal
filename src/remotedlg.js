@@ -23,7 +23,7 @@ import { log } from './bridge.js';
 const el = {};
 let hooks = {};
 /** 後端回報的目前狀態（`hasToken` 決定 placeholder 的字）。 */
-let state = { hasToken: false, running: false };
+let state = { hasToken: false, running: false, stoppedReason: null };
 
 function $(id) {
   return document.getElementById(id);
@@ -50,10 +50,15 @@ async function fill() {
   try {
     state = await invoke('telegram_state');
   } catch {
-    state = { hasToken: false, running: false };
+    state = { hasToken: false, running: false, stoppedReason: null };
   }
   el.token.placeholder = T[state.hasToken ? 'remote.tokenSet' : 'remote.tokenNone'];
-  el.note.textContent = T[state.running ? 'remote.running' : 'remote.stopped'];
+  // 停掉的原因優先顯示（TASK-036）：只寫「已停止」的話，token 失效的人
+  // 會以為是程式壞了——後端會在 401／404 時自動關掉遠端並記下原因。
+  el.note.textContent = state.stoppedReason
+    ? state.stoppedReason
+    : T[state.running ? 'remote.running' : 'remote.stopped'];
+  el.note.classList.toggle('rm-error', !!state.stoppedReason);
 }
 
 export async function openRemote() {

@@ -43,8 +43,15 @@ struct Shared {
     queue: Vec<String>,
     /// 程式打出去的呼叫（`getUpdates` 不記，太吵）。
     calls: Vec<Call>,
-    /// 下 n 次 `getUpdates` 回 500（驗退避與恢復）。
+    /// 下 n 次 `getUpdates` 回 [`Shared::fail_status`]（驗退避與恢復）。
     fail_updates: u32,
+    /// 上面那 n 次要回的狀態碼。0 ＝ 500（預設）。
+    /// TASK-036 用 409 驗「暫時性錯誤要重試而且退避遞增」。
+    fail_status: u16,
+    /// 不是 0 就讓 `getUpdates` **一直**回這個狀態（驗 401 這種致命錯誤要停掉輪詢）。
+    fatal_status: u16,
+    /// 每一次 `getUpdates` 進來的時間，用來量退避有沒有遞增。
+    poll_at: Vec<Instant>,
     /// 發過幾次 `getUpdates`。
     polls: u32,
     /// `prime_offset` 用的 `offset=-1` 來過幾次。
@@ -228,10 +235,18 @@ fn serve(mut stream: TcpStream, shared: &Arc<Mutex<Shared>>) -> std::io::Result<
                 .to_string()
         } else {
             g.polls += 1;
+            g.poll_at.push(Instant::now());
+            // 致命狀態（401／404）：一直回，程式應該要**停掉輪詢**而不是一直重試
+            if g.fatal_status != 0 {
+                let code = g.fatal_status;
+                drop(g);
+                return write_http(&mut stream, code, "{\"ok\":false,\"description\":\"Unauthorized\"}");
+            }
             if g.fail_updates > 0 {
                 g.fail_updates -= 1;
+                let code = if g.fail_status == 0 { 500 } else { g.fail_status };
                 drop(g);
-                return write_http(&mut stream, 500, "{\"ok\":false}");
+                return write_http(&mut stream, code, "{\"ok\":false}");
             }
             let mut items = std::mem::take(&mut g.queue);
             drop(g);
@@ -653,6 +668,109 @@ fn run(app: &AppHandle, tab: Option<u32>) -> Result<Vec<String>, String> {
     // 10) token 不進任何輸出
     let leaked = r.lines.iter().any(|l| l.contains(FAKE_TOKEN));
     r.check("token 不出現在任何一行輸出裡", !leaked, "");
+
+    // 12b) 409（別的程式在 poll）＝暫時性 → 要重試，而且**退避要遞增**（TASK-036）
+    {
+        bot.lock().poll_at.clear();
+        bot.lock().fail_status = 409;
+        // **剛好 3 次**：失敗 3 次（退避 3→6→12 秒）之後第 4 次會成功，
+        // 所以 `poll_at` 會有 4 筆 → 量得到 3 個間隔，而且第 4 筆本身就證明恢復了。
+        // 設 4 次的話最後要再等 24 秒的退避，整段 `--verify` 平白多半分鐘。
+        bot.lock().fail_updates = 3;
+        let until = Instant::now() + Duration::from_secs(40);
+        while Instant::now() < until && bot.lock().poll_at.len() < 4 {
+            std::thread::sleep(Duration::from_millis(200));
+        }
+        // 收集相鄰兩次 getUpdates 的間隔；退避是 3 → 6 → 12 秒，所以間隔要一路變大
+        let gaps: Vec<u64> = {
+            let g = bot.lock();
+            g.poll_at.windows(2).map(|w| w[1].duration_since(w[0]).as_millis() as u64).collect()
+        };
+        let grew = gaps.len() >= 3 && gaps[1] > gaps[0] + 1000 && gaps[2] > gaps[1] + 1000;
+        r.check(
+            "409 會重試而且退避遞增（3→6→12 秒）",
+            grew,
+            &format!("間隔(ms)={gaps:?}"),
+        );
+        bot.lock().fail_status = 0;
+        // 恢復之後退避要歸零：第 4 次（成功那次）之後下一次應該**馬上**來
+        //（long poll 2 秒），不是再等 24 秒
+        let n_before = bot.lock().poll_at.len();
+        let until = Instant::now() + Duration::from_secs(15);
+        while Instant::now() < until && bot.lock().poll_at.len() <= n_before {
+            std::thread::sleep(Duration::from_millis(200));
+        }
+        let after = bot.lock().poll_at.len();
+        let last_gap = {
+            let g = bot.lock();
+            g.poll_at
+                .windows(2)
+                .last()
+                .map(|w| w[1].duration_since(w[0]).as_millis() as u64)
+                .unwrap_or(u64::MAX)
+        };
+        r.check(
+            "409 結束後輪詢恢復，而且退避歸零（下一次很快就來）",
+            after > n_before && last_gap < 8_000,
+            &format!("最後一個間隔 {last_gap} ms（歸零的話應該只有 long poll 的 2 秒多）"),
+        );
+    }
+
+    // 12c) 401＝token 失效，**重試永遠不會成功** → 要停掉輪詢、關掉設定、通知一次（TASK-036）
+    {
+        // ⚠️ 這一段會把設定裡的 `remoteEnabled` 關掉（那正是要驗的行為），
+        // 所以先記下使用者原本的值，最後一定要放回去。
+        let enabled_before = {
+            use tauri::Manager;
+            app.state::<std::sync::Arc<crate::settings::SettingsStore>>().get().remote_enabled
+        };
+        bot.lock().fatal_status = 401;
+        let polls_at_start = bot.polls();
+        // 等它自己停掉（輪詢逾時 2 秒 + 退避，給 25 秒）
+        let until = Instant::now() + Duration::from_secs(25);
+        while Instant::now() < until && remote::is_running() {
+            std::thread::sleep(Duration::from_millis(200));
+        }
+        r.check("401 之後遠端自己停了（不再重試）", !remote::is_running(), "");
+
+        // 停了就不可以再打 getUpdates
+        let polls_when_stopped = bot.polls();
+        std::thread::sleep(Duration::from_secs(5));
+        r.check(
+            "停掉之後真的沒有再打 getUpdates",
+            bot.polls() == polls_when_stopped,
+            &format!("polls {polls_at_start} → {polls_when_stopped} → {}", bot.polls()),
+        );
+        // 打的次數要是「個位數」——舊版 12 分鐘打 240 次就是這一條要擋的
+        r.check(
+            "401 之後只打了幾次就放棄（舊版是無限重試）",
+            polls_when_stopped - polls_at_start <= 5,
+            &format!("這段期間打了 {} 次", polls_when_stopped - polls_at_start),
+        );
+
+        let reason = remote::stopped_reason();
+        r.check(
+            "記下停止原因（遠端設定視窗要顯示）",
+            reason.as_deref().map(|t| t.contains("401")).unwrap_or(false),
+            &format!("{reason:?}"),
+        );
+        let enabled_now = {
+            use tauri::Manager;
+            app.state::<std::sync::Arc<crate::settings::SettingsStore>>().get().remote_enabled
+        };
+        r.check("設定裡的 remoteEnabled 被關掉（下次啟動不會再重試）", !enabled_now, "");
+
+        // 還原使用者的設定與旗標
+        bot.lock().fatal_status = 0;
+        {
+            use tauri::Manager;
+            app.state::<std::sync::Arc<crate::settings::SettingsStore>>()
+                .update(|s| s.remote_enabled = enabled_before);
+        }
+        r.lines.push(format!(
+            "[verify] 已還原使用者的 remoteEnabled＝{enabled_before}（驗證不留痕跡）"
+        ));
+    }
 
     remote::stop();
     std::thread::sleep(Duration::from_millis(200));
