@@ -33,13 +33,13 @@ npm run tauri build
 | 檔案 | 什麼 |
 |---|---|
 | `src-tauri/target/release/AwayTerminal.exe` | 主程式 |
-| `src-tauri/target/release/bundle/nsis/AwayTerminal_<版本>_x64-setup.exe` | NSIS 安裝檔（主要發佈用） |
-| `src-tauri/target/release/bundle/msi/AwayTerminal_<版本>_x64_<語言>.msi` | MSI（企業派送用；`en-US` 與 `zh-TW` 各一個） |
+| `src-tauri/target/release/bundle/nsis/AwayTerminal2_<版本>_x64-setup.exe` | NSIS 安裝檔（主要發佈用） |
+| `src-tauri/target/release/bundle/msi/AwayTerminal2_<版本>_x64_<語言>.msi` | MSI（企業派送用；`en-US` 與 `zh-TW` 各一個） |
 
 ### 安裝檔內容該有什麼
 
 ```powershell
-& "C:\Program Files\7-Zip\7z.exe" l .\src-tauri\target\release\bundle\nsis\AwayTerminal_2.0.0_x64-setup.exe
+& "C:\Program Files\7-Zip\7z.exe" l .\src-tauri\target\release\bundle\nsis\AwayTerminal2_2.0.0_x64-setup.exe
 ```
 
 必須看到（2026-09-27 實測）：
@@ -72,7 +72,8 @@ MPL-2.0、TeraTerm 是 BSD-3，散布時必須附授權全文。`cargo test --li
 
 | 項目 | 舊版 1.2.8（Inno Setup） | 這一版（Tauri NSIS） |
 |---|---|---|
-| 安裝範圍 | `PrivilegesRequired=admin`＋`{autopf}` ＝ Program Files | `installMode: perMachine`（同） |
+| 安裝範圍 | `PrivilegesRequired=admin`＋`{autopf}` ＝ `Program FilesAwayTerminal` | `installMode: perMachine`，裝到 **`Program FilesAwayTerminal2`** |
+| 和 1.x 並存 | — | **可以**（2026-10-01 使用者定案）。`productName` 是 `AwayTerminal2`，所以安裝目錄、開始功能表捷徑、「新增或移除程式」項目都和 1.x 分開；1.x 不會被蓋掉或移除。exe 檔名與視窗標題仍是 `AwayTerminal` |
 | 開始功能表捷徑 | 一律建立 | 同 |
 | 桌面捷徑 | `[Tasks] desktopicon`，**預設不勾** | 完成頁的核取方塊，**預設不勾**（Tauri 樣板本來就這樣） |
 | 授權頁 | 沒有 | **有**（`bundle.licenseFile` → 本專案的 MIT 全文） |
@@ -259,7 +260,7 @@ signtool verify /pa /v <檔案>
    npm run tauri build
    ```
 
-   會多產出 `AwayTerminal_<版本>_x64-setup.exe.sig`。
+   會多產出 `AwayTerminal2_<版本>_x64-setup.exe.sig`。
 
 4. **`latest.json` 放進 GitHub Release**（檔名固定，`endpoints` 指著它）：
 
@@ -271,7 +272,7 @@ signtool verify /pa /v <檔案>
      "platforms": {
        "windows-x86_64": {
          "signature": "<.sig 檔的內容，一整行>",
-         "url": "https://github.com/awaysu/AwayTerminal2/releases/download/v2.0.1/AwayTerminal_2.0.1_x64-setup.exe"
+         "url": "https://github.com/awaysu/AwayTerminal2/releases/download/v2.0.1/AwayTerminal2_2.0.1_x64-setup.exe"
        }
      }
    }
@@ -335,10 +336,10 @@ signtool verify /pa /v <檔案>
 `npm run tauri build` 的輸出名稱直接用，不要改名（updater 的 `url` 與使用者的習慣都靠它）：
 
 ```
-AwayTerminal_2.0.0_x64-setup.exe          NSIS（主要）
-AwayTerminal_2.0.0_x64-setup.exe.sig      有開自動更新時才有
-AwayTerminal_2.0.0_x64_en-US.msi          MSI
-AwayTerminal_2.0.0_x64_zh-TW.msi
+AwayTerminal2_2.0.0_x64-setup.exe          NSIS（主要）
+AwayTerminal2_2.0.0_x64-setup.exe.sig      有開自動更新時才有
+AwayTerminal2_2.0.0_x64_en-US.msi          MSI
+AwayTerminal2_2.0.0_x64_zh-TW.msi
 latest.json                               有開自動更新時才有（檔名固定）
 ```
 

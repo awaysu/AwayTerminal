@@ -138,6 +138,9 @@
 
 ### 從舊版升級
 
+- **可以和 1.x 同時安裝**：2.0 裝在 `C:Program FilesAwayTerminal2`，開始功能表與「新增或移除程式」
+  裡叫 `AwayTerminal2`，不會蓋掉或移除 1.x。
+
 - 會讀 `%LOCALAPPDATA%\AwayTerminal\settings.json`（**唯讀，不改動舊檔**）並在第一次
   啟動時問要不要匯入。對照表與 21 條刻意跳過的欄位在 `docs/MIGRATION.md`。
 - **不匯入工作階段狀態**（`SavedTabs`／`History`）——那是「上次關程式時的樣子」。
