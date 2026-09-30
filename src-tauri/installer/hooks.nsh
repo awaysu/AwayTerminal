@@ -38,35 +38,40 @@
 ; Inno 的 unins000.exe 會把自己複製到 %TEMP% 再跑，原本那支馬上結束——ExecWait 等不到
 ; 真正做完。所以另外等「unins000.exe 被刪掉」（它是最後才刪的），最多 60 秒。
 !macro NSIS_HOOK_PREINSTALL
+  ; 暫存器只用 $R6～$R9：下面的 CheckIfAppIsRunning 會用掉 $R0～$R3
   SetRegView 64
-  ReadRegStr $R0 HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\{A8F5C3B1-9D2E-4F6A-B7C8-1234567890AB}_is1" "UninstallString"
-  ${If} $R0 == ""
+  ReadRegStr $R6 HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\{A8F5C3B1-9D2E-4F6A-B7C8-1234567890AB}_is1" "UninstallString"
+  ${If} $R6 == ""
     SetRegView 32
-    ReadRegStr $R0 HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\{A8F5C3B1-9D2E-4F6A-B7C8-1234567890AB}_is1" "UninstallString"
+    ReadRegStr $R6 HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\{A8F5C3B1-9D2E-4F6A-B7C8-1234567890AB}_is1" "UninstallString"
     SetRegView 64
   ${EndIf}
-  ${If} $R0 != ""
-    DetailPrint "Removing AwayTerminal 1.x ($R0)..."
+  ${If} $R6 != ""
+    ; Tauri 樣板的「程式是否開著」檢查排在這個 hook **之後**；1.x 的 exe 也叫 AwayTerminal.exe，
+    ; 開著的話 Inno 的靜默解除安裝會刪不掉被占用的檔案。所以移除之前先問一次（同一個 macro：
+    ; 請使用者同意關閉，取消就中止安裝）。
+    !insertmacro CheckIfAppIsRunning "${MAINBINARYNAME}.exe" "${PRODUCTNAME}"
+    DetailPrint "Removing AwayTerminal 1.x ($R6)..."
     ; 去掉前後的引號，拿來等檔案消失
-    StrCpy $R1 $R0 1
-    ${If} $R1 == '"'
-      StrCpy $R1 $R0 "" 1
-      StrLen $R2 $R1
-      IntOp $R2 $R2 - 1
-      StrCpy $R1 $R1 $R2
+    StrCpy $R7 $R6 1
+    ${If} $R7 == '"'
+      StrCpy $R7 $R6 "" 1
+      StrLen $R8 $R7
+      IntOp $R8 $R8 - 1
+      StrCpy $R7 $R7 $R8
     ${Else}
-      StrCpy $R1 $R0
+      StrCpy $R7 $R6
     ${EndIf}
-    ExecWait '$R0 /VERYSILENT /SUPPRESSMSGBOXES /NORESTART' $R2
-    DetailPrint "AwayTerminal 1.x uninstaller exit code: $R2"
-    StrCpy $R3 0
-    ${DoWhile} ${FileExists} "$R1"
-      ${If} $R3 >= 120
+    ExecWait '$R6 /VERYSILENT /SUPPRESSMSGBOXES /NORESTART' $R8
+    DetailPrint "AwayTerminal 1.x uninstaller exit code: $R8"
+    StrCpy $R9 0
+    ${DoWhile} ${FileExists} "$R7"
+      ${If} $R9 >= 120
         DetailPrint "AwayTerminal 1.x uninstaller did not finish within 60s; continuing."
         ${Break}
       ${EndIf}
       Sleep 500
-      IntOp $R3 $R3 + 1
+      IntOp $R9 $R9 + 1
     ${Loop}
   ${EndIf}
 !macroend
