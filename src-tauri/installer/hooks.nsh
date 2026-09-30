@@ -23,6 +23,54 @@
 ; 使用者本身是管理員（最常見）時沒問題。改成 `HKU\<SID>` 要取得「非提權使用者」的 SID
 ; 並處理 hive 沒載入的情況，寫錯會刪到別人的登錄檔 → 暫不做，說明在 docs/RELEASE.md §2。
 
+; ---------------------------------------------------------------------------
+; 安裝前：**先移除 AwayTerminal 1.x**（2026-10-01 使用者定案）
+;
+; 1.x 是 Inno Setup 裝的，和 2.0 同一個目錄（Program Files\AwayTerminal）。不先移除的話，
+; 2.0 的 exe 會直接蓋掉 1.x 的 exe、資料夾裡留一堆 .NET 檔案，「新增或移除程式」還會
+; 留著 1.x 的項目——之後有人移除 1.x，會連 2.0 的 exe 一起刪掉。
+;
+; 1.x 的 AppId 固定是 {A8F5C3B1-9D2E-4F6A-B7C8-1234567890AB}（installer.iss），Inno 把
+; 解除安裝資訊寫在 HKLM\...\Uninstall\<AppId>_is1（64 位元檢視；保險起見 32 位元也找）。
+; 設定檔在 %LOCALAPPDATA%\AwayTerminal、log 在「我的文件」，1.x 的解除安裝**不會刪**，
+; 所以 2.0 第一次啟動照樣能匯入舊設定。
+;
+; Inno 的 unins000.exe 會把自己複製到 %TEMP% 再跑，原本那支馬上結束——ExecWait 等不到
+; 真正做完。所以另外等「unins000.exe 被刪掉」（它是最後才刪的），最多 60 秒。
+!macro NSIS_HOOK_PREINSTALL
+  SetRegView 64
+  ReadRegStr $R0 HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\{A8F5C3B1-9D2E-4F6A-B7C8-1234567890AB}_is1" "UninstallString"
+  ${If} $R0 == ""
+    SetRegView 32
+    ReadRegStr $R0 HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\{A8F5C3B1-9D2E-4F6A-B7C8-1234567890AB}_is1" "UninstallString"
+    SetRegView 64
+  ${EndIf}
+  ${If} $R0 != ""
+    DetailPrint "Removing AwayTerminal 1.x ($R0)..."
+    ; 去掉前後的引號，拿來等檔案消失
+    StrCpy $R1 $R0 1
+    ${If} $R1 == '"'
+      StrCpy $R1 $R0 "" 1
+      StrLen $R2 $R1
+      IntOp $R2 $R2 - 1
+      StrCpy $R1 $R1 $R2
+    ${Else}
+      StrCpy $R1 $R0
+    ${EndIf}
+    ExecWait '$R0 /VERYSILENT /SUPPRESSMSGBOXES /NORESTART' $R2
+    DetailPrint "AwayTerminal 1.x uninstaller exit code: $R2"
+    StrCpy $R3 0
+    ${DoWhile} ${FileExists} "$R1"
+      ${If} $R3 >= 120
+        DetailPrint "AwayTerminal 1.x uninstaller did not finish within 60s; continuing."
+        ${Break}
+      ${EndIf}
+      Sleep 500
+      IntOp $R3 $R3 + 1
+    ${Loop}
+  ${EndIf}
+!macroend
+
 !macro NSIS_HOOK_POSTUNINSTALL
   DetailPrint "Removing the 'Open in AwayTerminal' shell menu (HKCU)..."
   DeleteRegKey HKCU "Software\Classes\Directory\shell\AwayTerminal"

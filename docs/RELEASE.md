@@ -73,6 +73,7 @@ MPL-2.0、TeraTerm 是 BSD-3，散布時必須附授權全文。`cargo test --li
 | 項目 | 舊版 1.2.8（Inno Setup） | 這一版（Tauri NSIS） |
 |---|---|---|
 | 安裝範圍 | `PrivilegesRequired=admin`＋`{autopf}` ＝ Program Files | `installMode: perMachine`（同） |
+| 已裝 1.x 時 | — | **安裝前先靜默移除 1.x**（`hooks.nsh` 的 `NSIS_HOOK_PREINSTALL`，找 1.x 的 Inno AppId 解除安裝項目，跑 `unins000.exe /VERYSILENT`，等它刪完最多 60 秒），再裝進同一個 `Program FilesAwayTerminal`。設定在 `%LOCALAPPDATA%`，不會被刪，2.0 第一次啟動可匯入（2026-10-01 使用者定案） |
 | 開始功能表捷徑 | 一律建立 | 同 |
 | 桌面捷徑 | `[Tasks] desktopicon`，**預設不勾** | 完成頁的核取方塊，**預設不勾**（Tauri 樣板本來就這樣） |
 | 授權頁 | 沒有 | **有**（`bundle.licenseFile` → 本專案的 MIT 全文） |
