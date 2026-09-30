@@ -80,11 +80,11 @@ else problem(`CHANGELOG.md 裡找不到 \`## ${version}\` 的段落`);
 // ------------------------------------------------------------- 3. 資產
 /** 這一版該有哪些檔案。`required` 的缺了就是問題。 */
 const assets = [
-  { path: join(BUNDLE, 'nsis', `AwayTerminal2_${version}_x64-setup.exe`), required: true, kind: 'nsis' },
-  { path: join(BUNDLE, 'msi', `AwayTerminal2_${version}_x64_en-US.msi`), required: true, kind: 'msi' },
-  { path: join(BUNDLE, 'msi', `AwayTerminal2_${version}_x64_zh-TW.msi`), required: true, kind: 'msi' },
+  { path: join(BUNDLE, 'nsis', `AwayTerminal_${version}_x64-setup.exe`), required: true, kind: 'nsis' },
+  { path: join(BUNDLE, 'msi', `AwayTerminal_${version}_x64_en-US.msi`), required: true, kind: 'msi' },
+  { path: join(BUNDLE, 'msi', `AwayTerminal_${version}_x64_zh-TW.msi`), required: true, kind: 'msi' },
   // 只有給了私鑰才會產生（見檔頭）
-  { path: join(BUNDLE, 'nsis', `AwayTerminal2_${version}_x64-setup.exe.sig`), required: false, kind: 'sig' },
+  { path: join(BUNDLE, 'nsis', `AwayTerminal_${version}_x64-setup.exe.sig`), required: false, kind: 'sig' },
 ];
 
 const found = [];
