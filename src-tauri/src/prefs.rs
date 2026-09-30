@@ -57,6 +57,13 @@ pub fn valid_color(text: &str, fallback: &str) -> String {
     }
 }
 
+/// 設定檔存不進去的原因（`None`＝正常）。BUG D6：settings.json 解析失敗時整個工作階段
+/// 只改記憶體、不寫檔——設定視窗按確定後要問一次，存不進去就告訴使用者，別默默吞掉。
+#[tauri::command]
+pub fn settings_readonly_reason(settings: State<'_, Arc<SettingsStore>>) -> Option<String> {
+    settings.readonly_reason()
+}
+
 /// 套用設定（舊版 `Ok_Click` ＋ `Settings_Click` 的後半段）。
 ///
 /// 回傳套用後的完整設定，前端拿去重畫（也用來驗證 clamp 的結果）。
@@ -66,6 +73,14 @@ pub fn settings_apply(
     patch: PrefsPatch,
     settings: State<'_, Arc<SettingsStore>>,
 ) -> AppSettings {
+    // log 資料夾被清空時的預設值（同啟動時的 `fill_log_dir`）
+    let default_log_dir = {
+        use tauri::Manager;
+        app.path()
+            .document_dir()
+            .ok()
+            .map(|d| d.join("AwayTerminalLogs").to_string_lossy().to_string())
+    };
     let after = settings.update(|s| {
         if let Some(lang) = &patch.language {
             // 認得的八種才收（前端的 `LANGS`）；認不出來就不動，避免把設定寫壞
@@ -111,7 +126,14 @@ pub fn settings_apply(
             s.auto_reconnect = b;
         }
         if let Some(d) = &patch.log_dir {
-            s.log_dir = d.trim().to_string();
+            let d = d.trim();
+            if !d.is_empty() {
+                s.log_dir = d.to_string();
+            } else if let Some(def) = &default_log_dir {
+                // 空字串不能存：log 會寫到程式的工作目錄（D11）→ 回到預設的「我的文件\AwayTerminalLogs」
+                s.log_dir = def.clone();
+            }
+            // 連文件資料夾都拿不到就保留原值
         }
         if let Some(b) = patch.log_timestamp {
             s.log_timestamp = b;

@@ -38,6 +38,7 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "createUpdaterArtifacts": false,
     "publisher": "Chih-Wei Su (Awaysu)",
     "homepage": "https://github.com/awaysu/AwayTerminal2",
     "category": "DeveloperTool",

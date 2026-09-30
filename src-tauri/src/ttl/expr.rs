@@ -63,14 +63,25 @@ impl Val {
 /// 32-bit：移位的邊界行為照原碼（`INT_BIT`）。
 const INT_BIT: i32 = 32;
 
+/// 因子巢狀的上限（括號、單元運算子、陣列索引）。原碼沒有上限，但它是 C 的主執行緒
+/// 大堆疊；我們每一層要走 11 個函式框，一行 1023 個 `(` 會撐爆巨集執行緒的堆疊
+/// （release 是 abort ＝整個 app 關掉）。64 層對正常巨集綽綽有餘，超過回 `Stack overflow.`。
+pub const MAX_EXPR_DEPTH: u32 = 64;
+
 pub struct Eval<'a> {
     pub lex: &'a mut Lexer,
     pub vars: &'a Vars,
+    /// 目前在第幾層因子裡（見 [`MAX_EXPR_DEPTH`]）。
+    depth: u32,
 }
 
 impl<'a> Eval<'a> {
     pub fn new(lex: &'a mut Lexer, vars: &'a Vars) -> Self {
-        Self { lex, vars }
+        Self {
+            lex,
+            vars,
+            depth: 0,
+        }
     }
 
     /// `GetExpression`（優先權 11）。回 `Ok(None)` ＝這裡根本沒有運算式。
@@ -298,8 +309,13 @@ impl<'a> Eval<'a> {
 
     /// `GetFactor`（1）：識別字（變數／單元運算子的字詞形式）、數字、字串、`(…)`、單元運算子。
     fn factor(&mut self) -> Result<Option<Val>> {
+        if self.depth >= MAX_EXPR_DEPTH {
+            return Err(Err::StackOver);
+        }
         let p = self.lex.ptr();
+        self.depth += 1;
         let r = self.factor_inner();
+        self.depth -= 1;
         if r.is_err() {
             self.lex.set_ptr(p); // 原碼：出錯就把 LinePtr 還原
         }

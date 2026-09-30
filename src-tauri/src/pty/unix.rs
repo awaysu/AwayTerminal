@@ -26,6 +26,8 @@ use crate::session::{ExitInfo, OnExit, OnOutput, TerminalSession};
 const READ_BUF: usize = 4096;
 /// 送完優雅結束鍵之後等多久才強制收（同 Windows 端的 60ms）。
 const GRACE: Duration = Duration::from_millis(60);
+/// 讀取一次最多等多久（逾時就回頭看是不是被 close() 了；close() 最多等這麼久拿到 fd 的寫鎖）。
+const READ_POLL_MS: i32 = 200;
 /// `SIGHUP` 之後等多久才 `SIGKILL`。
 const KILL_AFTER: Duration = Duration::from_millis(400);
 
@@ -56,18 +58,23 @@ impl UnixPtySession {
 
         let closed = Arc::new(AtomicBool::new(false));
 
-        // 讀取執行緒：讀到 0 ＝子行程結束（Linux 的 EIO 已經在 platform 那層翻成 0）
+        // 讀取執行緒：讀到 0 ＝子行程結束（Linux 的 EIO 已經在 platform 那層翻成 0）。
+        // 用有逾時的讀取、逾時就看一下是不是被 close() 了：fd 由 platform 那層加鎖管理，
+        // 不會在讀的途中被別的執行緒關掉、號碼被新分頁重用後讀到別人的輸出（C5）。
         {
             let pty = pty.clone();
             let closed = closed.clone();
             std::thread::spawn(move || {
                 let mut buf = [0u8; READ_BUF];
                 loop {
-                    match pty.read(&mut buf) {
-                        Ok(0) => break,
-                        Ok(n) => on_output(&buf[..n]),
+                    if closed.load(Ordering::SeqCst) {
+                        break;
+                    }
+                    match pty.read_timeout(&mut buf, READ_POLL_MS) {
+                        Ok(None) => continue,
+                        Ok(Some(0)) => break,
+                        Ok(Some(n)) => on_output(&buf[..n]),
                         Err(e) => {
-                            // 我們自己關掉 fd 時會拿到 EBADF，那是預期的
                             if !closed.load(Ordering::SeqCst) {
                                 println!("[AwayTerminal] PTY 讀取結束：{e}");
                             }
@@ -77,7 +84,7 @@ impl UnixPtySession {
                 }
                 // 收 zombie 並回報離開碼（同 Windows 端在 exit thread 做的事）
                 let code = pty.wait();
-                on_exit(ExitInfo { exit_code: code });
+                on_exit(ExitInfo::ended(code));
             });
         }
 
@@ -130,11 +137,12 @@ impl TerminalSession for UnixPtySession {
             let _ = self.pty.write_all(&self.graceful_exit_bytes.clone());
             std::thread::sleep(GRACE);
         }
-        // 先關 fd：slave 端讀到 EOF，多數 shell 會自己退出
-        self.pty.close_fd();
         let pty = self.pty.clone();
-        // `terminate_group` 會等最多 400ms，不要卡在呼叫端（關分頁要立刻有反應）
+        // 關 fd（要等讀取執行緒那一輪 poll 結束，最多 READ_POLL_MS）與 `terminate_group`
+        //（最多 400ms）都不要卡在呼叫端（關分頁要立刻有反應）
         std::thread::spawn(move || {
+            // 先關 fd：slave 端讀到 EOF，多數 shell 會自己退出
+            pty.close_fd();
             if pty.try_wait().is_some() {
                 return; // 已經自己走了
             }

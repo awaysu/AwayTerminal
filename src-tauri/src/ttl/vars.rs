@@ -72,6 +72,13 @@ pub fn truncate(mut s: Vec<u8>) -> Vec<u8> {
     s
 }
 
+/// `intdim` 的元素上限（64 MB）。原碼沒有明寫上限，但 32-bit 的 TeraTerm 實際上
+/// `calloc` 不到更大；我們在 64-bit 上 Windows 可能真的給、Linux overcommit 更會給，
+/// 然後在用到時才出事——所以明訂上限，超過回 `Can't allocate memory.`（同原碼的錯誤碼）。
+pub const MAX_INT_ARRAY: usize = 16 * 1024 * 1024;
+/// `strdim` 的元素上限（一格空字串 24 位元組 → 約 100 MB）。
+pub const MAX_STR_ARRAY: usize = 4 * 1024 * 1024;
+
 impl Vars {
     pub fn new() -> Self {
         Self::default()
@@ -131,11 +138,21 @@ impl Vars {
     }
 
     /// `NewIntAryVar`：大小 <= 0 是語法錯誤（原碼回 `ErrSyntax`）。
+    ///
+    /// 原碼 `calloc` 失敗回 `ErrFewMemory`。Rust 的 `vec![0; n]` 配置失敗是 **abort**
+    /// （整個 app 關掉），所以先 `try_reserve_exact`，並加上限（見 [`MAX_INT_ARRAY`]）。
     pub fn new_int_array(&mut self, name: &str, size: i32) -> Result<()> {
         if size <= 0 {
             return Err(Err::Syntax);
         }
-        self.insert(name, Value::IntArray(vec![0; size as usize]));
+        let n = size as usize;
+        if n > MAX_INT_ARRAY {
+            return Err(Err::FewMemory);
+        }
+        let mut v: Vec<i32> = Vec::new();
+        v.try_reserve_exact(n).map_err(|_| Err::FewMemory)?;
+        v.resize(n, 0);
+        self.insert(name, Value::IntArray(v));
         Ok(())
     }
 
@@ -143,7 +160,14 @@ impl Vars {
         if size <= 0 {
             return Err(Err::Syntax);
         }
-        self.insert(name, Value::StrArray(vec![Vec::new(); size as usize]));
+        let n = size as usize;
+        if n > MAX_STR_ARRAY {
+            return Err(Err::FewMemory);
+        }
+        let mut v: Vec<Vec<u8>> = Vec::new();
+        v.try_reserve_exact(n).map_err(|_| Err::FewMemory)?;
+        v.resize(n, Vec::new());
+        self.insert(name, Value::StrArray(v));
         Ok(())
     }
 

@@ -255,7 +255,8 @@ export async function initConnDialog() {
   });
   el.cancel.addEventListener('click', () => close(null));
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && !el.root.hidden) close(null);
+    // 頁內 #modal（字型清單、確認框…）開著時 Esc 只關 modal，不連底下這個視窗一起關（BUG-AUDIT B3）
+    if (e.key === 'Escape' && !el.root.hidden && document.getElementById('modal').hidden) close(null);
   });
 }
 

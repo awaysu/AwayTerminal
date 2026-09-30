@@ -255,16 +255,15 @@ fn main() {
     // ---------------------------------------------------------------- 2. NAWS 協商
     let before = server.received().len();
     server.send(&[IAC, DO, OPT_NAWS]);
-    let want = {
-        let mut v = vec![IAC, WILL, OPT_NAWS];
-        v.extend_from_slice(&naws_sb(80, 24));
-        v
-    };
-    let ok = server.wait_for(&want, Duration::from_secs(5));
+    // 連上時已經主動送過 WILL NAWS，這個 DO 是**確認**：只回尺寸，不可以再送一次 WILL
+    // （稽核 E4：再送的話遇到無狀態的對端會無限乒乓）
+    let ok = server.wait_for(&naws_sb(80, 24), Duration::from_secs(5));
+    std::thread::sleep(Duration::from_millis(150));
+    let wills = count_occurrences(&server.received(), &[IAC, WILL, OPT_NAWS]);
     report(
-        "DO NAWS → WILL NAWS + 尺寸子協商",
-        ok,
-        format!("收到 WILL NAWS + SB NAWS 80x24 = {ok}（先前已收 {before} bytes）"),
+        "DO NAWS → 尺寸子協商（不重送 WILL）",
+        ok && wills == 1,
+        format!("收到 SB NAWS 80x24 = {ok}、WILL NAWS 共 {wills} 次（要 1；先前已收 {before} bytes）"),
     );
 
     // ---------------------------------------------------------------- 3. resize 重送

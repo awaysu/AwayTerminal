@@ -29,8 +29,7 @@
 use std::ffi::{CStr, CString};
 use std::io;
 use std::os::unix::io::RawFd;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::RwLock;
 
 /// 開一個 PTY 要給的東西。欄位刻意和主 crate 的 `SpawnOptions` 對齊。
 #[derive(Debug, Clone)]
@@ -47,18 +46,27 @@ pub struct Options {
 }
 
 /// 開好的 PTY。`master` 是要讀寫的 fd，`pid` 是子行程。
+///
+/// ## ⚠️ fd 號碼會被重用（C5）
+/// `close(master)` 之後，同一個號碼可能立刻被**別的分頁**新開的 PTY 拿去用。
+/// 如果讀取執行緒此時還在用舊號碼 `read`，就會讀到別的分頁的輸出（寫入也一樣會寫錯地方）。
+/// 所以 fd 放在 `RwLock` 裡：讀／寫／改大小拿讀鎖、在鎖裡確認 fd 還開著才用；
+/// [`close_fd`](Self::close_fd) 拿寫鎖才關。讀取改成 `poll` 加逾時
+/// （[`read_timeout`](Self::read_timeout)），這樣讀取執行緒不會握著讀鎖無限期卡在 `read` 裡，
+/// 關閉最多等一個逾時就拿得到寫鎖。
 #[derive(Debug)]
 pub struct Pty {
-    master: RawFd,
+    /// `-1`＝已經關了。
+    master: RwLock<RawFd>,
     pid: libc::pid_t,
     /// 子行程是不是自己的行程群組 leader（決定要 `killpg` 還是 `kill`）。
     own_group: bool,
-    closed: Arc<AtomicBool>,
 }
 
 impl Pty {
+    /// 目前的 master fd（已關閉時是 `-1`）。只供診斷；**不要**拿去讀寫（見型別註解）。
     pub fn master_fd(&self) -> RawFd {
-        self.master
+        *self.master.read().unwrap_or_else(|e| e.into_inner())
     }
 
     pub fn pid(&self) -> u32 {
@@ -71,15 +79,48 @@ impl Pty {
     /// 呼叫端只要看 0 就知道要收攤（mac 回 0）。
     pub fn read(&self, buf: &mut [u8]) -> io::Result<usize> {
         loop {
-            let n = unsafe { libc::read(self.master, buf.as_mut_ptr().cast(), buf.len()) };
+            if let Some(n) = self.read_timeout(buf, 250)? {
+                return Ok(n);
+            }
+        }
+    }
+
+    /// 最多等 `timeout_ms` 讀一批輸出。`Ok(None)`＝逾時還沒有資料；
+    /// `Ok(Some(0))`＝對方關了或我們自己 [`close_fd`](Self::close_fd) 了。
+    ///
+    /// 讀取執行緒應該用這個（逾時時看一下自己是不是該收攤），不要用會一直等的 [`read`](Self::read)。
+    pub fn read_timeout(&self, buf: &mut [u8], timeout_ms: i32) -> io::Result<Option<usize>> {
+        let fd = self.master.read().unwrap_or_else(|e| e.into_inner());
+        if *fd < 0 {
+            return Ok(Some(0));
+        }
+        loop {
+            let mut pfd = libc::pollfd {
+                fd: *fd,
+                events: libc::POLLIN,
+                revents: 0,
+            };
+            let r = unsafe { libc::poll(&mut pfd, 1, timeout_ms) };
+            if r < 0 {
+                let err = io::Error::last_os_error();
+                if err.raw_os_error() == Some(libc::EINTR) {
+                    continue;
+                }
+                return Err(err);
+            }
+            if r == 0 {
+                return Ok(None);
+            }
+            // POLLIN／POLLHUP／POLLERR 都交給 read 判斷（HUP 時 read 會回 0 或 EIO）
+            let n = unsafe { libc::read(*fd, buf.as_mut_ptr().cast(), buf.len()) };
             if n >= 0 {
-                return Ok(n as usize);
+                return Ok(Some(n as usize));
             }
             let err = io::Error::last_os_error();
             match err.raw_os_error() {
-                Some(libc::EINTR) => continue, // 被訊號打斷：重試
+                Some(libc::EINTR) | Some(libc::EAGAIN) => continue, // 被訊號打斷：重試
                 // Linux：slave 全部關掉之後讀 master 會得到 EIO，那就是「結束了」
-                Some(libc::EIO) => return Ok(0),
+                Some(libc::EIO) => return Ok(Some(0)),
                 _ => return Err(err),
             }
         }
@@ -87,8 +128,12 @@ impl Pty {
 
     /// 寫入（鍵盤輸入）。會處理部分寫入與 `EINTR`。
     pub fn write_all(&self, mut data: &[u8]) -> io::Result<()> {
+        let fd = self.master.read().unwrap_or_else(|e| e.into_inner());
+        if *fd < 0 {
+            return Ok(()); // 已經關了：當成寫完（同下面 EIO 的處理）
+        }
         while !data.is_empty() {
-            let n = unsafe { libc::write(self.master, data.as_ptr().cast(), data.len()) };
+            let n = unsafe { libc::write(*fd, data.as_ptr().cast(), data.len()) };
             if n > 0 {
                 data = &data[n as usize..];
                 continue;
@@ -115,7 +160,11 @@ impl Pty {
             ws_xpixel: 0,
             ws_ypixel: 0,
         };
-        let r = unsafe { libc::ioctl(self.master, libc::TIOCSWINSZ, &ws) };
+        let fd = self.master.read().unwrap_or_else(|e| e.into_inner());
+        if *fd < 0 {
+            return Ok(());
+        }
+        let r = unsafe { libc::ioctl(*fd, libc::TIOCSWINSZ, &ws) };
         if r < 0 {
             return Err(io::Error::last_os_error());
         }
@@ -177,11 +226,14 @@ impl Pty {
     /// 收攤：關 master fd。**不送訊號**（訊號由呼叫端照優雅結束流程決定）。
     ///
     /// 可重複呼叫（第二次起是 no-op），同 Windows 端 `close()` 的約定。
+    /// 會等正在讀／寫的那一次做完（讀最多一個 `read_timeout` 的逾時）才關。
     pub fn close_fd(&self) {
-        if self.closed.swap(true, Ordering::SeqCst) {
+        let mut fd = self.master.write().unwrap_or_else(|e| e.into_inner());
+        if *fd < 0 {
             return;
         }
-        unsafe { libc::close(self.master) };
+        unsafe { libc::close(*fd) };
+        *fd = -1;
     }
 }
 
@@ -289,10 +341,9 @@ pub fn spawn(opts: &Options) -> io::Result<Pty> {
     unsafe { libc::close(slave) };
     set_cloexec(master);
     Ok(Pty {
-        master,
+        master: RwLock::new(master),
         pid,
         own_group: opts.own_process_group,
-        closed: Arc::new(AtomicBool::new(false)),
     })
 }
 

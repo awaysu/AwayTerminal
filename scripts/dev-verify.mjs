@@ -24,6 +24,15 @@
 //   * 掃到其他 target 行程只**印警告**（附 PID、路徑、啟動時間與可以自己下的 taskkill 指令），
 //     絕不自動砍。
 //
+// ⚠️ **PID 會被回收**（2026-09-30 稽核 I2／I3）。另一個 agent 正在 `cargo build` 時，
+// 一個剛結束的 PID 幾秒內就可能被別人的行程拿走，所以「PID 對得上」不等於「是我的」：
+//   * 子行程**已經結束之後不再對它的 PID 下 taskkill**（以前 exit handler 會 `taskkill /PID <child> /T`）；
+//   * 認子孫時比對 `CreationDate`：子行程一定比父行程晚建立，而「已結束的根」的子行程
+//     一定建立在它活著的那段時間內（`spawnedAt`～`exitedAt`）——對不上的就是 PID 被回收了；
+//   * 記下的「我的行程」是 **(PID, 建立時間)** 一對，收尾掃描兩個都對得上才動手；
+//   * `%TEMP%` 的驗證資料夾名字尾端是建立者的 PID（`agent/mod.rs`），只刪「是我的」
+//     或「那個 PID 已經不在了」的——安裝版或另一個 worktree 正在跑的 `--verify` 不會被刪。
+//
 // 用法：
 //   node scripts/dev-verify.mjs [分頁數=2] [逾時秒=600] [--release]
 //
@@ -36,6 +45,7 @@
 
 import { spawn, execFileSync } from 'node:child_process';
 import { existsSync, readdirSync, rmSync } from 'node:fs';
+import { createConnection } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -53,6 +63,24 @@ const TEMP_PREFIXES = [
   'awayterm-chat-probe-',
 ];
 
+/** 這個 PID 現在有沒有行程（`kill(pid, 0)` 只檢查、不送訊號；EPERM＝有、只是不是我們的）。 */
+function pidAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    return e.code === 'EPERM';
+  }
+}
+
+/**
+ * 清掉 `%TEMP%` 底下的驗證資料夾——**只清「是我的」或「建立者已經不在」的**（稽核 I3）。
+ *
+ * 資料夾名字尾端是建立者的 PID（`awayterm-verify-team-<pid>`，`agent/mod.rs`；
+ * probe 也一樣）。那個 PID 還活著又不是我啟動的 → 可能是安裝版、另一個 worktree
+ * 或另一個 agent 正在跑的 `--verify` → 不碰，只印出來。
+ * 名字尾端沒有 PID 的（不是這幾支程式建的）一律不碰。
+ */
 function cleanTemp() {
   const dir = tmpdir();
   const removed = [];
@@ -64,6 +92,13 @@ function cleanTemp() {
   }
   for (const name of names) {
     if (!TEMP_PREFIXES.some((p) => name.startsWith(p))) continue;
+    const m = /-(\d+)$/.exec(name);
+    if (!m) continue;
+    const owner = Number(m[1]);
+    if (!ourPids.has(owner) && pidAlive(owner)) {
+      console.log(`[dev-verify] 留著 ${name}：建立它的 PID ${owner} 還活著，而且不是我啟動的`);
+      continue;
+    }
     try {
       rmSync(join(dir, name), { recursive: true, force: true });
       removed.push(name);
@@ -75,17 +110,23 @@ function cleanTemp() {
 }
 
 /**
- * 「這些是我啟動的」——收尾掃描只會動這裡面的 PID。
+ * 「這些是我啟動的」——收尾掃描只會動這裡面的行程。PID → 建立時間（Unix ms；拿不到是 0）。
  *
- * 每次 `killTree()` 動手**之前**先把那棵樹的子孫記進來：`taskkill /T` 之後父子關係就沒了，
+ * 每次收樹**之前**先把那棵樹的子孫記進來：`taskkill` 之後父子關係就沒了，
  * 事後再問就認不出誰是誰（tauri dev 的 watcher 重啟過 app 時尤其明顯）。
+ * 記建立時間是因為 PID 會被回收：收尾時 PID 與建立時間**都**對得上才算同一隻。
  */
-const ourPids = new Set();
+const ourPids = new Map();
 
-/** `pid` 的所有子孫（含自己）。只在 Windows 上用得到。 */
-function collectDescendants(pid) {
-  const out = new Set([Number(pid)]);
-  if (!isWindows) return out;
+/** 子行程 spawn 的時間、結束的時間（Unix ms）。用來判斷「PID 是不是被回收了」。 */
+let spawnedAt = 0;
+let exitedAt = 0;
+/** 時鐘誤差的寬限（WMI 的 CreationDate 與 Date.now() 取樣點不同）。 */
+const SLACK_MS = 2000;
+
+/** 系統上所有行程：PID → { ppid, created }。只在 Windows 上用得到。 */
+function snapshotProcesses() {
+  const table = new Map();
   let text = '';
   try {
     text = execFileSync(
@@ -93,25 +134,57 @@ function collectDescendants(pid) {
       [
         '-NoProfile',
         '-Command',
-        'Get-CimInstance Win32_Process | ForEach-Object { "$($_.ProcessId) $($_.ParentProcessId)" }',
+        'Get-CimInstance Win32_Process | ForEach-Object { ' +
+          '$c = 0; if ($_.CreationDate) { $c = ([DateTimeOffset]$_.CreationDate).ToUnixTimeMilliseconds() }; ' +
+          '"$($_.ProcessId) $($_.ParentProcessId) $c" }',
       ],
       { encoding: 'utf8' }
     );
   } catch {
+    return table;
+  }
+  for (const line of text.split(/\r?\n/)) {
+    const [pid, ppid, created] = line.trim().split(/\s+/).map(Number);
+    if (pid > 0) table.set(pid, { ppid, created: created || 0 });
+  }
+  return table;
+}
+
+/**
+ * 我 spawn 的那個根（`rootPid`）的子孫：PID → 建立時間。根還活著的話也包含根。
+ *
+ * 只靠 ParentProcessId 會認錯（稽核 I2）：父行程結束後它的 PID 可能被別人拿走，
+ * 那個新行程的子行程 ParentProcessId 也是同一個數字。所以：
+ *   * 根：還在的話建立時間要落在 spawn 之後，否則那是別人（PID 已被回收）→ 回傳空的；
+ *   * 根的直接子行程：建立時間要在根活著的期間（`spawnedAt`～根結束／現在）；
+ *   * 更下層：建立時間不可早於父行程（早於＝父的 PID 是回收來的）。
+ */
+function collectDescendants(rootPid) {
+  const out = new Map();
+  if (!isWindows || !rootPid) return out;
+  const table = snapshotProcesses();
+  const root = table.get(rootPid);
+  const lo = spawnedAt - SLACK_MS;
+  // 根已結束：exit 事件一定晚於真正結束，所以 exitedAt 本身就是上限，不加寬限
+  //（加了寬限，回收那個 PID 的新行程剛生的子行程就可能被算進來）
+  const hi = exitedAt || Date.now() + SLACK_MS;
+  const rootAlive = !exitedAt && root && root.created >= lo;
+  if (root && !rootAlive && !exitedAt) {
+    // 還沒收到 exit，PID 上卻是一隻 spawn 之前就在的行程——不是我的，整棵都不碰
     return out;
   }
-  const parents = new Map();
-  for (const line of text.split(/\r?\n/)) {
-    const [a, b] = line.trim().split(/\s+/).map(Number);
-    if (a > 0) parents.set(a, b);
-  }
-  // 廣度優先展開（行程數量頂多幾百，直接掃）
+  if (rootAlive) out.set(rootPid, root.created);
+  const inWindow = (c) => c.created && c.created >= lo && c.created <= hi;
   let grew = true;
   while (grew) {
     grew = false;
-    for (const [child, parent] of parents) {
-      if (out.has(parent) && !out.has(child)) {
-        out.add(child);
+    for (const [pid, info] of table) {
+      if (out.has(pid) || pid === rootPid) continue;
+      let ok = false;
+      if (info.ppid === rootPid) ok = inWindow(info);
+      else if (out.has(info.ppid)) ok = info.created && info.created >= out.get(info.ppid);
+      if (ok) {
+        out.set(pid, info.created);
         grew = true;
       }
     }
@@ -119,22 +192,51 @@ function collectDescendants(pid) {
   return out;
 }
 
-/** 依 PID 收掉整棵行程樹。**絕不依名稱，也絕不收不是自己啟動的樹。** */
+/** 依 PID 逐一收掉（Windows）。**不用 /T**：`/T` 自己再依 ParentProcessId 找子孫，不看建立時間。 */
+function killPids(pids) {
+  const killed = [];
+  for (const pid of pids) {
+    try {
+      execFileSync('taskkill', ['/PID', String(pid), '/F'], { stdio: 'ignore' });
+      killed.push(pid);
+    } catch {
+      // 已經自己結束了
+    }
+  }
+  return killed;
+}
+
+/**
+ * 收掉我 spawn 的那棵樹。**絕不依名稱，也絕不收不是自己啟動的樹。**
+ *
+ * 子行程已經結束（`exitedAt`）之後**不再對它的 PID 下手**——那個 PID 可能已經是別人的
+ *（稽核 I2）；只收「建立時間落在它活著期間」的遺孤。
+ */
 function killTree(pid) {
   if (!pid) return;
-  for (const p of collectDescendants(pid)) ourPids.add(p);
-  try {
-    if (isWindows) {
-      // /T ＝連子孫一起；/F ＝強制。只認 PID。
-      execFileSync('taskkill', ['/PID', String(pid), '/T', '/F'], { stdio: 'ignore' });
-    } else {
+  if (!isWindows) {
+    if (exitedAt) return; // 同上：結束後 process group 的號碼也可能被重用
+    try {
       // 子行程是 process group leader（detached），負號＝整組
       process.kill(-pid, 'SIGKILL');
+      console.log(`[dev-verify] 已收掉行程群組 ${pid}`);
+    } catch {
+      // 已經自己結束了就沒事
     }
-    console.log(`[dev-verify] 已收掉行程樹 PID ${pid}`);
-  } catch {
-    // 已經自己結束了就沒事
+    return;
   }
+  // 收兩輪：收的時候 tauri dev 的 watcher 可能剛好又生出新的子行程
+  let total = 0;
+  for (let round = 0; round < 2; round++) {
+    const tree = collectDescendants(pid);
+    const todo = [...tree.keys()]; // 都是快照當下活著的
+    if (!todo.length) break;
+    for (const [p, c] of tree) ourPids.set(p, c);
+    // 根先收（它不在了 watcher 就不會再重生 app），再收其他
+    todo.sort((a, b) => (a === pid ? -1 : b === pid ? 1 : 0));
+    total += killPids(todo).length;
+  }
+  if (total) console.log(`[dev-verify] 已收掉 PID ${pid} 那棵樹（${total} 隻）`);
 }
 
 /** `src-tauri/target/{debug,release}` 底下活著的行程（PID、路徑、啟動時間）。 */
@@ -149,7 +251,8 @@ function listTargetProcesses() {
         '-NoProfile',
         '-Command',
         `Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -like '${target}\\*' } | ` +
-          'ForEach-Object { "$($_.ProcessId)`t$($_.CreationDate.ToString(\'HH:mm:ss\'))`t$($_.ExecutablePath)" }',
+          'ForEach-Object { $c = 0; if ($_.CreationDate) { $c = ([DateTimeOffset]$_.CreationDate).ToUnixTimeMilliseconds() }; ' +
+          '"$($_.ProcessId)`t$c`t$($_.CreationDate.ToString(\'HH:mm:ss\'))`t$($_.ExecutablePath)" }',
       ],
       { encoding: 'utf8' }
     );
@@ -158,11 +261,27 @@ function listTargetProcesses() {
   }
   const rows = [];
   for (const line of out.split(/\r?\n/)) {
-    const [pid, started, ...rest] = line.trim().split('\t');
+    const [pid, created, started, ...rest] = line.trim().split('\t');
     const n = Number(pid);
-    if (n > 0) rows.push({ pid: n, started: started || '?', path: rest.join('\t') });
+    if (n > 0) rows.push({ pid: n, created: Number(created) || 0, started: started || '?', path: rest.join('\t') });
   }
   return rows;
+}
+
+/** 1420 有沒有人在聽（vite 的 `localhost` 可能綁 IPv4 或 IPv6，兩個都探）。 */
+function portInUse(port) {
+  const probe = (host) =>
+    new Promise((resolve) => {
+      const s = createConnection({ host, port });
+      const done = (v) => {
+        s.destroy();
+        resolve(v);
+      };
+      s.setTimeout(1000, () => done(false));
+      s.once('connect', () => done(true));
+      s.once('error', () => done(false));
+    });
+  return Promise.all([probe('127.0.0.1'), probe('::1')]).then((r) => r.some(Boolean));
 }
 
 /**
@@ -172,12 +291,19 @@ function listTargetProcesses() {
  * 以及任何佔著 vite 1420 的東西。撞上了硬跑下去只會兩敗俱傷
  *（`beforeDevCommand` 失敗 → 什麼都沒驗到，收尾還把對方砍了）。
  */
-function preflight() {
+async function preflight() {
   const running = listTargetProcesses();
   if (running.length) {
     console.log('[dev-verify] 中止：這個 repo 的 target 底下已經有行程在跑（不是我啟動的，我不會碰它）：');
     for (const r of running) console.log(`[dev-verify]   PID ${r.pid}　啟動 ${r.started}　${r.path}`);
     console.log('[dev-verify] 可能是同一個團隊的另一個 agent 或使用者開著 dev。請先協調好再跑 verify。');
+    process.exit(1);
+  }
+  // dev 模式要用 vite 的 1420。**spawn 之前**就真的探一次（稽核 I6）——以前只靠 spawn 之後
+  // 比對 vite 的錯誤字串，那時 tauri CLI 已經跑起來了。release 模式不經 vite，不用查。
+  if (!release && (await portInUse(1420))) {
+    console.log('[dev-verify] 中止：1420 已經有人在聽（通常是有人正在跑 dev：同團隊的另一個 agent 或使用者）。');
+    console.log('[dev-verify] 我不會去動它；請先協調好再跑 verify。');
     process.exit(1);
   }
 }
@@ -208,22 +334,18 @@ function sweepStrays() {
   const killed = [];
   const others = [];
   for (const r of rows) {
-    if (!ourPids.has(r.pid)) {
+    // PID **和建立時間**都要對得上：只看 PID 的話，我的行程結束後被別人拿走的 PID 也會中（稽核 I2）
+    if (!ourPids.has(r.pid) || !r.created || ourPids.get(r.pid) !== r.created) {
       others.push(r);
       continue;
     }
-    try {
-      execFileSync('taskkill', ['/PID', String(r.pid), '/T', '/F'], { stdio: 'ignore' });
-      killed.push(r.pid);
-    } catch {
-      // 已經自己結束了
-    }
+    killed.push(...killPids([r.pid]));
   }
   return { killed, others };
 }
 
 // 別人正在跑就直接中止（TASK-034）。要在 spawn 之前，才不會白跑一輪又把對方收掉。
-preflight();
+await preflight();
 
 const what = release ? 'release exe' : 'dev';
 console.log(
@@ -247,6 +369,7 @@ if (release && !existsSync(exe)) {
 }
 // stdio 用 pipe 而不是 inherit：輸出照樣原封不動轉出去（下面的 write），
 // 但這樣才看得到「驗證跑完了」那一行 → 可以當場收工，不必等逾時。
+spawnedAt = Date.now();
 const child = release
   ? spawn(exe, ['--verify', tabs], { stdio: ['ignore', 'pipe', 'pipe'], detached: !isWindows })
   : spawn(process.execPath, [cli, 'dev', '--', '--', '--verify', tabs], {
@@ -317,9 +440,12 @@ for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
 }
 
 child.on('exit', (code) => {
+  exitedAt = Date.now();
   clearTimeout(timer);
   // 正常結束也要確認一次：tauri dev 的 watcher 可能已經重新啟動過 app，
-  // 那個新的 app 行程不是 npx 的直接子行程，但仍在同一棵樹裡
+  // 那個新的 app 行程不是 npx 的直接子行程，但仍掛在它底下。
+  // ⚠️ child 已經結束了：**不再對 child.pid 下 taskkill**（PID 可能已被回收，稽核 I2）；
+  // exitedAt 設了之後 killTree 只收「建立時間落在 child 活著期間」的遺孤。
   killTree(child.pid);
   const { killed, others } = sweepStrays();
   const removed = cleanTemp();

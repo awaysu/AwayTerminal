@@ -29,6 +29,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 use std::time::Duration;
 
+// `open_native()` 回的是具體型別，DTR／RTS 那幾個方法要把 trait 帶進來
+use serialport::SerialPort;
+
 use crate::session::{ExitInfo, OnExit, OnOutput, TerminalSession};
 
 /// 讀取的輪詢間隔。
@@ -312,7 +315,8 @@ pub fn open(params: &ComParams) -> Result<(Link, Vec<String>), String> {
         .stop_bits(stop.value)
         .flow_control(flow.value)
         .timeout(READ_POLL)
-        .open()
+        // 要拿平台原生型別（Windows 的 `COMPort`）才能另外設寫入逾時，見下面 E12 的說明
+        .open_native()
         .map_err(|e| {
             // Linux 沒進 dialout 群組的話開埠會是「權限不足」——那是**設定問題不是壞掉**，
             // 錯誤訊息要直接告訴使用者要跑哪一行（`CLAUDE.md` 平台差異表的權限那一欄）。
@@ -342,12 +346,11 @@ pub fn open(params: &ComParams) -> Result<(Link, Vec<String>), String> {
     }
 
     // 寫入要在另一條執行緒上做 → 需要第二個 handle（`try_clone`）。
-    // 它的逾時另外設成 2 秒（舊版 WriteTimeout）：讀取那條要短逾時輪詢，
-    // 寫入那條要給流量控制留時間，兩者不能共用同一個值。
+    // 讀取那條要短逾時輪詢，寫入那條要給流量控制留 2 秒（舊版 WriteTimeout），兩者不能共用同一個值。
     let mut writer = port
-        .try_clone()
+        .try_clone_native()
         .map_err(|e| tf("err.comHandleFailed", &[&params.port, &e.description]))?;
-    let _ = writer.set_timeout(WRITE_TIMEOUT);
+    set_split_timeouts(&port, &mut writer);
 
     Ok((
         Link {
@@ -357,6 +360,58 @@ pub fn open(params: &ComParams) -> Result<(Link, Vec<String>), String> {
         },
         warnings,
     ))
+}
+
+/// 讀取 25ms、寫入 2 秒的逾時。
+///
+/// ⚠️ 稽核 E12：Windows 的逾時（`SetCommTimeouts`）是**裝置層級**的——`try_clone` 出來的
+/// handle 是同一個 file object，第一版對 writer 呼叫 `set_timeout(2s)` 其實把讀取那條也改成
+/// 2 秒：讀取執行緒每次要等滿 2 秒才醒來看「關了沒」，關分頁後埠最多再被佔 2 秒（馬上重開會失敗）。
+/// `serialport` 的 `set_timeout` 讀寫一起設，沒辦法分開，所以 Windows 自己呼叫一次
+/// `SetCommTimeouts`：讀的欄位照 `serialport` 的設法（有資料立刻回、沒有就等 `READ_POLL`），
+/// 寫的欄位給 `WRITE_TIMEOUT`。
+///
+/// mac／Linux 的逾時是 `serialport` 自己用 `poll` 做的、存在各自的物件上，本來就分得開。
+#[cfg(windows)]
+fn set_split_timeouts(port: &serialport::COMPort, _writer: &mut serialport::COMPort) {
+    use std::os::windows::io::AsRawHandle;
+
+    /// Win32 `COMMTIMEOUTS`（五個 DWORD）。只用這一個 API，不為它多開 windows-sys 的 feature。
+    #[repr(C)]
+    struct CommTimeouts {
+        read_interval_timeout: u32,
+        read_total_timeout_multiplier: u32,
+        read_total_timeout_constant: u32,
+        write_total_timeout_multiplier: u32,
+        write_total_timeout_constant: u32,
+    }
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn SetCommTimeouts(h: *mut std::ffi::c_void, t: *const CommTimeouts) -> i32;
+    }
+
+    let t = CommTimeouts {
+        // 同 serialport 的 `set_timeout`：MAXDWORD/MAXDWORD/常數＝「有資料就回，沒有就等常數毫秒」
+        read_interval_timeout: u32::MAX,
+        read_total_timeout_multiplier: u32::MAX,
+        read_total_timeout_constant: READ_POLL.as_millis() as u32,
+        write_total_timeout_multiplier: 0,
+        write_total_timeout_constant: WRITE_TIMEOUT.as_millis() as u32,
+    };
+    // SAFETY：handle 由 `port` 持有、在這個呼叫期間有效；`t` 是正確配置的 COMMTIMEOUTS。
+    let ok = unsafe { SetCommTimeouts(port.as_raw_handle() as *mut std::ffi::c_void, &t) };
+    if ok == 0 {
+        println!(
+            "[AwayTerminal] SetCommTimeouts 失敗（讀寫逾時沿用 {}ms）：{}",
+            READ_POLL.as_millis(),
+            std::io::Error::last_os_error()
+        );
+    }
+}
+
+#[cfg(not(windows))]
+fn set_split_timeouts(_port: &serialport::TTYPort, writer: &mut serialport::TTYPort) {
+    let _ = writer.set_timeout(WRITE_TIMEOUT);
 }
 
 // ---------------------------------------------------------------- session
@@ -397,7 +452,7 @@ struct ExitOnce {
 impl ExitOnce {
     fn fire(&self) {
         if !self.fired.swap(true, Ordering::SeqCst) {
-            (self.on_exit)(ExitInfo { exit_code: None });
+            (self.on_exit)(ExitInfo::ended(None));
         }
     }
 }

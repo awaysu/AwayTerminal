@@ -77,6 +77,8 @@ function tooltipFor(tab) {
     s += tab.sandbox.hasWorktree
       ? `\n${fmt('sb.tipBranch', tab.sandbox.branch)}`
       : `\n${T['sb.tipNoWorktree']}`;
+    // BUG D15：護欄沒真的生效（例如 Claude Code 的 hook 要 node，但找不到 node）
+    if (tab.sandbox.guardWarning) s += `\n⚠ ${tab.sandbox.guardWarning}`;
   } else if (tab.connSandbox === false) {
     s += `\n${T['sb.tipOff']}`;
   }
@@ -465,6 +467,10 @@ function render() {
       sb.title = tab.sandbox.hasWorktree
         ? fmt('sb.tipBranch', tab.sandbox.branch)
         : T['sb.tipNoWorktree'];
+      if (tab.sandbox.guardWarning) {
+        if (tab.sandbox.hasWorktree) sb.className += ' partial';
+        sb.title += `\n⚠ ${tab.sandbox.guardWarning}`;
+      }
       row.insertBefore(sb, close);
     }
     el.strip.appendChild(row);
@@ -475,7 +481,10 @@ function render() {
 function refreshTooltips() {
   for (const row of el.strip.querySelectorAll('.tab-row')) {
     const tab = state.tabs.find((t) => String(t.id) === row.dataset.id);
-    if (tab) row.title = tooltipFor(tab);
+    if (!tab) continue;
+    // 代理團隊那一列要連附加行一起刷（和 render 時同一個組法；BUG-AUDIT B12）
+    const team = teamOfTab(tab.id);
+    row.title = team ? `${tooltipFor(tab)}\n${teamTip(team)}` : tooltipFor(tab);
   }
 }
 
@@ -571,9 +580,12 @@ async function toggleSandbox(id) {
   );
   if (!restart) return;
   const conn = tab.connName;
+  // 重開要回到原本的工作目錄：沒帶 cwd 會開在預設目錄（桌面），不是 repo 就沒有 worktree，
+  // pickDir 也不會再問（BUG-AUDIT B6）。舊後端沒送 workDir 時退回預設（等於原本行為）。
+  const cwd = tab.workDir || null;
   await invoke('tab_close', { id });
   try {
-    await createSession({ kind: 'conn', conn });
+    await createSession({ kind: 'conn', conn, cwd });
   } catch (e) {
     await showInfo(T['msg.connectFail'], String(e));
   }
@@ -783,7 +795,12 @@ function installStripEvents() {
 
   el.strip.addEventListener('dblclick', (e) => {
     const id = idOfRow(e.target);
-    if (id !== null && !e.target.closest('.tab-close')) renameTab(id);
+    if (id === null || e.target.closest('.tab-close')) return;
+    // 代理團隊代表列的標題＝組名：改 `Team::title`，不是分頁標題（改分頁標題會被重綁蓋回去；
+    // 同右鍵「改名」那條，BUG-AUDIT B11）
+    const team = teamOfTab(id);
+    if (team) renameTeam(team);
+    else renameTab(id);
   });
 
   el.strip.addEventListener('contextmenu', (e) => {
@@ -839,7 +856,9 @@ function installStripEvents() {
     e.dataTransfer.effectAllowed = 'move';
     try {
       e.dataTransfer.setData('text/plain', String(dragId));
-    } catch (_) {}
+    } catch {
+      /* 有些 webview 不給 setData，拖曳照樣靠 dragId */
+    }
   });
   el.strip.addEventListener('dragover', (e) => {
     if (dragId === null) return;
@@ -865,9 +884,25 @@ function installStripEvents() {
     const from = dragId;
     endDrag();
     if (from === null || targetId === null || from === targetId) return;
-    const ids = state.tabs.map((t) => t.id).filter((x) => x !== from);
-    const at = ids.indexOf(targetId);
+    const all = state.tabs.map((t) => t.id);
+    const fromIdx = all.indexOf(from);
+    const targetIdx = all.indexOf(targetId);
+    const ids = all.filter((x) => x !== from);
+    let at = ids.indexOf(targetId);
     if (at < 0) return;
+    // 往下拖＝放在目標**後面**，否則永遠拖不到最後一個（BUG-AUDIT B7）。
+    // 目標是代理團隊代表列時，要放在整組的最後一格後面，不要插進組裡。
+    if (fromIdx >= 0 && fromIdx < targetIdx) {
+      let last = at;
+      const team = teamOfTab(targetId);
+      if (team) {
+        for (const a of team.agents) {
+          const k = a.tab === null ? -1 : ids.indexOf(a.tab);
+          if (k > last) last = k;
+        }
+      }
+      at = last + 1;
+    }
     ids.splice(at, 0, from);
     invoke('tabs_reorder', { ids }).catch((err) => log(`[tabbar] 排序失敗：${err}`));
   });
@@ -977,16 +1012,24 @@ export function showUrlMenu(url, x, y) {
  * `acceptandstore`＝繼續並記住這台主機、`reject`＝取消）。
  */
 function installWeakAlgoDialog() {
+  let done = () => {};
   const answer = (id, value) => {
     el.weakAlgo.hidden = true;
     invoke('ssh_hostkey_answer', { id, answer: value }).catch((e) =>
       log(`[tabbar] 弱演算法回覆失敗：${e}`)
     );
+    done();
   };
 
   listen('ssh-weak-algo', (e) => {
-    const r = e.payload;
-    const where = r.port === 22 ? r.host : `${r.host}:${r.port}`;
+    enqueueSshAsk((finish) => {
+      done = finish;
+      showWeakAlgo(e.payload);
+    });
+  }).catch((e) => log(`[tabbar] 掛弱演算法 listener 失敗：${e}`));
+
+  const showWeakAlgo = (r) => {
+    const where = withTabName(r, r.port === 22 ? r.host : `${r.host}:${r.port}`);
     el.weakAlgoTitle.textContent = T['wa.title'];
     el.weakAlgoBody.textContent = fmt('wa.body', where);
     const tbody = el.weakAlgoList.querySelector('tbody');
@@ -1006,7 +1049,44 @@ function installWeakAlgoDialog() {
 
     el.waGo.onclick = () => answer(r.id, 'acceptandstore');
     el.waCancel.onclick = () => answer(r.id, 'reject');
-  }).catch((e) => log(`[tabbar] 掛弱演算法 listener 失敗：${e}`));
+  };
+}
+
+// 主機金鑰／弱演算法詢問的佇列（BUG-AUDIT B9）：兩種對話框都只有一份，兩個 SSH 分頁
+// 同時問時第二個會蓋掉第一個，第一個的 id 永遠得不到答覆（Rust 等到 180 秒逾時）。
+// 所以排隊、一次只顯示一個，答完一個才顯示下一個。
+const sshAskQueue = [];
+let sshAskBusy = false;
+
+/** `show(finish)`：顯示對話框，使用者答完要呼叫 `finish()` 讓下一個上來。 */
+function enqueueSshAsk(show) {
+  sshAskQueue.push(show);
+  pumpSshAsk();
+}
+
+function pumpSshAsk() {
+  if (sshAskBusy || sshAskQueue.length === 0) return;
+  sshAskBusy = true;
+  const show = sshAskQueue.shift();
+  let finished = false;
+  const finish = () => {
+    if (finished) return;
+    finished = true;
+    sshAskBusy = false;
+    pumpSshAsk();
+  };
+  try {
+    show(finish);
+  } catch (e) {
+    log(`[tabbar] SSH 詢問對話框失敗：${e}`);
+    finish();
+  }
+}
+
+/** 對話框裡的主機名稱後面加上是哪個分頁問的（同時有好幾個 SSH 分頁時才分得出來）。 */
+function withTabName(r, where) {
+  const tab = state.tabs.find((t) => t.id === r.tabId);
+  return tab && tab.title ? `${where} (${tab.title})` : where;
 }
 
 /** `m` 協定：下一個空的選取回覆是因為程式接管了滑鼠。 */
@@ -1203,7 +1283,14 @@ function installMenus() {
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
       hideMenus();
-      if (!el.modal.hidden) el.modalCancel.click();
+      // 延到這一輪 keydown 分派完才關：其他對話框的 Esc handler 靠「#modal 還開著」判斷
+      // 這一下是給 modal 的（BUG-AUDIT B3）。這個 listener 最早掛，同步關掉的話它們
+      // 會看到 modal 已經關了，然後把底下的視窗也一起關掉。
+      if (!el.modal.hidden) {
+        setTimeout(() => {
+          if (!el.modal.hidden) el.modalCancel.click();
+        }, 0);
+      }
     }
   });
 }
@@ -1357,20 +1444,29 @@ function renderConnMenu(list) {
  * 我們一定要回一個答案（逾時 180 秒後 Rust 端會自己當成取消）。
  */
 function installHostKeyDialog() {
+  let done = () => {};
   const answer = (id, value) => {
     el.hostkey.hidden = true;
     invoke('ssh_hostkey_answer', { id, answer: value }).catch((e) =>
       log(`[tabbar] 主機金鑰回覆失敗：${e}`)
     );
+    done();
   };
 
+  // 排隊一次一個（BUG-AUDIT B9，佇列和弱演算法共用）
   listen('ssh-hostkey', (e) => {
-    const r = e.payload;
+    enqueueSshAsk((finish) => {
+      done = finish;
+      showHostKey(e.payload);
+    });
+  }).catch((e) => log(`[tabbar] 掛主機金鑰 listener 失敗：${e}`));
+
+  const showHostKey = (r) => {
     const changed = r.kind === 'changed';
     el.hostkeyBox.classList.toggle('danger', changed);
     el.hostkeyTitle.textContent = changed ? T['hk.titleChanged'] : T['hk.titleUnknown'];
     el.hostkeyBody.textContent = changed ? T['hk.bodyChanged'] : T['hk.bodyUnknown'];
-    el.hkHost.textContent = r.port === 22 ? r.host : `${r.host}:${r.port}`;
+    el.hkHost.textContent = withTabName(r, r.port === 22 ? r.host : `${r.host}:${r.port}`);
     const f = r.fingerprints;
     el.hkAlg.textContent = f.bits ? `${f.algorithm} (${f.bits} bits)` : f.algorithm;
     el.hkSha256.textContent = f.sha256;
@@ -1385,7 +1481,7 @@ function installHostKeyDialog() {
     el.hkCancel.onclick = () => answer(r.id, 'reject');
     // 金鑰變更時預設焦點放「取消」（PuTTY 也是把危險選項放在最不順手的位置）
     (changed ? el.hkCancel : el.hkStore).focus();
-  }).catch((e) => log(`[tabbar] 掛主機金鑰 listener 失敗：${e}`));
+  };
 }
 
 /** 純文字貼上（舊版 `Paste_Click`）：讀剪貼簿 → `v` 協定 → `terminal.js` 的 `doPaste`。 */

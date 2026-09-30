@@ -99,6 +99,20 @@ async function getChatId() {
 }
 
 async function save() {
+  // 勾了「啟用」卻沒有 token／chat id：後端只會記 log 回「未啟動」，使用者看到視窗關了
+  // 以為開好了（BUG-AUDIT B15）→ 先擋下來、視窗不關
+  if (el.enabled.checked) {
+    if (!el.token.value.trim() && !state.hasToken) {
+      await hooks.showInfo(T['remote.title'], T['remote.needToken']);
+      el.token.focus();
+      return;
+    }
+    if (!(Number(el.chat.value.trim()) > 0)) {
+      await hooks.showInfo(T['remote.title'], T['remote.needChatId']);
+      el.chat.focus();
+      return;
+    }
+  }
   try {
     const st = await invoke('telegram_apply', {
       enabled: el.enabled.checked,
@@ -112,6 +126,12 @@ async function save() {
       `[remote] Telegram 遠端：${st.running ? '已啟動' : '未啟動'} chat=${st.chatId} ` +
         `token=${st.hasToken ? '已設定' : '未設定'}`
     );
+    if (el.enabled.checked && !st.running) {
+      // 前面擋過了還是沒啟動（例：後端另有原因）→ 說出來，不要靜靜關窗
+      el.note.textContent = st.stoppedReason || T['remote.notStarted'];
+      el.note.classList.add('rm-error');
+      return;
+    }
     close();
   } catch (e) {
     el.note.textContent = String(e);
@@ -170,6 +190,7 @@ export function initRemoteDialog(injected) {
     save();
   });
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && !el.root.hidden) close();
+    // 頁內 #modal（字型清單、確認框…）開著時 Esc 只關 modal，不連底下這個視窗一起關（BUG-AUDIT B3）
+    if (e.key === 'Escape' && !el.root.hidden && document.getElementById('modal').hidden) close();
   });
 }

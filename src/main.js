@@ -18,7 +18,7 @@ import { SerializeAddon } from '@xterm/addon-serialize';
 import { invoke, Channel } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 
-import { bridgeReady, log, createSession } from './bridge.js';
+import { bridgeReady, launchReady, log, createSession } from './bridge.js';
 import { loadAppFonts, fontReady } from './appfonts.js';
 import { loadAdapter as loadImeAdapter, engineInfo } from './ime/detect.js';
 import { initTabBar, currentTabState, askYesNo, showInfo, showUrlMenu, toast } from './tabbar.js';
@@ -97,6 +97,9 @@ window.AwayWebgl = function (term, id) {
   }
   activeRenderer = renderer;
   console.log('[AwayTerminal] renderer =', renderer);
+  // IME adapter 的掛載點：terminal.js 只呼叫 AwayWebgl（AT2-2），所以在這裡順便套上
+  // （BUG-AUDIT A5：原本 window.AwayIme 從沒被呼叫）。非同步、不等它，失敗它自己吞掉。
+  if (window.AwayIme) window.AwayIme(term, id);
   if (!rendererReported) {
     rendererReported = true;
     invoke('report_renderer', { renderer }).catch(() => {});
@@ -175,7 +178,7 @@ async function verifyToolbar(id) {
   // 驗證刻意不用預設的「我的文件」：這台機器的防毒會擋住剛建置的 exe 寫進去
   // （見 Logger::open_with_timeout）。驗證要的是「格式對不對」，寫 TEMP 就好。
   const tmp = await invoke('temp_dir');
-  const logPath = `${tmp}\awayterm-verify.log`;
+  const logPath = `${tmp}\\awayterm-verify.log`;
   try {
     const real = await invoke('log_start', {
       id,
@@ -2139,7 +2142,7 @@ async function verifyMacro() {
   const lines = ['[verify] TTL 巨集（app 端路徑）'];
   try {
     const tmp = await invoke('temp_dir');
-    const path = `${tmp}\awayterm-verify.ttl`;
+    const path = `${tmp}\\awayterm-verify.ttl`;
     // 巨集內容：送一行、等它回來、再設一個旗標檔用的變數
     const src = [
       "timeout = 10",
@@ -2221,7 +2224,7 @@ async function verifyCompose() {
     }
     lines.push(`[verify] 送到分頁後畫面上看得到中文：${seen}`);
     // 把打字清掉（Ctrl+C），免得留在提示字元上
-    await invoke('session_write_text', { id, text: '' });
+    await invoke('session_write_text', { id, text: '\x03' });
     // ⬇ 這個 wait 不能抽：Ctrl+C 之後 PSReadLine 還要重畫一次（印中斷的那一行＋新的提示字元）。
     // 不等它畫完就跑 verifyRestore，它寫進畫面的記號會被這次重畫**蓋掉**，兩個恢復分頁的檢查會假失敗。
     await wait(600);
@@ -2585,7 +2588,7 @@ async function offerMigration() {
       `[migrate] 匯入舊版設定：套用 ${r.applied} 個欄位、${r.conns} 條自訂連線、` +
         `${r.favorites} 筆我的最愛（跳過 ${r.skipped.length} 項）`,
     );
-    await window.AwayAsk?.info?.(
+    await showInfo(
       T['migrate.title'],
       fmt('migrate.done', r.applied, r.conns, r.favorites) +
         (r.warnings.length ? '\n\n' + r.warnings.join('\n') : ''),
@@ -2644,7 +2647,7 @@ async function openDirTab(dir) {
   try {
     const info = engineInfo();
     log(`[main] webview 引擎＝${info.engine}（${info.flavour}）`);
-  } catch (e) {
+  } catch {
     /* 偵測失敗不影響啟動 */
   }
 
@@ -2699,8 +2702,13 @@ async function openDirTab(dir) {
   // 第一次啟動而且有舊版設定 → 問要不要匯入（舊檔只讀，不會被改）
   if (!opt.verify) await offerMigration();
 
-  // 啟動參數帶的資料夾（右鍵開啟時沒有既有實例可轉交）→ 開一個 shell 分頁在那裡
-  if (opt.openDir) await openDirTab(opt.openDir);
+  // 啟動參數帶的資料夾（右鍵開啟時沒有既有實例可轉交）→ 開一個 shell 分頁在那裡。
+  // 要等 bridge 的 onReady（恢復分頁／預設分頁）做完再開，否則兩邊同時建分頁、
+  // 作用中分頁不定（BUG-AUDIT A3）。onReady 看到 openDir 且沒恢復任何分頁時不會再開預設 shell。
+  if (opt.openDir) {
+    await launchReady;
+    await openDirTab(opt.openDir);
+  }
 
   if (opt.bench) {
     try {

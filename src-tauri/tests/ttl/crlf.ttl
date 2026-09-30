@@ -1,0 +1,15 @@
+; CRLF 行尾的巨集（Windows 記事本的預設存法）。
+; 這個檔要保持 CRLF 才有測試意義：.gitattributes 的 `*.ttl text eol=lf` 會把它轉成 LF，
+; 需要另加 `src-tauri/tests/ttl/crlf.ttl text eol=crlf`（單元測試另外在記憶體裡轉 CRLF，
+; 所以就算被轉成 LF 也不會壞，只是少驗一層）。
+
+c_a = 1
+
+c_b = 2
+goto skip
+c_b = 99
+:skip
+/* 註解裡的標籤不可以被登記（以前會 Label already defined.）
+:skip
+*/
+c_after = 3

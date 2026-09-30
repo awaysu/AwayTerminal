@@ -306,9 +306,12 @@ impl Team {
         self.kind == GroupKind::Chat
     }
 
-    /// 聊天室的主持人（第 1 位）。
+    /// 聊天室的主持人＝**格 1**（角色固定主持人），而且有分頁。
+    ///
+    /// 不能用「格號最小、還開著的那格」：主持人分頁關掉後會變成第 2 位（普通參加者）
+    /// 被當主持人去寫結論。格 1 不在＝沒有主持人（`None`）。
     pub fn host(&self) -> Option<&Slot> {
-        self.running().next()
+        self.running().find(|s| s.index == 1)
     }
 
     /// 已啟動（有分頁）的格，依格號排序。
@@ -509,5 +512,16 @@ mod tests {
         t.slots[0].tab = Some(9);
         assert_eq!(t.row_tab(), Some(9), "格 1 啟動之後它才是代表列");
         assert_eq!(t.slot_by_tab(8).unwrap().agent_id(), "Agent-23");
+    }
+
+    /// 主持人固定是格 1：格 1 的分頁關掉後不能換成第 2 位（G4）。
+    #[test]
+    fn host_is_always_slot_one() {
+        let mut t = Team::new("k", 1, "C:\\p");
+        t.slots[0].tab = Some(5);
+        t.slots[1].tab = Some(6);
+        assert_eq!(t.host().map(|s| s.index), Some(1));
+        t.slots[0].tab = None;
+        assert!(t.host().is_none(), "格 1 不在＝沒有主持人，不是由格 2 頂上");
     }
 }

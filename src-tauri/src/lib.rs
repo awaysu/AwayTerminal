@@ -124,6 +124,7 @@ pub fn run() {
             migrate::migrate_import,
             commands::settings_get,
             prefs::settings_apply,
+            prefs::settings_readonly_reason,
             prefs::ssh_weak_clear,
             prefs::font_list,
             winicon::window_icon_probe,
@@ -231,6 +232,8 @@ pub fn run() {
             agent::agent_teams,
             agent::agent_team_tabs,
             agent::agent_tab_closed,
+            // 前端關完整組後通知（B4：之前沒登記，六處呼叫全被 `.catch` 吞掉，團隊留在 TeamManager）
+            agent::agent_team_gone,
             agent::agent_verify_begin,
             agent::agent_verify_send,
             agent::agent_verify_state,
@@ -265,6 +268,14 @@ pub fn run() {
                 i18n::set_lang(&lang);
             }
             settings::spawn_autosave(store.clone());
+            // 檔案總管右鍵選單：已登錄但指向別的 exe（搬家／升級）→ 重新指到這一支（D4）。
+            // 背景做，登錄檔慢也不拖啟動；只在 release 建置做（見 `refresh_if_moved`）。
+            #[cfg(windows)]
+            std::thread::spawn(|| match shellmenu::refresh_if_moved() {
+                Ok(true) => println!("[AwayTerminal] 檔案總管右鍵選單：exe 路徑變了，已重新登錄"),
+                Ok(false) => {}
+                Err(e) => println!("[AwayTerminal] 檔案總管右鍵選單重新登錄失敗：{e}"),
+            });
 
             let view_mode = store.get().view_mode;
             let tabs = Arc::new(TabManager::new(&view_mode));

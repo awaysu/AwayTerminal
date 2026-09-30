@@ -12,6 +12,20 @@ use std::sync::{Arc, Mutex};
 pub struct ExitInfo {
     /// 取不到 exit code 時為 None。
     pub exit_code: Option<i32>,
+    /// 使用者**明確取消**而結束（SSH 主機金鑰／弱演算法按「取消」、登入提示按 Ctrl+C）。
+    /// 斷線自動重連看到它就不排重連（E3），否則 3 秒後又問同一個問題、無限循環。
+    #[serde(skip)]
+    pub user_cancelled: bool,
+}
+
+impl ExitInfo {
+    /// 一般的結束（行程結束／斷線）。
+    pub fn ended(exit_code: Option<i32>) -> Self {
+        Self {
+            exit_code,
+            user_cancelled: false,
+        }
+    }
 }
 
 /// 原始位元組輸出（在後端的讀取執行緒上呼叫，不可阻塞太久）。
@@ -60,6 +74,24 @@ impl SessionManager {
     /// 取出並移除；呼叫端負責 close()。
     pub fn remove(&self, id: u32) -> Option<Arc<dyn TerminalSession>> {
         self.lock().remove(&id)
+    }
+
+    /// 目前登記的**正是** `session` 這一條才移除（比對 Arc 指標）。
+    /// 給「on_exit 比 insert 先跑完」的收尾用：不可以誤收之後重連上的新 session。
+    pub fn remove_if_same(
+        &self,
+        id: u32,
+        session: &Arc<dyn TerminalSession>,
+    ) -> Option<Arc<dyn TerminalSession>> {
+        let mut map = self.lock();
+        let same = map
+            .get(&id)
+            .is_some_and(|cur| std::ptr::addr_eq(Arc::as_ptr(cur), Arc::as_ptr(session)));
+        if same {
+            map.remove(&id)
+        } else {
+            None
+        }
     }
 
     pub fn ids(&self) -> Vec<u32> {

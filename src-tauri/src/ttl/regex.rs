@@ -215,10 +215,17 @@ impl Interp {
             self.vars.set_result(0);
             return Ok(());
         }
-        let from = (pos - 1) as usize;
-        let text = String::from_utf8_lossy(&cur).into_owned();
-        // 原碼是從 `pos` 之後的那一段裡找（`p = tmpstr + pos`）
-        let (head, tail) = text.split_at(from.min(text.len()));
+        // 原碼是從 `pos` 之後的那一段裡找（`p = tmpstr + pos`）。
+        // ⚠️ **在位元組層切**：`pos` 是位元組位置，可能落在中文字（UTF-8 3 位元組）中間；
+        // 以前先轉 `String` 再 `split_at` → 不在字元邊界就 panic（release＝app 關掉）。
+        // 落在字中間時，開頭那幾個延續位元組（0x80–0xBF）原樣留在前段，不拿去比對。
+        let mut from = ((pos - 1) as usize).min(cur.len());
+        while from < cur.len() && (0x80..0xC0).contains(&cur[from]) {
+            from += 1;
+        }
+        let head: &[u8] = &cur[..from];
+        let tail = String::from_utf8_lossy(&cur[from..]).into_owned();
+        let tail = tail.as_str();
         let pattern = String::from_utf8_lossy(&pattern).into_owned();
         let opts = self.regex_options().clone();
         match find_one(&opts, &pattern, tail) {
@@ -227,7 +234,7 @@ impl Interp {
                 let start = m.start;
                 let len = m.whole.len();
                 self.apply_match(&m);
-                let mut out = head.as_bytes().to_vec();
+                let mut out = head.to_vec();
                 out.extend_from_slice(&tail.as_bytes()[..start]);
                 out.extend_from_slice(&newstr);
                 out.extend_from_slice(&tail.as_bytes()[start + len..]);
@@ -349,6 +356,21 @@ mod tests {
 
     fn run(src: &str) -> super::super::vars::Vars {
         run_text(src).expect("巨集應該跑得完")
+    }
+
+    /// `strreplace` 的位置落在中文字中間：不可以 panic（以前 `String::split_at` 不在字元邊界）。
+    #[test]
+    fn strreplace_with_cjk_positions() {
+        // 位置 2 在「中」（3 個位元組）的中間 → 從下一個字元開始找
+        let v = run("s = '中文abc'\nstrreplace s 2 'a' 'x'\nr = result");
+        assert_eq!(v.int_of("r"), Some(1));
+        assert_eq!(v.str_of("s").unwrap(), "中文xbc".as_bytes());
+        // 位置剛好在字元邊界
+        let v = run("s = '中文abc'\nstrreplace s 4 '文' 'X'");
+        assert_eq!(v.str_of("s").unwrap(), "中Xabc".as_bytes());
+        // 前段的中文原封不動
+        let v = run("s = '中文abc中'\nstrreplace s 5 '中' '!'");
+        assert_eq!(v.str_of("s").unwrap(), "中文abc!".as_bytes());
     }
 
     /// **`docs/TTL-REGEX.md` 第 2 節那張表**：換引擎或升版時這條會先叫。

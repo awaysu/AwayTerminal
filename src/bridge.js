@@ -13,7 +13,7 @@ import { invoke, Channel } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { restoreSavedTabs } from './restoretabs.js';
 
-import { T } from './strings.js';
+import { T, fmt } from './strings.js';
 import { showUrlMenu, noteMouseHint, noSelectionToast, toast, writeClipboard } from './tabbar.js';
 
 const US = '\x1f';
@@ -51,10 +51,14 @@ function shotPng(id) {
   const lh = Math.ceil(size * 1.35);
   const pad = 8;
   const cv = document.createElement('canvas');
-  // 手機看的圖：2 倍取樣才不會糊掉（Telegram 會再壓一次）
-  const dpr = 2;
-  cv.width = (s.cols * cw + pad * 2) * dpr;
-  cv.height = (s.rows * lh + pad * 2) * dpr;
+  // 手機看的圖：2 倍取樣才不會糊掉（Telegram 會再壓一次）。
+  // 但 Telegram sendPhoto 限「寬＋高 ≤ 10000」：4K 全螢幕 2 倍會超過 → 等比縮小到剛好不超過
+  // （BUG-AUDIT H5；留一點餘裕給取整）。
+  const baseW = s.cols * cw + pad * 2;
+  const baseH = s.rows * lh + pad * 2;
+  const dpr = Math.min(2, 9990 / (baseW + baseH));
+  cv.width = Math.floor(baseW * dpr);
+  cv.height = Math.floor(baseH * dpr);
   const g = cv.getContext('2d');
   if (!g) return '';
   g.scale(dpr, dpr);
@@ -98,7 +102,7 @@ function deliver(str) {
     try {
       const t = JSON.parse(str.slice(1));
       if (typeof t.renderer === 'string') window.AwayRendererPref = t.renderer;
-    } catch (e) {
+    } catch {
       /* 壞掉的 JSON 交給 terminal.js 自己處理 */
     }
   }
@@ -118,6 +122,9 @@ function deliver(str) {
       return;
     }
   }
+  // `x{id}` 關閉 pane：那個 id 不會再有 term（id 不重用），扣住的殘餘輸出永遠補寫不了 →
+  // 丟掉，免得 pendingOut 一直累積（BUG-AUDIT C11）
+  if (str.charCodeAt(0) === 120 /* x */) pendingOut.delete(Number(str.slice(1)));
   const ev = { data: str };
   for (const fn of listeners) {
     try {
@@ -352,8 +359,11 @@ export async function createSession(opts = {}) {
       if (term && term.hasTerm(m.id)) {
         term.writeOutput(
           m.id,
-          new TextEncoder().encode(`\r\n\x1b[90m[行程已結束，exit code ${code}]\x1b[0m\r\n`)
+          new TextEncoder().encode(`\r\n\x1b[90m${fmt('term.exited', code)}\x1b[0m\r\n`)
         );
+      } else {
+        // pane 已經不在（關掉了）→ 扣住的輸出不會再有人要（BUG-AUDIT C11）
+        pendingOut.delete(m.id);
       }
     }
   };
@@ -401,6 +411,23 @@ export async function createSession(opts = {}) {
  *   4. 之後 terminal.js 自己 fit 並送 `r{id}US{cols},{rows}` 回來
  */
 async function onReady() {
+  try {
+    await onReadyInner();
+  } finally {
+    resolveLaunch();
+  }
+}
+
+let resolveLaunch = () => {};
+/**
+ * `ready` 之後的啟動流程（恢復分頁／預設分頁）做完才 resolve。main.js 的 `--open-dir`
+ * 要等它，否則兩邊同時建分頁、作用中分頁不定（BUG-AUDIT A3）。
+ */
+export const launchReady = new Promise((r) => {
+  resolveLaunch = r;
+});
+
+async function onReadyInner() {
   await invoke('host_ready');
 
   // 恢復分頁（1.0.45）：上次關閉時勾了「下次開啟恢復目前分頁」就照那份清單重開，
@@ -413,6 +440,15 @@ async function onReady() {
     } catch (e) {
       log(`[bridge] 恢復分頁失敗，改開預設分頁：${e}`);
     }
+  }
+
+  // `--open-dir` 啟動（檔案總管右鍵）而且沒有恢復任何分頁：main.js 等 launchReady 之後
+  // 會在那個資料夾開分頁，這裡就不要再多開一個預設 shell（BUG-AUDIT A3）。
+  // 資料夾不存在時 main.js 不會開，那就照舊開預設 shell，免得一個分頁都沒有。
+  const openDir = (window.AwayLaunch && window.AwayLaunch.openDir) || null;
+  if (!cmd && openDir) {
+    const ok = await invoke('dir_exists', { path: openDir }).catch(() => false);
+    if (ok) return;
   }
 
   // 第一條 session：`--cmd` / `?cmd=` 指定的指令，否則預設 shell。

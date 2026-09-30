@@ -449,7 +449,9 @@ pub fn title_of(lib: &Library, data_dir: &Path, key: &str) -> String {
     // 第一次用（範本還沒複製出來）時不能退回檔名轉換——「qa-engineer」會變「Qa Engineer」
     ensure_defaults(lib, data_dir);
     let path = roles_dir(lib, data_dir).join(format!("{key}.md"));
-    if let Ok(text) = std::fs::read_to_string(&path) {
+    // 使用者用記事本存過的角色檔可能帶 BOM（第一行變成「\u{feff}# …」，`trim` 去不掉）
+    // 或是 Big5／UTF-16：一律經 `read_text` 解碼並去 BOM，否則標題退成檔名（G10）
+    if let Ok((text, _)) = super::message::read_text(&path) {
         for line in text.lines() {
             let t = line.trim();
             if let Some(title) = t.strip_prefix("# ") {
@@ -493,8 +495,21 @@ pub fn clear_session(lib: &Library, data_dir: &Path, team_number: u32) {
     }
 }
 
+/// 讀 `common.md`／角色檔。不是 UTF-8（使用者用 Big5／UTF-16 存）時照樣解碼，
+/// 不能像 `read_to_string` 那樣整層靜靜消失；BOM 也要去掉，否則組好的檔中間夾一個 BOM（G10）。
 fn read_or_empty(path: &Path) -> String {
-    std::fs::read_to_string(path).unwrap_or_default()
+    match super::message::read_text(path) {
+        Ok((text, enc)) => {
+            if enc != "UTF-8" && enc != "UTF-8 (BOM)" {
+                println!(
+                    "[AwayTerminal] 角色檔 {} 不是 UTF-8，以 {enc} 解碼",
+                    path.display()
+                );
+            }
+            text
+        }
+        Err(_) => String::new(),
+    }
 }
 
 /// 組合一個 agent 的角色檔（UTF-8 無 BOM）→ 回傳絕對路徑。
@@ -573,7 +588,10 @@ pub fn runtime_context(team: &Team, me: &Slot) -> String {
     ));
     sb.push_str(&format!("Provider: {}\n", me.backend_name()));
     sb.push_str(&format!("Team session: MAS-{}\n", team.number));
-    sb.push_str(&format!("Project directory: {}\n", team.dir));
+    // 有沙盒時信箱在 worktree 裡（`bus::MessageBus::new(&work_dir)`）：這裡寫原始 repo，
+    // agent 照字面組路徑就會把信寫進原始 repo 的 `.ai/bus/`，永遠收不到（G5）。
+    // 沒沙盒時 work_dir＝dir，和舊版逐字相同。
+    sb.push_str(&format!("Project directory: {}\n", team.work_dir));
     sb.push_str("Enabled agents:\n");
     for x in &enabled {
         sb.push_str(&format!(
@@ -1030,5 +1048,42 @@ mod tests {
         let text = runtime_context(&team, &team.slots[0]);
         assert!(text.contains("  - Agent-11  Product Manager    (ClaudeCode)   <- you\n"));
         assert!(text.contains("  - Agent-12  Software Engineer  (ClaudeCode)\n"));
+    }
+
+    /// 角色檔帶 BOM 或不是 UTF-8：標題照樣讀到、組檔時角色層不消失、沒有夾 BOM（G10）。
+    #[test]
+    fn reads_role_files_with_bom_or_legacy_encoding() {
+        let dir = temp_dir("bom");
+        ensure_defaults(&TEAM, &dir);
+        let roles = roles_dir(&TEAM, &dir);
+        std::fs::write(roles.join("bom-role.md"), "\u{feff}# 帶 BOM 的角色\n\n內容 A\n").unwrap();
+        assert_eq!(title_of(&TEAM, &dir, "bom-role"), "帶 BOM 的角色");
+
+        // UTF-16 LE（記事本「Unicode」）
+        let mut le = vec![0xFF, 0xFE];
+        le.extend("# UTF16 Role\n\nbody\n".encode_utf16().flat_map(|u| u.to_le_bytes()));
+        std::fs::write(roles.join("utf16-role.md"), &le).unwrap();
+        assert_eq!(title_of(&TEAM, &dir, "utf16-role"), "UTF16 Role");
+
+        // Big5：組檔時角色層要在（以前 read_to_string 失敗＝整層靜靜消失）
+        let mut big5 = b"# Big5 Role\n\n".to_vec();
+        big5.extend([0xA7, 0xB9, 0xA6, 0xA8, 0xA4, 0x46]); // 完成了
+        std::fs::write(roles.join("big5-role.md"), &big5).unwrap();
+        let mut team = team_of(7, "C:\\p");
+        team.slots[1].role = "big5-role".to_string();
+        let p = compose(&TEAM, &dir, &team, 2).unwrap();
+        let text = std::fs::read_to_string(&p).unwrap();
+        assert!(text.contains("# Big5 Role"));
+        assert!(text.contains("完成了"));
+        assert!(!text.contains('\u{feff}'));
+    }
+
+    /// 有沙盒時執行期脈絡寫 worktree（信箱真正所在的地方），不是原始 repo（G5）。
+    #[test]
+    fn runtime_context_points_at_the_work_dir() {
+        let mut team = team_of(1, "C:\\repo");
+        team.work_dir = "C:\\repo\\.ai\\sandbox\\x".to_string();
+        let text = runtime_context(&team, &team.slots[0]);
+        assert!(text.contains("Project directory: C:\\repo\\.ai\\sandbox\\x\n"));
     }
 }

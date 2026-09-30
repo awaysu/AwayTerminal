@@ -138,6 +138,35 @@ pub fn current(sandbox: bool) -> (bool, String) {
     (false, String::new())
 }
 
+/// 啟動時呼叫：選單**已經登錄**、但指向的不是目前這支 exe（搬家／升級）→ 用原本的選單文字重新登錄（D4）。
+///
+/// 只在 release 建置做：dev 建置的 exe 在 `target\` 底下，重新登錄會把使用者真的選單
+/// 指到 dev 的 exe（TASK-016 踩過）。回傳 `true`＝有重新登錄。
+pub fn refresh_if_moved() -> Result<bool, String> {
+    if cfg!(debug_assertions) || cfg!(test) {
+        return Ok(false);
+    }
+    let (on, command) = current(false);
+    let exe = exe_path();
+    if !on || exe.is_empty() || command.eq_ignore_ascii_case(&command_line(&exe)) {
+        return Ok(false);
+    }
+    // 選單文字沿用登錄檔裡現在的（語言改過的話設定視窗會再套一次）
+    let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+    let text = ROOTS
+        .iter()
+        .filter_map(|root| {
+            hkcu.open_subkey_with_flags(format!(r"{root}\{}", key_name(false)), KEY_READ)
+                .ok()?
+                .get_value::<String, _>("")
+                .ok()
+        })
+        .find(|t| !t.trim().is_empty())
+        .unwrap_or_else(|| "Open with AwayTerminal".to_string());
+    register(&text, false)?;
+    Ok(true)
+}
+
 // ------------------------------------------------------------------ commands
 
 /// 設定視窗的勾選：勾＝寫入、取消＝刪除。回傳套用後的狀態。

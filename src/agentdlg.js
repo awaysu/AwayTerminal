@@ -186,7 +186,8 @@ function applyTexts() {
   el.hint.textContent = T[chat ? 'chat.dlgHint' : 'ma.dlgHint'];
   el.restoreRoles.textContent = T['ma.dlgRestoreRoles'];
   el.openRoles.textContent = T['ma.dlgOpenRoles'];
-  el.ok.textContent = T['ma.dlgOpen'];
+  // 既有團隊是「套用」：切語言時也要維持
+  el.ok.textContent = T[existing ? 'ma.dlgApply' : 'ma.dlgOpen'];
   el.cancel.textContent = T['dlg.cancel'];
   if (!el.slotUi) return;
   for (let i = 0; i < el.slotUi.length; i++) {
@@ -250,14 +251,18 @@ export function initAgentDialog() {
   });
   el.cancel.addEventListener('click', () => close(null));
   document.addEventListener('keydown', (e) => {
+    // 頁內 #modal（確認框之類）開著時 Esc 是給它的，不能連底下這個對話框一起關（B3）
+    if (!document.getElementById('modal').hidden) return;
     if (!el.root.hidden && e.key === 'Escape') close(null);
   });
 
   el.restoreRoles.addEventListener('click', async () => {
     const { askYesNo } = await import('./tabbar.js');
-    if (!(await askYesNo(T['ma.title'], T['ma.dlgRestoreRolesAsk']))) return;
+    if (!(await askYesNo(T[kind === 'chat' ? 'chat.title' : 'ma.title'], T['ma.dlgRestoreRolesAsk'])))
+      return;
     try {
-      opts.roles = await invoke('agent_roles_restore');
+      // 要帶 kind：不帶的話 Rust 端預設是代理團隊，聊天室按了會去還原團隊的角色庫（B5）
+      opts.roles = await invoke('agent_roles_restore', { kind });
       fillRoles();
     } catch (err) {
       log(`[agentdlg] 還原角色檔失敗：${err}`);
@@ -265,7 +270,7 @@ export function initAgentDialog() {
   });
   el.openRoles.addEventListener('click', async () => {
     try {
-      const dir = await invoke('agent_roles_dir');
+      const dir = await invoke('agent_roles_dir', { kind });
       await invoke('open_dir', { path: dir });
     } catch (err) {
       log(`[agentdlg] 開啟角色檔資料夾失敗：${err}`);
@@ -325,6 +330,10 @@ async function openDialog(dir, state, wantKind) {
   for (const n of el.idleRow) n.hidden = kind === 'chat';
   el.dirPath = dir;
   el.dir.textContent = dir;
+  // **先**依這次的 kind 建好下拉選項、**再**設值（B2）：以前順序相反，第一次開時選項還沒建，
+  // 設的值無效 → 顯示第一個選項（10），按套用就把既有團隊的 30 改掉；團隊↔聊天室切換時
+  // 選項是上一種的，回合數 3 也設不進去。
+  applyTexts();
   el.limit.value =
     kind === 'chat'
       ? String(existing ? existing.rounds : opts.defaultRounds)
@@ -334,8 +343,6 @@ async function openDialog(dir, state, wantKind) {
   el.sandbox.checked = existing ? existing.sandbox : true;
   el.sandbox.disabled = !!existing;
   el.ok.textContent = existing ? T['ma.dlgApply'] : T['ma.dlgOpen'];
-  applyTexts();
-  if (existing) el.ok.textContent = T['ma.dlgApply'];
 
   // 沒有裝任何一家 CLI＝不能開新團隊（舊版 `ma.dlgNoBackend` ＋ 停用「開啟」）。
   // 既有團隊照樣能按套用——可能只是要關掉一格或改上限。
@@ -470,7 +477,8 @@ function agentLabel(state, i) {
   if (!slot) return `Agent-x${i + 1}`;
   const b = opts && opts.backends.find((x) => x.key === slot.backend);
   const role = opts && opts.roles.find((x) => x.key === slot.role);
-  return `Agent-${state.key.split('-')[0]}${slot.index} · ${role ? role.title : 'None'} · ${
+  // 組號用後端給的 `number`：`key` 的前綴是建組當時的組號，恢復後可能已經換了（G8）
+  return `Agent-${state.number}${slot.index} · ${role ? role.title : 'None'} · ${
     b ? b.name : slot.backend
   }`;
 }

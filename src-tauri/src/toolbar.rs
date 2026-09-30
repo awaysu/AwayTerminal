@@ -426,7 +426,21 @@ pub fn reveal_path(app: AppHandle, path: String) -> Result<(), String> {
 pub fn save_text_to_file_at(path: String, text: String) -> Result<String, String> {
     let p = std::path::PathBuf::from(&path);
     let temp = std::env::temp_dir();
-    if !p.starts_with(&temp) {
+    // `starts_with` 是字面比較：`%TEMP%\..\Desktop\x` 也會通過（D8）。所以
+    // ① 不接受 `..`；② 上層目錄實際解析（含 junction／symlink）後也必須在暫存資料夾底下。
+    let has_parent_dir = p
+        .components()
+        .any(|c| matches!(c, std::path::Component::ParentDir));
+    let inside = !has_parent_dir
+        && p.starts_with(&temp)
+        && match (
+            p.parent().and_then(|d| std::fs::canonicalize(d).ok()),
+            std::fs::canonicalize(&temp).ok(),
+        ) {
+            (Some(dir), Some(temp)) => dir.starts_with(temp),
+            _ => false,
+        };
+    if !inside {
         return Err(tf("err.tempOnlyPath", &[&temp.display().to_string()]));
     }
     std::fs::write(&p, text.as_bytes()).map_err(|e| tf("err.writeFailed", &[&e.to_string()]))?;

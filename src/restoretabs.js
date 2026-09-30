@@ -110,6 +110,18 @@ function argsOf(st, index) {
     case 'telnet':
       if (!st.conn) return null;
       return { kind: 'telnet', telnet: st.conn, title, restore: index };
+    case 'com':
+      // 連接埠：`ComParams` 的欄位（port／baud／dataBits…）和 `session_create` 的 `com` 對得上
+      if (!st.conn) return null;
+      return { kind: 'com', com: st.conn, title, restore: index };
+    case 'adb':
+      // 記下的 adb.exe 路徑與序號直接重開，**不再跑 `adb devices`**（同舊版 1.0.30）
+      return {
+        kind: 'adb',
+        adb: { path: st.adbPath || null, serial: st.adbSerial || null },
+        title,
+        restore: index,
+      };
     default:
       return null;
   }
@@ -199,7 +211,9 @@ export async function initExitDialog() {
     let available = false;
     try {
       available = await invoke('claude_md_available');
-    } catch (_) {}
+    } catch {
+      // 查不到就當成沒有（勾選框停用）
+    }
     el.md.disabled = !available;
     el.md.checked = available && p.updateMd === true;
     el.mdLabel.style.opacity = available ? '' : '0.5';

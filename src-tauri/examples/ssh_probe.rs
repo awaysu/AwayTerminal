@@ -197,6 +197,83 @@ fn main() {
             format!("連線成功={ok}、known_hosts 沒有變動={}", before == after),
         );
         c2.close();
+
+        // 稽核 E2：紅框按「接受並儲存」之後，下一次（例如自動重連）就不可以再問
+        let c3 = Client::connect(
+            port,
+            Some(USER.to_string()),
+            SshAuth::default(),
+            store2.clone(),
+            HostKeyAnswer::AcceptAndStore,
+        );
+        c3.expect("password: ", 5);
+        c3.session.write(format!("{PASSWORD}\r").as_bytes());
+        let ok3 = c3.expect("AWAY_SSH_OK", 10);
+        c3.close();
+        let c4 = Client::connect(
+            port,
+            Some(USER.to_string()),
+            SshAuth::default(),
+            store2.clone(),
+            // 真的又問了就會被拒絕而連不上
+            HostKeyAnswer::Reject,
+        );
+        c4.expect("password: ", 5);
+        c4.session.write(format!("{PASSWORD}\r").as_bytes());
+        let ok4 = c4.expect("AWAY_SSH_OK", 10);
+        let asked4 = c4.decider.seen.lock().unwrap().len();
+        let lines = std::fs::read_to_string(store2.path())
+            .unwrap_or_default()
+            .lines()
+            .filter(|l| !l.trim().is_empty())
+            .count();
+        report(
+            "金鑰變更 → 接受並儲存之後不再問",
+            ok3 && ok4 && asked4 == 0 && lines == 1,
+            format!("接受後連上={ok3}、下一次連上={ok4}、被問={asked4}（要 0）、known_hosts 行數={lines}（要 1）"),
+        );
+        c4.close();
+    }
+
+    // ------------------------------- 3b. 一次貼上帳號＋密碼（稽核 E7：第一版只拿到帳號）
+    {
+        let c = Client::connect(port, None, SshAuth::default(), store.clone(), HostKeyAnswer::AcceptAndStore);
+        c.expect("login as: ", 5);
+        c.session.write(format!("{USER}\n{PASSWORD}\n").as_bytes());
+        let ok = c.expect("AWAY_SSH_OK", 10);
+        report(
+            "一次貼上 帳號\\n密碼\\n",
+            ok && !c.text().contains(PASSWORD),
+            format!("登入成功={ok}（密碼仍不回顯）"),
+        );
+        c.close();
+    }
+
+    // ------------------------ 3c. 連線中關分頁要立刻收掉（稽核 E15：第一版等 TCP 逾時）
+    {
+        // 只 accept、永遠不說話的伺服器（交握卡在等 SSH 版本字串）
+        let (silent_port, _keep) = rt.block_on(async {
+            let l = tokio::net::TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+            let p = l.local_addr().unwrap().port();
+            let h = tokio::spawn(async move {
+                let mut held = Vec::new();
+                while let Ok((s, _)) = l.accept().await {
+                    held.push(s);
+                }
+            });
+            (p, h)
+        });
+        let c = Client::connect(silent_port, Some(USER.to_string()), SshAuth::default(), store.clone(), HostKeyAnswer::Reject);
+        std::thread::sleep(Duration::from_millis(300));
+        let t0 = Instant::now();
+        c.close();
+        let exited = c.wait_exit(5);
+        let took = t0.elapsed();
+        report(
+            "連線中關分頁立刻取消",
+            exited && took < Duration::from_secs(2),
+            format!("結束事件={exited}、花了 {} ms", took.as_millis()),
+        );
     }
 
     // ----------------------------------------------------- 4. publickey / .ppk

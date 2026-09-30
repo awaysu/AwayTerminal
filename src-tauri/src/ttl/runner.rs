@@ -296,8 +296,14 @@ impl MacroHost for TabMacroHost {
         let Some(parts) = tabs.session_parts_of(self.tab) else {
             return false;
         };
-        let g = parts.logger.lock().unwrap_or_else(|e| e.into_inner());
-        match g.as_ref() {
+        // 先把 `Arc<Logger>` 複製出來、放掉槽的鎖再寫磁碟：慢磁碟／防毒卡住時，
+        // 握著這把鎖會連帶卡住輸出管線與 `state_with`（整個 UI 凍結，稽核 C2）
+        let logger = parts
+            .logger
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone();
+        match logger {
             Some(l) => {
                 l.write(text);
                 true
@@ -435,6 +441,9 @@ pub async fn macro_run(app: AppHandle, id: u32, path: String) -> Result<String, 
     let app2 = app.clone();
     std::thread::Builder::new()
         .name(format!("ttl-{id}"))
+        // 運算式是遞迴下降（一層因子 11 個函式框）；`expr.rs` 有深度上限，
+        // 這裡再給足堆疊當第二道保險（撐爆堆疊在 release 是整個 app abort）
+        .stack_size(8 * 1024 * 1024)
         .spawn(move || {
             let mut it = interp;
             it.set_host(Some(host));
@@ -458,6 +467,9 @@ fn run_loop(it: &mut Interp, handle: &Arc<MacroHandle>) -> Result<(), TtlError> 
                 handle.line.store(it.line_no(), Ordering::Relaxed);
             }
             Err(e) if e.err == super::Err::Interrupted => return Ok(()),
+            // 已經被叫停（關分頁／按停止）：這時連線多半已經拆了，正在跑的連線指令會回
+            // `Link macro first.` 之類——那是停止造成的，不是巨集的錯，不跳錯誤對話框
+            Err(_) if handle.stop.load(Ordering::Relaxed) => return Ok(()),
             Err(e) => return Err(e),
         }
     }
@@ -695,8 +707,21 @@ fn spawn_for_tab(
     );
 
     if !wait {
-        // 不等：原碼 CloseHandle 之後就不管了（我們也不 reap，Job Object 會收）
-        std::mem::forget(child);
+        // 不等：原碼 CloseHandle 之後就不管了。以前這裡 `mem::forget(child)` → 每次
+        // 漏一個行程 handle（Unix 還會留殭屍）。Windows：drop `Child` 只是關 handle，
+        // 不會砍行程（Job Object 照樣收）。Unix：要有人 `wait()` 才不會變殭屍 →
+        // 另開一條小執行緒等它（行程群組被 `killpg` 時它也會醒來）。
+        #[cfg(unix)]
+        {
+            let mut child = child;
+            let _ = std::thread::Builder::new()
+                .name(format!("ttl-exec-wait-{pid}"))
+                .spawn(move || {
+                    let _ = child.wait();
+                });
+        }
+        #[cfg(not(unix))]
+        drop(child);
         return 0;
     }
     // 等它結束（中斷時不強制砍：Job Object 在巨集結束時會收）

@@ -96,10 +96,14 @@ pub fn telegram_apply(
 /// `token` 是 `None`＝用設定裡存的那一個（視窗永遠不回填 token，留空就是「沒改」）。
 /// 回 `Ok(None)`＝bot 收到的訊息裡沒有可用的 chat id（使用者還沒傳訊息給 bot）。
 /// **錯誤字串不含 URL**（URL 裡有 token，見 `api::describe`）。
+///
+/// - `async` ＋ `spawn_blocking`（同 `telegram_probe`）：查詢最長阻塞 10 秒，
+///   同步 command 會把 UI 凍住（BUG H3）。
+/// - 不收前端給的 `base`（BUG H8）：以前前端可以指定任意主機，設定裡的 token 就會送過去。
+///   `--verify` 直接用 `api::Api::new(假 API, …)`，不經過這個 command。
 #[tauri::command]
-pub fn telegram_get_chat_id(
+pub async fn telegram_get_chat_id(
     token: Option<String>,
-    base: Option<String>,
     settings: State<'_, Arc<SettingsStore>>,
 ) -> Result<Option<i64>, String> {
     let token = match token {
@@ -110,11 +114,10 @@ pub fn telegram_get_chat_id(
         // 前端在送出之前就會擋（`remote.needToken`），這裡是第二道
         return Err("no token".into());
     }
-    let api = match base {
-        Some(b) => api::Api::new(&b, &token),
-        None => api::Api::telegram(&token),
-    };
-    api.latest_chat_id()
+    let api = api::Api::telegram(&token);
+    tauri::async_runtime::spawn_blocking(move || api.latest_chat_id())
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 /// 前端開完 `telegram-open` 要的分頁之後回報（`None`＝開失敗）。

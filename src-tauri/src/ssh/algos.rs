@@ -148,8 +148,9 @@ const WEAK_CIPHER: &[&str] = &[
 ];
 const WEAK_MAC: &[&str] = &["hmac-sha1", "hmac-sha1-etm@openssh.com", "hmac-sha1-96", "hmac-md5"];
 
-/// 這四個名稱裡有沒有在警告線以下的？回傳「哪幾個」（給對話框列出來）。
-pub fn weak_ones(kex: &str, host_key: &str, cipher: &str, mac: &str) -> Vec<(String, String)> {
+/// 這幾個名稱裡有沒有在警告線以下的？回傳「哪幾個」（給對話框列出來）。
+/// `macs` 是兩個方向的 MAC（client→server、server→client），**兩個都要看**（稽核 E10）。
+pub fn weak_ones(kex: &str, host_key: &str, cipher: &str, macs: &[&str]) -> Vec<(String, String)> {
     let mut out = Vec::new();
     if WEAK_KEX.contains(&kex) {
         out.push((t("algo.kex"), kex.to_string()));
@@ -160,8 +161,11 @@ pub fn weak_ones(kex: &str, host_key: &str, cipher: &str, mac: &str) -> Vec<(Str
     if WEAK_CIPHER.contains(&cipher) {
         out.push((t("algo.cipher"), cipher.to_string()));
     }
-    if WEAK_MAC.contains(&mac) {
-        out.push((t("algo.mac"), mac.to_string()));
+    for (i, mac) in macs.iter().enumerate() {
+        // 兩個方向是同一個演算法時只列一次
+        if WEAK_MAC.contains(mac) && !macs[..i].contains(mac) {
+            out.push((t("algo.mac"), mac.to_string()));
+        }
     }
     out
 }
@@ -334,15 +338,24 @@ mod tests {
 
     #[test]
     fn strong_algorithms_are_not_flagged_weak() {
-        assert!(weak_ones("curve25519-sha256", "ssh-ed25519", "chacha20-poly1305@openssh.com", "hmac-sha2-256").is_empty());
+        assert!(weak_ones("curve25519-sha256", "ssh-ed25519", "chacha20-poly1305@openssh.com", &["hmac-sha2-256", "hmac-sha2-256"]).is_empty());
     }
 
     #[test]
     fn legacy_combo_is_flagged_weak() {
-        let w = weak_ones("diffie-hellman-group14-sha1", "ssh-rsa", "aes128-cbc", "hmac-sha1");
+        let w = weak_ones("diffie-hellman-group14-sha1", "ssh-rsa", "aes128-cbc", &["hmac-sha1", "hmac-sha1"]);
         assert_eq!(w.len(), 4, "四項都該被標出來：{w:?}");
         let kinds: Vec<&str> = w.iter().map(|(k, _)| k.as_str()).collect();
         assert_eq!(kinds, vec![t("algo.kex"), t("algo.hostkey"), t("algo.cipher"), t("algo.mac")]);
+    }
+
+    /// 稽核 E10：只有 client→server 方向是弱 MAC 也要標出來。
+    #[test]
+    fn weak_client_mac_is_flagged() {
+        let w = weak_ones("curve25519-sha256", "ssh-ed25519", "aes128-ctr", &["hmac-sha1", "hmac-sha2-256"]);
+        assert_eq!(w, vec![(t("algo.mac"), "hmac-sha1".to_string())]);
+        let w = weak_ones("curve25519-sha256", "ssh-ed25519", "aes128-ctr", &["hmac-sha2-256", "hmac-md5"]);
+        assert_eq!(w, vec![(t("algo.mac"), "hmac-md5".to_string())]);
     }
 
     #[test]

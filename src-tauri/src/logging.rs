@@ -181,19 +181,30 @@ impl Drop for Logger {
 ///
 /// 真的壞掉的位元組（不是「還沒收完」）照 lossy 換成 U+FFFD 往前走——
 /// 不然一個壞位元組會讓後面整條 log 卡住。
+///
+/// ⚠️ 一定要用迴圈、不可以遞迴：Big5 BBS 畫面或 `cat` 二進位檔一塊就有幾千個壞位元組，
+/// 每個壞位元組遞迴一層會撐爆讀取執行緒的堆疊（堆疊溢位不是 panic，整個 app 直接死掉）。
 fn decode_utf8_prefix(bytes: &[u8]) -> (String, Vec<u8>) {
-    match std::str::from_utf8(bytes) {
-        Ok(s) => (s.to_string(), Vec::new()),
-        Err(e) => {
-            let good = e.valid_up_to();
-            let head = String::from_utf8_lossy(&bytes[..good]).into_owned();
-            match e.error_len() {
-                // 只是還沒收完（尾端不完整）→ 留給下一塊
-                None => (head, bytes[good..].to_vec()),
-                // 真的不合法 → 換成 U+FFFD，剩下的遞迴處理
-                Some(bad) => {
-                    let (tail, carry) = decode_utf8_prefix(&bytes[good + bad..]);
-                    (format!("{head}\u{FFFD}{tail}"), carry)
+    let mut out = String::with_capacity(bytes.len());
+    let mut rest = bytes;
+    loop {
+        match std::str::from_utf8(rest) {
+            Ok(s) => {
+                out.push_str(s);
+                return (out, Vec::new());
+            }
+            Err(e) => {
+                let good = e.valid_up_to();
+                // `..good` 保證是合法 UTF-8
+                out.push_str(std::str::from_utf8(&rest[..good]).unwrap_or_default());
+                match e.error_len() {
+                    // 只是還沒收完（尾端不完整）→ 留給下一塊
+                    None => return (out, rest[good..].to_vec()),
+                    // 真的不合法 → 換成 U+FFFD，往後繼續
+                    Some(bad) => {
+                        out.push('\u{FFFD}');
+                        rest = &rest[good + bad..];
+                    }
                 }
             }
         }
@@ -403,6 +414,18 @@ mod tests {
         let (tail, carry2) = decode_utf8_prefix(&rest);
         assert_eq!(tail, "文");
         assert!(carry2.is_empty());
+    }
+
+    /// 大塊非 UTF-8（Big5 畫面、二進位檔）不可以撐爆堆疊（C1）。
+    #[test]
+    fn decodes_huge_invalid_block_without_recursion() {
+        let mut bytes = vec![0xFFu8; 1_000_000];
+        bytes.extend_from_slice("中".as_bytes());
+        bytes.push(0xE4); // 半截的下一個字
+        let (text, carry) = decode_utf8_prefix(&bytes);
+        assert_eq!(text.chars().filter(|&c| c == '\u{FFFD}').count(), 1_000_000);
+        assert!(text.ends_with('中'));
+        assert_eq!(carry, vec![0xE4]);
     }
 
     #[test]

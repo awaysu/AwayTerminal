@@ -486,6 +486,11 @@ pub fn migrate_import(
         _ => old_path().ok_or_else(|| crate::i18n::t("err.noOldSettings"))?,
     };
     let old = read_old(&p)?;
+    // 這次啟動的 settings.json 讀不進來 → 整個工作階段都不寫檔；照樣匯入的話只會改在記憶體裡、
+    // 關掉就沒了，卻回報成功（BUG D6）。直接告訴使用者。
+    if let Some(why) = settings.readonly_reason() {
+        return Err(why);
+    }
     let mut report = ImportReport::default();
     let after = settings.update(|s| {
         report = apply(&old, s);

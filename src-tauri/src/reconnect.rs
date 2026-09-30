@@ -126,7 +126,6 @@ pub fn on_exit(app: &AppHandle, id: u32, info: ExitInfo) {
     let Some(params) = tabs.conn_params_of(id) else {
         return;
     };
-    let _ = info;
 
     // 這條已經死掉的 session 還掛在 SessionManager 上（是 `start` 放進去的），
     // **一定要先取下來**：否則下面的「已經連上了嗎」永遠成立，重連根本不會排。
@@ -137,7 +136,9 @@ pub fn on_exit(app: &AppHandle, id: u32, info: ExitInfo) {
         }
     }
 
-    if params.auto_reconnect() {
+    // 使用者自己取消的（主機金鑰／弱演算法按「取消」、登入提示按 Ctrl+C）不可以自動重連：
+    // 否則 3 秒後又跳同一個問題，無限循環（E3）。改成跟「沒勾自動重連」一樣，等使用者按 Enter。
+    if params.auto_reconnect() && !info.user_cancelled {
         schedule(app, id);
     } else {
         // 舊版：灰字「[連線已結束]」＋黃字「[按 Enter 在此分頁重新連線]」
@@ -255,10 +256,11 @@ fn pipeline(app: &AppHandle, id: u32, parts: &tabs::SessionParts) -> (OnOutput, 
             // TTL 巨集的 `wait` 要看得到輸出（現在一定是空槽，見 src/tap.rs）
             tap.output(bytes);
             // log 先寫再餵畫面：舊版 OnSessionOutput 也是這個順序
-            if let Ok(g) = logger.lock() {
-                if let Some(l) = g.as_ref() {
-                    l.write(bytes);
-                }
+            // 先把 Logger 複製出來、放掉槽的鎖再寫檔：磁碟慢／防毒卡住時不可以握著槽的鎖
+            //（`state_with` 與關分頁都要鎖它，握著會讓整個 UI 一起凍住）
+            let l = logger.lock().ok().and_then(|g| g.clone());
+            if let Some(l) = l {
+                l.write(bytes);
             }
             pump.push(bytes);
         }) as OnOutput
@@ -287,7 +289,21 @@ pub fn start(
     let manager = app
         .try_state::<SessionManager>()
         .ok_or_else(|| t("err.connListNotReady").to_string())?;
+    // 分頁原本的 pump 可能已經停了（PTY 分頁的行程結束後巨集 `connect`）→ 用同一條
+    // channel 重開，否則新連線的輸出全被丟掉（C4）。還在跑就什麼都不做。
+    parts.pump.ensure_running();
     let (on_output, on_exit) = pipeline(app, id, &parts);
+    // 連線瞬間失敗時（Telnet／COM），後端的 on_exit 可能在下面 `manager.insert` **之前**
+    // 就跑完了：那時 `remove` 拿到 None，之後才把死 session 登記上去 → 分頁永遠卡在
+    // 「已連上」（C3）。所以 on_exit 先立旗標，insert 之後再看一次。
+    let exited = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let on_exit = {
+        let exited = exited.clone();
+        Arc::new(move |info: ExitInfo| {
+            exited.store(true, Ordering::SeqCst);
+            on_exit(info);
+        }) as OnExit
+    };
     let on_connected = {
         let app = app.clone();
         Arc::new(move || note_connected(&app, id))
@@ -319,7 +335,18 @@ pub fn start(
             Some(on_connected),
         ),
     };
-    manager.insert(id, session);
+    manager.insert(id, session.clone());
+    if exited.load(Ordering::SeqCst) {
+        // on_exit 已經在 insert 之前跑完（它 remove 不到、該排的重連也排了）：
+        // 把剛登記的死 session 收回來。只收**自己這一條**，不會誤收之後重連上的新 session。
+        if let Some(dead) = manager.remove_if_same(id, &session) {
+            // drop 會關 socket／送優雅結束鍵，別卡在呼叫端（可能是 IPC 執行緒）
+            std::thread::spawn(move || {
+                drop(dead);
+                drop(session);
+            });
+        }
+    }
     Ok(())
 }
 

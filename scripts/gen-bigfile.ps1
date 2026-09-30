@@ -61,10 +61,15 @@ foreach ($mb in $SizesMb) {
         $written = 0L
         # 先產生一批樣板行重複使用，比每行重算快很多（50MB 大約 40 萬行）
         $templates = @(0..255 | ForEach-Object { New-Line $_ })
+        # 累計的是**寫出去的位元組數**，不是字元數：一個中文字在 UTF-8 是 3 bytes，
+        # 用 $line.Length 算會讓檔案比目標大約 16.5%（稽核 I9）。行尾也照實算
+        # （Windows 是 CRLF＝2、pwsh 在 mac/Linux 是 LF＝1）。
+        $eolBytes = $enc.GetByteCount($sw.NewLine)
+        $templateBytes = @($templates | ForEach-Object { [long]($enc.GetByteCount($_) + $eolBytes) })
         while ($written -lt $target) {
-            $line = $templates[$i % $templates.Count]
-            $sw.WriteLine($line)
-            $written += $line.Length + 2
+            $k = $i % $templates.Count
+            $sw.WriteLine($templates[$k])
+            $written += $templateBytes[$k]
             $i++
         }
         Write-Host ("  完成：{0:N0} 行" -f $i)

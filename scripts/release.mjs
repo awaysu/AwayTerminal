@@ -8,11 +8,12 @@
 //   node scripts/release.mjs --publish       真的建立 GitHub Release（需要 gh 已登入）
 //
 // 為什麼要有這支：發佈的步驟多（三處版本、兩種安裝檔 ×3 個檔、簽章、latest.json 的
-// signature 欄位、CHANGELOG 的段落、資產命名），漏一步的後果都是安靜的
+// signature 欄位、CHANGELOG 的段落、資產命名、tag 指向的 commit），漏一步的後果都是安靜的
 // ——例如 `latest.json` 的 `version` 帶了 `v` 前綴，updater 就永遠不會認為有新版。
 //
 // 簽章：`latest.json` 的 `signature` 要放 `.sig` 檔的內容，而 `.sig` 只有在
-// build 時給了 `TAURI_SIGNING_PRIVATE_KEY` 才會產生。**沒有私鑰時這一步會被跳過並明說**
+// `bundle.createUpdaterArtifacts: true` ＋ 公鑰 ＋ build 時給了 `TAURI_SIGNING_PRIVATE_KEY`
+// 才會產生。**沒有 .sig 時這一步會被跳過並明說**
 // （見 `docs/RELEASE.md` 第 4 節）。
 
 import { existsSync, readFileSync, writeFileSync, statSync } from 'node:fs';
@@ -100,6 +101,20 @@ for (const a of assets) {
 }
 
 // ------------------------------------------------------------- 4. latest.json
+// `.sig` 要**三個條件同時成立**才會產生（稽核 I1：以前的訊息只講了後兩個）：
+//   1. tauri.conf.json 的 `bundle.createUpdaterArtifacts` 是 true（預設 false＝完全不產生）
+//   2. `plugins.updater.pubkey` 有公鑰
+//   3. build 時給了 TAURI_SIGNING_PRIVATE_KEY
+// 1 開了但沒有 3，`tauri build` 會在最後失敗（"A public key has been found, but no private key"）
+// → 所以 1 和 2 要一起開，repo 平常兩個都關著。
+const conf = JSON.parse(readFileSync(join('src-tauri', 'tauri.conf.json'), 'utf8'));
+const updaterArtifacts = conf.bundle?.createUpdaterArtifacts === true;
+const pubkey = String(conf.plugins?.updater?.pubkey || '');
+if (updaterArtifacts && !pubkey) {
+  problem('tauri.conf.json 的 bundle.createUpdaterArtifacts 開了、updater.pubkey 卻是空的——兩個要一起開（docs/RELEASE.md 第 4 節）');
+} else if (!updaterArtifacts && pubkey) {
+  problem('tauri.conf.json 有 updater.pubkey，但 bundle.createUpdaterArtifacts 不是 true——build 不會產生 .sig，自動更新發不出去');
+}
 const sig = found.find((a) => a.kind === 'sig');
 const nsis = found.find((a) => a.kind === 'nsis');
 let latest = null;
@@ -108,7 +123,12 @@ if (!sig) {
   console.log('⏭  跳過 latest.json：**沒有 .sig 檔，也就是這次 build 沒有簽章**。');
   console.log('   自動更新需要簽章——沒有簽章的 latest.json 會被使用者端的 updater 拒絕，');
   console.log('   放上去只會讓「檢查更新」一直失敗。要開啟的話請照 docs/RELEASE.md 第 4 節：');
-  console.log('   產生金鑰 → 公鑰貼進 tauri.conf.json → build 時給 TAURI_SIGNING_PRIVATE_KEY。');
+  console.log('   產生金鑰 → 公鑰貼進 tauri.conf.json 並把 bundle.createUpdaterArtifacts 設成 true');
+  console.log('   → build 時給 TAURI_SIGNING_PRIVATE_KEY。');
+  console.log(
+    `   現在：createUpdaterArtifacts=${updaterArtifacts}　pubkey=${pubkey ? '有' : '空'}　` +
+      `TAURI_SIGNING_PRIVATE_KEY=${process.env.TAURI_SIGNING_PRIVATE_KEY ? '有' : '沒有'}（這一個看的是跑 build 時的環境）`
+  );
 } else if (nsis) {
   latest = {
     version,
@@ -125,13 +145,31 @@ if (!sig) {
   note('mac／Linux 做好之後要在 platforms 裡補 darwin-aarch64／darwin-x86_64／linux-x86_64');
 }
 
-// ------------------------------------------------------------- 5. 輸出
+// ------------------------------------------------------------- 5. tag 要打在哪個 commit
+// `gh release create <tag>` 在 tag 還不存在時，會把 tag 打在**遠端預設分支的 HEAD**——
+// 不一定是這次 build 的那個 commit（稽核 I7）。所以：工作樹要乾淨（build 的就是 HEAD）、
+// HEAD 要已經 push 上去，再用 `--target <sha>` 明確指定。
+const git = (...a) => execFileSync('git', a, { encoding: 'utf8' }).trim();
+let headSha = '';
+try {
+  headSha = git('rev-parse', 'HEAD');
+  const dirty = git('status', '--porcelain', '--untracked-files=no');
+  const pushed = git('branch', '-r', '--contains', headSha);
+  const check = doPublish ? problem : (m) => note(`（--publish 時會擋）${m}`);
+  if (dirty) check('工作樹有還沒 commit 的修改——安裝檔不是從任何一個 commit 建出來的，先 commit 再重新 build');
+  if (!pushed) check(`HEAD ${headSha.slice(0, 8)} 還沒 push 到遠端——tag 會指向一個 GitHub 上不存在的 commit`);
+  if (!dirty && pushed) ok(`tag 會打在 ${headSha.slice(0, 8)}（工作樹乾淨、已 push）`);
+} catch (e) {
+  problem(`查不到 git 狀態：${e.message}`);
+}
+
+// ------------------------------------------------------------- 6. 輸出
 const notesPath = join(OUT_DIR, `release-notes-${version}.md`);
 const latestPath = join(OUT_DIR, 'latest.json');
 
 console.log('');
 console.log('─── 會做的事 ───');
-console.log(`tag：${tag}`);
+console.log(`tag：${tag}（→ ${headSha ? headSha.slice(0, 8) : '?'}）`);
 console.log(`資產：${found.filter((a) => a.kind !== 'sig').map((a) => a.path.split(/[\\/]/).pop()).join('、') || '（沒有）'}`);
 console.log(`release notes：${notesPath}${notes ? '' : '（沒有內容）'}`);
 console.log(`latest.json：${latest ? latestPath : '不產生（沒有簽章）'}`);
@@ -157,7 +195,7 @@ if (fail) {
 if (doPublish) {
   const files = found.filter((a) => a.kind !== 'sig').map((a) => a.path);
   if (latest) files.push(latestPath);
-  const gh = ['release', 'create', tag, ...files, '--title', `AwayTerminal ${version}`];
+  const gh = ['release', 'create', tag, ...files, '--target', headSha, '--title', `AwayTerminal ${version}`];
   if (notes) gh.push('--notes-file', notesPath);
   console.log('');
   console.log(`執行：gh ${gh.join(' ')}`);

@@ -43,7 +43,10 @@ pub fn deliver(id: u32, text: String) {
 /// 向前端要這個分頁畫面上的文字（最多 400 行，同舊版）。
 ///
 /// **不要在 tauri 的 IPC 執行緒上呼叫**——它會等前端回覆。遠端是自己的執行緒，沒問題。
-pub fn recent_text(app: &AppHandle, id: u32, timeout: Duration) -> String {
+///
+/// 等不到回覆回 `None`（BUG H4）：和「畫面真的是空的」（`Some("")`）要分得開，
+/// 呼叫端才不會拿逾時的空字串去當推播基準。
+pub fn recent_text(app: &AppHandle, id: u32, timeout: Duration) -> Option<String> {
     let (tx, rx) = mpsc::channel();
     {
         let mut g = mailbox().lock().unwrap_or_else(|e| e.into_inner());
@@ -52,12 +55,12 @@ pub fn recent_text(app: &AppHandle, id: u32, timeout: Duration) -> String {
     }
     crate::host::emit_host(app, format!("q{id}\x1ftext"));
     match rx.recv_timeout(timeout) {
-        Ok(text) => text,
+        Ok(text) => Some(text),
         Err(_) => {
             let mut g = mailbox().lock().unwrap_or_else(|e| e.into_inner());
             g.retain(|(i, _)| *i != id);
             println!("[AwayTerminal] Telegram：分頁 {id} 的畫面文字等不到（前端沒回 a…text）");
-            String::new()
+            None
         }
     }
 }

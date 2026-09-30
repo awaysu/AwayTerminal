@@ -179,11 +179,37 @@ pub fn parse_text(msg: &mut AgentMessage, text: &str) {
     };
 }
 
+/// 讀 agent 寫的文字檔：照 BOM 解碼（UTF-8／UTF-16 LE／BE），沒 BOM 先試 UTF-8，
+/// 不合法再退回 Big5（和「輸入文字視窗」載入檔案同一套：[`crate::compose::decode_text`]）。
+/// 回傳 (內容, 編碼名稱)；內容不含 BOM。
+///
+/// 為什麼不能 `read_to_string`（G3）：Codex 在 Windows 常用 PowerShell 5.1 寫檔——
+/// `Out-File`／`>` 是 UTF-16 LE、`Set-Content` 是 ANSI（繁中＝Big5）。`read_to_string`
+/// 對這些一律失敗，呼叫端當成「被鎖住」每 3 秒重試到永遠，也沒有任何 log。
+pub fn read_text(path: &Path) -> std::io::Result<(String, &'static str)> {
+    let bytes = std::fs::read(path)?;
+    Ok(decode_bytes(&bytes))
+}
+
+/// [`read_text`] 的本體（拆出來讓測試直接餵位元組）。
+pub fn decode_bytes(bytes: &[u8]) -> (String, &'static str) {
+    let (text, enc) = crate::compose::decode_text(bytes);
+    // decode_text 已經跳過 BOM；保險起見再去一次（UTF-16 檔裡有時會重複寫 BOM）
+    let text = match text.strip_prefix('\u{feff}') {
+        Some(rest) => rest.to_string(),
+        None => text,
+    };
+    (text, enc)
+}
+
 /// 讀檔並解析；讀不到（被鎖、已刪）回 `None`（照舊版：下一輪再試）。
+/// 不是 UTF-8 的信照 BOM／Big5 解碼後照常投遞，並記一筆 log（G3）。
 pub fn parse_file(path: &Path) -> Option<AgentMessage> {
-    let text = std::fs::read_to_string(path).ok()?;
-    let text = text.strip_prefix('\u{feff}').unwrap_or(&text).to_string();
+    let (text, enc) = read_text(path).ok()?;
     let name = path.file_name()?.to_string_lossy().to_string();
+    if enc != "UTF-8" && enc != "UTF-8 (BOM)" {
+        println!("[AwayTerminal] 代理團隊信箱：{name} 不是 UTF-8，以 {enc} 解碼");
+    }
     let parsed_name = parse_file_name(&name);
     let mut msg = AgentMessage {
         file_name: name,
@@ -335,6 +361,47 @@ mod tests {
         assert_eq!(m.task, "TASK-009");
         assert_eq!(m.seq, 3);
         assert_eq!(m.rel_path(), ".ai/bus/0003-agent-11-to-agent-12.md");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// PowerShell 5.1 寫的信（UTF-16 LE／BE 帶 BOM、Big5）也要讀得到，不能永遠重試（G3）。
+    #[test]
+    fn parse_file_decodes_non_utf8() {
+        let dir = std::env::temp_dir().join(format!("awayterm-bus-enc-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let text = "---\nfrom: Agent-12\nto: Agent-11\ntype: TASK_RESULT\n---\n完成了";
+
+        // UTF-16 LE（Out-File／> 的預設）
+        let mut le = vec![0xFF, 0xFE];
+        le.extend(text.encode_utf16().flat_map(|u| u.to_le_bytes()));
+        let p = dir.join("0001-Agent-12-to-Agent-11.md");
+        std::fs::write(&p, &le).unwrap();
+        let m = parse_file(&p).expect("UTF-16 LE 要讀得到");
+        assert_eq!(m.kind, "TASK_RESULT");
+        assert_eq!(m.body, "完成了");
+
+        // UTF-16 BE
+        let mut be = vec![0xFE, 0xFF];
+        be.extend(text.encode_utf16().flat_map(|u| u.to_be_bytes()));
+        let p = dir.join("0002-Agent-12-to-Agent-11.md");
+        std::fs::write(&p, &be).unwrap();
+        assert_eq!(parse_file(&p).expect("UTF-16 BE").body, "完成了");
+
+        // Big5（Set-Content 在繁中 Windows 的預設）：「完成了」＝A7B9 A6A8 A446
+        let mut big5 = b"---\nfrom: Agent-12\nto: Agent-11\ntype: INFO\n---\n".to_vec();
+        big5.extend([0xA7, 0xB9, 0xA6, 0xA8, 0xA4, 0x46]);
+        let p = dir.join("0003-Agent-12-to-Agent-11.md");
+        std::fs::write(&p, &big5).unwrap();
+        let m = parse_file(&p).expect("非 UTF-8 也要解析，不能回 None");
+        assert_eq!(m.from, "Agent-12");
+        assert_eq!(m.body, "完成了");
+
+        // 亂七八糟的位元組：照樣回一封信（檔名補 from／to），不是 None
+        let p = dir.join("0004-Agent-12-to-Agent-11.md");
+        std::fs::write(&p, [0xFF, 0x80, 0x81, 0x00, 0xC3]).unwrap();
+        let m = parse_file(&p).expect("壞位元組也不能永遠重試");
+        assert_eq!(m.to, "Agent-11");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

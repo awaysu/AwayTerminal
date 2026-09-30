@@ -41,6 +41,10 @@ use team::{Slot, Team};
 #[derive(Default)]
 pub struct TeamManager {
     inner: Mutex<Vec<Team>>,
+    /// 上一次送出的 `agent-state`（JSON）：內容沒變就不送（G7）。
+    /// 600ms tick 每次都叫 `post_state`，無條件送的話分頁列每 600ms 整個重建——
+    /// 拖曳中的列失效、tooltip 一直重置。前端開起來時自己 `agent_teams` 拿一次，不靠這個事件。
+    last_posted: Mutex<Option<String>>,
 }
 
 impl TeamManager {
@@ -305,6 +309,17 @@ pub fn post_state(app: &AppHandle, teams: &Arc<TeamManager>) {
     for p in posts {
         crate::host::emit_host(app, p);
     }
+    // 內容沒變就不送（G7）
+    let Ok(json) = serde_json::to_string(&views) else {
+        return;
+    };
+    {
+        let mut last = teams.last_posted.lock().unwrap_or_else(|e| e.into_inner());
+        if last.as_deref() == Some(json.as_str()) {
+            return;
+        }
+        *last = Some(json);
+    }
     use tauri::Emitter;
     let _ = app.emit("agent-state", &views);
 }
@@ -465,7 +480,13 @@ pub fn plan_slot(
         extra_args: format!("{}{sb_extra}", launch.extra_args),
         dir: team.dir.clone(),
         work_dir: team.work_dir.clone(),
-        sandbox: team.sandbox_cfg.clone(),
+        // 團隊的沙盒是用空的 tool_path 準備的（一組多家 CLI），`guard_warning` 永遠是空的 →
+        // 依**這一格**實際跑的 CLI 補上（Claude Code 找不到 node＝護欄 hook 不會生效；D15），
+        // 和單一連線走 `sandbox::prepare(…, tool_path)` 的結果一致
+        sandbox: team.sandbox_cfg.clone().map(|mut sb| {
+            sb.guard_warning = crate::sandbox::guard_warning(&conn.path);
+            sb
+        }),
         first_message: launch.first_message,
         via_ps,
         conn,
@@ -745,6 +766,12 @@ pub fn create_team(
             done.push(b.key().to_string());
             if let Some(conn) = adapters::resolve(settings, b) {
                 let files = crate::sandbox::write_guardrails(&work, &conn.path);
+                // 護欄寫了但不會生效（Claude Code 沒有 node；D15）：記一筆，分頁 tooltip 由
+                // `plan_slot` 帶的 `guard_warning` 顯示
+                let warn = crate::sandbox::guard_warning(&conn.path);
+                if !warn.is_empty() {
+                    println!("[AwayTerminal] 代理團隊 {number} 護欄未生效（{}）：{warn}", b.display_name());
+                }
                 if !files.is_empty() {
                     println!(
                         "[AwayTerminal] 代理團隊 {number} 護欄（{}）：{}",
@@ -858,7 +885,9 @@ pub fn agent_team_ready(
     }
     {
         let mut list = teams.lock();
-        if let Some(t) = list.iter_mut().find(|t| t.key == key) {
+        // 聊天室不走信箱（由 AwayTerminal 主持輪流發言，見 `chat.rs`）：建了監看反而會把
+        // agent 誤寫進 `.ai/bus/` 的檔排進一個永遠不投遞的佇列（G9）
+        if let Some(t) = list.iter_mut().find(|t| t.key == key && !t.is_chat()) {
             let b: bus::SharedBus = Arc::new(bus::MessageBus::new(&work_dir));
             b.start();
             t.bus = Some(b);
@@ -1084,6 +1113,42 @@ pub struct ApplyPlan {
     pub changed: bool,
 }
 
+/// [`agent_team_apply`] 會改到的欄位的快照：中途失敗時整個還原（G6）。
+/// `Team` 沒有 `Clone`（裡面有信箱監看），所以只存會被改的那幾個欄位。
+struct ApplySnapshot {
+    slots: Vec<Slot>,
+    max_messages: u32,
+    paused: bool,
+    paused_by_limit: bool,
+    idle_check_minutes: u32,
+    all_idle_since_ms: u128,
+    rounds: u32,
+}
+
+impl ApplySnapshot {
+    fn of(t: &Team) -> Self {
+        Self {
+            slots: t.slots.clone(),
+            max_messages: t.max_messages,
+            paused: t.paused,
+            paused_by_limit: t.paused_by_limit,
+            idle_check_minutes: t.idle_check_minutes,
+            all_idle_since_ms: t.all_idle_since_ms,
+            rounds: t.rounds,
+        }
+    }
+
+    fn restore(self, t: &mut Team) {
+        t.slots = self.slots;
+        t.max_messages = self.max_messages;
+        t.paused = self.paused;
+        t.paused_by_limit = self.paused_by_limit;
+        t.idle_check_minutes = self.idle_check_minutes;
+        t.all_idle_since_ms = self.all_idle_since_ms;
+        t.rounds = self.rounds;
+    }
+}
+
 /// 「代理團隊設定…」按了套用。
 ///
 /// 逐項照舊版 `ApplyAgentSetup` 的順序與規則：
@@ -1110,11 +1175,40 @@ pub fn agent_team_apply(
         return Err(crate::i18n::t("ma.openFail"));
     };
 
+    // 0. **先驗證、再動狀態**（G6）：以前是邊改邊驗，第 3 格的 CLI 不對而回 Err 時，
+    //    第 2 格的分頁已經 `take()` 掉——前端拿到 Err 不會關它，它就成了不屬於任何格的孤兒。
+    for i in 0..t.slots.len() {
+        let want = setup.slots.get(i).cloned().unwrap_or_default();
+        let s = &t.slots[i];
+        if !(want.enabled || s.index == 1) {
+            continue;
+        }
+        let running = s.tab.is_some();
+        let same_setup =
+            s.backend.eq_ignore_ascii_case(&want.backend) && s.role.eq_ignore_ascii_case(&want.role);
+        let will_launch = !running || !same_setup || want.restart;
+        if will_launch && adapters::Backend::by_key(&want.backend).is_none() {
+            return Err(crate::i18n::tf("ma.dlgNeedBackend", &[&s.agent_id()]));
+        }
+    }
+    // 組角色檔（寫檔）還是可能失敗 → 留一份快照，失敗時整個還原（分頁 id 也還回各格）
+    let snapshot = ApplySnapshot::of(t);
+
     let mut changed = false;
+
+    // 聊天室：第一列是「討論回合」，沒有投遞上限／閒置檢查（前端送的是固定值，不能蓋掉）
+    if t.is_chat() {
+        let rounds = setup.rounds.max(1);
+        if rounds != t.rounds {
+            t.rounds = rounds;
+            println!("[AwayTerminal] 聊天室 {}：討論回合={rounds}", t.number);
+            changed = true;
+        }
+    }
 
     // 1. 投遞上限
     let max = setup.max_messages;
-    if max != t.max_messages {
+    if !t.is_chat() && max != t.max_messages {
         t.max_messages = max;
         // 因為到上限而暫停、上限調高了＝接著送（計數照舊）
         if t.paused && t.paused_by_limit && !t.limit_reached() {
@@ -1132,7 +1226,7 @@ pub fn agent_team_apply(
     }
 
     // 2. 閒置檢查
-    if setup.idle_check_minutes != t.idle_check_minutes {
+    if !t.is_chat() && setup.idle_check_minutes != t.idle_check_minutes {
         t.idle_check_minutes = setup.idle_check_minutes;
         t.all_idle_since_ms = 0;
         println!(
@@ -1185,9 +1279,7 @@ pub fn agent_team_apply(
             } else {
                 roster_changed = true;
             }
-            if adapters::Backend::by_key(&want.backend).is_none() {
-                return Err(crate::i18n::tf("ma.dlgNeedBackend", &[&t.slots[i].agent_id()]));
-            }
+            // CLI 種類在第 0 步已經驗過
             t.slots[i].enabled = true;
             t.slots[i].backend = want.backend.clone();
             t.slots[i].role = want.role.clone();
@@ -1223,6 +1315,14 @@ pub fn agent_team_apply(
                     .find(|s| s.index == *i)
                     .map(|s| s.agent_id())
                     .unwrap_or_default();
+                // 前端拿到 Err 什麼都不會做 → 把狀態整個還原（`take()` 掉的分頁 id 還回各格），
+                // 已經重寫的角色檔也照原名單再組一次，免得還在跑的人讀到沒生效的名單（G6）
+                snapshot.restore(t);
+                let lib = library_for(t.kind);
+                let enabled: Vec<u32> = t.slots.iter().filter(|s| s.enabled).map(|s| s.index).collect();
+                for j in enabled {
+                    let _ = roles::compose(lib, &data_dir, t, j);
+                }
                 return Err(crate::i18n::tf("ma.roleComposeFailed", &[&who, &e.to_string()]));
             }
         }
@@ -1334,8 +1434,15 @@ Your role file {role_file} has been regenerated. Re-read its Runtime Context sec
 #[serde(rename_all = "camelCase")]
 pub struct TeamSetupState {
     pub key: String,
+    /// 組號（確認對話框的 `Agent-{組號}{格號}` 用——`key` 的前綴是**建組當時**的組號，
+    /// 恢復後組號可能換了，不能拿來算；G8）。
+    pub number: u32,
     pub dir: String,
     pub title: String,
+    /// 代理團隊還是 AI 聊天室（前端靠它決定開哪一種設定視窗、載哪一套角色庫；B1）。
+    pub kind: team::GroupKind,
+    /// 聊天室的討論回合（聊天室設定視窗第一列的值；B1）。
+    pub rounds: u32,
     pub max_messages: u32,
     pub idle_check_minutes: u32,
     pub sandbox: bool,
@@ -1364,8 +1471,11 @@ pub fn agent_team_state(
     let t = list.iter().find(|t| t.key == key)?;
     Some(TeamSetupState {
         key: t.key.clone(),
+        number: t.number,
         dir: t.dir.clone(),
         title: t.title.clone(),
+        kind: t.kind,
+        rounds: t.rounds,
         max_messages: t.max_messages,
         idle_check_minutes: t.idle_check_minutes,
         sandbox: t.sandbox_cfg.is_some(),
@@ -1940,7 +2050,7 @@ pub fn agent_verify_end(dir: String) -> String {
     roles::set_verify_data_dir(None);
     let p = std::path::PathBuf::from(&dir);
     // 只刪自己在 %TEMP% 底下建的那一個（名字要對得上，免得刪錯東西）
-    // 路徑長相：`%TEMP%wayterm-verify-team-<pid>\<段名>`（每一段一個子資料夾）；
+    // 路徑長相：`%TEMP%\awayterm-verify-team-<pid>\<段名>`（每一段一個子資料夾）；
     // 也接受沒有子資料夾的舊寫法。
     let name_ok = {
         let is_root = |q: &std::path::Path| {

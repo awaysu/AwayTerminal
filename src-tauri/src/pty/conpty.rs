@@ -5,7 +5,7 @@
 
 use std::io;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 
 use windows_sys::Win32::Foundation::{
@@ -69,6 +69,10 @@ pub struct ConPtySession {
     /// 輸入管線不是執行緒安全的：UI 打字、巨集、遠端指令、close() 的 Ctrl+C 可能同時寫，
     /// 沒鎖會互相蓋掉位元組（按鍵消失）。照舊版 `_writeLock`。
     write_lock: Mutex<()>,
+    /// `write_side`／`hpc` 的使用權。`write()`／`resize()` 拿讀鎖、在鎖裡**再看一次 `closed`**
+    /// 才碰 handle；`close()` 拿寫鎖才關 handle——否則通過 `closed` 檢查後、真的用之前
+    /// handle 被別的執行緒關掉，就是對已關 handle（HPCON 是 use-after-free）操作（C6）。
+    handles: RwLock<()>,
     /// 關閉前送出的「優雅結束」位元組。預設 Ctrl+C ×3（PowerShell / Claude Code 的離開方式）。
     graceful_exit_bytes: Vec<u8>,
     /// 已由我方主動 close()：之後的結束事件不再往前端送。
@@ -199,10 +203,29 @@ impl ConPtySession {
                 h_thread: SendHandle(proc_info.hThread),
                 pid: proc_info.dwProcessId,
                 write_lock: Mutex::new(()),
+                handles: RwLock::new(()),
                 graceful_exit_bytes: opts.graceful_exit_bytes,
                 closing: closing.clone(),
                 closed: AtomicBool::new(false),
                 job,
+            };
+
+            // 兩個 process handle 複製**先都拿到**再開執行緒：中途失敗時要自己關掉
+            // `out_read`（和已經複製到的那一份），其餘 handle 由 `session` 的 Drop 收（C10）。
+            let reader_proc = match duplicate(proc_info.hProcess) {
+                Ok(h) => h,
+                Err(e) => {
+                    close(out_read);
+                    return Err(e);
+                }
+            };
+            let waiter_proc = match duplicate(proc_info.hProcess) {
+                Ok(h) => h,
+                Err(e) => {
+                    close(reader_proc.raw());
+                    close(out_read);
+                    return Err(e);
+                }
             };
 
             // 讀取執行緒：擁有輸出讀端，自己在結束時關掉它
@@ -210,7 +233,7 @@ impl ConPtySession {
             // 它拿一份自己的 process handle 複製，才能在管線 EOF 時安全查 exit code。
             spawn_reader(
                 SendHandle(out_read),
-                duplicate(proc_info.hProcess)?,
+                reader_proc,
                 on_output,
                 on_exit.clone(),
                 exit_raised.clone(),
@@ -220,12 +243,7 @@ impl ConPtySession {
             // 行程結束偵測：**一定要等 process handle**。ConPTY 的內建 conhost 在子行程結束後
             // 不會關輸出管線（要等我們 ClosePseudoConsole），光靠讀取迴圈的 EOF 永遠等不到
             // ——舊版實測 claude 按 Ctrl+C 離開、powershell 打 exit 後分頁毫無反應就是這個原因。
-            spawn_waiter(
-                duplicate(proc_info.hProcess)?,
-                on_exit,
-                exit_raised,
-                closing,
-            );
+            spawn_waiter(waiter_proc, on_exit, exit_raised, closing);
 
             Ok(session)
         }
@@ -310,7 +328,7 @@ fn raise_exit(
             None
         }
     };
-    on_exit(ExitInfo { exit_code: code });
+    on_exit(ExitInfo::ended(code));
 }
 
 impl TerminalSession for ConPtySession {
@@ -319,6 +337,11 @@ impl TerminalSession for ConPtySession {
             return;
         }
         let _guard = self.write_lock.lock().unwrap_or_else(|e| e.into_inner());
+        let _h = self.handles.read().unwrap_or_else(|e| e.into_inner());
+        // 拿到鎖之後再看一次：等鎖期間 close() 可能已經把 handle 關了
+        if self.closed.load(Ordering::SeqCst) {
+            return;
+        }
         let mut offset = 0usize;
         while offset < data.len() {
             let mut written: u32 = 0;
@@ -346,6 +369,10 @@ impl TerminalSession for ConPtySession {
             X: cols as i16,
             Y: rows as i16,
         };
+        let _h = self.handles.read().unwrap_or_else(|e| e.into_inner());
+        if self.closed.load(Ordering::SeqCst) {
+            return; // 等鎖期間已經 close_pty 了
+        }
         unsafe {
             if self.open_console {
                 if let Some(h) = conpty_host::host() {
@@ -379,6 +406,8 @@ impl TerminalSession for ConPtySession {
         // 之後做 SSH 時建議設 Ctrl+D ×2），只短暫等待就往下強制收尾。
         if !self.graceful_exit_bytes.is_empty() {
             {
+                // `closed` 已經是 true，一般的 write() 不會再進來；這裡照樣拿鎖，
+                // 等正在寫的那一筆寫完才插入結束鍵
                 let _guard = self.write_lock.lock().unwrap_or_else(|e| e.into_inner());
                 let mut written: u32 = 0;
                 unsafe {
@@ -394,6 +423,8 @@ impl TerminalSession for ConPtySession {
             std::thread::sleep(GRACEFUL_WAIT);
         }
 
+        // 關 handle 要拿寫鎖：等正在用 `write_side`／`hpc` 的 write()／resize() 做完
+        let _h = self.handles.write().unwrap_or_else(|e| e.into_inner());
         unsafe {
             // 先終止子行程，ClosePseudoConsole 與管線關閉才會立即返回（否則會阻塞）
             TerminateProcess(self.h_process.raw(), 0);
@@ -552,16 +583,23 @@ unsafe fn build_env_block(extra: &[(String, String)]) -> Option<Vec<u16>> {
     if extra.is_empty() {
         return None;
     }
-    // 環境變數名在 Windows 不分大小寫，所以用大寫當 key 比對才不會出現兩個 TEMP
-    let mut map: std::collections::BTreeMap<String, (String, String)> = std::env::vars()
-        .map(|(k, v)| (k.to_ascii_uppercase(), (k, v)))
+    use std::ffi::OsString;
+    use std::os::windows::ffi::OsStrExt;
+    // 環境變數名在 Windows 不分大小寫，所以用大寫當 key 比對才不會出現兩個 TEMP。
+    // ⚠️ 要用 `vars_os()`：`vars()` 遇到不是合法 Unicode 的環境變數會 panic（C7；
+    // release 是 panic = "abort"，整個 app 直接關掉）。比對用的 key 可以 lossy，
+    // 寫進區塊的是原始的 UTF-16。
+    let mut map: std::collections::BTreeMap<String, (OsString, OsString)> = std::env::vars_os()
+        .map(|(k, v)| (k.to_string_lossy().to_ascii_uppercase(), (k, v)))
         .collect();
     for (k, v) in extra {
-        map.insert(k.to_ascii_uppercase(), (k.clone(), v.clone()));
+        map.insert(k.to_ascii_uppercase(), (OsString::from(k), OsString::from(v)));
     }
     let mut block: Vec<u16> = Vec::new();
     for (_, (k, v)) in map {
-        block.extend(format!("{k}={v}").encode_utf16());
+        block.extend(k.encode_wide());
+        block.push(u16::from(b'='));
+        block.extend(v.encode_wide());
         block.push(0);
     }
     block.push(0); // 區塊結尾再一個 NUL

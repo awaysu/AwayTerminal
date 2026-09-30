@@ -23,6 +23,9 @@ pub struct OutputPump {
     state: Mutex<PumpState>,
     cv: Condvar,
     stopped: AtomicBool,
+    /// 留一份 channel：pump 停掉之後（行程自己結束）巨集 `connect`／重連要能用同一條
+    /// channel 再開一條 pump（[`ensure_running`](Self::ensure_running)）。
+    channel: Channel<InvokeResponseBody>,
 }
 
 #[derive(Default)]
@@ -38,12 +41,61 @@ impl OutputPump {
             state: Mutex::new(PumpState::default()),
             cv: Condvar::new(),
             stopped: AtomicBool::new(false),
+            channel,
         });
+        Self::spawn_worker(&pump);
+        pump
+    }
+
+    fn spawn_worker(pump: &std::sync::Arc<Self>) {
         let worker = pump.clone();
-        let _ = std::thread::Builder::new()
+        let channel = pump.channel.clone();
+        let spawned = std::thread::Builder::new()
             .name("pty-output-pump".into())
             .spawn(move || worker.run(channel));
-        pump
+        if spawned.is_err() {
+            // 執行緒開不起來：標成已停，flush_and_stop 才不會白等 2 秒
+            pump.stopped.store(true, Ordering::SeqCst);
+        }
+    }
+
+    /// pump 已經停了（行程自己結束 → `flush_and_stop`）就用同一條 channel 重開一條。
+    ///
+    /// 巨集的 `connect` 與重連沿用分頁既有的 pump；PTY 分頁的行程結束後 pump 是
+    /// draining／stopped 狀態，不重開的話新連線的輸出會全部被丟掉（C4）。
+    /// 還在跑的 pump 什麼都不做。
+    pub fn ensure_running(self: &std::sync::Arc<Self>) {
+        let draining = self.state.lock().unwrap_or_else(|e| e.into_inner()).draining;
+        if !draining {
+            return;
+        }
+        // 正在排空（flush_and_stop 進行中）→ 等它真的停
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        while !self.stopped.load(Ordering::SeqCst) && std::time::Instant::now() < deadline {
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        if !self.stopped.load(Ordering::SeqCst) {
+            return; // 舊的 worker 卡住了，不要同時開兩條
+        }
+        {
+            let mut st = self.state.lock().unwrap_or_else(|e| e.into_inner());
+            st.buf.clear();
+            st.draining = false;
+        }
+        self.stopped.store(false, Ordering::SeqCst);
+        Self::spawn_worker(self);
+    }
+
+    /// 關分頁用：丟掉還沒送的輸出、叫 pump 結束，**不等**（在 IPC 執行緒上呼叫）。
+    ///
+    /// 分頁已經 `x{id}` 拆掉了，剩下的輸出沒有人要看。
+    pub fn stop(&self) {
+        {
+            let mut st = self.state.lock().unwrap_or_else(|e| e.into_inner());
+            st.buf.clear();
+            st.draining = true;
+        }
+        self.cv.notify_all();
     }
 
     /// 讀取執行緒呼叫：只是把 bytes 接到緩衝後面。

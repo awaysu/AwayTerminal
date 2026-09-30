@@ -90,6 +90,19 @@ MPL-2.0、TeraTerm 是 BSD-3，散布時必須附授權全文。`cargo test --li
 
 舊版是同樣的結論。解除安裝時清掉才是必要的——不清的話選單會指向一個已經被刪掉的 exe。
 
+⚠️ **已知限制（2026-09-30 稽核 I8）**：同樣的理由也適用在**解除安裝**。per-machine 的
+解除安裝程式跑在提權環境，`hooks.nsh` 的 `DeleteRegKey HKCU …` 刪的是**提權那個帳號**的 HKCU：
+
+- 一般使用者 + UAC 輸入**另一個**系統管理員帳密 → 刪到管理員的，使用者自己的選單**留著**，
+  點下去指向已經被刪掉的 exe；
+- 使用者本身就是管理員（最常見）→ 提權後還是同一個帳號，刪得到；
+- 機器上**其他**勾過選單的帳號，任何做法都刪不到（每個帳號各一份 HKCU）。
+
+沒有改成 `HKU\<SID>`：NSIS 拿「啟動解除安裝的那個非提權使用者」的 SID 要靠外掛或
+`System::Call` 查 token，還要處理「那個帳號的 hive 沒載入」的情況，寫錯的代價是刪到
+別人的登錄檔——在能和簽章、MSI 一起實機驗之前不值得冒險。殘留的選單要由使用者
+重新安裝後在設定視窗取消勾選（`shellmenu.rs` 寫／刪的是自己帳號的 HKCU）才清得掉。
+
 ### ⬜ 待辦（階段 5）：捷徑要帶和程式一樣的 AppUserModelID
 
 TASK-035 起，程式在啟動時（建立視窗之前）設了明確的工作列身分：
@@ -222,6 +235,22 @@ signtool verify /pa /v <檔案>
    貼上之後 `the_updater_is_configured_but_disabled_until_a_key_exists` 這條測試會失敗
    ——那是刻意的，改成檢查格式並在這裡記一筆「哪一版開始有自動更新」。
 
+   **同一個 commit 裡把 `bundle.createUpdaterArtifacts` 改成 `true`**（repo 裡現在明寫著 `false`）：
+
+   ```jsonc
+   "bundle": {
+     "createUpdaterArtifacts": true,
+     …
+   }
+   ```
+
+   ⚠️ 這是 `.sig` 會不會產生的**總開關**（2026-09-30 稽核 I1）：它是 `false` 的時候，
+   就算給了私鑰也**一個 `.sig` 都不會產生**，`release.mjs` 只會一直說「沒有簽章」。
+   反過來，它是 `true` 而 build 時**沒給私鑰**，`npm run tauri build` 會在最後失敗
+   （`A public key has been found, but no private key…`）——所以它和公鑰**一起開**，
+   在那之前保持 `false`，平常沒有私鑰的機器才 build 得起來。
+   `node scripts/release.mjs` 會檢查這兩個是不是一起開／一起關。
+
 3. **簽章時把私鑰給 build**（環境變數，不要寫進檔案）：
 
    ```powershell
@@ -281,6 +310,8 @@ signtool verify /pa /v <檔案>
 [ ] node scripts/test-bridge-args.mjs  PASS
 [ ] node scripts/audit-pitfalls.mjs   PASS（舊版 CLAUDE.md 更新過就要重新稽核）
 [ ] node scripts/test-sandbox-guard.mjs PASS
+[ ] node scripts/audit-control-bytes.mjs PASS（原始碼沒有字面控制字元，稽核 A9）
+[ ] node scripts/make-manual-plan.mjs --check PASS
 [ ] cd src-tauri && cargo deny check      advisories/bans/licenses/sources 全 ok
 [ ] npm audit --omit=dev                  0 vulnerabilities
 [ ] 重看 deny.toml 的 ignore 清單          上游修好了就拿掉（目前只有 RUSTSEC-2023-0071）
@@ -295,6 +326,7 @@ signtool verify /pa /v <檔案>
 [ ] msiexec /a 看 MSI 內容：同上
 [ ] 安裝檔有簽章（signtool verify /pa）
 [ ] docs/MANUAL-TEST-PLAN.md 的 P0 一節由使用者跑過
+[ ] 工作樹乾淨、HEAD 已 push（release.mjs --publish 會用 --target <HEAD> 打 tag，沒 push 就擋）
 [ ] GitHub Release：tag v<版本>，資產命名見下
 [ ] awaysu.cc 後台的 awayterminal2 版本號更新
 ```

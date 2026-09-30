@@ -99,6 +99,46 @@ fn default_cwd() -> Option<String> {
     }
 }
 
+/// 「經 PowerShell 啟動」的命令列：`<ps> -NoExit -EncodedCommand <base64>`。
+///
+/// PowerShell 那一段是 `& '<exe>' <args>`。**不可以**用 `-Command "…"` 包：
+/// 使用者的參數與代理團隊 adapter 加的 `--append-system-prompt-file "C:\Users\Away Work\x.md"`
+/// 含雙引號，會把外層的 `"…"` 提早結束，路徑有空白就被拆成兩個參數、角色檔沒注入（D7／G1）。
+/// `-EncodedCommand` 是 UTF-16LE 的 base64，Windows 命令列的引號規則完全碰不到它，
+/// `args` 原樣就是 PowerShell 語法（和使用者在 PowerShell 裡自己打的一樣）。
+fn powershell_launch(ps_command_line: &str, exe: &str, args: &str) -> String {
+    // PowerShell 單引號字串裡的單引號要寫成兩個
+    let script = format!("& '{}'{}", exe.replace('\'', "''"), args);
+    let utf16: Vec<u8> = script
+        .encode_utf16()
+        .flat_map(|u| u.to_le_bytes())
+        .collect();
+    format!(
+        "{} -NoExit -EncodedCommand {}",
+        ps_command_line,
+        crate::b64::encode(&utf16)
+    )
+}
+
+/// 連線名稱 → 可以當資料夾名的字串（Windows 不允許的字元換成 `_`）。
+fn sandbox_dir_name(name: &str) -> String {
+    let s: String = name
+        .trim()
+        .chars()
+        .map(|c| match c {
+            '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*' => '_',
+            c if c.is_control() => '_',
+            c => c,
+        })
+        .collect();
+    let s = s.trim_end_matches(['.', ' ']).to_string();
+    if s.is_empty() {
+        "conn".to_string()
+    } else {
+        s
+    }
+}
+
 /// SSH 連線的額外參數（`kind = "ssh"` 時才看）。
 #[derive(Default, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -361,7 +401,7 @@ pub fn session_create(
     };
     let mut work_dir = cwd.clone().or_else(default_cwd);
     // 恢復分頁要存「沙盒之前」的工作目錄，否則下次會在 worktree 裡再開一層沙盒
-    let base_dir = work_dir.clone().unwrap_or_default();
+    let mut base_dir = work_dir.clone().unwrap_or_default();
     let mut sandbox = None;
     if let Some(a) = &agent_slot {
         // 沙盒是**團隊的**（`agent_team_create` 已經開好 worktree、寫好護欄）：
@@ -372,7 +412,27 @@ pub fn session_create(
         }
     } else if let Some(c) = &conn_def {
         if c.sandbox {
-            let base = std::path::PathBuf::from(work_dir.clone().unwrap_or_default());
+            let mut base = std::path::PathBuf::from(work_dir.clone().unwrap_or_default());
+            // 使用者沒選工作目錄（預設＝桌面）而且那裡不是 git repo：不要在桌面建
+            // `.ai\sandbox\…`、也不要把護欄設定寫到桌面上（D14）→ 改用程式設定資料夾底下
+            // 這條連線自己的目錄。使用者**自己選的**目錄照用（那是他的決定）。
+            if cwd.is_none() && crate::sandbox::git_toplevel(&base).is_none() {
+                let dir = settings
+                    .dir()
+                    .join("sandbox-work")
+                    .join(sandbox_dir_name(&c.name));
+                match std::fs::create_dir_all(&dir) {
+                    Ok(()) => {
+                        base = dir;
+                        base_dir = base.to_string_lossy().to_string();
+                        work_dir = Some(base_dir.clone());
+                    }
+                    Err(e) => println!(
+                        "[AwayTerminal] 沙盒工作目錄建立失敗，沿用 {}：{e}",
+                        base.display()
+                    ),
+                }
+            }
             match crate::sandbox::prepare(&base, &c.name, &c.path) {
                 Ok(sb) => {
                     work_dir = Some(sb.work_dir.clone());
@@ -409,17 +469,11 @@ pub fn session_create(
         args.push_str(extra);
         sh.command_line = if c.via_powershell {
             // 舊版是「先開互動 PowerShell，尺寸就緒後再把指令打進去」（避免以 80 欄啟動）。
-            // 我們的 PTY 一開始就是前端回報的真實尺寸，所以直接用 -NoExit -Command 起——
+            // 我們的 PTY 一開始就是前端回報的真實尺寸，所以直接用 -NoExit -EncodedCommand 起——
             // 結果一樣（工具跑完仍留在 shell 裡），少一套延後打字的機制。
             let ps = shell::powershell()
                 .ok_or_else(|| t("err.noPowerShellVia").to_string())?;
-            format!(
-                "{} -NoExit -Command \"& '{}'{}\"",
-                ps.command_line,
-                // PowerShell 單引號字串裡的單引號要寫成兩個
-                c.path.replace('\'', "''"),
-                args
-            )
+            powershell_launch(&ps.command_line, &c.path, &args)
         } else {
             format!("\"{}\"{}", c.path, args)
         };
@@ -428,6 +482,9 @@ pub fn session_create(
     let is_claude = shell::is_claude_exe(&sh.exe);
     let tab_kind = match kind.as_str() {
         "shell" | "powershell" => TabKind::PowerShell,
+        // ADB 是自己的種類（舊版 `TermKind.Adb`）：恢復分頁要認得它（C8），
+        // 也不依提示行改名（`tracks_cwd_title` 不含 ADB）
+        "adb" => TabKind::Adb,
         _ if is_claude => TabKind::Claude,
         _ => TabKind::Custom,
     };
@@ -492,10 +549,11 @@ pub fn session_create(
             last_output.store(tabs::now_ms(), Ordering::Relaxed);
             tap.output(bytes);
             // log 先寫再餵畫面：舊版 OnSessionOutput 也是這個順序
-            if let Ok(g) = logger.lock() {
-                if let Some(l) = g.as_ref() {
-                    l.write(bytes);
-                }
+            // 先把 Logger 複製出來、放掉槽的鎖再寫檔：磁碟慢／防毒卡住時不可以握著槽的鎖
+            //（`state_with` 與關分頁都要鎖它，握著會讓整個 UI 一起凍住）
+            let l = logger.lock().ok().and_then(|g| g.clone());
+            if let Some(l) = l {
+                l.write(bytes);
             }
             pump.push(bytes);
         }) as crate::session::OnOutput
@@ -590,6 +648,17 @@ pub fn session_create(
         sandbox: sandbox.clone(),
         conn_name: conn_def.as_ref().map(|c| c.name.clone()),
         work_dir: base_dir,
+        // 恢復分頁用：實際用的 adb.exe 與序號（下次不再跑 `adb devices`）
+        adb: (kind == "adb").then(|| {
+            (
+                sh.exe.display().to_string(),
+                adb.as_ref()
+                    .and_then(|a| a.serial.clone())
+                    .unwrap_or_default()
+                    .trim()
+                    .to_string(),
+            )
+        }),
         command_line: sh.command_line,
         backend: info.backend.clone(),
     });
@@ -714,7 +783,7 @@ fn create_remote(
         .filter(|t| !t.is_empty())
         .unwrap_or(default_title);
 
-    emit_host(&app, format!("n{id}{tab_title}"));
+    emit_host(&app, format!("n{id}\x1f{tab_title}"));
     // 恢復分頁：畫面要在 `n` 之後、`s`／連線之前倒回去（舊版 AddTab 的順序）
     crate::restore::emit_buffer(&app, id, restore);
     emit_host(&app, format!("s{id}"));
@@ -752,6 +821,7 @@ fn create_remote(
         sandbox: None, // 遠端連線沒有本機子行程可以隔離，不需要沙盒
         conn_name: None,
         work_dir: String::new(),
+        adb: None,
         command_line: params.target(),
         backend: backend.to_string(),
     });
@@ -763,7 +833,16 @@ fn create_remote(
         .ok_or_else(|| t("err.tabCreateFailed").to_string())?;
     if let Err(e) = crate::reconnect::start(&app, id, &params, parts) {
         emit_host(&app, format!("x{id}"));
-        tabs_state.remove(id);
+        // pump 也要收掉，否則每次開埠失敗就漏一條執行緒（C4／E5）
+        if let Some(parts) = tabs_state.session_parts_of(id) {
+            parts.pump.stop();
+        }
+        // 作用中分頁換回原位置的那一個並通知前端，否則 `active` 變 null、鍵盤沒有目標（C9；
+        // 同 `close_tab` 的收尾）
+        if let Some(next) = tabs_state.remove(id) {
+            emit_host(&app, format!("s{next}"));
+        }
+        tabs::emit_state(&app, tabs_state);
         return Err(e);
     }
     println!(
@@ -880,11 +959,16 @@ pub fn close_tab(app: &AppHandle, id: u32, manager: &SessionManager, tabs_state:
     crate::ttl::runner::stop_for_tab(app, id);
     // 關分頁要先收掉 log（舊版 RemoveTabSilently 的 `(tab.Logger as SessionLogger)?.Dispose()`）
     if let Some(slot) = tabs_state.logger_slot(id) {
-        if let Ok(mut g) = slot.lock() {
-            if let Some(l) = g.take() {
-                l.close();
-            }
+        // 先拿出來、放掉槽的鎖再 close（close 要等正在寫的那一塊寫完）
+        let taken = slot.lock().ok().and_then(|mut g| g.take());
+        if let Some(l) = taken {
+            l.close();
         }
+    }
+    // 輸出 pump 也要收掉：不收的話每關一個分頁就漏一條執行緒＋一條 Channel（C4／E5）。
+    // ConPTY 的 close() 不會再發 on_exit、遠端的 on_exit 只 flush，所以只能在這裡停。
+    if let Some(parts) = tabs_state.session_parts_of(id) {
+        parts.pump.stop();
     }
     let next = tabs_state.remove(id);
     if let Some(s) = manager.remove(id) {
@@ -898,6 +982,8 @@ pub fn close_tab(app: &AppHandle, id: u32, manager: &SessionManager, tabs_state:
             crate::agent::tab_removed(app, &teams, id);
         }
     }
+    // Telegram 遠端：附著在這個分頁上的狀態（`/last` 基準等）一起清掉（H7）
+    crate::telegram::remote::tab_closed(id);
     if let Some(next) = next {
         emit_host(app, format!("s{next}"));
     }
@@ -1055,5 +1141,57 @@ pub fn pane_answer(
             emit_host(&app, format!("t{id}\x1f{title}"));
         }
         tabs::emit_state(&app, &tabs_state);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{powershell_launch, sandbox_dir_name};
+
+    /// 把 `-EncodedCommand` 後面的 base64 解回 PowerShell 腳本（測試用的小解碼器）。
+    fn decode_ps(cmd: &str) -> String {
+        let b64 = cmd.rsplit(' ').next().unwrap();
+        let table = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        let mut bits = 0u32;
+        let mut n = 0;
+        let mut bytes = Vec::new();
+        for c in b64.bytes().filter(|&c| c != b'=') {
+            let v = table.iter().position(|&t| t == c).unwrap() as u32;
+            bits = (bits << 6) | v;
+            n += 6;
+            if n >= 8 {
+                n -= 8;
+                bytes.push((bits >> n) as u8);
+                bits &= (1 << n) - 1;
+            }
+        }
+        let units: Vec<u16> = bytes
+            .chunks(2)
+            .map(|c| u16::from_le_bytes([c[0], c[1]]))
+            .collect();
+        String::from_utf16(&units).unwrap()
+    }
+
+    /// D7／G1：參數裡的雙引號（含空白的角色檔路徑）要原封不動到 PowerShell，
+    /// 不可以再被外層 `-Command "…"` 的引號吃掉。
+    #[test]
+    fn via_powershell_keeps_quoted_args_intact() {
+        let args = r#" --append-system-prompt-file "C:\Users\Away Work\x.md" --model "a b""#;
+        let cmd = powershell_launch(r#""C:\pwsh.exe" -NoLogo"#, r"C:\npm\it's\claude.cmd", args);
+        assert!(cmd.starts_with(r#""C:\pwsh.exe" -NoLogo -NoExit -EncodedCommand "#), "{cmd}");
+        // 命令列本身不再含有會被 CommandLineToArgv 解讀的雙引號（除了 exe 路徑那一對）
+        assert_eq!(cmd.matches('"').count(), 2, "{cmd}");
+        assert_eq!(
+            decode_ps(&cmd),
+            format!(r"& 'C:\npm\it''s\claude.cmd'{args}")
+        );
+    }
+
+    #[test]
+    fn sandbox_dir_names_are_file_safe() {
+        assert_eq!(sandbox_dir_name("Claude Code"), "Claude Code");
+        assert_eq!(sandbox_dir_name(r#"a/b\c:d*e?"f<g>h|"#), "a_b_c_d_e__f_g_h_");
+        assert_eq!(sandbox_dir_name("  ..  "), "conn");
+        assert_eq!(sandbox_dir_name("x."), "x");
     }
 }

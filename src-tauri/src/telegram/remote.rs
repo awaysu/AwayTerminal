@@ -75,6 +75,52 @@ impl State {
             ..Default::default()
         }
     }
+
+    /// 把一個已經不在的分頁的東西都丟掉（附著、基準畫面、去重、翻頁）。
+    fn forget_tab(&mut self, tab: u32) {
+        if self.current == Some(tab) {
+            self.current = None;
+            self.idle_warned = false;
+        }
+        self.baseline.remove(&tab);
+        self.last_sent.remove(&tab);
+        if self.more_tab == Some(tab) {
+            self.more_tab = None;
+            self.more_buf.clear();
+            self.more_pos = 0;
+        }
+    }
+}
+
+/// 分頁關掉了（`commands::close_tab` 呼叫；UI 關、遠端 `/close` 關都會走到）。
+///
+/// BUG H7：以前遠端狀態不清——附著中的分頁從電腦上關掉後，`/last` 要等 2.5 秒才回
+/// 「沒有輸出」而不是「分頁已關閉」；每個分頁的基準畫面（最多 400 行）永遠不釋放。
+/// 遠端沒在跑也要清逐分頁推播設定（那張表不跟著遠端的啟停）。
+pub fn tab_closed(id: u32) {
+    tab_notify_map()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .remove(&id);
+    let state = lock().as_ref().map(|r| r.state.clone());
+    if let Some(state) = state {
+        state.lock().unwrap_or_else(|e| e.into_inner()).forget_tab(id);
+    }
+}
+
+/// 附著的分頁還在嗎（`/last`、`/shot`、選單應答用）。不在就清掉它的狀態、回「分頁已關閉」。
+///
+/// 看的是**分頁**在不在，不是連線：斷線等重連的 SSH 分頁畫面還在，`/last` 照樣要能看。
+fn tab_gone(app: &AppHandle, api: &Api, chat_id: i64, state: &Arc<Mutex<State>>, tab: u32) -> bool {
+    let gone = app
+        .try_state::<Arc<crate::tabs::TabManager>>()
+        .map(|t| !t.contains(tab))
+        .unwrap_or(false);
+    if gone {
+        state.lock().unwrap_or_else(|e| e.into_inner()).forget_tab(tab);
+        send(api, chat_id, &crate::i18n::t("tg.tabGone"));
+    }
+    gone
 }
 
 struct Running {
@@ -201,17 +247,41 @@ fn clear_stopped_reason() {
 ///
 /// 通知走 `telegram-fatal` 事件，前端顯示一次。**這個函式一輪只會被呼叫一次**
 /// （呼叫完 `poll_loop` 就 return 了），所以不會洗版。
-fn fatal_stop(app: &AppHandle, err: &str, status: u16) {
+///
+/// `own_stop` 是呼叫它的那條輪詢執行緒自己的停止旗標（BUG H2）：使用者重存設定時，
+/// 舊執行緒已經被 `stop()`、新的 `Running` 已經登記——舊執行緒這時才拿到 401 的話，
+/// 以前會 `take()` 走**新的** `Running`、把開關關回去。現在只在「正在跑的就是自己」時才動。
+///
+/// 對著本機假 Bot API（`--verify`）時不 emit `telegram-fatal`（BUG H9：不然驗證途中
+/// 前端會跳「Bot Token 無效」對話框）。停止原因與設定照改——那正是 `--verify` 要驗的，
+/// 它驗完會把 `remote_enabled` 放回去。
+fn fatal_stop(app: &AppHandle, api: &Api, own_stop: &Arc<AtomicBool>, err: &str, status: u16) {
+    if own_stop.load(Ordering::Relaxed) {
+        // 自己早就被停掉了（使用者按了停止或重存）→ 這個錯誤跟現在的設定無關
+        println!("[AwayTerminal] Telegram 遠端：已停止的輪詢收到 {err}，忽略");
+        return;
+    }
     let reason = crate::i18n::tf("tg.fatalToken", &[&status.to_string()]);
     println!("[AwayTerminal] Telegram 遠端：{err} → 停止輪詢（token 無效，不再重試）");
-    *reason_slot().lock().unwrap_or_else(|e| e.into_inner()) = Some(reason.clone());
     // 先把自己從「正在跑」名單拿掉（`stop()` 會清掉原因，所以這裡自己來）
-    if let Some(r) = lock().take() {
-        r.stop.store(true, Ordering::Relaxed);
+    {
+        let mut g = lock();
+        let mine = g.as_ref().is_some_and(|r| Arc::ptr_eq(&r.stop, own_stop));
+        own_stop.store(true, Ordering::Relaxed);
+        if !mine {
+            // 名單上已經是新的一條了 → 不碰它、也不改設定
+            return;
+        }
+        g.take();
     }
-    // 設定裡的開關也關掉並存檔
+    *reason_slot().lock().unwrap_or_else(|e| e.into_inner()) = Some(reason.clone());
+    // 設定裡的開關也關掉並存檔（`--verify` 會自己記下原值、驗完放回去）
     if let Some(store) = app.try_state::<Arc<crate::settings::SettingsStore>>() {
         store.update(|s| s.remote_enabled = false);
+    }
+    if api.is_local() {
+        println!("[AwayTerminal] Telegram 遠端：假 Bot API（--verify），不通知前端");
+        return;
     }
     if let Err(e) = app.emit("telegram-fatal", reason) {
         println!("[AwayTerminal] Telegram 遠端：通知前端失敗：{e}");
@@ -241,12 +311,39 @@ fn poll_loop(
     stop: Arc<AtomicBool>,
     state: Arc<Mutex<State>>,
 ) {
-    // 跳過啟動前累積的舊訊息，避免一開機就重播（見 `prime_offset` 的註解）
-    let mut offset = api.prime_offset();
+    // 跳過啟動前累積的舊訊息，避免一開機就重播（見 `prime_offset` 的註解）。
+    // **一定要成功才開始輪詢**（BUG H1）：開機時網路還沒好就退回 offset 0 的話，
+    // 第一次成功輪詢會把關機期間的 `/goto`、`/new`、文字整批執行。失敗就退避重試。
+    let mut backoff = BACKOFF;
+    let mut prime_errors = 0u32;
+    let mut offset = loop {
+        if stop.load(Ordering::Relaxed) {
+            return;
+        }
+        match api.prime_offset() {
+            Ok(o) => break o,
+            Err(e) => {
+                if super::api::is_fatal(&e) {
+                    let status = super::api::http_status(&e).unwrap_or(0);
+                    fatal_stop(&app, &api, &stop, &e, status);
+                    return;
+                }
+                prime_errors += 1;
+                if prime_errors == 1 || prime_errors.is_multiple_of(20) {
+                    println!(
+                        "[AwayTerminal] Telegram 遠端：prime offset 失敗 #{prime_errors}（{e}），{} 秒後重試",
+                        backoff.as_secs()
+                    );
+                }
+                sleep_unless_stopped(backoff, &stop);
+                backoff = (backoff * 2).min(BACKOFF_MAX);
+            }
+        }
+    };
+    backoff = BACKOFF;
     let _ = api.set_my_commands(&cmd::command_menu());
     let _ = api.send_message(chat_id, &crate::i18n::t("tg.online"), false, &[]);
     let mut errors = 0u32;
-    let mut backoff = BACKOFF;
 
     while !stop.load(Ordering::Relaxed) {
         // getUpdates 最多阻塞 30 秒 → 每輪至少檢查一次閒置
@@ -274,11 +371,15 @@ fn poll_loop(
                 }
             }
             Err(e) => {
+                // 這一輪輪詢期間自己已經被停掉了 → 錯誤與現在的設定無關（BUG H2）
+                if stop.load(Ordering::Relaxed) {
+                    return;
+                }
                 // **401／404 ＝ 重試永遠不會成功**（token 無效或 bot 不存在）→ 停掉，別再打。
                 // 舊做法一視同仁重試，實測 12 分鐘打了 240 次還是 401（TASK-036）。
                 if super::api::is_fatal(&e) {
                     let status = super::api::http_status(&e).unwrap_or(0);
-                    fatal_stop(&app, &e, status);
+                    fatal_stop(&app, &api, &stop, &e, status);
                     return;
                 }
                 // 其餘（409＝別的程式在 poll、5xx、逾時、斷線）都是暫時性 → 重試，但退避遞增
@@ -293,6 +394,18 @@ fn poll_loop(
                 backoff = (backoff * 2).min(BACKOFF_MAX);
             }
         }
+    }
+}
+
+/// 睡 `d`，但每 200ms 看一次停止旗標（退避最長 60 秒，使用者按停止不該等那麼久才真的停）。
+fn sleep_unless_stopped(d: Duration, stop: &AtomicBool) {
+    let until = Instant::now() + d;
+    while !stop.load(Ordering::Relaxed) {
+        let now = Instant::now();
+        if now >= until {
+            break;
+        }
+        std::thread::sleep((until - now).min(Duration::from_millis(200)));
     }
 }
 
@@ -524,7 +637,15 @@ fn do_goto(
     {
         let mut st = state.lock().unwrap_or_else(|e| e.into_inner());
         st.current = Some(id);
-        st.baseline.insert(id, screen);
+        // 等不到畫面就不定基準（BUG H4：空字串當基準會讓下一次推播整張重送）
+        match screen {
+            Some(s) => {
+                st.baseline.insert(id, s);
+            }
+            None => {
+                st.baseline.remove(&id);
+            }
+        }
     }
     send(
         api,
@@ -624,18 +745,36 @@ fn send_last(
         }
         return;
     };
-    let raw = super::screen::recent_text(app, tab, SCREEN_TIMEOUT);
+    if auto {
+        // 自動推播不回訊息，只清狀態
+        let gone = app
+            .try_state::<Arc<crate::tabs::TabManager>>()
+            .map(|t| !t.contains(tab))
+            .unwrap_or(false);
+        if gone {
+            state.lock().unwrap_or_else(|e| e.into_inner()).forget_tab(tab);
+            return;
+        }
+    } else if tab_gone(app, api, chat_id, state, tab) {
+        return;
+    }
+    // 等不到前端回畫面（逾時）＝`None`：**不可以**拿空字串當基準（BUG H4），
+    // 否則下一次完成推播對空基準做 diff，整張快照重送一次
+    let fetched = super::screen::recent_text(app, tab, SCREEN_TIMEOUT);
+    let raw = fetched.clone().unwrap_or_default();
     let diff = if incremental {
         let st = state.lock().unwrap_or_else(|e| e.into_inner());
         st.baseline.get(&tab).and_then(|b| tidy::diff_new(b, &raw))
     } else {
         None
     };
-    state
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .baseline
-        .insert(tab, raw.clone());
+    if let Some(screen) = fetched {
+        state
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .baseline
+            .insert(tab, screen);
+    }
 
     // 先抓一大段、瘦身去雜訊**之後**才取行，行數額度才不會被 spinner 雜訊吃掉
     let all_full = tidy::tidy_for_phone(&raw);
@@ -742,7 +881,12 @@ fn do_close(
     let rows = tab_rows(app);
     // 帶編號＝清單上的第 n 個；不帶＝目前附著的
     let target = match n {
-        Some(i) => rows.get((i as usize).saturating_sub(1)).map(|(id, _, _)| *id),
+        // `/close 0` 不可以變成第 1 個（BUG H6：以前 saturating_sub）；也不能在 parse 時
+        // 濾成 None——那會變成「關掉目前附著的」。0 就是清單上沒有的編號。
+        Some(i) => (i as usize)
+            .checked_sub(1)
+            .and_then(|k| rows.get(k))
+            .map(|(id, _, _)| *id),
         None => state.lock().unwrap_or_else(|e| e.into_inner()).current,
     };
     let Some(tab) = target else {
@@ -811,6 +955,9 @@ fn do_shot(app: &AppHandle, api: &Api, chat_id: i64, state: &Arc<Mutex<State>>) 
         send(api, chat_id, &crate::i18n::t("tg.notAttached"));
         return;
     };
+    if tab_gone(app, api, chat_id, state, tab) {
+        return;
+    }
     match super::shot::capture_png(app, tab) {
         Some(png) if !png.is_empty() => {
             if let Err(e) = api.send_photo(chat_id, &png, "") {
@@ -834,7 +981,10 @@ fn answer_menu(
 ) -> bool {
     let cur = state.lock().unwrap_or_else(|e| e.into_inner()).current;
     let Some(tab) = cur else { return false };
-    let screen = super::screen::recent_text(app, tab, SCREEN_TIMEOUT);
+    if tab_gone(app, api, chat_id, state, tab) {
+        return true; // 已經回了「分頁已關閉」，別再當文字送
+    }
+    let screen = super::screen::recent_text(app, tab, SCREEN_TIMEOUT).unwrap_or_default();
     if !cmd::is_menu_screen(&screen) {
         return false;
     }

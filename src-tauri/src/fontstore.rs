@@ -317,14 +317,29 @@ pub async fn font_download(app: AppHandle, id: String) -> Result<String, String>
         r.push((id.clone(), cancel.clone()));
     }
 
-    let id2 = id.clone();
+    // 不管怎麼結束（含下載執行緒 panic、`?` 提早回傳）都要把自己從 `running` 拿掉，
+    // 否則這個字型之後永遠「下載中」（BUG D10）→ 用 Drop 收尾
+    struct Unregister(String);
+    impl Drop for Unregister {
+        fn drop(&mut self) {
+            running()
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .retain(|(k, _)| *k != self.0);
+        }
+    }
+    let _unregister = Unregister(id.clone());
+
     let result = tokio::task::spawn_blocking(move || download_blocking(&app, entry, &dir, &cancel))
         .await
         .map_err(|e| e.to_string())?;
-    running().lock().unwrap_or_else(|e| e.into_inner()).retain(|(k, _)| *k != id2);
     fonts::invalidate();
     result
 }
+
+/// 一個字型檔最多收這麼多位元組。目錄裡最大的也才幾 MB；`Content-Length` 是對方說了算，
+/// 不能照單全收拿去預先配置記憶體（BUG D10）。
+const MAX_FONT_BYTES: u64 = 64 * 1024 * 1024;
 
 /// 取消正在跑的下載。回 `true`＝真的有一個在跑。
 #[tauri::command]
@@ -371,6 +386,11 @@ fn download_blocking(
     let tmp = dir.join(format!("{}.part", entry.file));
     let mut body = resp.into_body().into_reader();
     let mut buf = vec![0u8; 256 * 1024];
+    if total > MAX_FONT_BYTES {
+        let msg = crate::i18n::tf("font.tooLarge", &[&(MAX_FONT_BYTES / 1024 / 1024).to_string()]);
+        emit(0, total, true, Some(msg.clone()));
+        return Err(msg);
+    }
     let mut data: Vec<u8> = Vec::with_capacity(total as usize);
     let mut last = std::time::Instant::now();
     emit(0, total, false, None);
@@ -392,6 +412,13 @@ fn download_blocking(
             }
         };
         data.extend_from_slice(&buf[..n]);
+        // 沒給 Content-Length、或給了卻送得比說的多 → 一樣要有上限
+        if data.len() as u64 > MAX_FONT_BYTES {
+            let _ = std::fs::remove_file(&tmp);
+            let msg = crate::i18n::tf("font.tooLarge", &[&(MAX_FONT_BYTES / 1024 / 1024).to_string()]);
+            emit(data.len() as u64, total, true, Some(msg.clone()));
+            return Err(msg);
+        }
         // 進度事件別太密（每 200ms 一次就夠畫進度條了）
         if last.elapsed() >= std::time::Duration::from_millis(200) {
             last = std::time::Instant::now();

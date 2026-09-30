@@ -1,0 +1,3 @@
+﻿; UTF-8 BOM 開頭的巨集（記事本「UTF-8 含 BOM」存的）。第 1 行不可以 Syntax error.
+b_first = 1
+b_str = '中文'

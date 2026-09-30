@@ -65,6 +65,8 @@ src-tauri/resources/chatroom/**    text eol=lf
 
 # TTL 測試腳本：`ttl_probe` 逐個變數比對結果，固定 LF 最保險
 src-tauri/tests/ttl/*.ttl  text eol=lf
+# 例外：這支專門測 CRLF 行尾的行號（BUG F5），一定要保持 CRLF
+src-tauri/tests/ttl/crlf.ttl  text eol=crlf
 
 # ---------------------------------------------------------------- 二進位
 # 一定要明列：被當成文字去「正規化」會**直接損壞檔案**。

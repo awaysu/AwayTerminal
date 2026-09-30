@@ -107,7 +107,9 @@ pub fn read_finished(path: &Path, asked_ms: u128, now_ms: u128) -> Option<String
     if now_ms.saturating_sub(written) < 1000 {
         return None; // 還在寫
     }
-    let text = std::fs::read_to_string(path).ok()?;
+    // agent 可能用 Windows PowerShell 5.1 寫檔（UTF-16／Big5）：照 BOM／內容解碼，
+    // 不是 UTF-8 也要讀得到，否則這一位每回合都被當成逾時（G3 同一類）
+    let (text, _) = super::message::read_text(path).ok()?;
     let text = text.trim();
     if text.is_empty() {
         None
@@ -143,7 +145,9 @@ pub fn runtime_context(team: &Team, me: &Slot) -> String {
     sb.push_str(&format!("你的角色：{}\n", me.role_title));
     sb.push_str(&format!("你用的 AI：{}\n", me.backend_name()));
     sb.push_str(&format!("聊天室編號：CHAT-{}\n", team.number));
-    sb.push_str(&format!("專案資料夾：{}\n", team.dir));
+    // 有沙盒時 agent 的工作目錄是 worktree，討論紀錄也在那裡——寫原始 repo 的路徑，
+    // agent 照字面組路徑就會寫到原始 repo 去（G5）。沒沙盒時 work_dir＝dir，文字不變。
+    sb.push_str(&format!("專案資料夾：{}\n", team.work_dir));
     sb.push_str(&format!(
         "討論回合：{} 回合（一回合＝每個人各發言一次；使用者可以提前結束）\n",
         team.rounds
@@ -246,7 +250,19 @@ pub fn tick(
 
     // ---- 寫結論 ----
     if team.phase == ChatPhase::Concluding {
-        let (hi, htab, hid, _) = speakers[0].clone();
+        // 主持人固定是**格 1**（角色下拉停用的那一格）。不能拿 `speakers[0]`——格 1 的分頁
+        // 關掉後那是第 2 位，會叫一個普通參加者去寫結論（G4）。格 1 不在＝主持人已結束。
+        let Some((hi, htab, hid, _)) = speakers
+            .iter()
+            .find(|(i, _, _, _)| team.slots[*i].index == 1)
+            .cloned()
+        else {
+            let hid = format!("Agent-{}1", team.number);
+            let text = crate::i18n::tf("chat.trHostGone", &[&hid]);
+            write_transcript(team, &text);
+            finish(team, true);
+            return ChatAction::None;
+        };
         if !alive(htab) {
             // 主持人已結束：沒人能寫結論，收場並在紀錄註明
             let text = crate::i18n::tf("chat.trHostGone", &[&hid]);

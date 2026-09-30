@@ -52,20 +52,32 @@ pub struct Source {
 }
 
 impl Source {
-    /// 從檔案內容切行。`\r\n`／`\n`／`\r` 都算換行——原碼是「遇到 < 0x20 的字元就結束這一行，
-    /// 接著把連續的控制字元跳掉」，效果一樣。
+    /// 從檔案內容切行。`\r\n`、`\n`、`\r` 各算**一個**換行；行索引＋1 就是行號。
+    ///
+    /// 原碼是「遇到 < 0x20 的字元就結束這一行，接著把連續的控制字元跳掉」，行號另外用
+    /// LF 的位置算（`BuffLineNo`）。以前這裡每個控制字元都推一行 → CRLF 檔每行後面多一個
+    /// 空行、錯誤訊息的行號幾乎加倍。其他控制字元（Ctrl-Z 之類）當成空白，不換行。
+    ///
+    /// 開頭的 UTF-8 BOM 去掉（原碼 `LoadFileU8W` 讀檔時就處理掉了；記事本存的 UTF-8
+    /// 檔常有它，留著會讓第 1 行 `Syntax error.`）。`include` 也走這裡。
     pub fn new(name: impl Into<String>, text: &[u8]) -> Self {
+        let text = text.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(text);
         let mut lines = Vec::new();
         let mut cur = Vec::new();
-        for &b in text {
-            if b < 0x20 && b != b'\t' {
-                if !cur.is_empty() {
+        let mut i = 0;
+        while i < text.len() {
+            let b = text[i];
+            i += 1;
+            match b {
+                b'\r' | b'\n' => {
+                    if b == b'\r' && text.get(i) == Some(&b'\n') {
+                        i += 1;
+                    }
                     lines.push(std::mem::take(&mut cur));
-                } else {
-                    lines.push(Vec::new());
                 }
-            } else {
-                cur.push(b);
+                b'\t' => cur.push(b),
+                0..=0x1F => cur.push(b' '),
+                _ => cur.push(b),
             }
         }
         if !cur.is_empty() {
@@ -148,6 +160,8 @@ pub struct Interp {
     next_handle: i32,
     /// `regexoption` 的目前設定（原碼的 `RegexOpt`／`RegexEnc`／`RegexSyntax`）。
     regex_opts: super::regex::RegexOptions,
+    /// 收到的「這一行」（原碼 `RecvLnBuff`）：`wait`／`recvln`／`waitn` **共用、跨指令保留**。
+    pub(super) recv_line: super::host::RecvLine,
 }
 
 impl Interp {
@@ -180,6 +194,7 @@ impl Interp {
             finds: std::collections::HashMap::new(),
             next_handle: 0,
             regex_opts: Default::default(),
+            recv_line: Default::default(),
         };
         it.push_buffer(src)?;
         Ok(it)
@@ -311,23 +326,16 @@ impl Interp {
     /// `RegisterLabels`：先掃一遍把 `:label` 記下來（**跳到未來的標籤要靠這個**）。
     fn register_labels(&mut self, level: usize) -> std::result::Result<(), TtlError> {
         let lines = self.buffers[level].src.lines.clone();
-        for (i, line) in lines.iter().enumerate() {
-            let mut lex = Lexer::new(line);
-            if lex.first_char() != b':' {
-                continue;
-            }
-            let Some(name) = lex.label_name() else {
-                continue;
-            };
-            if lex.first_char() != 0 {
+        for (i, label) in scan_labels(&lines) {
+            let Some(name) = label else {
                 // 標籤後面還有東西 → 語法錯誤（同原碼）
                 self.line_no = i + 1;
-                self.lex.reset(line);
+                self.lex.reset(&lines[i]);
                 return Err(self.error(Err::Syntax));
-            }
+            };
             if self.vars.find(&name).is_some() {
                 self.line_no = i + 1;
-                self.lex.reset(line);
+                self.lex.reset(&lines[i]);
                 return Err(self.error(Err::LabelAlreadyDef));
             }
             // 原碼記的是「標籤那一行之後」的位置
@@ -1069,21 +1077,20 @@ impl Interp {
         self.buffers.push(Buffer { src, line: 0 });
         // 標籤註冊失敗（重複定義）要把那一層收掉再回報
         let lines = self.buffers[level].src.lines.clone();
-        for (i, line) in lines.iter().enumerate() {
-            let mut lex = Lexer::new(line);
-            if lex.first_char() != b':' {
-                continue;
-            }
-            let Some(lbl) = lex.label_name() else { continue };
-            if lex.first_char() != 0 {
+        for (i, label) in scan_labels(&lines) {
+            let err = match label {
+                None => Some(Err::Syntax),
+                Some(ref l) if self.vars.find(l).is_some() => Some(Err::LabelAlreadyDef),
+                Some(_) => None,
+            };
+            if let Some(e) = err {
                 self.buffers.pop();
-                return Err(Err::Syntax);
+                self.vars.drop_labels_of_level(level);
+                return Err(e);
             }
-            if self.vars.find(&lbl).is_some() {
-                self.buffers.pop();
-                return Err(Err::LabelAlreadyDef);
+            if let Some(l) = label {
+                self.vars.new_label(&l, i + 1, level);
             }
-            self.vars.new_label(&lbl, i + 1, level);
         }
         Ok(())
     }
@@ -1191,6 +1198,48 @@ impl Interp {
 pub(super) struct VarRef {
     pub name: String,
     pub index: Option<i32>,
+}
+
+/// 找出一個檔裡所有的 `:label` 行：`(行索引, Some(名稱))`；標籤後面還有東西是
+/// `(行索引, None)`（呼叫端回語法錯誤）。
+///
+/// 同原碼 `RegisterLabels`：**整個檔用同一個 lexer**，每行都掃到行尾（跳過字串），讓
+/// `/* … */` 的跨行狀態跟得上——`/*` 與 `*/` 之間那幾行的 `:label` 不能被登記（以前每行
+/// 開新 lexer，註解裡的 `:label` 和真的撞名就 `Label already defined.`）。
+fn scan_labels(lines: &[Vec<u8>]) -> Vec<(usize, Option<String>)> {
+    let mut out = Vec::new();
+    let mut lex = Lexer::new(b"");
+    for (i, line) in lines.iter().enumerate() {
+        lex.reset(line);
+        let b = lex.first_char();
+        if b == b':' {
+            if let Some(name) = lex.label_name() {
+                // 原碼：`GetLabelName && GetFirstChar()==0` 才算標籤
+                if lex.first_char() == 0 {
+                    out.push((i, Some(name)));
+                } else {
+                    out.push((i, None));
+                }
+            }
+        } else if b != 0 {
+            lex.set_ptr(lex.ptr() - 1);
+        }
+        // 次の行へ移す前に行末までスキャンする（原碼註解）：字串裡的 `/*` 不算註解
+        loop {
+            let c = lex.first_char();
+            if c == 0 {
+                break;
+            }
+            if c == b'"' || c == b'\'' || c == b'#' {
+                let before = lex.ptr() - 1;
+                lex.set_ptr(before);
+                if lex.string().is_err() || lex.ptr() <= before {
+                    break;
+                }
+            }
+        }
+    }
+    out
 }
 
 fn ctl_level(c: &Ctl) -> usize {
@@ -1450,6 +1499,113 @@ mod tests {
         }
         src.push_str("return\n");
         assert_eq!(run_text(&src).unwrap_err().err, Err::StackOver);
+    }
+
+    /// CRLF 檔：`\r\n` 只算一個換行，錯誤的行號要是真正的行號（以前幾乎加倍）。
+    #[test]
+    fn crlf_line_numbers() {
+        let src = Source::new("t.ttl", b"a = 1\r\n\r\nb = 2\r\nfoo bar\r\n");
+        assert_eq!(src.lines.len(), 4, "4 行，不是 8 行");
+        let e = run_text("a = 1\r\n\r\nb = 2\r\nfoo bar\r\n").unwrap_err();
+        assert_eq!(e.line_no, 4);
+        // 只有 CR（舊 Mac）也各算一行；LF 的空行照算
+        let e = run_text("a = 1\rb = 2\r\rfoo bar").unwrap_err();
+        assert_eq!(e.line_no, 4);
+        let e = run_text("a = 1\n\n\nfoo bar").unwrap_err();
+        assert_eq!(e.line_no, 4);
+        // 其他控制字元（Ctrl-Z）當空白，不換行
+        let v = run("a = 1\x1a\nb = 2");
+        assert_eq!(v.int_of("b"), Some(2));
+    }
+
+    /// UTF-8 BOM 開頭的檔：第 1 行照常執行（以前 `Syntax error.`）；`include` 也一樣。
+    #[test]
+    fn utf8_bom_is_stripped() {
+        let v = run("\u{FEFF}a = 1\nb = 2");
+        assert_eq!(v.int_of("a"), Some(1));
+        let mut files = HashMap::new();
+        files.insert("lib.ttl".to_string(), "\u{FEFF}c = 3".to_string());
+        let v = run_text_with_includes("include 'lib.ttl'\nd = c", files).unwrap();
+        assert_eq!(v.int_of("d"), Some(3));
+    }
+
+    /// `/* … */` 裡的 `:label` 不可以被登記（以前和真的撞名就 `Label already defined.`）；
+    /// 字串裡的 `/*` 不是註解開頭。
+    #[test]
+    fn labels_inside_block_comments_are_ignored() {
+        let v = run("goto foo\na = 99\n/*\n:foo\n*/\n:foo\nb = 1");
+        assert_eq!(v.int_of("a"), None);
+        assert_eq!(v.int_of("b"), Some(1));
+        // 註解裡的標籤不能當跳躍目標
+        assert_eq!(err_of("goto bar\n/*\n:bar\n*/\na = 1"), Err::LabelReq);
+        // 同一行開頭就收尾的註解之後的標籤照算
+        let v = run("goto baz\na = 99\n/* x\n*/ :baz\nb = 2");
+        assert_eq!(v.int_of("a"), None);
+        assert_eq!(v.int_of("b"), Some(2));
+        // 字串裡的 `/*` 不是註解：後面的標籤要登記得到
+        let v = run("goto qux\ns = '/*'\n:qux\nb = 3");
+        assert_eq!(v.int_of("b"), Some(3));
+        assert_eq!(v.int_of("s"), None, "被 goto 跳過了");
+        // include 進來的檔也一樣
+        let mut files = HashMap::new();
+        files.insert("lib.ttl".to_string(), "/*\n:dup\n*/\n:dup\nc = 1".to_string());
+        let v = run_text_with_includes(":dup0\ninclude 'lib.ttl'", files).unwrap();
+        assert_eq!(v.int_of("c"), Some(1));
+    }
+
+    /// 測試用 fixture：`tests/ttl/crlf.ttl`（在記憶體裡確保是 CRLF，git 就算把它轉成 LF 也照樣驗）
+    /// 與 `tests/ttl/bom.ttl`。
+    #[test]
+    fn crlf_and_bom_fixtures() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/ttl");
+        let raw = std::fs::read(dir.join("crlf.ttl")).unwrap();
+        let lf: Vec<u8> = raw.iter().copied().filter(|&b| b != b'\r').collect();
+        let mut crlf = Vec::new();
+        for &b in &lf {
+            if b == b'\n' {
+                crlf.push(b'\r');
+            }
+            crlf.push(b);
+        }
+        let mut it = Interp::new(
+            Source::new("crlf.ttl", &crlf),
+            Box::new(|f| Err(f.to_string())),
+        )
+        .unwrap();
+        it.run(10_000).unwrap();
+        assert_eq!(it.vars.int_of("c_a"), Some(1));
+        assert_eq!(it.vars.int_of("c_b"), Some(2));
+        assert_eq!(it.vars.int_of("c_after"), Some(3));
+        // 行數＝LF 版的行數
+        assert_eq!(
+            Source::new("x", &crlf).lines.len(),
+            Source::new("x", &lf).lines.len()
+        );
+
+        let v = crate::ttl::run_file(&dir.join("bom.ttl"), 10_000).unwrap();
+        assert_eq!(v.int_of("b_first"), Some(1));
+        assert_eq!(v.str_of("b_str").unwrap(), "中文".as_bytes());
+    }
+
+    /// 運算式巢狀太深：回 `Stack overflow.`，不可以撐爆堆疊（release 是 abort）。
+    #[test]
+    fn expression_depth_is_limited() {
+        let deep = format!("a = {}1{}", "(".repeat(500), ")".repeat(500));
+        assert_eq!(err_of(&deep), Err::StackOver);
+        let deep = format!("a = {}1", "-".repeat(500));
+        assert_eq!(err_of(&deep), Err::StackOver);
+        // 正常深度照算
+        let ok = format!("a = {}1{}", "(".repeat(30), ")".repeat(30));
+        assert_eq!(run(&ok).int_of("a"), Some(1));
+    }
+
+    /// `intdim`／`strdim` 超大尺寸：回 `Can't allocate memory.`，不可以配置失敗 abort。
+    #[test]
+    fn huge_arrays_fail_cleanly() {
+        assert_eq!(err_of("intdim a 2147483647"), Err::FewMemory);
+        assert_eq!(err_of("strdim s 2147483647"), Err::FewMemory);
+        let v = run("intdim a 10\na[9] = 5\nb = a[9]");
+        assert_eq!(v.int_of("b"), Some(5));
     }
 
     /// 一步＝一行：第二批的 `wait`／`pause` 要靠這個掛起。

@@ -16,6 +16,12 @@
 ;
 ; ⚠️ 測試專用的 key（`AwayTerminal_UnitTest`）**刻意不刪**：那是 `--verify` 自己收尾的
 ; 東西，解除安裝程式不該去碰使用者機器上任何不是自己寫的東西。
+;
+; ⚠️ 已知限制（2026-09-30 稽核 I8）：上面第 2 點同樣適用在**這裡**。perMachine 的解除安裝
+; 跑在提權環境，下面的 HKCU 是**提權那個帳號**的：一般使用者在 UAC 輸入另一個管理員帳密時，
+; 刪到的是管理員的 HKCU，使用者自己的選單會留著（指向已刪除的 exe）；其他帳號的也刪不到。
+; 使用者本身是管理員（最常見）時沒問題。改成 `HKU\<SID>` 要取得「非提權使用者」的 SID
+; 並處理 hive 沒載入的情況，寫錯會刪到別人的登錄檔 → 暫不做，說明在 docs/RELEASE.md §2。
 
 !macro NSIS_HOOK_POSTUNINSTALL
   DetailPrint "Removing the 'Open in AwayTerminal' shell menu (HKCU)..."

@@ -147,9 +147,12 @@ const lines = md.split('\n');
 
 /** 章節代號 → { title, rows: [{id, what, exp}] } */
 const chapters = new Map();
+/** 在章節裡、帶 👤、但編號認不出來而沒收進計畫的列（稽核 I4：以前是靜默丟掉）。 */
+const skipped = [];
 let cur = null;
-for (const ln of lines) {
-  const h = /^## ([A-Z]{1,3})\. (.+)$/.exec(ln);
+for (const [i, ln] of lines.entries()) {
+  // 章節代號可以帶數字（`## K2.`、`## M2.`）——以前的 `[A-Z]{1,3}` 對不上，整章的 👤 都會漏掉
+  const h = /^## ([A-Z]{1,3}\d*)\. (.+)$/.exec(ln);
   if (h) {
     cur = h[1];
     chapters.set(cur, { title: h[2].trim(), rows: [] });
@@ -161,9 +164,12 @@ for (const ln of lines) {
   }
   if (!cur || !ln.startsWith('|') || !ln.includes('👤')) continue;
   const cells = ln.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map((c) => c.trim());
-  if (cells.length < 3) continue;
   const [id, what, exp] = cells;
-  if (!/^[A-Z]{1,3}\d+$/.test(id)) continue;
+  // 編號可以帶小寫字母後綴（`TN7d`——同一條拆出來的子項）
+  if (cells.length < 3 || !/^[A-Z]{1,3}\d+[a-z]*$/.test(id)) {
+    skipped.push(`${SRC}:${i + 1}（${cur}）${id.slice(0, 40)}`);
+    continue;
+  }
   chapters.get(cur).rows.push({ id, what: what.replace('👤', '').trim(), exp });
 }
 
@@ -272,7 +278,16 @@ if (unplanned.length) {
 }
 
 const text = out.join('\n');
+if (skipped.length) {
+  console.log(`[make-manual-plan] ⚠ ${skipped.length} 條帶 👤 的列編號認不出來，沒有收進計畫：`);
+  for (const s of skipped) console.log(`[make-manual-plan]     ${s}`);
+  console.log('[make-manual-plan]     編號要長得像 `A12`／`TN7d`；確定不是測項就把 👤 拿掉。');
+}
 if (process.argv.includes('--check')) {
+  if (skipped.length) {
+    console.log('RESULT: FAIL（有 👤 條目沒收進計畫，見上面）');
+    process.exit(1);
+  }
   let cur2 = '';
   try {
     cur2 = readFileSync(OUT, 'utf8');

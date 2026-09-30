@@ -239,6 +239,8 @@ export function initAbout(injected) {
   });
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape') return;
+    // 頁內 #modal（字型清單、確認框…）開著時 Esc 只關 modal，不連底下這個視窗一起關（BUG-AUDIT B3）
+    if (!document.getElementById('modal').hidden) return;
     if (!el.upRoot.hidden) el.upRoot.hidden = true;
     else if (!el.root.hidden) el.root.hidden = true;
   });

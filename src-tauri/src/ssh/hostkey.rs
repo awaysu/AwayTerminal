@@ -76,7 +76,9 @@ fn key_bits(key: &ssh_key::PublicKey) -> u32 {
     use ssh_key::public::KeyData;
     match key.key_data() {
         KeyData::Ed25519(_) => 256,
-        KeyData::Rsa(rsa) => (rsa.n().as_bytes().len() as u32) * 8,
+        // 用 ssh-key 算好的模數位元數（稽核 E11：`n().as_bytes()` 含 mpint 的前導 0x00，
+        // 2048 位元會多報成 2056）
+        KeyData::Rsa(rsa) => rsa.key_size(),
         KeyData::Ecdsa(e) => match e.curve() {
             ssh_key::EcdsaCurve::NistP256 => 256,
             ssh_key::EcdsaCurve::NistP384 => 384,
@@ -118,12 +120,22 @@ impl HostKeyStore {
         }
     }
 
-    /// 記下一把主機金鑰（append 一行）。
+    /// 記下一把主機金鑰。
+    ///
+    /// **同一台主機、同型別的舊記錄會先拿掉**（稽核 E2）：russh 的 `check_known_hosts_path`
+    /// 只要有任何一行「同主機同型別但金鑰不同」就回 `KeyChanged`，第一版只 append，
+    /// 金鑰變更後按「接受並儲存」等於沒存，每次連線（含自動重連）都再跳紅框。
+    ///
+    /// 寫法是「讀整個檔 → 濾掉舊行 → 加新行 → 寫暫存檔 → rename 蓋過去」，
+    /// 寫到一半當掉也不會留下半個檔（原子寫入）。
     pub fn learn(&self, host: &str, port: u16, key: &ssh_key::PublicKey) -> Result<(), String> {
+        // 兩個分頁同時按「接受並儲存」時不要互相蓋掉（也共用同一個暫存檔名）
+        static WRITING: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let _guard = WRITING.lock().unwrap_or_else(|e| e.into_inner());
+
         if let Some(dir) = self.path.parent() {
             std::fs::create_dir_all(dir).map_err(|e| tf("err.mkdirFailed", &[&e.to_string()]))?;
         }
-        // `russh` 的 `learn_known_hosts_path` 沒有被 `pub use` 出來，所以自己寫這一行。
         // 格式就是 OpenSSH 的：非預設埠用 `[host]:port`（同 russh 讀取端的慣例）。
         let pattern = if port == 22 {
             host.to_string()
@@ -133,13 +145,58 @@ impl HostKeyStore {
         let line = key
             .to_openssh()
             .map_err(|e| tf("err.keySerialize", &[&e.to_string()]))?;
-        let mut file = std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&self.path)
-            .map_err(|e| tf("err.knownHostsOpen", &[&e.to_string()]))?;
-        use std::io::Write;
-        writeln!(file, "{pattern} {line}").map_err(|e| tf("err.knownHostsWrite", &[&e.to_string()]))
+
+        let old = match std::fs::read(&self.path) {
+            Ok(b) => String::from_utf8_lossy(&b).into_owned(),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
+            Err(e) => return Err(tf("err.knownHostsOpen", &[&e.to_string()])),
+        };
+
+        // 哪幾行要拿掉：用 russh 自己的比對（含 `|1|` 雜湊主機名、逗號分隔的多主機），
+        // 才能保證拿掉的正好是它會判成 KeyChanged 的那幾行。
+        // ⚠️ russh 的行號**不數 `#` 開頭的註解行**（見 known_hosts.rs），下面照同一套規則數。
+        let stale: Vec<usize> = if old.is_empty() {
+            Vec::new()
+        } else {
+            russh::keys::known_hosts::known_host_keys_path(host, port, &self.path)
+                .map_err(|e| tf("err.knownHostsOpen", &[&e.to_string()]))?
+                .into_iter()
+                .filter(|(_, recorded)| recorded.algorithm() == key.algorithm())
+                .map(|(n, _)| n)
+                .collect()
+        };
+
+        let mut out = String::with_capacity(old.len() + line.len() + pattern.len() + 2);
+        let mut n = 1usize;
+        for l in old.split_inclusive('\n') {
+            if l.starts_with('#') {
+                out.push_str(l);
+                continue;
+            }
+            // 一行列了好幾台主機（`a,b ssh-ed25519 …`）時整行拿掉——那一行的金鑰已經不對了
+            if !stale.contains(&n) {
+                out.push_str(l);
+            }
+            n += 1;
+        }
+        if !out.is_empty() && !out.ends_with('\n') {
+            out.push('\n');
+        }
+        out.push_str(&format!("{pattern} {line}\n"));
+
+        let tmp = self.path.with_extension(format!("tmp{}", std::process::id()));
+        let write = || -> std::io::Result<()> {
+            use std::io::Write;
+            let mut f = std::fs::File::create(&tmp)?;
+            f.write_all(out.as_bytes())?;
+            f.sync_all()?;
+            drop(f);
+            std::fs::rename(&tmp, &self.path)
+        };
+        write().map_err(|e| {
+            let _ = std::fs::remove_file(&tmp);
+            tf("err.knownHostsWrite", &[&e.to_string()])
+        })
     }
 }
 
@@ -185,6 +242,65 @@ mod tests {
         assert_eq!(store.check("example.test", 2222, &ka), Verdict::Unknown);
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 稽核 E2：金鑰變更後「接受並儲存」要真的生效——舊的同型別那行要拿掉，
+    /// 別台主機、別的埠、註解行都要原樣留著。
+    #[test]
+    fn learn_replaces_changed_key() {
+        let dir = std::env::temp_dir().join(format!("awayterm-hostkey-e2-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("known_hosts");
+        let store = HostKeyStore::new(path.clone());
+        let ka = parse(KEY_A);
+        let kb = parse(KEY_B);
+
+        std::fs::write(
+            &path,
+            format!("# 使用者自己寫的註解\nother.test {KEY_A}\n[example.test]:2222 {KEY_A}\n"),
+        )
+        .unwrap();
+        store.learn("example.test", 22, &ka).unwrap();
+        assert_eq!(store.check("example.test", 22, &kb), Verdict::Changed { line: 3 });
+
+        // 使用者在紅框按「接受並儲存」
+        store.learn("example.test", 22, &kb).unwrap();
+        assert_eq!(store.check("example.test", 22, &kb), Verdict::Known, "換過之後要直接通過");
+        assert!(matches!(store.check("example.test", 22, &ka), Verdict::Changed { .. }));
+
+        // 其他記錄不能被波及
+        assert_eq!(store.check("other.test", 22, &ka), Verdict::Known);
+        assert_eq!(store.check("example.test", 2222, &ka), Verdict::Known);
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(text.starts_with("# 使用者自己寫的註解\n"), "{text}");
+        assert_eq!(text.lines().filter(|l| l.starts_with("example.test ")).count(), 1, "{text}");
+        // 暫存檔不能留下來
+        let leftovers: Vec<_> = std::fs::read_dir(&dir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .map(|e| e.file_name())
+            .filter(|n| n != "known_hosts")
+            .collect();
+        assert!(leftovers.is_empty(), "{leftovers:?}");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 稽核 E11：2048 位元的 RSA 要顯示 2048（第一版多算 mpint 前導的 0x00 → 2056）。
+    #[test]
+    fn rsa_bits_are_exact() {
+        // 最高位元是 1 的 2048 位元模數，mpint 編碼會多一個前導 0x00
+        let mut n = vec![0xC5u8; 256];
+        n[255] = 0x01;
+        let rsa = ssh_key::public::RsaPublicKey::new(
+            ssh_key::Mpint::from_positive_bytes(&[0x01, 0x00, 0x01]),
+            ssh_key::Mpint::from_positive_bytes(&n),
+        )
+        .unwrap();
+        assert_eq!(rsa.n().as_bytes().len(), 257, "前提：mpint 有前導 0x00");
+        let key = ssh_key::PublicKey::from(rsa);
+        assert_eq!(fingerprints(&key).bits, 2048);
     }
 
     #[test]

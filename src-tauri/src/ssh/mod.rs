@@ -38,7 +38,7 @@ use russh::keys::ssh_key;
 use russh::keys::PublicKeyOrCertificate;
 use russh::ChannelMsg;
 use tokio::runtime::Runtime;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, watch};
 
 use crate::session::{ExitInfo, OnExit, OnOutput, TerminalSession};
 
@@ -47,6 +47,9 @@ pub const GRACEFUL_EXIT_BYTES: [u8; 3] = [0x04, 0x04, 0x04];
 
 /// 關閉時等遠端反應的時間（同 ConPTY 那邊的 60ms 量級）。
 const CLOSE_WAIT: Duration = Duration::from_millis(120);
+
+/// TCP 連線這一段的逾時（稽核 E15；不含交握與主機金鑰對話框）。同 Telnet 的 20 秒。
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(20);
 
 /// SSH 用的 tokio runtime。
 ///
@@ -94,24 +97,53 @@ pub struct SshOptions {
     pub env: Vec<(String, String)>,
 }
 
+/// 「等使用者回答」的 future。
+///
+/// ⚠️ 一定要是 async（稽核 E1）：這些詢問是在 russh 的 handler 裡、也就是 SSH runtime 的
+/// worker 上被等的；runtime 只有 2 條 worker，同步等對話框會把**所有** SSH 分頁一起凍住。
+pub type Asking<'a, T> = std::pin::Pin<Box<dyn std::future::Future<Output = T> + Send + 'a>>;
+
 /// 主機金鑰要不要接受。由呼叫端提供——app 端跳對話框問使用者，`ssh_probe` 直接給答案。
 pub trait HostKeyDecider: Send + Sync + 'static {
     /// `verdict` 是與 `known_hosts` 比對的結果；回傳 [`HostKeyAnswer`]。
-    fn decide(
-        &self,
-        host: &str,
+    ///
+    /// 分頁關閉時 SSH 任務會直接丟掉這個 future（當成 `Reject`），實作端不必自己處理取消。
+    fn decide<'a>(
+        &'a self,
+        host: &'a str,
         port: u16,
-        verdict: &hostkey::Verdict,
-        fp: &hostkey::Fingerprints,
-    ) -> HostKeyAnswer;
+        verdict: &'a hostkey::Verdict,
+        fp: &'a hostkey::Fingerprints,
+    ) -> Asking<'a, HostKeyAnswer>;
 
     /// 交握**實際協商到**警告線以下的演算法時呼叫（PuTTY 的 warn-below-this-line）。
     ///
-    /// 回傳 `true`＝繼續連。實作端要負責「這台主機已經接受過就不要再問」。
-    /// 預設 `false`（安全預設：沒有人回答就當成不接受）。
-    fn accept_weak(&self, _host: &str, _port: u16, _weak: &[(String, String)]) -> bool {
-        false
+    /// 實作端要負責「這台主機已經接受過這組演算法就不要再問」，但**不要在這裡寫記錄**：
+    /// 這時主機金鑰還沒驗證（russh 先呼叫 `kex_done` 才呼叫 `check_server_key`）。
+    /// 要記住的話回 [`WeakAnswer::AcceptAndRemember`]，驗證通過後會呼叫 [`Self::remember_weak`]。
+    /// 預設 `Reject`（安全預設：沒有人回答就當成不接受）。
+    fn accept_weak<'a>(
+        &'a self,
+        _host: &'a str,
+        _port: u16,
+        _weak: &'a [(String, String)],
+    ) -> Asking<'a, WeakAnswer> {
+        Box::pin(async { WeakAnswer::Reject })
     }
+
+    /// 主機金鑰驗證通過之後，把使用者選「記住」的弱演算法寫下來（稽核 E9）。
+    fn remember_weak(&self, _host: &str, _port: u16, _weak: &[(String, String)]) {}
+}
+
+/// 弱演算法警告的答案。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WeakAnswer {
+    /// 取消連線
+    Reject,
+    /// 繼續，不必記（只這次，或是之前已經記過）
+    Accept,
+    /// 繼續，主機金鑰驗證通過後記住這台主機＋這組演算法
+    AcceptAndRemember,
 }
 
 /// PuTTY 對話框的三個選項。
@@ -206,6 +238,55 @@ pub fn spawn(
         pid: AtomicU32::new(0),
     });
 
+    // E3：使用者**自己取消**（主機金鑰／弱演算法按「取消」、登入提示按 Ctrl+C）要和一般斷線
+    // 分得出來，否則自動重連 3 秒後又問一次、無限循環。主機金鑰與弱演算法的答案從 decider
+    // 包一層記下來；Ctrl+C 看 run() 回的錯誤訊息（`prompt_line` 回 `err.cancelled`）。
+    struct CancelRecorder {
+        inner: Arc<dyn HostKeyDecider>,
+        cancelled: Arc<AtomicBool>,
+    }
+    // （E1 之後 decider 是 async，這層跟著改成包 future；remember_weak 也要轉給 inner，
+    //   否則 E9 的「驗證通過後才記住」會被預設的空實作吞掉。）
+    impl HostKeyDecider for CancelRecorder {
+        fn decide<'a>(
+            &'a self,
+            host: &'a str,
+            port: u16,
+            verdict: &'a hostkey::Verdict,
+            fp: &'a hostkey::Fingerprints,
+        ) -> Asking<'a, HostKeyAnswer> {
+            Box::pin(async move {
+                let answer = self.inner.decide(host, port, verdict, fp).await;
+                if answer == HostKeyAnswer::Reject {
+                    self.cancelled.store(true, Ordering::SeqCst);
+                }
+                answer
+            })
+        }
+        fn accept_weak<'a>(
+            &'a self,
+            host: &'a str,
+            port: u16,
+            weak: &'a [(String, String)],
+        ) -> Asking<'a, WeakAnswer> {
+            Box::pin(async move {
+                let answer = self.inner.accept_weak(host, port, weak).await;
+                if answer == WeakAnswer::Reject {
+                    self.cancelled.store(true, Ordering::SeqCst);
+                }
+                answer
+            })
+        }
+        fn remember_weak(&self, host: &str, port: u16, weak: &[(String, String)]) {
+            self.inner.remember_weak(host, port, weak);
+        }
+    }
+    let cancelled = Arc::new(AtomicBool::new(false));
+    let decider: Arc<dyn HostKeyDecider> = Arc::new(CancelRecorder {
+        inner: decider,
+        cancelled: cancelled.clone(),
+    });
+
     let out = on_output.clone();
     runtime().spawn(async move {
         let result = run(opts, store, decider, out.clone(), rx, on_user, on_connected).await;
@@ -213,11 +294,16 @@ pub fn spawn(
             // 錯誤一律印在終端機裡（黃字），不要只進 log——使用者要看得到為什麼連不上
             echo(&out, &format!("\r\n\x1b[33m{msg}\x1b[0m\r\n"));
         }
+        let user_cancelled = match &result {
+            Ok(_) => false,
+            Err(msg) => cancelled.load(Ordering::SeqCst) || *msg == t("err.cancelled"),
+        };
         on_exit(ExitInfo {
             exit_code: match &result {
                 Ok(code) => *code,
                 Err(_) => None,
             },
+            user_cancelled,
         });
     });
 
@@ -239,6 +325,40 @@ struct Handler {
     on_output: OnOutput,
     /// 弱演算法警告每條連線只問一次（rekey 時 `kex_done` 會再進來）。
     weak_asked: bool,
+    /// 使用者選「記住」的弱演算法；**主機金鑰驗證通過後**才寫進設定（稽核 E9）。
+    weak_to_remember: Option<Vec<(String, String)>>,
+    /// 分頁關閉／連線放棄的訊號（`true` 或 sender 被丟掉＝取消）。
+    /// 對話框開著時分頁被關掉，靠這個讓 handler 立刻當成「取消」收掉，不必等 180 秒逾時。
+    cancel: watch::Receiver<bool>,
+}
+
+/// 等到「取消」為止（sender 被丟掉也算）。
+async fn until_cancelled(cancel: &mut watch::Receiver<bool>) {
+    loop {
+        if *cancel.borrow_and_update() {
+            return;
+        }
+        if cancel.changed().await.is_err() {
+            return;
+        }
+    }
+}
+
+/// 等使用者回答；中途被取消回 `None`。
+async fn or_cancel<T>(ask: Asking<'_, T>, cancel: &mut watch::Receiver<bool>) -> Option<T> {
+    tokio::select! {
+        v = ask => Some(v),
+        _ = until_cancelled(cancel) => None,
+    }
+}
+
+impl Handler {
+    /// 主機金鑰驗證通過了：這時才把使用者選「記住」的弱演算法寫下來（稽核 E9）。
+    fn host_verified(&mut self) {
+        if let Some(weak) = self.weak_to_remember.take() {
+            self.decider.remember_weak(&self.host, self.port, &weak);
+        }
+    }
 }
 
 impl client::Handler for Handler {
@@ -265,18 +385,28 @@ impl client::Handler for Handler {
         names: &russh::Names,
         _session: &mut client::Session,
     ) -> Result<(), Self::Error> {
+        // 兩個方向的 MAC 都要看（稽核 E10：第一版只看 server_mac）
         let weak = algos::weak_ones(
             names.kex.as_ref(),
             names.key.as_str(),
             names.cipher.as_ref(),
-            names.server_mac.as_ref(),
+            &[names.client_mac.as_ref(), names.server_mac.as_ref()],
         );
         // 每條連線只問一次（rekey 也會進來這裡）
         if weak.is_empty() || self.weak_asked {
             return Ok(());
         }
         self.weak_asked = true;
-        if self.decider.accept_weak(&self.host, self.port, &weak) {
+        let answer = or_cancel(
+            self.decider.accept_weak(&self.host, self.port, &weak),
+            &mut self.cancel,
+        )
+        .await
+        .unwrap_or(WeakAnswer::Reject);
+        if answer == WeakAnswer::AcceptAndRemember {
+            self.weak_to_remember = Some(weak.clone());
+        }
+        if answer != WeakAnswer::Reject {
             let list = weak
                 .iter()
                 .map(|(k, n)| format!("{k}={n}"))
@@ -284,7 +414,7 @@ impl client::Handler for Handler {
                 .join(" ");
             echo(
                 &self.on_output,
-                &format!("[90m（使用了較舊的加密演算法：{list}）[0m
+                &format!("\x1b[90m（使用了較舊的加密演算法：{list}）\x1b[0m
 "),
             );
             Ok(())
@@ -292,7 +422,7 @@ impl client::Handler for Handler {
             echo(
                 &self.on_output,
                 "
-[33m已取消：這條連線會用到較舊、已知較弱的加密演算法。[0m
+\x1b[33m已取消：這條連線會用到較舊、已知較弱的加密演算法。\x1b[0m
 ",
             );
             // 拒絕交握＝斷線。用 Disconnect 讓上層的錯誤訊息合理
@@ -315,20 +445,32 @@ impl client::Handler for Handler {
 
         let verdict = self.store.check(&self.host, self.port, key);
         if verdict == hostkey::Verdict::Known {
+            self.host_verified();
             return Ok(true);
         }
 
         let fp = hostkey::fingerprints(key);
-        let answer = self.decider.decide(&self.host, self.port, &verdict, &fp);
+        // 分頁在對話框開著時被關掉 → 當成取消（不必等 180 秒逾時）
+        let answer = or_cancel(
+            self.decider.decide(&self.host, self.port, &verdict, &fp),
+            &mut self.cancel,
+        )
+        .await
+        .unwrap_or(HostKeyAnswer::Reject);
         match answer {
             HostKeyAnswer::AcceptAndStore => {
+                // `learn` 會先拿掉這台主機同型別的舊記錄（金鑰變更時「接受並儲存」才真的生效，稽核 E2）
                 if let Err(e) = self.store.learn(&self.host, self.port, key) {
                     // 存不起來就講出來，但這次連線照使用者的意思繼續
                     echo(&self.on_output, &format!("\r\n\x1b[33m{e}\x1b[0m\r\n"));
                 }
+                self.host_verified();
                 Ok(true)
             }
-            HostKeyAnswer::AcceptOnce => Ok(true),
+            HostKeyAnswer::AcceptOnce => {
+                self.host_verified();
+                Ok(true)
+            }
             HostKeyAnswer::Reject => Ok(false),
         }
     }
@@ -342,17 +484,21 @@ async fn run(
     store: Arc<hostkey::HostKeyStore>,
     decider: Arc<dyn HostKeyDecider>,
     on_output: OnOutput,
-    mut rx: mpsc::UnboundedReceiver<Cmd>,
+    rx: mpsc::UnboundedReceiver<Cmd>,
     on_user: Option<OnUser>,
     on_connected: Option<OnConnected>,
 ) -> Result<Option<i32>, String> {
+    let mut input = Input::new(rx, opts.cols, opts.rows);
+    // 取消訊號：run() 結束（不論成敗）時 sender 被丟掉，handler 裡還在等的對話框就當成取消
+    let (cancel_tx, cancel_rx) = watch::channel(false);
+
     // 演算法順序照 PuTTY（B4）：舊演算法在清單裡但排最後，協商到就跳警告。
     let (preferred, unknown) = algos::preferred(&opts.algos);
     if !unknown.is_empty() {
         echo(
             &on_output,
             &format!(
-                "[33m設定裡有認不出來的演算法名稱，已略過：{}[0m
+                "\x1b[33m設定裡有認不出來的演算法名稱，已略過：{}\x1b[0m
 ",
                 unknown.join("、")
             ),
@@ -375,6 +521,8 @@ async fn run(
         decider,
         on_output: on_output.clone(),
         weak_asked: false,
+        weak_to_remember: None,
+        cancel: cancel_rx,
     };
 
     echo(
@@ -385,15 +533,28 @@ async fn run(
         ),
     );
 
-    let mut handle = client::connect(config, (opts.host.as_str(), opts.port), handler)
-        .await
-        .map_err(|e| tf("err.sshConnectFailed", &[&e.to_string()]))?;
+    // 連線（含交握與主機金鑰對話框）期間也要聽分頁的指令（稽核 E15）：
+    // 關分頁要能立刻取消；打字／改尺寸先收起來，給後面的提示與 shell 用。
+    let connecting = open_transport(config, &opts.host, opts.port, handler);
+    tokio::pin!(connecting);
+    let mut handle = loop {
+        tokio::select! {
+            r = &mut connecting => break r?,
+            cmd = input.rx.recv() => match cmd {
+                Some(Cmd::Close) | None => {
+                    let _ = cancel_tx.send(true);
+                    return Err(t("err.connCancelled").to_string());
+                }
+                Some(other) => input.stash(other),
+            },
+        }
+    };
 
     // ---- 帳號：PuTTY 式在終端機裡問 ----
     let user = match opts.user.clone() {
         Some(u) if !u.trim().is_empty() => u,
         _ => {
-            let u = prompt_line(&on_output, &mut rx, "login as: ", true).await?;
+            let u = prompt_line(&on_output, &mut input, "login as: ", true).await?;
             if u.trim().is_empty() {
                 return Err(t("err.sshNoUser").to_string());
             }
@@ -405,19 +566,21 @@ async fn run(
         cb(&user);
     }
 
-    authenticate(&mut handle, &user, &opts, &on_output, &mut rx).await?;
+    authenticate(&mut handle, &user, &opts, &on_output, &mut input).await?;
 
     // ---- 開 shell channel ----
     let channel = handle
         .channel_open_session()
         .await
         .map_err(|e| tf("err.sshSessionFailed", &[&e.to_string()]))?;
+    // 用**最新**的尺寸（稽核 E6：`login as:`／密碼提示期間改了視窗大小，第一版會丟掉）
+    let (cols, rows) = input.size;
     channel
         .request_pty(
             false,
             "xterm-256color",
-            opts.cols as u32,
-            opts.rows as u32,
+            cols as u32,
+            rows as u32,
             0,
             0,
             &[],
@@ -453,15 +616,20 @@ async fn run(
         cb();
     }
 
-    pump(channel, on_output, rx).await
+    pump(channel, on_output, input).await
 }
 
 /// 連上 shell 之後的主迴圈：本機輸入 → 遠端，遠端輸出 → 畫面。
 async fn pump(
     mut channel: russh::Channel<client::Msg>,
     on_output: OnOutput,
-    mut rx: mpsc::UnboundedReceiver<Cmd>,
+    input: Input,
 ) -> Result<Option<i32>, String> {
+    let Input { mut rx, pending, .. } = input;
+    // 提示期間多打（或多貼）的位元組照順序交給 shell（稽核 E7：第一版整段丟掉）
+    if !pending.is_empty() && channel.data(&pending[..]).await.is_err() {
+        return Ok(None);
+    }
     let mut exit_code = None;
     loop {
         tokio::select! {
@@ -502,7 +670,7 @@ async fn authenticate(
     user: &str,
     opts: &SshOptions,
     on_output: &OnOutput,
-    rx: &mut mpsc::UnboundedReceiver<Cmd>,
+    input: &mut Input,
 ) -> Result<(), String> {
     // PuTTY 也會先送一次 none：一方面有些設備真的不需要驗證，
     // 另一方面伺服器會在回覆裡列出它支援哪些方法。
@@ -514,7 +682,7 @@ async fn authenticate(
 
     // ---- 1. publickey（明確指定的金鑰檔；OpenSSH 或 .ppk）----
     if let Some(path) = opts.auth.key_path.as_deref() {
-        match load_key(path, opts.auth.key_passphrase.as_deref(), on_output, rx).await {
+        match load_key(path, opts.auth.key_passphrase.as_deref(), on_output, input).await {
             Ok(key) => {
                 let hash_alg = handle.best_supported_rsa_hash().await.ok().flatten().flatten();
                 let with_hash = russh::keys::PrivateKeyWithHashAlg::new(Arc::new(key), hash_alg);
@@ -565,7 +733,7 @@ async fn authenticate(
                     }
                     let mut answers = Vec::with_capacity(prompts.len());
                     for p in &prompts {
-                        answers.push(prompt_line(on_output, rx, &p.prompt, p.echo).await?);
+                        answers.push(prompt_line(on_output, input, &p.prompt, p.echo).await?);
                     }
                     resp = handle
                         .authenticate_keyboard_interactive_respond(answers)
@@ -580,7 +748,7 @@ async fn authenticate(
     // ---- 4. 密碼（PuTTY 的提示文字）----
     for attempt in 1..=3 {
         let prompt = format!("{}@{}'s password: ", user, opts.host);
-        let pw = prompt_line(on_output, rx, &prompt, false).await?;
+        let pw = prompt_line(on_output, input, &prompt, false).await?;
         match handle.authenticate_password(user, pw).await {
             Ok(r) if r.success() => return Ok(()),
             Ok(_) => {
@@ -600,14 +768,14 @@ async fn load_key(
     path: &str,
     passphrase: Option<&str>,
     on_output: &OnOutput,
-    rx: &mut mpsc::UnboundedReceiver<Cmd>,
+    input: &mut Input,
 ) -> Result<ssh_key::PrivateKey, String> {
     let text = std::fs::read_to_string(path).map_err(|e| tf("err.sshKeyRead", &[path, &e.to_string()]))?;
     match russh::keys::decode_secret_key(&text, passphrase) {
         Ok(k) => Ok(k),
         Err(_) if passphrase.is_none() => {
             // OpenSSH 與 .ppk 的加密金鑰都會走到這裡
-            let pw = prompt_line(on_output, rx, "Passphrase for key: ", false).await?;
+            let pw = prompt_line(on_output, input, "Passphrase for key: ", false).await?;
             russh::keys::decode_secret_key(&text, Some(&pw))
                 .map_err(|e| tf("err.sshKeyDecrypt", &[&e.to_string()]))
         }
@@ -660,47 +828,174 @@ async fn try_agent(handle: &mut client::Handle<Handler>, user: &str) -> Result<b
 // 舊版 `HandleLoginInput`：Enter 送出、Backspace 退格（回顯 `\b \b`）、其餘字元回顯。
 // 這裡多了「不回顯」模式給密碼用（PuTTY 打密碼時畫面完全不動）。
 
+/// 分頁送進來、但還沒交給 shell 的東西（連線與登入提示期間）。
+///
+/// - `pending`：一次寫入裡「這一行之後」的位元組（稽核 E7：貼 `user\npass\n` 時第一版只拿到 user，
+///   其餘整段消失）。留給下一個提示；shell 開起來時還有剩就照順序送過去。
+/// - `size`：提示期間最後一次的視窗大小（稽核 E6：第一版 `Resize => continue` 直接丟掉，
+///   `request_pty` 用的還是開分頁當下的尺寸）。
+struct Input {
+    rx: mpsc::UnboundedReceiver<Cmd>,
+    pending: Vec<u8>,
+    size: (u16, u16),
+}
+
+impl Input {
+    fn new(rx: mpsc::UnboundedReceiver<Cmd>, cols: u16, rows: u16) -> Self {
+        Self {
+            rx,
+            pending: Vec::new(),
+            size: (cols, rows),
+        }
+    }
+
+    /// 連線中收到的指令先收起來（`Close` 由呼叫端自己處理）。
+    fn stash(&mut self, cmd: Cmd) {
+        match cmd {
+            Cmd::Write(d) => self.pending.extend_from_slice(&d),
+            Cmd::Resize(c, r) => {
+                if c > 0 && r > 0 {
+                    self.size = (c, r);
+                }
+            }
+            Cmd::Close => {}
+        }
+    }
+}
+
+/// 一行讀到哪裡了。
+#[derive(Debug, PartialEq, Eq)]
+enum LineStep {
+    /// 還沒到行尾，要等更多輸入。
+    More,
+    /// 讀到行尾（CR／LF）。
+    Done,
+    /// Ctrl+C
+    Cancel,
+}
+
+/// 從 `pending` 前面吃位元組進 `buf`，直到行尾、Ctrl+C 或吃完。吃掉的位元組從 `pending` 移除，
+/// **行尾之後的留著**給下一個提示（E7）。回傳（讀到哪裡, 要回顯的文字）。
+///
+/// UTF-8 字被切在兩次寫入之間時，不完整的尾巴留在 `pending` 等下一次（不可以先解成 U+FFFD）。
+fn take_line(pending: &mut Vec<u8>, buf: &mut String, echo_input: bool) -> (LineStep, String) {
+    let mut shown = String::new();
+    let mut used = 0;
+    let mut step = LineStep::More;
+    'outer: while used < pending.len() {
+        let rest = &pending[used..];
+        let valid = match std::str::from_utf8(rest) {
+            Ok(s) => s,
+            Err(e) => {
+                let v = std::str::from_utf8(&rest[..e.valid_up_to()]).unwrap_or_default();
+                if !v.is_empty() {
+                    v
+                } else if let Some(n) = e.error_len() {
+                    used += n; // 壞位元組直接跳過
+                    continue;
+                } else {
+                    break; // 不完整的尾巴：留著等下一次
+                }
+            }
+        };
+        let mut chars = valid.char_indices().peekable();
+        while let Some((i, ch)) = chars.next() {
+            match ch {
+                '\r' | '\n' => {
+                    let mut len = i + 1;
+                    // CR LF 算一個行尾（否則 LF 會變成下一個提示的空白答案）
+                    if ch == '\r' && matches!(chars.peek(), Some((_, '\n'))) {
+                        len += 1;
+                    }
+                    used += len;
+                    step = LineStep::Done;
+                    break 'outer;
+                }
+                '\u{7f}' | '\u{8}' => {
+                    if buf.pop().is_some() && echo_input {
+                        shown.push_str("\u{8} \u{8}"); // 同舊版的 "\b \b"
+                    }
+                }
+                // Ctrl+C：取消整條連線（PuTTY 在登入階段按 Ctrl+C 也是斷線）
+                '\u{3}' => {
+                    used += i + 1;
+                    step = LineStep::Cancel;
+                    break 'outer;
+                }
+                c if c.is_control() => {}
+                c => {
+                    buf.push(c);
+                    if echo_input {
+                        shown.push(c);
+                    }
+                }
+            }
+        }
+        used += valid.len();
+    }
+    pending.drain(..used);
+    (step, shown)
+}
+
 /// 從輸入流讀一行。`echo = false` 時完全不回顯（密碼）。
 async fn prompt_line(
     on_output: &OnOutput,
-    rx: &mut mpsc::UnboundedReceiver<Cmd>,
+    input: &mut Input,
     prompt: &str,
     echo_input: bool,
 ) -> Result<String, String> {
     echo(on_output, prompt);
     let mut buf = String::new();
     loop {
-        let Some(cmd) = rx.recv().await else {
+        // 先吃上一次留下來的（同一筆寫入裡上一行之後的位元組）
+        let (step, shown) = take_line(&mut input.pending, &mut buf, echo_input);
+        if !shown.is_empty() {
+            echo(on_output, &shown);
+        }
+        match step {
+            LineStep::Done => {
+                echo(on_output, "\r\n");
+                return Ok(buf);
+            }
+            LineStep::Cancel => return Err(t("err.cancelled").to_string()),
+            LineStep::More => {}
+        }
+        let Some(cmd) = input.rx.recv().await else {
             return Err(t("err.connCancelled").to_string());
         };
-        let data = match cmd {
-            Cmd::Write(d) => d,
-            Cmd::Resize(..) => continue, // 問答期間也可能改變視窗大小
+        match cmd {
             Cmd::Close => return Err(t("err.connCancelled").to_string()),
-        };
-        for ch in String::from_utf8_lossy(&data).chars() {
-            match ch {
-                '\r' | '\n' => {
-                    echo(on_output, "\r\n");
-                    return Ok(buf);
-                }
-                '\u{7f}' | '\u{8}' => {
-                    if buf.pop().is_some() && echo_input {
-                        echo(on_output, "\u{8} \u{8}"); // 同舊版的 "\b \b"
-                    }
-                }
-                // Ctrl+C：取消整條連線（PuTTY 在登入階段按 Ctrl+C 也是斷線）
-                '\u{3}' => return Err(t("err.cancelled").to_string()),
-                c if c.is_control() => {}
-                c => {
-                    buf.push(c);
-                    if echo_input {
-                        echo(on_output, &c.to_string());
-                    }
-                }
-            }
+            // 問答期間也可能改變視窗大小：記下來給 request_pty（E6）
+            other => input.stash(other),
         }
     }
+}
+
+/// 先 TCP 連線（有逾時），再交給 russh 交握（稽核 E15）。
+///
+/// 為什麼不直接用 `client::connect`：它裡面的 `TcpStream::connect` 沒有逾時，
+/// 黑洞主機在 Windows 要等約 21 秒、Linux 最長 2 分鐘，而且這段期間關分頁也收不掉。
+/// 逾時**只包 TCP 連線這一段**——交握裡還有主機金鑰對話框，那要等人按，不能算進去。
+async fn open_transport(
+    config: Arc<client::Config>,
+    host: &str,
+    port: u16,
+    handler: Handler,
+) -> Result<client::Handle<Handler>, String> {
+    let tcp = match tokio::time::timeout(CONNECT_TIMEOUT, tokio::net::TcpStream::connect((host, port))).await {
+        Ok(Ok(s)) => s,
+        Ok(Err(e)) => return Err(tf("err.sshConnectFailed", &[&e.to_string()])),
+        Err(_) => {
+            let why = tf("err.sshConnectTimeout", &[&CONNECT_TIMEOUT.as_secs().to_string()]);
+            return Err(tf("err.sshConnectFailed", &[&why]));
+        }
+    };
+    if config.nodelay {
+        let _ = tcp.set_nodelay(true); // 同 `client::connect`
+    }
+    client::connect_stream(config, tcp, handler)
+        .await
+        .map_err(|e| tf("err.sshConnectFailed", &[&e.to_string()]))
 }
 
 // --------------------------------------------------------------- 給測試用
@@ -739,24 +1034,101 @@ impl FixedDecider {
 }
 
 impl HostKeyDecider for FixedDecider {
-    fn decide(
-        &self,
-        _host: &str,
+    fn decide<'a>(
+        &'a self,
+        _host: &'a str,
         _port: u16,
-        verdict: &hostkey::Verdict,
-        _fp: &hostkey::Fingerprints,
-    ) -> HostKeyAnswer {
+        verdict: &'a hostkey::Verdict,
+        _fp: &'a hostkey::Fingerprints,
+    ) -> Asking<'a, HostKeyAnswer> {
         self.seen
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .push(verdict.clone());
-        self.answer
+        let answer = self.answer;
+        Box::pin(async move { answer })
     }
 
-    fn accept_weak(&self, _host: &str, _port: u16, _weak: &[(String, String)]) -> bool {
+    fn accept_weak<'a>(
+        &'a self,
+        _host: &'a str,
+        _port: u16,
+        _weak: &'a [(String, String)],
+    ) -> Asking<'a, WeakAnswer> {
         self.weak_asks
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        self.accept_weak
-            .load(std::sync::atomic::Ordering::SeqCst)
+        let yes = self
+            .accept_weak
+            .load(std::sync::atomic::Ordering::SeqCst);
+        Box::pin(async move {
+            if yes {
+                WeakAnswer::Accept
+            } else {
+                WeakAnswer::Reject
+            }
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn line(pending: &mut Vec<u8>) -> (LineStep, String) {
+        let mut buf = String::new();
+        let (step, _) = take_line(pending, &mut buf, true);
+        (step, buf)
+    }
+
+    /// 稽核 E7：一次貼 `user\npass\n`，兩個提示各拿到自己那一行。
+    #[test]
+    fn pasted_lines_are_kept_for_next_prompt() {
+        let mut p = b"root\r\nsecret\nls\n".to_vec();
+        assert_eq!(line(&mut p), (LineStep::Done, "root".to_string()));
+        assert_eq!(line(&mut p), (LineStep::Done, "secret".to_string()), "CR LF 只算一個行尾");
+        assert_eq!(p, b"ls\n", "剩下的留給 shell");
+    }
+
+    #[test]
+    fn partial_line_waits_for_more() {
+        let mut p = b"ro".to_vec();
+        let mut buf = String::new();
+        assert_eq!(take_line(&mut p, &mut buf, true).0, LineStep::More);
+        assert!(p.is_empty());
+        p.extend_from_slice(b"ot\x7f\x7fot\r");
+        assert_eq!(take_line(&mut p, &mut buf, true).0, LineStep::Done);
+        assert_eq!(buf, "root");
+    }
+
+    /// 中文字被切在兩次寫入之間：不完整的尾巴要留著，不能變成 U+FFFD。
+    #[test]
+    fn utf8_split_is_kept() {
+        let bytes = "使用者\r".as_bytes();
+        let mut p = bytes[..4].to_vec();
+        let mut buf = String::new();
+        assert_eq!(take_line(&mut p, &mut buf, true).0, LineStep::More);
+        assert_eq!(buf, "使");
+        assert_eq!(p.len(), 1, "半個字留著");
+        p.extend_from_slice(&bytes[4..]);
+        assert_eq!(take_line(&mut p, &mut buf, true).0, LineStep::Done);
+        assert_eq!(buf, "使用者");
+    }
+
+    #[test]
+    fn ctrl_c_cancels() {
+        let mut p = b"ab\x03cd".to_vec();
+        assert_eq!(line(&mut p).0, LineStep::Cancel);
+    }
+
+    /// 稽核 E6：提示期間的 resize 要記下來。
+    #[test]
+    fn resize_during_prompt_is_remembered() {
+        let (_tx, rx) = mpsc::unbounded_channel();
+        let mut input = Input::new(rx, 80, 24);
+        input.stash(Cmd::Resize(132, 50));
+        input.stash(Cmd::Resize(0, 0)); // 0 不算
+        input.stash(Cmd::Write(b"x".to_vec()));
+        assert_eq!(input.size, (132, 50));
+        assert_eq!(input.pending, b"x");
     }
 }

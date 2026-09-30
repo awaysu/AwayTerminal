@@ -33,7 +33,8 @@ function applyTexts() {
   el.rename.textContent = T['menu.rename'];
   el.delete.textContent = T['conn.delete'];
   el.close.textContent = T['dlg.close'];
-  el.menu.querySelector('[data-fav="manage"]').textContent = T['fav.settings'];
+  // with-icon 項目只能改 `.menu-label`，寫整個 textContent 會把圖示洗掉（BUG-AUDIT B8）
+  el.menu.querySelector('[data-fav="manage"] .menu-label').textContent = T['fav.settings'];
 }
 
 export async function reloadFavs() {
@@ -51,23 +52,23 @@ function detailOf(f) {
   if (f.kind === 'com' && f.com) {
     const c = f.com;
     const parts = [`COM  ${c.port} ${c.baud}`, `${c.dataBits}/${c.parity}/${c.stopBits}/${c.flow}`];
-    if (c.autoReconnect) parts.push('斷線自動重連');
+    if (c.autoReconnect) parts.push(T['sd.reconnect']);
     return parts.join('\n');
   }
   if (f.kind === 'telnet' && f.telnet) {
     const t = f.telnet;
     const parts = [`Telnet  ${t.host}${t.port === 23 ? '' : `:${t.port}`}`];
-    if (t.autoReconnect) parts.push('斷線自動重連');
-    if (t.keepaliveMins > 0) parts.push(`保持連線 ${t.keepaliveMins} 分鐘`);
+    if (t.autoReconnect) parts.push(T['sd.reconnect']);
+    if (t.keepaliveMins > 0) parts.push(fmt('fav.tipKeepalive', t.keepaliveMins));
     return parts.join('\n');
   }
   if (f.kind === 'ssh' && f.ssh) {
     const s = f.ssh;
     const who = s.user ? `${s.user}@${s.host}` : s.host;
     const parts = [`SSH  ${who}${s.port === 22 ? '' : `:${s.port}`}`];
-    if (s.keyPath) parts.push(`金鑰：${s.keyPath}`);
-    if (s.autoReconnect) parts.push('斷線自動重連');
-    if (s.keepaliveMins > 0) parts.push(`保持連線 ${s.keepaliveMins} 分鐘`);
+    if (s.keyPath) parts.push(fmt('fav.tipKey', s.keyPath));
+    if (s.autoReconnect) parts.push(T['sd.reconnect']);
+    if (s.keepaliveMins > 0) parts.push(fmt('fav.tipKeepalive', s.keepaliveMins));
     return parts.join('\n');
   }
   if (f.kind === 'conn') return `${f.connName}${f.dir ? `\n${f.dir}` : ''}`;
@@ -114,7 +115,7 @@ function renderMenu(candidate) {
   // 舊版：沒有分頁、或這個分頁沒有可重開的資訊 → 灰掉
   const add = el.menu.querySelector('[data-fav="add"]');
   add.classList.toggle('disabled', !candidate);
-  add.textContent = candidate
+  add.querySelector('.menu-label').textContent = candidate
     ? fmt('fav.addNamed', candidate.name)
     : T['fav.add'];
 }
@@ -384,7 +385,8 @@ export function initFavs(injected) {
     el.root.hidden = true;
   });
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && !el.root.hidden) el.root.hidden = true;
+    // 頁內 #modal（字型清單、確認框…）開著時 Esc 只關 modal，不連底下這個視窗一起關（BUG-AUDIT B3）
+    if (e.key === 'Escape' && !el.root.hidden && document.getElementById('modal').hidden) el.root.hidden = true;
   });
 
   return reloadFavs();

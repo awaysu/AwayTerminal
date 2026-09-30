@@ -174,6 +174,8 @@ struct RecvInner {
 /// 上限與砍到的大小（同舊版 `MacroRunner`）。
 const MAX_BUF: usize = 400_000;
 const TRIM_TO: usize = 200_000;
+/// 半截 ESC 序列最多扣這麼多位元組（同 `logging.rs`／舊版的 4096）。
+const MAX_ESC_CARRY: usize = 4096;
 
 impl Default for RecvBuffer {
     fn default() -> Self {
@@ -196,7 +198,15 @@ impl RecvBuffer {
         let mut g = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         let mut data = std::mem::take(&mut g.carry);
         data.extend_from_slice(bytes);
-        let (clean, carry) = strip_ansi(&data);
+        let (mut clean, mut carry) = strip_ansi(&data);
+        // 沒收尾的序列（最常見是 `ESC ]` 之後一直等不到 BEL）不可以無上限扣著：
+        // 超過上限就當它不是序列——丟掉開頭的 ESC，剩下的重新掃一次照放
+        // （同 `logging.rs` 的 `MAX_ESC_CARRY`；每圈至少少一個位元組，一定會停）
+        while carry.len() > MAX_ESC_CARRY {
+            let (c2, k2) = strip_ansi(&carry[1..]);
+            clean.extend_from_slice(&c2);
+            carry = k2;
+        }
         g.carry = carry;
         g.buf.extend(clean);
         if g.buf.len() > MAX_BUF {
@@ -230,8 +240,9 @@ impl RecvBuffer {
 
 /// 去掉 ANSI／OSC 序列，回傳 (乾淨的位元組, 沒收完的尾巴)。
 ///
-/// 三種形狀和 `logging.rs` 的掃描器一致（那邊是給 log 用的，同一組規則）：
-/// `ESC ] … BEL|ESC \`（OSC）、`ESC [ … 結尾字元`（CSI）、`ESC 單一字元`。
+/// 形狀和 `logging.rs` 的掃描器一致（那邊是給 log 用的，同一組規則）：
+/// `ESC ] … BEL|ESC \`（OSC）、`ESC [ … 結尾字元`（CSI）、
+/// `ESC 中間位元組(0x20–0x2F)… 結尾位元組`（nF，例如 `ESC ( B` 切字集）、`ESC 單一字元`。
 fn strip_ansi(data: &[u8]) -> (Vec<u8>, Vec<u8>) {
     let mut out = Vec::with_capacity(data.len());
     let mut i = 0;
@@ -282,6 +293,18 @@ fn strip_ansi(data: &[u8]) -> (Vec<u8>, Vec<u8>) {
                 }
                 i = j + 1; // 吃掉結尾字元
             }
+            0x20..=0x2f => {
+                // nF：中間位元組之後還有一個結尾位元組（`ESC ( B`）。以前當成
+                // `ESC 單一字元` 只吃兩個 → `B` 漏進接收資料
+                let mut j = i + 1;
+                while j < data.len() && (0x20..=0x2f).contains(&data[j]) {
+                    j += 1;
+                }
+                if j >= data.len() {
+                    return (out, data[i..].to_vec());
+                }
+                i = j + 1;
+            }
             _ => {
                 i += 2; // `ESC 單一字元`
             }
@@ -301,10 +324,6 @@ pub struct WaitMatcher {
     pats: Vec<Vec<u8>>,
     /// 每個候選已經對到幾個位元組。
     count: Vec<usize>,
-    /// 收到的這一行（`waitln`／`recvln` 的 `inputstr`；同原碼的 `RecvLnBuff`）。
-    line: Vec<u8>,
-    /// 上一個位元組（原碼 `RecvLnLast`：LF 之後的下一個位元組才清行緩衝）。
-    last: u8,
 }
 
 impl WaitMatcher {
@@ -316,21 +335,14 @@ impl WaitMatcher {
         Self {
             pats,
             count: vec![0; n],
-            line: Vec::new(),
-            last: 0,
         }
     }
 
     /// 吃一個位元組。回 `Some(index+1)` ＝第幾個候選命中（1 起算，同 `result`）。
+    ///
+    /// 「這一行」（`inputstr` 用的 `RecvLnBuff`）不在這裡：它要**跨指令保留**
+    /// （`wait` 之後接 `recvln`），所以放在直譯器上，見 [`RecvLine`]。
     pub fn feed(&mut self, b: u8) -> Option<usize> {
-        // 「這一行」的累積規則照原碼 `PutRecvLnBuff`：**換行也存進去**，
-        // 而且是在「上一個位元組是 LF」的下一個位元組才把前一行清掉（延後清）。
-        if self.last == 0x0a {
-            self.line.clear();
-        }
-        self.line.push(b);
-        self.last = b;
-
         let mut found = None;
         // ⚠️ 要從後往前跑：這樣索引小的候選最後寫入，「同時命中時小的贏」才成立
         for i in (0..self.pats.len()).rev() {
@@ -364,32 +376,96 @@ impl WaitMatcher {
         found
     }
 
-    /// 換一組候選，但**保留「這一行」的內容**。
-    ///
-    /// `waitln` 需要這個：先等使用者給的字串，命中之後改等換行，而 `inputstr` 要的是
-    /// **整行**（包含命中之前就收到的部分）。原碼是同一個 `RecvLnBuff` 一路累積，
-    /// 只是把 `PWaitStr` 換掉（`ClearWait` + `SetWait(1, LF)`），語意一樣。
+    /// 換一組候選（`waitln` 命中之後改等換行；原碼 `ClearWait` + `SetWait(1, LF)`）。
     pub fn switch_to(&mut self, pats: Vec<Vec<u8>>) {
         self.count = vec![0; pats.len()];
         self.pats = pats;
     }
 
-    /// 收到的那一行，**去掉尾端的 LF 與 CR**（原碼 `GetRecvLnBuff` 就是這樣處理的）。
-    /// `waitln`／`recvln` 的 `inputstr` 用這個。
-    pub fn line_before_newline(&self) -> &[u8] {
-        let mut end = self.line.len();
-        if end > 0 && self.line[end - 1] == 0x0a {
+    /// 第 `idx` 個（1 起算）候選的內容。
+    pub fn pattern(&self, idx: usize) -> Option<&[u8]> {
+        self.pats.get(idx.checked_sub(1)?).map(|p| p.as_slice())
+    }
+}
+
+/// 收到的「這一行」——原碼 `ttmdde.c` 的 `RecvLnBuff`／`RecvLnPtr`／`RecvLnLast`／
+/// `RecvLnClear`，**整支巨集共用一份、跨指令保留**。
+///
+/// `wait`／`waitln`／`recvln`／`waitn`（還有 `waitregex`）讀到的每個位元組都先放進這裡
+/// （`PutRecvLnBuff`），`inputstr` 從這裡拿（`GetRecvLnBuff`）。所以 `wait 'foo'` 在一行
+/// 中間命中之後接 `recvln`，`inputstr` 是**整行**（含 `foo` 之前收到的部分）——以前每個
+/// 指令各開一個行緩衝，後半行才拿得到（稽核 F9）。
+#[derive(Clone, Debug)]
+pub struct RecvLine {
+    buf: Vec<u8>,
+    /// 上一個位元組（原碼 `RecvLnLast`：LF 之後的**下一個**位元組才清掉前一行）。
+    last: u8,
+    /// 遇到 LF 要不要清（原碼 `RecvLnClear`；`waitn` 期間是 false，換行也要累積）。
+    clear_on_lf: bool,
+}
+
+impl Default for RecvLine {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl RecvLine {
+    /// 容量同原碼（`TStrVal` 512，最後一格留給 NUL）。
+    pub const CAP: usize = super::lex::MAX_STR_LEN - 1;
+
+    pub fn new() -> Self {
+        Self {
+            buf: Vec::new(),
+            last: 0,
+            clear_on_lf: true,
+        }
+    }
+
+    /// `PutRecvLnBuff`：**換行也存進去**，前一個是 LF 才在這時清掉前一行（延後清）；
+    /// 滿了之後的位元組丟掉（同原碼）。
+    pub fn put(&mut self, b: u8) {
+        if self.last == 0x0a && self.clear_on_lf {
+            self.clear();
+        }
+        if self.buf.len() < Self::CAP {
+            self.buf.push(b);
+        }
+        self.last = b;
+    }
+
+    /// `GetRecvLnBuff`：拿走這一行，**去掉尾端的 LF 與它前面的 CR**，然後清空。
+    pub fn take(&mut self) -> Vec<u8> {
+        let mut end = self.buf.len();
+        if end > 0 && self.buf[end - 1] == 0x0a {
             end -= 1;
-            if end > 0 && self.line[end - 1] == 0x0d {
+            if end > 0 && self.buf[end - 1] == 0x0d {
                 end -= 1;
             }
         }
-        &self.line[..end]
+        let out = self.buf[..end].to_vec();
+        self.clear();
+        out
     }
 
-    /// 收到的那一行（原樣，含 CR／LF）。
-    pub fn line(&self) -> &[u8] {
-        &self.line
+    /// `ClearRecvLnBuff`。
+    pub fn clear(&mut self) {
+        self.buf.clear();
+        self.last = 0;
+    }
+
+    /// 目前累積了幾個位元組（原碼 `RecvLnPtr`）。
+    pub fn len(&self) -> usize {
+        self.buf.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.buf.is_empty()
+    }
+
+    /// `SetRecvLnClear`。
+    pub fn set_clear_on_lf(&mut self, v: bool) {
+        self.clear_on_lf = v;
     }
 }
 
@@ -536,32 +612,53 @@ mod tests {
         assert_eq!(hit, Some(1));
     }
 
-    /// `recvln`／`waitln` 用的「這一行」：含 CR／LF 存進去，讀的時候才去尾；
-    /// 下一行的第一個位元組才會把前一行清掉（原碼 `PutRecvLnBuff` 的延後清）。
+    /// `recvln`／`waitln` 用的「這一行」：含 CR／LF 存進去，讀的時候才去尾。
     #[test]
     fn line_buffer_resets_on_newline() {
-        let mut m = WaitMatcher::new(vec![b"\n".to_vec()]);
+        let mut l = RecvLine::new();
         for &b in b"abc\r\n" {
-            m.feed(b);
+            l.put(b);
         }
-        assert_eq!(m.line_before_newline(), b"abc", "去掉尾端的 CR LF");
-        let mut m = WaitMatcher::new(vec![b"zz".to_vec()]);
+        assert_eq!(l.take(), b"abc", "去掉尾端的 CR LF");
+        assert!(l.is_empty(), "take 之後清空");
         for &b in b"hello" {
-            m.feed(b);
+            l.put(b);
         }
-        assert_eq!(m.line_before_newline(), b"hello");
+        assert_eq!(l.take(), b"hello");
     }
 
     /// 前一行是在**下一行的第一個位元組**才被清掉（原碼的延後清）。
     #[test]
     fn line_buffer_clears_lazily() {
-        let mut m = WaitMatcher::new(vec![b"zz".to_vec()]);
+        let mut l = RecvLine::new();
         for &b in b"one\r\n" {
-            m.feed(b);
+            l.put(b);
         }
-        assert_eq!(m.line_before_newline(), b"one");
-        m.feed(b'x');
-        assert_eq!(m.line_before_newline(), b"x", "新的一行開始了");
+        assert_eq!(l.len(), 5, "LF 還在，還沒清");
+        l.put(b'x');
+        assert_eq!(l.take(), b"x", "新的一行開始了");
+    }
+
+    /// `waitn` 期間（`clear_on_lf = false`）換行也累積；只去掉**最後**的 CR LF。
+    #[test]
+    fn line_buffer_keeps_newlines_for_waitn() {
+        let mut l = RecvLine::new();
+        l.set_clear_on_lf(false);
+        for &b in b"a\r\nb\r\n" {
+            l.put(b);
+        }
+        l.put(b'c');
+        assert_eq!(l.take(), b"a\r\nb\r\nc");
+    }
+
+    /// 容量同原碼（511）：超過的位元組丟掉。
+    #[test]
+    fn line_buffer_is_bounded() {
+        let mut l = RecvLine::new();
+        for _ in 0..2000 {
+            l.put(b'x');
+        }
+        assert_eq!(l.len(), RecvLine::CAP);
     }
 
     /// 接收緩衝會去掉 ANSI（照舊版；原碼是直接比原始位元組）。
@@ -611,6 +708,40 @@ mod tests {
             got.push(b);
         }
         assert_eq!(String::from_utf8(got).unwrap(), "中文完成");
+    }
+
+    /// `ESC ( B`（切字集）整段吃掉，`B` 不可以漏出來；跨 chunk 也一樣。
+    #[test]
+    fn recv_buffer_strips_charset_designation() {
+        let buf = RecvBuffer::new();
+        buf.push(b"a\x1b(Bb\x1b)0c");
+        buf.push(b"d\x1b(");
+        buf.push(b"Be");
+        let mut got = Vec::new();
+        while let Some(b) = buf.read_byte() {
+            got.push(b);
+        }
+        assert_eq!(got, b"abcde".to_vec());
+    }
+
+    /// `ESC ]` 一直沒收尾：扣住的尾巴有上限，後面的輸出最後還是要出得來。
+    #[test]
+    fn recv_buffer_unterminated_osc_is_bounded() {
+        let buf = RecvBuffer::new();
+        buf.push(b"\x1b]0;");
+        let chunk = vec![b'x'; 1000];
+        for _ in 0..10 {
+            buf.push(&chunk);
+        }
+        buf.push(b"OK");
+        let inner = buf.inner.lock().unwrap();
+        assert!(inner.carry.len() <= MAX_ESC_CARRY, "carry={}", inner.carry.len());
+        drop(inner);
+        let mut got = Vec::new();
+        while let Some(b) = buf.read_byte() {
+            got.push(b);
+        }
+        assert!(got.ends_with(b"OK"), "OSC 沒收尾不可以把之後的輸出全部扣住");
     }
 
     /// 緩衝上限：滿了要砍掉前面，不可以無限長大。

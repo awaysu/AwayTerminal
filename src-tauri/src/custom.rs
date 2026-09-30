@@ -227,6 +227,17 @@ pub fn custom_save(
         return Err(t("err.needExePath").to_string());
     }
     let key = original_name.unwrap_or_else(|| name.clone());
+    // 改名成另一條既有連線的名字 → 會變成兩條同名（`find` 永遠取第一條、`delete` 兩條一起刪；
+    // BUG D12）。不是改名（key 就是 name）時是「更新同名那條」，不算衝突。
+    if !key.trim().eq_ignore_ascii_case(&name)
+        && settings
+            .get()
+            .custom_conns
+            .iter()
+            .any(|c| c.name.trim().eq_ignore_ascii_case(&name))
+    {
+        return Err(tf("err.connNameTaken", &[&name]));
+    }
     settings.update(|s| {
         match s
             .custom_conns
@@ -289,6 +300,19 @@ pub fn sandbox_clear(
         .ok_or_else(|| t("err.tabNoSandbox").to_string())?;
     if !sb.has_worktree {
         return Err(t("err.sandboxNoWorktree").to_string());
+    }
+    // BUG D1：還有行程在 worktree 裡跑就不清——Windows 刪不掉使用中的目錄，
+    // git 會清掉一半內容再把 worktree 除名。代理團隊的每一格共用同一棵 worktree，
+    // 所以用 work_dir 比對**所有**分頁，不是只看這一格。
+    let in_use = tabs_state.poll_snapshot().into_iter().any(|(tid, _, pid, _)| {
+        pid != 0
+            && tabs_state
+                .sandbox_of(tid)
+                .is_some_and(|o| o.work_dir == sb.work_dir)
+            && crate::status::pid_exists(pid)
+    });
+    if in_use {
+        return Err(t("err.sandboxInUse").to_string());
     }
     crate::sandbox::remove_worktree(&sb.work_dir)?;
     Ok(sb.branch)

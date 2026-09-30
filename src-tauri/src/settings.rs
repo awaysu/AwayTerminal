@@ -389,7 +389,11 @@ impl SettingsStore {
     pub fn load(dir: &Path) -> Self {
         let path = dir.join("settings.json");
         let (settings, writable) = match std::fs::read_to_string(&path) {
-            Ok(text) => match serde_json::from_str::<AppSettings>(&text) {
+            // 帶 UTF-8 BOM 的檔（PowerShell 5.1 `Out-File` 存的就有）serde_json 讀不進來 →
+            // 以前整份設定靜默丟掉、這個工作階段什麼都存不了（BUG D6）。先剝掉 BOM。
+            Ok(text) => match serde_json::from_str::<AppSettings>(
+                text.strip_prefix('\u{feff}').unwrap_or(&text),
+            ) {
                 Ok(s) => (s, true),
                 Err(e) => {
                     println!("[AwayTerminal] settings.json 解析失敗，這次不寫回：{e}");
@@ -412,6 +416,16 @@ impl SettingsStore {
             dirty: Arc::new(AtomicBool::new(fresh)),
             writable,
         }
+    }
+
+    /// 這次啟動的設定**存不回去**嗎（讀檔或解析失敗 → 為了不蓋掉使用者的檔，整個工作階段
+    /// 都不寫）。回傳已翻譯、給使用者看的說明；可以存時回 `None`。
+    ///
+    /// 會改設定的指令（匯入舊版設定、設定視窗按確定）要用它告訴使用者「改了也不會留下來」，
+    /// 不然就是靜默丟失（BUG D6）。
+    pub fn readonly_reason(&self) -> Option<String> {
+        (!self.writable)
+            .then(|| crate::i18n::tf("err.settingsReadOnly", &[&self.path.display().to_string()]))
     }
 
     /// 設定檔所在的資料夾（`known_hosts` 之類的東西也放這裡）。
@@ -556,6 +570,24 @@ mod tests {
     fn flatten_does_not_add_a_nested_key() {
         let out = serde_json::to_string(&AppSettings::default()).unwrap();
         assert!(!out.contains("\"extra\""), "flatten 沒生效：{out}");
+    }
+
+    /// BUG D6：帶 BOM 的設定檔要讀得進來，而且之後照常可以存。
+    #[test]
+    fn a_bom_file_is_read_and_stays_writable() {
+        let dir = std::env::temp_dir().join(format!("awayterm-settings-bom-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("settings.json");
+        std::fs::write(&path, "\u{feff}{\"fontSize\": 21}").unwrap();
+
+        let store = SettingsStore::load(&dir);
+        assert_eq!(store.get().font_size, 21, "BOM 檔的內容要讀得到");
+        assert!(store.readonly_reason().is_none(), "BOM 檔不可以被當成壞檔");
+        store.update(|s| s.font_size = 22);
+        store.flush();
+        let after = std::fs::read_to_string(&path).unwrap();
+        assert!(after.contains("22"), "要存得回去：{after}");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// 解析失敗時**不可以**寫回去（不然使用者的檔案會被預設值蓋掉）。

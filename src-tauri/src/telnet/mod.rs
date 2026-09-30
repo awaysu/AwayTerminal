@@ -22,7 +22,7 @@ use crate::i18n::{tf};
 use std::io::{Read, Write};
 use std::net::{TcpStream, ToSocketAddrs};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{mpsc, Arc, Mutex};
 use std::time::Duration;
 
 use crate::session::{ExitInfo, OnExit, OnOutput, TerminalSession};
@@ -189,32 +189,43 @@ impl Iac {
 
     /// 回應一個選項協商。規則照舊版 `RespondOption`，加上 TASK-011 由 PM 決定補的
     /// `DO TTYPE` 與 `WONT`／`DONT` 的回答。
+    ///
+    /// ⚠️ 稽核 E4：`WILL`／`DO` 也要看狀態。我們連上就主動送 `WILL NAWS`／`WILL TTYPE`
+    /// （舊版沒有），對方回的 `DO` 是**確認**、不是新的請求——再回一次 `WILL` 的話，
+    /// 遇到「每收到一條就回一條」的無狀態對端就會無限乒乓（RFC 854／1143：已經是那個狀態就不回）。
+    /// 拒絕的那兩條（`DONT`／`WONT`）不必查：對方回 `WONT`／`DONT` 時我們本來就不會再答。
     fn respond(&mut self, cmd: u8, opt: u8, cols: u16, rows: u16, out: &mut Vec<u8>) {
         match cmd {
             WILL => {
                 if opt == OPT_ECHO || opt == OPT_SGA {
+                    // 已經說過 DO（對方是在確認）→ 不再回
                     if !self.do_sent.contains(&opt) {
                         self.do_sent.push(opt);
+                        out.extend_from_slice(&[IAC, DO, opt]);
                     }
-                    out.extend_from_slice(&[IAC, DO, opt]);
                 } else {
                     out.extend_from_slice(&[IAC, DONT, opt]);
                 }
             }
             DO => {
                 if opt == OPT_NAWS {
-                    // 答應送視窗大小，並立刻送一次目前尺寸
-                    self.naws_ok = true;
-                    self.note_will(OPT_NAWS);
-                    out.extend_from_slice(&[IAC, WILL, OPT_NAWS]);
-                    out.extend_from_slice(&naws_sb(cols, rows));
+                    // 答應送視窗大小，並立刻送一次目前尺寸。已經談成就不重複（對方重送 DO 不必理）
+                    if !self.naws_ok {
+                        self.naws_ok = true;
+                        if self.note_will(OPT_NAWS) {
+                            out.extend_from_slice(&[IAC, WILL, OPT_NAWS]);
+                        }
+                        out.extend_from_slice(&naws_sb(cols, rows));
+                    }
                 } else if opt == OPT_TTYPE {
                     // 答應回報終端機類型；實際的名稱要等對方送 `SB TTYPE SEND` 才回
-                    self.note_will(OPT_TTYPE);
-                    out.extend_from_slice(&[IAC, WILL, OPT_TTYPE]);
+                    if self.note_will(OPT_TTYPE) {
+                        out.extend_from_slice(&[IAC, WILL, OPT_TTYPE]);
+                    }
                 } else if opt == OPT_SGA {
-                    self.note_will(OPT_SGA);
-                    out.extend_from_slice(&[IAC, WILL, OPT_SGA]);
+                    if self.note_will(OPT_SGA) {
+                        out.extend_from_slice(&[IAC, WILL, OPT_SGA]);
+                    }
                 } else {
                     out.extend_from_slice(&[IAC, WONT, opt]);
                 }
@@ -244,10 +255,13 @@ impl Iac {
     }
 
     /// 記下「我們說過 WILL 這個選項」（收到 `DONT` 時才知道要不要回答）。
-    fn note_will(&mut self, opt: u8) {
-        if !self.will_sent.contains(&opt) {
-            self.will_sent.push(opt);
+    /// 回傳 `true`＝這是新狀態（要送 `WILL`）；`false`＝之前就說過了（E4：不要再送）。
+    fn note_will(&mut self, opt: u8) -> bool {
+        if self.will_sent.contains(&opt) {
+            return false;
         }
+        self.will_sent.push(opt);
+        true
     }
 }
 
@@ -284,8 +298,13 @@ pub fn escape(data: &[u8]) -> Vec<u8> {
 
 /// 一條 Telnet 連線。
 pub struct TelnetSession {
-    /// 連上之後才有；寫入從這裡拿（同舊版的 `volatile NetworkStream? _stream`）。
+    /// 連上之後才有（同舊版的 `volatile NetworkStream? _stream`）。現在只拿來 `shutdown`；
+    /// 寫入改走 [`Self::writer`] 佇列。
     stream: Mutex<Option<TcpStream>>,
+    /// 寫入佇列（稽核 E13）。第一版在呼叫端執行緒上持鎖 `write_all`：對方不讀（TCP 視窗滿）時
+    /// `write`／`resize`／keepalive 全卡住，呼叫端是 IPC 執行緒的話整個 UI 跟著凍。
+    /// 比照 COM：丟進佇列就回，由專用的寫入執行緒送出；關閉時 `shutdown` 會把卡住的寫入叫醒。
+    writer: Mutex<Option<mpsc::Sender<Vec<u8>>>>,
     /// 目前的終端機尺寸（NAWS 用）。
     size: Mutex<(u16, u16)>,
     /// 對方同意我們送 NAWS 了嗎（`DO NAWS` 收到才是 true）。
@@ -303,10 +322,9 @@ impl TelnetSession {
         if bytes.is_empty() {
             return;
         }
-        let mut g = self.stream.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(s) = g.as_mut() {
-            let _ = s.write_all(bytes);
-            let _ = s.flush();
+        // 丟進佇列就回（E13）；順序由佇列保證（鍵盤、協商回覆、NAWS、NOP 都走這裡）
+        if let Some(tx) = self.writer.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
+            let _ = tx.send(bytes.to_vec());
         }
     }
 
@@ -357,6 +375,9 @@ impl TerminalSession for TelnetSession {
         if let Some(s) = g.as_ref() {
             let _ = s.shutdown(std::net::Shutdown::Both);
         }
+        drop(g);
+        // 丟掉佇列的 sender → 寫入執行緒收完就結束
+        self.writer.lock().unwrap_or_else(|e| e.into_inner()).take();
     }
 }
 
@@ -383,6 +404,7 @@ pub fn spawn(
 ) -> Arc<TelnetSession> {
     let session = Arc::new(TelnetSession {
         stream: Mutex::new(None),
+        writer: Mutex::new(None),
         size: Mutex::new((opts.cols, opts.rows)),
         naws_ok: Arc::new(AtomicBool::new(false)),
         closed: Arc::new(AtomicBool::new(false)),
@@ -414,7 +436,7 @@ fn connect_and_read(
             if !session.closed.load(Ordering::Relaxed) {
                 // 舊版：連不上就紅字印錯誤並觸發 Exited（勾了自動重連的話由它接手退避重試）
                 on_output(format!("\r\n\x1b[31m{e}\x1b[0m\r\n").as_bytes());
-                on_exit(ExitInfo { exit_code: None });
+                on_exit(ExitInfo::ended(None));
             }
             return;
         }
@@ -426,17 +448,33 @@ fn connect_and_read(
         Ok(r) => r,
         Err(e) => {
             on_output(format!("\r\n\x1b[31m{e}\x1b[0m\r\n").as_bytes());
-            on_exit(ExitInfo { exit_code: None });
+            on_exit(ExitInfo::ended(None));
+            return;
+        }
+    };
+    let write_side = match stream.try_clone() {
+        Ok(w) => w,
+        Err(e) => {
+            on_output(format!("\r\n\x1b[31m{e}\x1b[0m\r\n").as_bytes());
+            on_exit(ExitInfo::ended(None));
             return;
         }
     };
     *session.stream.lock().unwrap_or_else(|e| e.into_inner()) = Some(stream);
 
-    // 使用者在連線還沒完成時就關了分頁
+    // 使用者在連線還沒完成時就關了分頁。
+    // （`close()` 那時 stream 還是 None、關不到 socket；這裡自己關，不要留一條開著的連線）
     if session.closed.load(Ordering::Relaxed) {
-        session.close();
-        on_exit(ExitInfo { exit_code: None });
+        if let Some(s) = session.stream.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
+            let _ = s.shutdown(std::net::Shutdown::Both);
+        }
+        on_exit(ExitInfo::ended(None));
         return;
+    }
+    *session.writer.lock().unwrap_or_else(|e| e.into_inner()) = Some(writer_thread(write_side));
+    // 設好佇列的同時被關掉：`close()` 可能在上一行之前就 take 過了 → 自己收掉
+    if session.closed.load(Ordering::Relaxed) {
+        session.writer.lock().unwrap_or_else(|e| e.into_inner()).take();
     }
 
     // NAWS 與 TTYPE 都要自己先開口：多數 telnet 伺服器不會主動問（PuTTY 也是連上就送這幾條）。
@@ -452,7 +490,7 @@ fn connect_and_read(
     if !session.closed.load(Ordering::Relaxed) {
         session.close();
     }
-    on_exit(ExitInfo { exit_code: None });
+    on_exit(ExitInfo::ended(None));
 }
 
 /// 解析主機名並連線。`ToSocketAddrs` 會把每個解析結果都試一次（IPv6 優先的主機不會直接失敗）。
@@ -505,9 +543,9 @@ fn read_loop(
         }
         let (cols, rows) = *session.size.lock().unwrap_or_else(|e| e.into_inner());
         let (data, reply) = iac.process(&buf[..n], cols, rows);
-        if iac.naws_ok {
-            session.naws_ok.store(true, Ordering::Relaxed);
-        }
+        // 兩個方向都要同步（稽核 E8：第一版只 store(true)，對方 `DONT NAWS` 之後
+        // `resize` 仍照送子協商，違反 RFC 1073）
+        session.naws_ok.store(iac.naws_ok, Ordering::Relaxed);
         if !reply.is_empty() {
             session.write_raw(&reply);
         }
@@ -515,6 +553,24 @@ fn read_loop(
             on_output(&data);
         }
     }
+}
+
+/// 寫入執行緒（稽核 E13）：從佇列拿出來一次 `write_all`（不逐 byte，同舊版）。
+/// 對方不讀時卡的是這條執行緒，不是呼叫端；`close()` 的 `shutdown` 會讓卡住的寫入失敗回來，
+/// 丟掉 sender 會讓 `recv` 結束。
+fn writer_thread(mut w: TcpStream) -> mpsc::Sender<Vec<u8>> {
+    let (tx, rx) = mpsc::channel::<Vec<u8>>();
+    std::thread::Builder::new()
+        .name("telnet-write".to_string())
+        .spawn(move || {
+            while let Ok(bytes) = rx.recv() {
+                if w.write_all(&bytes).and_then(|()| w.flush()).is_err() {
+                    break; // 連線斷了：剩下的丟掉（讀取那邊會發現並觸發結束事件）
+                }
+            }
+        })
+        .expect("spawn telnet write thread");
+    tx
 }
 
 /// 每 N 分鐘一個 `IAC NOP`（同舊版）。
@@ -613,6 +669,47 @@ mod tests {
         // 同一條再來一次就不回了（狀態已經清掉）
         let (_, reply) = iac.process(&[IAC, WONT, OPT_ECHO, IAC, DONT, OPT_NAWS], 80, 24);
         assert!(reply.is_empty());
+    }
+
+    /// 稽核 E4：主動送過 `WILL NAWS`／`WILL TTYPE` 之後收到的 `DO` 是確認，不可以再回 `WILL`；
+    /// `WILL ECHO` 重複來也只回一次 `DO`。否則遇到無狀態的對端會無限乒乓。
+    #[test]
+    fn acknowledgements_are_not_answered_again() {
+        let mut iac = Iac::default();
+        // 同 read_loop：連上就主動說了 WILL NAWS / WILL TTYPE
+        iac.note_will(OPT_NAWS);
+        iac.note_will(OPT_TTYPE);
+
+        // 對方確認 NAWS → 只送尺寸，不再送 WILL
+        let (_, reply) = iac.process(&[IAC, DO, OPT_NAWS], 80, 24);
+        assert_eq!(reply, naws_sb(80, 24));
+        assert!(iac.naws_ok);
+        // 再來一次 DO NAWS（無狀態的對端）→ 不回
+        let (_, reply) = iac.process(&[IAC, DO, OPT_NAWS], 80, 24);
+        assert!(reply.is_empty(), "{reply:?}");
+
+        // TTYPE 的確認同理
+        let (_, reply) = iac.process(&[IAC, DO, OPT_TTYPE], 80, 24);
+        assert!(reply.is_empty(), "{reply:?}");
+
+        // WILL ECHO：第一次回 DO，之後的確認不回
+        let (_, reply) = iac.process(&[IAC, WILL, OPT_ECHO], 80, 24);
+        assert_eq!(reply, vec![IAC, DO, OPT_ECHO]);
+        let (_, reply) = iac.process(&[IAC, WILL, OPT_ECHO, IAC, WILL, OPT_ECHO], 80, 24);
+        assert!(reply.is_empty(), "{reply:?}");
+
+        // DO SGA 同理
+        let (_, reply) = iac.process(&[IAC, DO, OPT_SGA, IAC, DO, OPT_SGA], 80, 24);
+        assert_eq!(reply, vec![IAC, WILL, OPT_SGA]);
+
+        // 收回之後再請求＝新的狀態改變 → 要再答
+        let (_, reply) = iac.process(&[IAC, DONT, OPT_NAWS], 80, 24);
+        assert_eq!(reply, vec![IAC, WONT, OPT_NAWS]);
+        assert!(!iac.naws_ok);
+        let (_, reply) = iac.process(&[IAC, DO, OPT_NAWS], 100, 30);
+        let mut want = vec![IAC, WILL, OPT_NAWS];
+        want.extend_from_slice(&naws_sb(100, 30));
+        assert_eq!(reply, want);
     }
 
     /// 子協商內容有上限，對方一直送也不會讓我們無限長大。

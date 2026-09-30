@@ -307,6 +307,28 @@ static TABLE: &[(&str, &str, &str)] = &[
     ("err.tabNoSandbox",      "這個分頁沒有沙盒", "This tab has no sandbox"),
     ("err.sandboxNoWorktree", "這個沙盒沒有 worktree（不是 git repo），沒有東西要移除",
                               "This sandbox has no worktree (not a git repository); there is nothing to remove"),
+    ("err.sandboxInUse",      "這個沙盒還有分頁在執行（代理團隊是整組共用）。請先結束分頁裡的程式（例如輸入 exit），再清除沙盒。",
+                              "This sandbox is still in use by a running tab (agent teams share one). Exit the program in the tab first (e.g. type exit), then clear the sandbox."),
+    ("err.sandboxLeftover",   "worktree 已從 git 移除，但資料夾刪不掉（可能還有程式開著裡面的檔案）：{0}\n{1}",
+                              "The worktree was removed from git, but its folder could not be deleted (a program may still have files open in it): {0}\n{1}"),
+    ("sb.guardNoNode",        "護欄未啟用：找不到 node，Claude Code 的指令護欄 hook 不會執行（沙盒的其他部分照常）",
+                              "Guardrails inactive: node was not found, so the Claude Code command-guard hook will not run (the rest of the sandbox still works)"),
+    ("err.connNameTaken",     "已經有一條叫「{0}」的自訂連線，請換一個名稱",
+                              "A custom connection named \"{0}\" already exists; please choose another name"),
+
+    // ---------------- 設定檔（settings.rs／migrate.rs）----------------
+    ("err.settingsReadOnly",  "這次啟動時設定檔讀不進來，為了不蓋掉它，這次的變更都不會存檔：{0}\n請修好或移走這個檔案後重新啟動。",
+                              "The settings file could not be read at startup, so to avoid overwriting it no changes will be saved this session: {0}\nFix or move the file away, then restart."),
+
+    // ---------------- 離開時更新 CLAUDE.md（claudemd.rs）／關於（update.rs）----------------
+    // BUG D3：這兩條以前不在表裡 → release 把字面 key 打進 Claude Code，debug 直接 panic
+    ("exit.mdPrompt",         "請更新 CLAUDE.md，把這次工作的重點與變更記錄進去。",
+                              "Please update CLAUDE.md to record this session's key changes."),
+    ("about.noticesFail",     "讀不到 THIRD-PARTY-NOTICES.md", "Could not read THIRD-PARTY-NOTICES.md"),
+
+    // ---------------- 字型下載（fontstore.rs）----------------
+    ("font.tooLarge",         "下載的檔案超過 {0} MB，不像是字型，已中止",
+                              "The download is larger than {0} MB and does not look like a font; aborted"),
 
     // ---------------- SSH（ssh/*.rs）----------------
     ("algo.kex",      "金鑰交換", "Key exchange"),
@@ -322,6 +344,7 @@ static TABLE: &[(&str, &str, &str)] = &[
     ("term.sshKeyRejected",   "金鑰被拒絕，改用其他方式。", "The key was rejected; trying another method."),
     ("term.sshKeyAuthFailed", "金鑰驗證失敗（{0}）。", "Key authentication failed ({0})."),
     ("err.sshConnectFailed",  "連線失敗：{0}", "Connection failed: {0}"),
+    ("err.sshConnectTimeout", "{0} 秒內沒有回應", "no response within {0} seconds"),
     ("err.sshNoUser",         "沒有輸入帳號，連線取消。", "No user name was entered; the connection was cancelled."),
     ("err.sshSessionFailed",  "開啟 session 失敗：{0}", "Could not open the session: {0}"),
     ("err.sshPtyFailed",      "請求 PTY 失敗：{0}", "The PTY request failed: {0}"),

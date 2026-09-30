@@ -48,6 +48,10 @@ pub struct Sandbox {
     pub guardrails: Vec<String>,
     /// 給這個工具追加的啟動參數（Codex／Gemini 的 `--sandbox`）。
     pub extra_args: String,
+    /// 護欄沒有真的生效的原因（空字串＝沒問題）。目前只有「Claude Code 的 hook 要 node，
+    /// 但 PATH 找不到 node」這一種（BUG D15：原生 `claude.exe` 不帶 node）。
+    /// 已翻譯好的字，前端 tooltip 直接顯示。
+    pub guard_warning: String,
 }
 
 /// 準備沙盒。`name` 是分頁或團隊的識別字（會出現在路徑與分支名裡）。
@@ -64,7 +68,8 @@ pub fn prepare(work_dir: &Path, name: &str, tool_path: &str) -> Result<Sandbox, 
             let root = repo.join(SANDBOX_DIRS[0]).join(SANDBOX_DIRS[1]).join(&safe);
             let branch = format!("sandbox/{safe}-{stamp}");
             match add_worktree(repo, &root, &branch) {
-                Ok(()) => {
+                // 重用既有 worktree 時回的是它**實際**的分支（BUG D5），不是上面新組的名字
+                Ok(branch) => {
                     ensure_ignored(repo);
                     (root.clone(), root, branch, true)
                 }
@@ -98,6 +103,10 @@ pub fn prepare(work_dir: &Path, name: &str, tool_path: &str) -> Result<Sandbox, 
             work.to_string_lossy().to_string(),
         ),
     ];
+    // mac／Linux 的程式看的是 TMPDIR，不是 TEMP／TMP（BUG D13）
+    if !cfg!(windows) {
+        env.push(("TMPDIR".to_string(), tmp.to_string_lossy().to_string()));
+    }
     // Rust 專案才設 CARGO_TARGET_DIR：非 Rust 專案設了只是多一個沒人看的變數
     if work.join("Cargo.toml").is_file() {
         env.push((
@@ -108,6 +117,10 @@ pub fn prepare(work_dir: &Path, name: &str, tool_path: &str) -> Result<Sandbox, 
 
     // ---- 3. 護欄設定 ----
     let guardrails = write_guardrails(&work, tool_path);
+    let guard_warning = guard_warning(tool_path);
+    if !guard_warning.is_empty() {
+        println!("[AwayTerminal] 沙盒護欄未生效：{guard_warning}");
+    }
 
     Ok(Sandbox {
         root: root.to_string_lossy().to_string(),
@@ -117,7 +130,27 @@ pub fn prepare(work_dir: &Path, name: &str, tool_path: &str) -> Result<Sandbox, 
         env,
         guardrails,
         extra_args: extra_args(tool_path).to_string(),
+        guard_warning,
     })
+}
+
+/// 護欄有沒有真的會生效（BUG D15）。回傳已翻譯的警告，沒問題回空字串。
+///
+/// Claude Code 的 hook 是 `node "<腳本>"`：npm 裝的 claude 一定有 node，但**原生安裝的
+/// `claude.exe` 不需要 node**，這時 hook 每次都執行失敗（Claude Code 把它當非阻擋錯誤，
+/// 指令照樣放行）→ 護欄等於沒有，卻看起來開著。找不到 node 就明講。
+/// 代理團隊的護欄也是 `write_guardrails` 寫的，要顯示同一句可以呼叫這裡。
+pub fn guard_warning(tool_path: &str) -> String {
+    if tool_kind(tool_path) != ToolKind::Claude || node_available() {
+        return String::new();
+    }
+    t("sb.guardNoNode")
+}
+
+fn node_available() -> bool {
+    crate::pty::shell::which("node.exe")
+        .or_else(|| crate::pty::shell::which("node"))
+        .is_some()
 }
 
 /// 工具本身支援的沙盒參數（`CLAUDE.md`：Codex `--sandbox workspace-write`、Gemini `--sandbox`）。
@@ -256,18 +289,121 @@ pub fn git_toplevel(dir: &Path) -> Option<PathBuf> {
         .map(PathBuf::from)
 }
 
-/// `git worktree add -b <branch> <path>`（從目前 HEAD 開）。
-fn add_worktree(repo: &Path, path: &Path, branch: &str) -> Result<(), String> {
+/// `git worktree add -b <branch> <path>`（從目前 HEAD 開）。回傳這個 worktree **實際**的分支。
+///
+/// 目錄已經存在時（同一條連線重開）：
+/// - **確實是這個 repo 登記中的 worktree** → 直接用它，分支從 worktree 讀回來（BUG D5：
+///   以前回的是這次新組、根本不存在的分支名）。
+/// - 否則（BUG D2：舊版 `sandbox_clear` 留下的空殼、`worktree add` 失敗時 fallback 建的
+///   一般目錄）→ 以前直接當 worktree 用，agent 的 git 往上找到主 repo，隔離整個反過來。
+///   現在先 prune、把目錄清掉（只剩我們自己的 `.tmp`／`.target` 才刪，有別的東西就改名
+///   留著不丟）再重新 add。
+fn add_worktree(repo: &Path, path: &Path, branch: &str) -> Result<String, String> {
     if path.exists() {
-        // 同名沙盒已經存在（同一條連線重開）→ 直接用它，不要重複 add
-        return Ok(());
+        if path.join(".git").is_file() && is_registered_worktree(repo, path) {
+            let actual = git(path, &["rev-parse", "--abbrev-ref", "HEAD"]).unwrap_or_default();
+            // detached HEAD 會回 `HEAD`，那不是分支名
+            return Ok(if actual == "HEAD" { String::new() } else { actual });
+        }
+        println!(
+            "[AwayTerminal] 沙盒目錄存在但不是有效的 worktree，清掉重開：{}",
+            path.display()
+        );
+        let _ = git(repo, &["worktree", "prune"]);
+        discard_stale_dir(path)?;
     }
+    // 已登記但目錄已經不見的 worktree 要先除名，否則 `worktree add` 會拒絕同一個路徑
+    let _ = git(repo, &["worktree", "prune"]);
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| tf("err.sandboxDirFailed", &[&e.to_string()]))?;
     }
     let path_str = path.to_string_lossy().to_string();
     git(repo, &["worktree", "add", "-b", branch, &path_str])?;
+    Ok(branch.to_string())
+}
+
+/// 把「不是 worktree 的沙盒目錄」讓開。
+///
+/// 裡面只有我們自己產生的東西（`.tmp`／`.target`／`.claude`）→ 直接刪；
+/// 有別的東西（可能是使用者或 agent 的成果）→ **改名留著**（`<名稱>.stale-<時間>`），不丟資料。
+fn discard_stale_dir(path: &Path) -> Result<(), String> {
+    const OURS: [&str; 3] = [".tmp", ".target", ".claude"];
+    let only_ours = std::fs::read_dir(path)
+        .map(|rd| {
+            rd.flatten()
+                .all(|e| OURS.iter().any(|o| e.file_name().to_string_lossy() == *o))
+        })
+        .unwrap_or(false);
+    if only_ours {
+        return std::fs::remove_dir_all(path).map_err(|e| tf("err.sandboxDirFailed", &[&e.to_string()]));
+    }
+    let stamp = chrono::Local::now().format("%Y%m%d-%H%M%S");
+    let mut aside = path.as_os_str().to_owned();
+    aside.push(format!(".stale-{stamp}"));
+    std::fs::rename(path, &aside).map_err(|e| tf("err.sandboxDirFailed", &[&e.to_string()]))?;
+    println!(
+        "[AwayTerminal] 舊的沙盒目錄裡有東西，改名留著：{}",
+        PathBuf::from(aside).display()
+    );
     Ok(())
+}
+
+/// 兩個路徑是不是同一個地方（git 在 Windows 回 `C:/x/y`，我們手上是 `C:\x\y`；
+/// 還可能一邊是 8.3 短檔名 → 能 canonicalize 就先 canonicalize）。
+fn same_path(a: &Path, b: &Path) -> bool {
+    let norm = |p: &Path| {
+        let c = std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
+        let s = c.to_string_lossy().replace('\\', "/");
+        let s = s.trim_start_matches("//?/").trim_end_matches('/').to_string();
+        if cfg!(windows) {
+            s.to_lowercase()
+        } else {
+            s
+        }
+    };
+    norm(a) == norm(b)
+}
+
+/// `path` 是不是 `repo` 目前登記中的 worktree（`git worktree list --porcelain`）。
+fn is_registered_worktree(repo: &Path, path: &Path) -> bool {
+    git(repo, &["worktree", "list", "--porcelain"])
+        .map(|list| {
+            list.lines()
+                .filter_map(|l| l.strip_prefix("worktree "))
+                .any(|w| same_path(Path::new(w), path))
+        })
+        .unwrap_or(false)
+}
+
+/// 主 repo（主工作樹）的根目錄。在連結 worktree 裡問 `--show-toplevel` 回的是 worktree
+/// 自己，所以改問 `--git-common-dir`（所有 worktree 共用的 `<repo>/.git`）再取上一層。
+fn main_repo_of(dir: &Path) -> Option<PathBuf> {
+    if !dir.is_dir() {
+        return None;
+    }
+    let common = git(dir, &["rev-parse", "--path-format=absolute", "--git-common-dir"])
+        .ok()
+        .map(PathBuf::from)
+        // git < 2.31 沒有 --path-format：回的可能是相對路徑
+        .or_else(|| git(dir, &["rev-parse", "--git-common-dir"]).ok().map(|s| dir.join(s)))?;
+    // bare repo 沒有工作樹，沙盒也不會開在那種地方
+    if common.file_name().map(|n| n == ".git").unwrap_or(false) {
+        common.parent().map(Path::to_path_buf)
+    } else {
+        None
+    }
+}
+
+/// 目錄已經不在（或 git 認不得）時，照 [`prepare`] 的配置倒推主 repo：
+/// `<repo>/.ai/sandbox/<name>`。
+fn repo_from_layout(path: &Path) -> Option<PathBuf> {
+    let sandbox = path.parent()?;
+    let ai = sandbox.parent()?;
+    if sandbox.file_name()? != SANDBOX_DIRS[1] || ai.file_name()? != SANDBOX_DIRS[0] {
+        return None;
+    }
+    let repo = ai.parent()?;
+    repo.join(".git").exists().then(|| repo.to_path_buf())
 }
 
 /// 讓 `.ai/sandbox/` 不要出現在 `git status`。
@@ -297,11 +433,36 @@ fn ensure_ignored(repo: &Path) {
 }
 
 /// 移除一個沙盒 worktree。**分支保留**（裡面可能有還沒合併的成果）。
+///
+/// BUG D1：以前用 `git_toplevel(worktree)`（回的是 worktree 自己）當 cwd 跑
+/// `git worktree remove` → Windows 不能刪行程的 cwd → git 清完內容、刪不掉目錄、
+/// 卻照樣把 worktree 除名，留下空殼（再按一次得到 `not a working tree`）。
+/// 現在一律在**主 repo** 跑；失敗時 prune，已除名但目錄還在就自己刪。
+///
+/// ⚠️ 呼叫端要先確定沒有分頁還在用這個 worktree（`custom::sandbox_clear` 會檢查）。
 pub fn remove_worktree(work_dir: &str) -> Result<(), String> {
     let path = PathBuf::from(work_dir);
-    let repo = git_toplevel(&path).ok_or_else(|| t("err.notGitRepo").to_string())?;
+    let repo = main_repo_of(&path)
+        .or_else(|| repo_from_layout(&path))
+        .ok_or_else(|| t("err.notGitRepo").to_string())?;
+    if same_path(&repo, &path) {
+        // 保險：絕不對主工作樹本身做 remove
+        return Err(t("err.sandboxNoWorktree").to_string());
+    }
     let path_str = path.to_string_lossy().to_string();
-    git(&repo, &["worktree", "remove", "--force", &path_str])?;
+    if let Err(e) = git(&repo, &["worktree", "remove", "--force", &path_str]) {
+        let _ = git(&repo, &["worktree", "prune"]);
+        if is_registered_worktree(&repo, &path) {
+            // 還登記著＝真的沒移掉（例如檔案被鎖），照實回報
+            return Err(tf("err.gitFailed", &["worktree remove", &e]));
+        }
+        println!("[AwayTerminal] worktree remove 失敗但已除名，自己清殘留目錄：{e}");
+    }
+    // git 成功也可能因為檔案被鎖留下目錄；已經除名的殘骸不留（否則下次重開會被當成 worktree）
+    if path.exists() {
+        std::fs::remove_dir_all(&path)
+            .map_err(|e| tf("err.sandboxLeftover", &[&path_str, &e.to_string()]))?;
+    }
     println!("[AwayTerminal] 已移除沙盒 worktree：{path_str}（分支保留）");
     Ok(())
 }
@@ -572,6 +733,70 @@ mod tests {
         assert_eq!(v["hooks"]["PreToolUse"].as_array().unwrap().len(), 2);
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 在暫存資料夾建一個有一個 commit 的 repo。機器上沒有 git 就回 None（測試跳過）。
+    fn temp_repo(tag: &str) -> Option<PathBuf> {
+        let dir = std::env::temp_dir().join(format!("awayterm-wt-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).ok()?;
+        git(&dir, &["init", "-q"]).ok()?;
+        git(
+            &dir,
+            &["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "init"],
+        )
+        .ok()?;
+        Some(dir)
+    }
+
+    /// D1／D5：清除沙盒要真的把 worktree 拿掉（目錄不留、git 也除名）；
+    /// 重用既有 worktree 時分支要讀回實際的名字。
+    #[test]
+    fn worktree_reuse_and_remove() {
+        let Some(repo) = temp_repo("rm") else { return };
+        let wt = repo.join(".ai").join("sandbox").join("t1");
+        let b1 = add_worktree(&repo, &wt, "sandbox/t1-first").unwrap();
+        assert_eq!(b1, "sandbox/t1-first");
+        // 重開：不可以回新組的名字（那個分支不存在）
+        let b2 = add_worktree(&repo, &wt, "sandbox/t1-second").unwrap();
+        assert_eq!(b2, "sandbox/t1-first", "重用時要回實際分支");
+        std::fs::write(wt.join("work.txt"), "x").unwrap();
+
+        remove_worktree(&wt.to_string_lossy()).unwrap();
+        assert!(!wt.exists(), "worktree 目錄要不見");
+        assert!(!is_registered_worktree(&repo, &wt));
+        // 分支保留
+        assert!(git(&repo, &["rev-parse", "--verify", "sandbox/t1-first"]).is_ok());
+        let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    /// D2：同路徑是一般目錄（舊殘骸／fallback 建的）→ 不可以當成 worktree，要清掉重開。
+    #[test]
+    fn stale_plain_dir_is_replaced() {
+        let Some(repo) = temp_repo("stale") else { return };
+        let wt = repo.join(".ai").join("sandbox").join("t2");
+        std::fs::create_dir_all(wt.join(".tmp")).unwrap();
+        let b = add_worktree(&repo, &wt, "sandbox/t2-x").unwrap();
+        assert_eq!(b, "sandbox/t2-x");
+        assert!(wt.join(".git").is_file(), "要是真的 worktree");
+        assert!(is_registered_worktree(&repo, &wt));
+
+        // 有別人的東西的殘骸 → 改名留著，不刪
+        let wt3 = repo.join(".ai").join("sandbox").join("t3");
+        std::fs::create_dir_all(&wt3).unwrap();
+        std::fs::write(wt3.join("keep.txt"), "important").unwrap();
+        add_worktree(&repo, &wt3, "sandbox/t3-x").unwrap();
+        let kept = std::fs::read_dir(wt3.parent().unwrap())
+            .unwrap()
+            .flatten()
+            .any(|e| e.file_name().to_string_lossy().starts_with("t3.stale-") && e.path().join("keep.txt").is_file());
+        assert!(kept, "有內容的舊目錄要改名留著");
+        let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    #[test]
+    fn repo_from_layout_needs_sandbox_layout() {
+        assert!(repo_from_layout(Path::new("C:/x/y")).is_none());
     }
 
     #[test]

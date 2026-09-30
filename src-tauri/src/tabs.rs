@@ -134,6 +134,9 @@ pub struct Tab {
     /// 啟動時的工作目錄，**沙盒改寫之前**的那一個（恢復分頁要存這個，
     /// 不能存 worktree 路徑——否則下次會在沙盒裡再開一層沙盒）。
     pub work_dir: String,
+    /// ADB 分頁：`(adb.exe 路徑, 裝置序號)`。恢復分頁用（舊版 `SavedTab.Path`／`AdbSerial`；
+    /// **恢復時不再跑 `adb devices`**，直接用這兩個值重開）。其餘分頁是 `None`。
+    pub adb: Option<(String, String)>,
     /// 診斷用。
     pub command_line: String,
     pub backend: String,
@@ -181,12 +184,18 @@ pub struct TabView {
     pub conn_sandbox: Option<bool>,
     pub conn_name: Option<String>,
     /// 目前沒有連線、但這個分頁可以重連（SSH 分頁斷線後）。
+    ///
+    /// ＝「有連線參數」**且**「`SessionManager` 裡沒有這個分頁的 session」（A2）。
+    /// 只看 `conn` 的話從建分頁起就一直是 true，離開對話框「還有 N 個連線中的分頁」永遠是 0。
     pub reconnectable: bool,
     /// 正在等自動重連（退避倒數中）。
     pub reconnect_attempt: u32,
     /// 正在跑的 TTL 巨集（`None`＝沒有）。**新增**：舊版只在 tooltip 提一句，
     /// 我們讓分頁列也看得到（檔名 + 目前行號）。
     pub macro_state: Option<crate::ttl::runner::MacroState>,
+    /// 啟動時的工作目錄（**沙盒改寫之前**的那一個；遠端連線是空字串）。
+    /// 「沙盒切換後立刻重新啟動分頁」要在同一個目錄重開，不能退回桌面（B6）。
+    pub work_dir: String,
 }
 
 #[derive(Clone, serde::Serialize)]
@@ -616,6 +625,16 @@ impl TabManager {
                     dir: t.work_dir.clone(),
                     ..base
                 },
+                // ADB：adb.exe 路徑＋序號（C8；舊版 `SavedTab{ type="adb", AdbSerial, Path }`）
+                (None, TabKind::Adb) => match &t.adb {
+                    Some((path, serial)) => crate::restore::SavedTab {
+                        kind: "adb".to_string(),
+                        adb_path: path.clone(),
+                        adb_serial: serial.clone(),
+                        ..base
+                    },
+                    None => continue,
+                },
                 _ => continue,
             };
             out.push((*id, entry));
@@ -718,7 +737,19 @@ impl TabManager {
     }
 
     /// `conns`＝目前的自訂連線清單（拿來填 `conn_sandbox`，也就是右鍵選單那個勾勾）。
+    ///
+    /// 不知道哪些分頁有 session（沒有 `SessionManager`）的呼叫端用這個：
+    /// `reconnectable` 退回「有連線參數」。要送給前端的請用 [`emit_state`]。
     pub fn state_with(&self, conns: &[crate::settings::CustomConn]) -> TabState {
+        self.state_with_live(conns, None)
+    }
+
+    /// `live`＝目前 `SessionManager` 裡有 session 的分頁 id（`None`＝不知道）。
+    pub fn state_with_live(
+        &self,
+        conns: &[crate::settings::CustomConn],
+        live: Option<&[u32]>,
+    ) -> TabState {
         let inner = self.lock();
         TabState {
             tabs: inner
@@ -735,15 +766,18 @@ impl TabManager {
                     busy: t.busy,
                     started_at: t.started_at,
                     pid: t.pid,
-                    logging: t
-                        .logger
-                        .lock()
-                        .map(|g| g.is_some())
-                        .unwrap_or(false),
+                    // `try_lock`：這裡握著分頁清單的鎖（主執行緒每 600ms 一次），
+                    // 不可以排在一個正在寫檔的 log 槽後面等（C2）。拿不到鎖＝正在寫＝在記錄中。
+                    logging: match t.logger.try_lock() {
+                        Ok(g) => g.is_some(),
+                        Err(std::sync::TryLockError::Poisoned(e)) => e.into_inner().is_some(),
+                        Err(std::sync::TryLockError::WouldBlock) => true,
+                    },
                     sandbox: t.sandbox.clone(),
                     conn_sandbox: conn_sandbox_of(t.conn_name.as_deref(), conns),
                     conn_name: t.conn_name.clone(),
-                    reconnectable: t.conn.is_some(),
+                    reconnectable: t.conn.is_some()
+                        && live.is_none_or(|ids| !ids.contains(&t.id)),
                     reconnect_attempt: t.reconnect_attempt,
                     macro_state: t.macro_handle.as_ref().map(|h| {
                         crate::ttl::runner::MacroState {
@@ -751,6 +785,7 @@ impl TabManager {
                             line: h.line.load(std::sync::atomic::Ordering::Relaxed),
                         }
                     }),
+                    work_dir: t.work_dir.clone(),
                 })
                 .collect(),
             active_id: inner.active,
@@ -782,7 +817,11 @@ pub fn emit_state(app: &AppHandle, tabs: &TabManager) {
         .try_state::<std::sync::Arc<crate::settings::SettingsStore>>()
         .map(|s| s.get().custom_conns)
         .unwrap_or_default();
-    if let Err(e) = app.emit("tab-state", tabs.state_with(&conns)) {
+    // 先拿 session 清單（另一把鎖），放掉之後才鎖分頁清單
+    let live = app
+        .try_state::<crate::session::SessionManager>()
+        .map(|m| m.ids());
+    if let Err(e) = app.emit("tab-state", tabs.state_with_live(&conns, live.as_deref())) {
         println!("[AwayTerminal] emit tab-state 失敗：{e}");
     }
 }
@@ -928,9 +967,39 @@ mod tests {
             sandbox: None,
             conn_name: None,
             work_dir: String::new(),
+            adb: None,
             command_line: String::new(),
             backend: String::new(),
         }
+    }
+
+    /// A2：`reconnectable`＝有連線參數**且**目前沒有 session。
+    #[test]
+    fn reconnectable_means_no_live_session() {
+        let m = TabManager::new("tab");
+        m.insert(tab(1));
+        m.insert(tab(2));
+        let st = m.state_with_live(&[], Some(&[1]));
+        let r: Vec<bool> = st.tabs.iter().map(|t| t.reconnectable).collect();
+        assert_eq!(r, vec![false, true]);
+        // 不知道 session 清單時退回舊語意
+        assert!(m.state_with(&[]).tabs.iter().all(|t| t.reconnectable));
+    }
+
+    /// C8：ADB 分頁要存得下來（路徑＋序號）。
+    #[test]
+    fn adb_tabs_are_restorable() {
+        let m = TabManager::new("tab");
+        let mut t = tab(7);
+        t.kind = TabKind::Adb;
+        t.conn = None;
+        t.adb = Some(("C:\\adb.exe".into(), "R5CT".into()));
+        m.insert(t);
+        let saved = m.restorable();
+        assert_eq!(saved.len(), 1);
+        assert_eq!(saved[0].1.kind, "adb");
+        assert_eq!(saved[0].1.adb_path, "C:\\adb.exe");
+        assert_eq!(saved[0].1.adb_serial, "R5CT");
     }
 
     /// 退避次數：每排一次 +1，一收到輸出就歸零（同舊版）。

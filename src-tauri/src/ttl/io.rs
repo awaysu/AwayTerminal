@@ -34,6 +34,7 @@ impl Interp {
             // `waitregex` 和 `wait` 共用等待的機制，只是比對改成正規表示式（逐行）
             Word::WaitRegex => self.cmd_wait(false, true),
             Word::WaitN => self.cmd_waitn(),
+            Word::WaitRecv => self.cmd_waitrecv(),
             Word::RecvLn => self.cmd_recvln(),
             Word::FlushRecv => self.cmd_flushrecv(),
             Word::Pause => self.cmd_pause(1000),
@@ -169,8 +170,11 @@ impl Interp {
             return self.wait_regex(pats, timeout);
         }
 
+        // 截止時間只算一次：`waitln` 的第二階段（等換行）和第一階段共用同一個
+        // （原碼的逾時計時器在 TTLWait 設一次，進 IdTTLWaitNL 也不重設）
+        let deadline = self.deadline(timeout);
         let mut m = WaitMatcher::new(pats);
-        let hit = self.pump_until(timeout, &mut m)?;
+        let hit = self.pump_until(deadline, &mut m)?;
         match hit {
             None => {
                 self.vars.set_result(0); // 逾時
@@ -181,16 +185,21 @@ impl Interp {
                 if !wait_line {
                     return Ok(());
                 }
-                // `waitln`：命中之後改等換行，但**同一個行緩衝繼續累積**
+                // 命中的候選本身就是換行 → 這一行已經收完了（原碼 `CmpWait(ResultCode, "\n")`）
+                if m.pattern(idx) == Some(b"\n".as_slice()) {
+                    let line = self.recv_line.take();
+                    self.vars.set_str("inputstr", &line);
+                    return Ok(());
+                }
+                // `waitln`：命中之後改等換行，行緩衝繼續累積
                 // （`inputstr` 要的是整行，含命中之前收到的部分；同原碼的 RecvLnBuff）
                 m.switch_to(vec![vec![0x0a]]);
-                let got = self.pump_until(timeout, &mut m)?;
+                let got = self.pump_until(deadline, &mut m)?;
                 if got.is_none() {
-                    // 等不到換行就逾時：`result` 照原碼保持「命中的編號」，
-                    // `inputstr` 給目前收到的那一段
+                    // 等不到換行就逾時：`result` ＝ 0，`inputstr` 給目前收到的那一段
                     self.vars.set_result(0);
                 }
-                let line = m.line_before_newline().to_vec();
+                let line = self.recv_line.take();
                 self.vars.set_str("inputstr", &line);
                 Ok(())
             }
@@ -209,6 +218,11 @@ impl Interp {
         loop {
             match self.host_read_byte() {
                 Some(b) => {
+                    // 共用的行緩衝也要跟著收（`wait` 系列都會 `PutRecvLnBuff`）；
+                    // LF 照原碼在比對之後才放
+                    if b != 0x0a {
+                        self.recv_line.put(b);
+                    }
                     if b == 0x0a {
                         // 一整行收滿了 → 試每個 pattern（索引小的先）
                         let text = String::from_utf8_lossy(&trim_eol(&line)).into_owned();
@@ -219,9 +233,12 @@ impl Interp {
                                 self.apply_match(&m);
                                 self.vars.set_str("inputstr", text.as_bytes());
                                 self.vars.set_result(i as i32 + 1);
+                                // 原碼 `SetInputStr(GetRecvLnBuff())`：拿走＝清空
+                                self.recv_line.clear();
                                 return Ok(());
                             }
                         }
+                        self.recv_line.put(b);
                         line.clear();
                     } else {
                         line.push(b);
@@ -237,6 +254,7 @@ impl Interp {
                                 self.apply_match(&m);
                                 self.vars.set_str("inputstr", text.as_bytes());
                                 self.vars.set_result(i as i32 + 1);
+                                self.recv_line.clear();
                                 return Ok(());
                             }
                         }
@@ -250,64 +268,147 @@ impl Interp {
         }
     }
 
-    /// `TTLWaitN`：等 n 個位元組（`result` ＝ 1 收到、0 逾時）。
+    /// `TTLWaitN`：等行緩衝累積到 n 個位元組（原碼 `WaitN()`／`IdTTLWaitN`）。
+    ///
+    /// - 期間換行**也累積**（`SetWaitN` 把 `RecvLnClear` 關掉），而且之前 `wait` 留在
+    ///   行緩衝裡的位元組也算數（原碼比的是 `RecvLnPtr`）；
+    /// - 收滿：`result = 1`、`inputstr` ＝整段（只去掉最後的 CR LF，同 `GetRecvLnBuff`）；
+    /// - 逾時：`inputstr` ＝收到的那一段，有收到東西 `result = -1`、什麼都沒有 `0`。
     fn cmd_waitn(&mut self) -> Result<()> {
         let n = self.int_val()?;
         self.end_of_args()?;
         self.need_link()?;
         let timeout = self.timeout_ms();
         let deadline = self.deadline(timeout);
-        let mut got = 0i32;
-        let mut line: Vec<u8> = Vec::new();
-        while got < n {
-            match self.host_read_byte() {
-                Some(b) => {
-                    got += 1;
-                    if b == 0x0a {
-                        line.clear();
-                    } else if b != 0x0d {
-                        line.push(b);
-                    }
-                }
-                None => {
-                    if self.wait_tick(deadline)? {
-                        self.vars.set_result(0);
-                        return Ok(());
-                    }
-                }
+        self.recv_line.set_clear_on_lf(false);
+        let want = n.max(0) as usize;
+        let r = loop {
+            if self.recv_line.len() >= want {
+                break Ok(true);
             }
-        }
-        self.vars.set_result(1);
+            match self.host_read_byte() {
+                Some(b) => self.recv_line.put(b),
+                None => match self.wait_tick(deadline) {
+                    Ok(false) => {}
+                    Ok(true) => break Ok(false),
+                    Err(e) => break Err(e),
+                },
+            }
+        };
+        // 原碼成功時 `ClearWaitN()` 把它開回來；逾時那條沒開（原碼的疏漏，之後的
+        // `wait` 行緩衝會跨行累積）——我們兩條都開回來
+        self.recv_line.set_clear_on_lf(true);
+        let full = r?;
+        let line = self.recv_line.take();
+        let result = if full {
+            1
+        } else if line.is_empty() {
+            0
+        } else {
+            -1
+        };
+        self.vars.set_result(result);
         self.vars.set_str("inputstr", &line);
         Ok(())
     }
 
+    /// `TTLWaitRecv`：`waitrecv <子字串> <長度> <位置>`（原碼 `SetWait2`／`Wait2()`／`IdTTLWait2`）。
+    ///
+    /// 收到的資料滑過一個 `長度` 位元組的視窗；**視窗第 `位置` 個位元組起**等於子字串
+    /// 之後，再等視窗填滿 `長度` 個位元組才結束。
+    ///
+    /// - 成功：`result = 1`、`inputstr` ＝視窗內容；
+    /// - 逾時：子字串已經出現過 → `result = -1`、`inputstr` ＝視窗內容；沒出現 → `0`、空字串。
+    /// - `長度` 夾在 子字串長度～511、`位置` 夾在 1～`長度 - 子字串長度 + 1`（同原碼）。
+    fn cmd_waitrecv(&mut self) -> Result<()> {
+        let sub = self.str_val()?;
+        let len = self.int_val()?;
+        let pos = self.int_val()?;
+        self.end_of_args()?;
+        self.need_link()?;
+        self.vars.set_str("inputstr", b"");
+
+        // ---- SetWait2 ----
+        let max = super::lex::MAX_STR_LEN - 1;
+        let sub: Vec<u8> = sub.into_iter().take(max).collect();
+        let sub_len = sub.len();
+        let mut wlen = if len < 1 { 0 } else { (len as usize).min(max) };
+        if wlen < sub_len {
+            wlen = sub_len;
+        }
+        let hi = (wlen - sub_len + 1) as i64;
+        let sub_pos = (i64::from(pos)).clamp(1, hi.max(1)) as usize;
+        let mut win: Vec<u8> = Vec::with_capacity(wlen);
+        let mut found = sub.is_empty();
+
+        let timeout = self.timeout_ms();
+        let deadline = self.deadline(timeout);
+        // ---- Wait2() ----
+        let done = loop {
+            if found && win.len() == wlen {
+                break Ok(true);
+            }
+            match self.host_read_byte() {
+                Some(b) => {
+                    // （`wlen == 0` 時子字串一定是空的 → 上面第一圈就結束了，走不到這裡）
+                    if !win.is_empty() && win.len() >= wlen {
+                        win.remove(0);
+                    }
+                    win.push(b);
+                    if !found && win.len() >= sub_pos + sub_len - 1 {
+                        let at = sub_pos - 1;
+                        found = win.get(at..at + sub_len) == Some(sub.as_slice());
+                    }
+                }
+                None => match self.wait_tick(deadline) {
+                    Ok(false) => {}
+                    Ok(true) => break Ok(false),
+                    Err(e) => break Err(e),
+                },
+            }
+        };
+        if done? {
+            self.vars.set_str("inputstr", &win);
+            self.vars.set_result(1);
+        } else if found {
+            self.vars.set_str("inputstr", &win);
+            self.vars.set_result(-1);
+        } else {
+            self.vars.set_str("inputstr", b"");
+            self.vars.set_result(0);
+        }
+        Ok(())
+    }
+
     /// `TTLRecvLn`：等一整行（`inputstr` ＝那一行，`result` ＝ 1；逾時 0）。
+    ///
+    /// 照原碼：一開始就把 `inputstr` 清空、`result` 設 1；逾時時 `result = 0`，
+    /// `inputstr` ＝收到的那半行。行緩衝是共用的，所以前一個 `wait` 在行中間命中後
+    /// 接 `recvln`，拿到的是整行。
     fn cmd_recvln(&mut self) -> Result<()> {
         self.end_of_args()?;
         self.need_link()?;
+        self.vars.set_str("inputstr", b"");
+        self.vars.set_result(1);
         let timeout = self.timeout_ms();
+        let deadline = self.deadline(timeout);
         let mut m = WaitMatcher::new(vec![vec![0x0a]]);
-        let hit = self.pump_until(timeout, &mut m)?;
-        match hit {
-            Some(_) => {
-                self.vars.set_result(1);
-                self.vars.set_str("inputstr", m.line_before_newline());
-                Ok(())
-            }
-            None => {
-                self.vars.set_result(0);
-                Ok(())
-            }
+        let hit = self.pump_until(deadline, &mut m)?;
+        if hit.is_none() {
+            self.vars.set_result(0);
         }
+        let line = self.recv_line.take();
+        self.vars.set_str("inputstr", &line);
+        Ok(())
     }
 
-    /// `TTLFlushRecv`：清掉還沒比對的接收資料。
+    /// `TTLFlushRecv`：清掉還沒比對的接收資料（原碼 `FlushRecv` 連行緩衝一起清）。
     fn cmd_flushrecv(&mut self) -> Result<()> {
         self.end_of_args()?;
         if let Some(h) = self.host() {
             h.flush_recv();
         }
+        self.recv_line.clear();
         Ok(())
     }
 
@@ -322,12 +423,18 @@ impl Interp {
         let Some(h) = self.host() else {
             return Ok(());
         };
-        let end = h.now_ms() + total;
-        while h.now_ms() < end {
+        let end = h.now_ms().saturating_add(total);
+        loop {
+            let now = h.now_ms();
+            if now >= end {
+                break;
+            }
             if h.stopped() {
                 return Err(Err::Interrupted);
             }
-            h.sleep(POLL_MS.min(end - h.now_ms()));
+            // 用同一個 `now` 算剩多少：以前 `while` 判斷完再呼叫一次 `now_ms()`，
+            // 兩次之間跨過 `end` 就是 u64 減法溢位（debug 建置 panic）
+            h.sleep(POLL_MS.min(end.saturating_sub(now)));
         }
         Ok(())
     }
@@ -487,7 +594,9 @@ impl Interp {
         };
         self.end_of_args()?;
         let a = self.ask_dialog("yesno", &title, &msg, b"", &[]);
-        self.vars.set_result(a.number);
+        // 按 Esc／關掉視窗＝「否」（原碼 `IDOK` 才是 1，其餘 0）。前端取消時以前送 -1，
+        // 直接拿來當 `result` 的話 `if result then` 會走「是」的分支
+        self.vars.set_result(if a.cancelled { 0 } else { a.number });
         Ok(())
     }
 
@@ -707,12 +816,13 @@ impl Interp {
         Ok(false)
     }
 
-    /// 一直讀位元組餵給比對器，直到命中、逾時或被中斷。
-    fn pump_until(&mut self, timeout_ms: u64, m: &mut WaitMatcher) -> Result<Option<usize>> {
-        let deadline = self.deadline(timeout_ms);
+    /// 一直讀位元組餵給比對器，直到命中、逾時（`deadline`，`None` ＝永遠等）或被中斷。
+    /// 每個位元組先放進共用的行緩衝（原碼 `Wait()` 裡的 `PutRecvLnBuff`）再比對。
+    fn pump_until(&mut self, deadline: Option<u64>, m: &mut WaitMatcher) -> Result<Option<usize>> {
         loop {
             match self.host_read_byte() {
                 Some(b) => {
+                    self.recv_line.put(b);
                     if let Some(idx) = m.feed(b) {
                         return Ok(Some(idx));
                     }
@@ -825,12 +935,140 @@ mod tests {
     fn waitn_counts_bytes() {
         let host = NullHost::shared();
         host.feed(b"12345");
-        let (v, _) = run_with_host("timeout = 1\nwaitn 3\nr = result", host);
+        let (v, _) = run_with_host("timeout = 1\nwaitn 3\nr = result\ns = inputstr", host);
         assert_eq!(v.int_of("r"), Some(1));
-        // 不夠的話逾時
+        assert_eq!(v.str_of("s").unwrap(), b"123");
+        // 不夠的話逾時：有收到東西 → result = -1、inputstr ＝收到的那段（原碼 IdTTLWaitN 逾時）
         let host = NullHost::shared();
         host.feed(b"12");
-        let (v, _) = run_with_host("mtimeout = 30\nwaitn 5\nr = result", host);
+        let (v, _) = run_with_host("mtimeout = 30\nwaitn 5\nr = result\ns = inputstr", host);
+        assert_eq!(v.int_of("r"), Some(-1));
+        assert_eq!(v.str_of("s").unwrap(), b"12");
+        // 什麼都沒收到 → 0
+        let (v, _) = run_with_host("mtimeout = 30\nwaitn 5\nr = result", NullHost::shared());
+        assert_eq!(v.int_of("r"), Some(0));
+    }
+
+    /// `waitn` 保留中間的 CR／LF（期間換行不清行緩衝），只去掉最後的 CR LF。
+    #[test]
+    fn waitn_keeps_newlines() {
+        let host = NullHost::shared();
+        host.feed(b"a\r\nb\r\n");
+        let (v, _) = run_with_host("timeout = 1\nwaitn 6\ns = inputstr", host);
+        assert_eq!(v.str_of("s").unwrap(), b"a\r\nb");
+        let host = NullHost::shared();
+        host.feed(b"a\r\nbcd");
+        let (v, _) = run_with_host("timeout = 1\nwaitn 5\ns = inputstr", host);
+        assert_eq!(v.str_of("s").unwrap(), b"a\r\nbc");
+    }
+
+    /// 行緩衝跨指令保留：`wait` 在行中間命中後接 `recvln`，`inputstr` 是**整行**。
+    #[test]
+    fn recvln_after_wait_gets_whole_line() {
+        let host = NullHost::shared();
+        host.feed(b"login: ok done\r\nnext\r\n");
+        let (v, _) = run_with_host(
+            "timeout = 1\nwait 'login:'\nrecvln\ns1 = inputstr\nrecvln\ns2 = inputstr",
+            host,
+        );
+        assert_eq!(v.str_of("s1").unwrap(), b"login: ok done");
+        assert_eq!(v.str_of("s2").unwrap(), b"next");
+    }
+
+    /// `recvln` 逾時：`result = 0`、`inputstr` ＝收到的半行（開始時先清空）。
+    #[test]
+    fn recvln_timeout_gives_partial_line() {
+        let host = NullHost::shared();
+        host.feed(b"half");
+        let (v, _) = run_with_host("inputstr = 'old'\nmtimeout = 30\nrecvln\nr = result\ns = inputstr", host);
+        assert_eq!(v.int_of("r"), Some(0));
+        assert_eq!(v.str_of("s").unwrap(), b"half");
+        let (v, _) = run_with_host("inputstr = 'old'\nmtimeout = 30\nrecvln\ns = inputstr", NullHost::shared());
+        assert_eq!(v.str_of("s").unwrap(), b"", "開始時就清空");
+    }
+
+    /// `flushrecv` 連行緩衝一起清。
+    #[test]
+    fn flushrecv_clears_line_buffer() {
+        // 同一支巨集裡：wait 留下的前半行被 flushrecv 清掉
+        let host = NullHost::shared();
+        host.feed(b"garbage OK");
+        let mut it = Interp::from_text("t.ttl", "timeout = 1\nwait 'OK'\nflushrecv\nrecvln\ns = inputstr").unwrap();
+        it.set_host(Some(host.clone()));
+        // 跑到 recvln 之前再餵新的一行
+        for _ in 0..3 {
+            it.step().unwrap();
+        }
+        host.feed(b"clean\r\n");
+        it.run(100).unwrap();
+        assert_eq!(it.vars.str_of("s").unwrap(), b"clean");
+    }
+
+    /// `waitln` 第二階段（等換行）和第一階段共用同一個截止時間（以前重新起算，最多 2 倍）。
+    #[test]
+    fn waitln_shares_one_deadline() {
+        let host = NullHost::shared();
+        host.feed(b"xx OK but no newline");
+        let t0 = std::time::Instant::now();
+        let (v, _) = run_with_host("mtimeout = 300\nwaitln 'OK'\nr = result\ns = inputstr", host);
+        let ms = t0.elapsed().as_millis();
+        assert_eq!(v.int_of("r"), Some(0));
+        assert_eq!(v.str_of("s").unwrap(), b"xx OK but no newline");
+        assert!(ms < 550, "只能等一次 timeout（300ms），實際 {ms}ms");
+    }
+
+    /// `waitln` 的候選本身是換行：命中就是整行，不再等下一個換行。
+    #[test]
+    fn waitln_with_newline_pattern() {
+        let host = NullHost::shared();
+        host.feed(b"abc\r\nzzz");
+        let (v, _) = run_with_host("mtimeout = 100\nwaitln #10\nr = result\ns = inputstr", host);
+        assert_eq!(v.int_of("r"), Some(1));
+        assert_eq!(v.str_of("s").unwrap(), b"abc");
+    }
+
+    /// `waitrecv`：滑動視窗、子字串在指定位置、視窗填滿才結束（原碼 `Wait2()`）。
+    #[test]
+    fn waitrecv_window() {
+        let host = NullHost::shared();
+        host.feed(b"abcXYZdef");
+        let (v, _) = run_with_host("timeout = 1\nwaitrecv 'XYZ' 6 4\nr = result\ns = inputstr", host);
+        assert_eq!(v.int_of("r"), Some(1));
+        assert_eq!(v.str_of("s").unwrap(), b"abcXYZ");
+        let host = NullHost::shared();
+        host.feed(b"abcXYZdef");
+        let (v, _) = run_with_host("timeout = 1\nwaitrecv 'XYZ' 6 1\ns = inputstr", host);
+        assert_eq!(v.str_of("s").unwrap(), b"XYZdef");
+        // 子字串出現了但視窗沒填滿就逾時 → -1
+        let host = NullHost::shared();
+        host.feed(b"XYZ");
+        let (v, _) = run_with_host("mtimeout = 30\nwaitrecv 'XYZ' 6 1\nr = result\ns = inputstr", host);
+        assert_eq!(v.int_of("r"), Some(-1));
+        assert_eq!(v.str_of("s").unwrap(), b"XYZ");
+        // 沒出現 → 0、inputstr 空
+        let host = NullHost::shared();
+        host.feed(b"nothing");
+        let (v, _) = run_with_host("mtimeout = 30\nwaitrecv 'XYZ' 6 1\nr = result\ns = inputstr", host);
+        assert_eq!(v.int_of("r"), Some(0));
+        assert_eq!(v.str_of("s").unwrap(), b"");
+        // 長度／位置超出範圍會被夾住（不 panic）
+        let host = NullHost::shared();
+        host.feed(b"XYZ");
+        let (v, _) = run_with_host("timeout = 1\nwaitrecv 'XYZ' 0 99\nr = result\ns = inputstr", host);
+        assert_eq!(v.int_of("r"), Some(1));
+        assert_eq!(v.str_of("s").unwrap(), b"XYZ");
+    }
+
+    /// `yesnobox` 按 Esc／取消 → `result = 0`（前端送的是 -1；`if result then` 不可以走「是」）。
+    #[test]
+    fn yesnobox_cancel_is_no() {
+        let host = Arc::new(NullHost::default());
+        *host.answer.lock().unwrap() = DialogAnswer {
+            number: -1,
+            cancelled: true,
+            ..Default::default()
+        };
+        let (v, _) = run_with_host("yesnobox '要嗎' 'T'\nr = result", host);
         assert_eq!(v.int_of("r"), Some(0));
     }
 

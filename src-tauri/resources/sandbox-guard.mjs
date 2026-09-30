@@ -62,11 +62,12 @@ const RULES = [
   {
     id: 'git-push-force',
     check: (cmd) => {
-      if (!/\bgit\b[^|;&]*\bpush\b/i.test(cmd)) return null;
-      if (!/--force\b|--force-with-lease\b|\s-f\b/i.test(cmd)) return null;
-      // 推自己的沙盒分支可以（那是這個分頁自己開的）
-      if (/\bsandbox\/[^\s]+/i.test(cmd)) return null;
-      return 'force push 會覆寫遠端歷史。沙盒分支（sandbox/…）才允許。';
+      // 一條指令列可能串好幾段（; && || |），每段各自判斷
+      for (const seg of cmd.split(/[;&|]+/)) {
+        const why = checkPushSegment(seg);
+        if (why) return why;
+      }
+      return null;
     },
   },
   {
@@ -80,6 +81,61 @@ const RULES = [
     why: '刪分支可能刪掉還沒合併回去的沙盒成果。',
   },
 ];
+
+/** 沒用 `=` 帶值時，會把下一個引數當成值吃掉的 git push 選項。 */
+const PUSH_OPTS_WITH_VALUE = new Set(['-o', '--push-option', '--receive-pack', '--exec', '--repo']);
+
+/**
+ * 判斷一段 `git push …` 是不是「force push 到沙盒分支以外」。回傳 deny 原因或 null。
+ *
+ * 以前只看整段字串有沒有 `sandbox/`，`git push -f origin sandbox/x:main` 照樣放行（BUG D9）。
+ * 現在解析 refspec：**每一個目的端**都是 `sandbox/…` 才放行；沒寫 refspec（推 upstream／
+ * push.default）、`--all`／`--mirror` 看不出目的端 → 擋。`+src:dst` 也算 force。
+ */
+function checkPushSegment(seg) {
+  const tokens = seg
+    .trim()
+    .split(/\s+/)
+    .map((t) => t.replace(/^["']|["']$/g, ''));
+  const gi = tokens.findIndex((t) => /^git(\.exe)?$/i.test(t));
+  if (gi < 0) return null;
+  const pi = tokens.findIndex((t, i) => i > gi && t.toLowerCase() === 'push');
+  if (pi < 0) return null;
+  let force = false;
+  let wide = false; // --all／--mirror／--branches：一次推一大批，看不出目的端
+  const positional = [];
+  for (let i = pi + 1; i < tokens.length; i++) {
+    const t = tokens[i];
+    if (t === '') continue;
+    if (t.startsWith('--')) {
+      const name = t.split('=')[0].toLowerCase();
+      if (name === '--force' || name === '--force-with-lease' || name === '--force-if-includes') force = true;
+      if (name === '--all' || name === '--mirror' || name === '--branches') wide = true;
+      if (PUSH_OPTS_WITH_VALUE.has(name) && !t.includes('=')) i++;
+      continue;
+    }
+    if (t.startsWith('-') && t.length > 1) {
+      if (PUSH_OPTS_WITH_VALUE.has(t)) {
+        i++;
+        continue;
+      }
+      if (t.slice(1).includes('f')) force = true; // -f、-uf、-fu…
+      continue;
+    }
+    positional.push(t);
+  }
+  const refspecs = positional.slice(1); // 第一個位置引數是 remote
+  if (refspecs.some((r) => r.startsWith('+'))) force = true;
+  if (!force) return null;
+  const dest = (r) => {
+    const s = r.replace(/^\+/, '');
+    const d = s.includes(':') ? s.slice(s.indexOf(':') + 1) : s;
+    return d.replace(/^refs\/heads\//i, '');
+  };
+  // 推自己的沙盒分支可以（那是這個分頁自己開的）
+  if (!wide && refspecs.length > 0 && refspecs.every((r) => /^sandbox\/\S+/i.test(dest(r)))) return null;
+  return 'force push 會覆寫遠端歷史。只有目的端是沙盒分支（sandbox/…）、而且明確寫出 refspec 才允許。';
+}
 
 /** 從指令裡撈出看起來像「絕對路徑」或「往上跳」的引數，回傳不在沙盒底下的那些。 */
 function pathsOutsideSandbox(cmd, root) {

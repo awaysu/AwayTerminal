@@ -40,6 +40,40 @@ const ENTER_CHECK_AFTER_SEC: u64 = 10;
 /// 檢查時「這段時間內沒有新輸出」就算被吞（舊版 2 秒）。
 const ENTER_SWALLOWED_IF_QUIET_SEC: u64 = 2;
 
+/// 剛啟動的格在這段時間內就算 session 還查不到也當成「在跑」：`slot_started` 先把分頁 id
+/// 記進格裡、`manager.insert` 才登記 session，中間這一瞬間收到的信不能被當成「收件人沒在跑」。
+const STARTUP_GRACE_MS: u128 = 5_000;
+
+/// 這一格的 CLI 還活著嗎：有分頁**而且** session 還在（G2）。
+///
+/// 只看 `tab.is_some()` 不夠——CLI 結束後分頁還開著（顯示「已結束」），信排進佇列卻永遠
+/// 送不出去；重啟那一格時 `queue.clear()` 又把它們丟掉，寄件人永遠不知道。
+fn slot_alive(s: &Slot, is_live: impl Fn(u32) -> bool, now: u128) -> bool {
+    let Some(id) = s.tab else { return false };
+    is_live(id) || now.saturating_sub(s.launched_ms) < STARTUP_GRACE_MS
+}
+
+/// 「收件人沒在跑，這封沒投遞」的通知內文（給寄件人的 INFO，英文照舊版——agent 讀的）。
+fn undeliverable_body(m: &AgentMessage, roster: &str) -> String {
+    format!(
+        "Your message {} was not delivered: {} is not running in this team.\n\n\
+Running agents: {roster}.\n\
+Send it to one of them instead, or tell the user that this agent needs to be enabled.",
+        m.rel_path(),
+        m.to
+    )
+}
+
+/// 在跑的格的名單（`Agent-12 Software Engineer (Codex), …`）。
+fn running_roster(team: &Team, is_live: &dyn Fn(u32) -> bool, now: u128) -> String {
+    team.slots
+        .iter()
+        .filter(|s| slot_alive(s, is_live, now))
+        .map(|s| format!("{} {} ({})", s.agent_id(), s.role_title, s.backend_name()))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 /// 一格現在的時間戳（從分頁抓出來的），[`agent_ready`] 的輸入。
 #[derive(Clone, Copy, Debug)]
 pub struct Signals {
@@ -310,6 +344,8 @@ fn tick(app: &AppHandle) {
     // 2. 每一格：補 Enter → 角色注入 → 投遞
     let mut to_type: Vec<(u32, String, bool)> = Vec::new(); // (分頁 id, 文字, 要不要 Enter)
     let mut enter_only: Vec<u32> = Vec::new();
+    // 收件人已結束、不投遞的信要回給寄件人的 INFO：(信箱, 寄件人, task, 內文)。放掉鎖之後再寫。
+    let mut notices: Vec<(super::bus::SharedBus, String, String, String)> = Vec::new();
     {
         let mut list = teams.lock();
         for team in list.iter_mut() {
@@ -319,6 +355,46 @@ fn tick(app: &AppHandle) {
                     if !tabs.contains(id) {
                         s.tab = None;
                         s.queue.clear();
+                    }
+                }
+            }
+            // 收件人 CLI 已結束但分頁還開著（G2）：排著的信永遠送不出去，重啟那一格時
+            // `queue.clear()` 又會丟掉 → 現在就記「已投遞」並回 INFO 給寄件人（和收信時
+            // 收件人沒在跑同一條路）
+            if !team.is_chat() {
+                let is_live = |id: u32| sessions.get(id).is_some();
+                let now128 = now as u128;
+                let mut dropped: Vec<AgentMessage> = Vec::new();
+                for s in team.slots.iter_mut() {
+                    if s.tab.is_none() || s.queue.is_empty() || slot_alive(s, is_live, now128) {
+                        continue;
+                    }
+                    println!(
+                        "[AwayTerminal] 代理團隊 {}：{} 已結束，{} 封排隊中的信不投遞",
+                        team.number,
+                        s.agent_id(),
+                        s.queue.len()
+                    );
+                    dropped.extend(s.queue.drain(..));
+                }
+                if let (false, Some(bus)) = (dropped.is_empty(), team.bus.clone()) {
+                    let roster = running_roster(team, &is_live, now128);
+                    for m in dropped {
+                        // 廣播信：還有別人排著就等最後一個人拿到再記（同投遞那段的規則）
+                        let still_queued = m.is_broadcast()
+                            && team
+                                .slots
+                                .iter()
+                                .any(|x| x.queue.iter().any(|q| q.file_name == m.file_name));
+                        if !still_queued {
+                            bus.mark_delivered(&m.file_name);
+                        }
+                        let sender_alive = team
+                            .slot_by_id(&m.from)
+                            .is_some_and(|x| slot_alive(x, is_live, now128));
+                        if !m.is_broadcast() && sender_alive {
+                            notices.push((bus.clone(), m.from.clone(), m.task.clone(), undeliverable_body(&m, &roster)));
+                        }
                     }
                 }
             }
@@ -511,6 +587,10 @@ fn tick(app: &AppHandle) {
         }
     }
 
+    for (bus, sender, task, body) in notices {
+        bus.write_message("AwayTerminal", &sender, "INFO", &task, &body);
+    }
+
     // 4. 真的打字（鎖已經放掉——`send_text_then_enter` 會 emit、也會排 300ms 的 Enter）
     for id in enter_only {
         if let Some(s) = sessions.get(id) {
@@ -609,6 +689,10 @@ fn on_message(
         return;
     }
     let mut undeliverable: Option<(String, String)> = None; // (寄件人, 名單)
+    // 「在跑」＝有分頁而且 CLI 還活著（G2）；拿不到 SessionManager（不會發生）就退回只看分頁
+    let sessions = app.try_state::<SessionManager>();
+    let is_live = |id: u32| sessions.as_ref().is_none_or(|m| m.get(id).is_some());
+    let now = crate::tabs::now_ms() as u128;
     {
         let mut list = teams.lock();
         let Some(team) = list.iter_mut().find(|t| t.key == key) else {
@@ -636,7 +720,7 @@ fn on_message(
         if m.is_broadcast() {
             let targets: Vec<usize> = (0..team.slots.len())
                 .filter(|&i| {
-                    team.slots[i].tab.is_some()
+                    slot_alive(&team.slots[i], is_live, now)
                         && !team.slots[i].agent_id().eq_ignore_ascii_case(&m.from)
                 })
                 .collect();
@@ -648,7 +732,7 @@ fn on_message(
             }
         } else {
             match team.slot_by_id_mut(&m.to) {
-                Some(slot) if slot.enabled && slot.tab.is_some() => {
+                Some(slot) if slot.enabled && slot_alive(slot, is_live, now) => {
                     slot.queue.push_back(m.clone());
                 }
                 _ => {
@@ -660,33 +744,16 @@ fn on_message(
                     // 寄件人是本組 agent 才回通知（AwayTerminal 自己的信不回，免得打轉）
                     if team
                         .slot_by_id(&m.from)
-                        .is_some_and(|s| s.tab.is_some())
+                        .is_some_and(|s| slot_alive(s, is_live, now))
                     {
-                        let roster = team
-                            .running()
-                            .map(|s| format!("{} {} ({})", s.agent_id(), s.role_title, s.backend_name()))
-                            .collect::<Vec<_>>()
-                            .join(", ");
-                        undeliverable = Some((m.from.clone(), roster));
+                        undeliverable = Some((m.from.clone(), running_roster(team, &is_live, now)));
                     }
                 }
             }
         }
     }
     if let Some((sender, roster)) = undeliverable {
-        bus.write_message(
-            "AwayTerminal",
-            &sender,
-            "INFO",
-            &m.task,
-            &format!(
-                "Your message {} was not delivered: {} is not running in this team.\n\n\
-Running agents: {roster}.\n\
-Send it to one of them instead, or tell the user that this agent needs to be enabled.",
-                m.rel_path(),
-                m.to
-            ),
-        );
+        bus.write_message("AwayTerminal", &sender, "INFO", &m.task, &undeliverable_body(&m, &roster));
     }
     super::post_state(app, teams);
 }
@@ -781,6 +848,21 @@ mod tests {
             }
             assert!(agent_ready(&s), "第 {field} 個閘門過頭了");
         }
+    }
+
+    /// 「在跑」＝有分頁而且 session 還在；剛啟動 5 秒內 session 還沒登記也算（G2）。
+    #[test]
+    fn slot_alive_needs_a_live_session() {
+        let mut s = Slot::new(1, 2);
+        let live = |id: u32| id == 7;
+        assert!(!slot_alive(&s, live, 100_000), "沒有分頁");
+        s.tab = Some(7);
+        s.launched_ms = 10_000;
+        assert!(slot_alive(&s, live, 100_000));
+        s.tab = Some(8); // 分頁還開著，但 CLI 已結束
+        assert!(!slot_alive(&s, live, 100_000), "CLI 結束了就不算在跑");
+        s.launched_ms = 98_000;
+        assert!(slot_alive(&s, live, 100_000), "剛啟動、session 還沒登記");
     }
 
     /// 還沒啟動（`launched_ms == 0`）一定不能打。

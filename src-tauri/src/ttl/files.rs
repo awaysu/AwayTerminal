@@ -241,7 +241,8 @@ impl Interp {
     /// `filestrseek <控制代碼> <字串>`：從目前位置往後找。
     /// 找到 → `result=1`，檔案指標停在**字串之後**；找不到 → `result=0`，指標不動。
     ///
-    /// `filestrseek2` 是往**前**找（原碼另一個方向）。
+    /// `filestrseek2` 是往**前**找，照原碼逐位元組倒著讀（見 [`strseek_backward`]）：
+    /// **含目前這個位元組**，找到後指標停在**命中位置的前一個位元組**（命中在檔頭時是 0）。
     fn cmd_filestrseek(&mut self, forward: bool) -> Result<()> {
         let h = self.int_val()?;
         let needle = self.str_val()?;
@@ -266,8 +267,17 @@ impl Interp {
                         find_bytes(&data[from..], &needle).map(|i| from + i)
                     }
                 } else {
-                    let until = (start as usize).min(data.len());
-                    rfind_bytes(&data[..until], &needle)
+                    // 往回找：找到時的指標位置由原碼的讀法決定，直接回傳「要停在哪」
+                    return match strseek_backward(&data, start, &needle) {
+                        Some(p) => {
+                            let _ = f.file.seek(SeekFrom::Start(p));
+                            true
+                        }
+                        None => {
+                            let _ = f.file.seek(SeekFrom::Start(start));
+                            false
+                        }
+                    };
                 };
                 match hit {
                     Some(i) => {
@@ -573,13 +583,62 @@ fn find_bytes(hay: &[u8], needle: &[u8]) -> Option<usize> {
     (0..=hay.len() - needle.len()).find(|&i| &hay[i..i + needle.len()] == needle)
 }
 
-fn rfind_bytes(hay: &[u8], needle: &[u8]) -> Option<usize> {
-    if needle.is_empty() || hay.len() < needle.len() {
+/// `TTLFileStrSeek2` 逐步照抄：從目前指標 `start` **含這個位元組**開始倒著讀
+/// （讀一個、`llseek(-2)`），用「從字串尾巴往前對」的簡單比對（對不上只重試最後一個字元，
+/// 不做 KMP 退回——原碼就是這樣）。回 `Some(找到後的指標)`：命中起點的前一個位元組；
+/// 命中在檔頭時 `llseek` 會失敗，原碼把它調成 0。
+///
+/// 兩個原碼的細節也一起照抄：指標在檔尾（EOF）時第一次讀不到，`-2` 之後**最後一個位元組
+/// 不會被看到**；`start == 0` 只看第 0 個位元組。
+fn strseek_backward(data: &[u8], start: u64, needle: &[u8]) -> Option<u64> {
+    let len = needle.len();
+    if len == 0 {
         return None;
     }
-    (0..=hay.len() - needle.len())
-        .rev()
-        .find(|&i| &hay[i..i + needle.len()] == needle)
+    let mut p = start.min(i64::MAX as u64) as i64; // 真正的檔案指標
+    // 指標被 `fileseek` 移到檔尾之後很遠：那一段每圈都讀不到、只是 -2，一次跳過
+    // （不然 `fileseek fh 2000000000` 之後這裡要空轉十億圈）
+    let dlen = data.len() as i64;
+    if p >= dlen + 2 {
+        p -= (p - dlen) / 2 * 2;
+    }
+    let mut pos2 = p; // 原碼的 pos2（llseek 的回傳值，失敗是 -1）
+    let mut i = 0usize;
+    loop {
+        let last = pos2 <= 0;
+        // win16_lread(FH, &b, 1)
+        let c = if p >= 0 && (p as usize) < data.len() {
+            let b = data[p as usize];
+            p += 1;
+            Some(b)
+        } else {
+            None
+        };
+        // win16_llseek(FH, -2, 1)：跑到負的位置會失敗（INVALID_SET_FILE_POINTER），指標不動
+        if p - 2 < 0 {
+            pos2 = -1;
+        } else {
+            p -= 2;
+            pos2 = p;
+        }
+        if let Some(b) = c {
+            if b == needle[len - 1 - i] {
+                i += 1;
+            } else if i > 0 {
+                i = 0;
+                if b == needle[len - 1] {
+                    i = 1;
+                }
+            }
+        }
+        if last || i == len {
+            break;
+        }
+    }
+    if i != len {
+        return None;
+    }
+    Some(if pos2 == -1 { 0 } else { p as u64 })
 }
 
 /// `*` 與 `?` 的萬用字元比對（Windows 的 `FindFirstFile` 語意，大小寫不敏感）。
@@ -617,6 +676,41 @@ mod tests {
         it.set_current_dir(dir.clone());
         it.run(100_000).expect("巨集應該跑得完");
         (std::mem::take(&mut it.vars), dir)
+    }
+
+    /// `filestrseek2` 照原碼：含目前位元組、找到後停在命中起點的前一個位元組。
+    #[test]
+    fn filestrseek2_matches_original() {
+        //           0123456789...
+        let data = b"abcXYZdefXYZghi";
+        // 指標在第二個 Z 上：含目前位元組 → 命中第二個 XYZ（9），停在 8
+        assert_eq!(strseek_backward(data, 11, b"XYZ"), Some(8));
+        // 指標在第二個 Y 上：第二個湊不齊 → 命中第一個（3），停在 2
+        assert_eq!(strseek_backward(data, 10, b"XYZ"), Some(2));
+        // 命中在檔頭：llseek 失敗 → 調成 0
+        assert_eq!(strseek_backward(b"XYZabc", 2, b"XYZ"), Some(0));
+        assert_eq!(strseek_backward(b"XYZabc", 5, b"XYZ"), Some(0));
+        // 找不到
+        assert_eq!(strseek_backward(data, 14, b"QQ"), None);
+        assert_eq!(strseek_backward(data, 0, b"XYZ"), None);
+        // 指標在 EOF：第一次讀不到、-2 → 最後一個位元組看不到（原碼的行為）
+        assert_eq!(strseek_backward(b"abXYZ", 5, b"XYZ"), None);
+        assert_eq!(strseek_backward(b"abXYZ!", 6, b"XYZ"), Some(1));
+        // 指標遠在檔尾之後：不能空轉
+        assert_eq!(strseek_backward(b"XYZ", 1_000_000_000, b"XYZ"), Some(0));
+    }
+
+    /// 巨集層：`filestrseek2` 找到之後 `filereadln` 從「命中前一個位元組」開始讀。
+    #[test]
+    fn filestrseek2_then_read() {
+        let (v, dir) = run_in_temp(
+            "fileopen fh 'a.txt' 0\nfilewrite fh 'abcXYZdef'\nfileclose fh\n\
+             fileopen fh 'a.txt' 0\nfileseek fh 0 2\nfilestrseek2 fh 'XYZ'\nr = result\n\
+             filereadln fh s\nfileclose fh",
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(v.int_of("r"), Some(1));
+        assert_eq!(v.str_of("s").unwrap(), b"cXYZdef");
     }
 
     /// 寫檔 → 讀回來（`filewriteln` 補 CR LF、`filereadln` 去掉）。

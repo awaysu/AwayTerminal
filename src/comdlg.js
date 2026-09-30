@@ -84,7 +84,8 @@ async function loadPorts(keep) {
 /** 把欄位讀成 `ComParams`。 */
 function read() {
   return {
-    port: el.port.value.trim() || 'COM1',
+    // 不補預設埠：留空要讓送出時的 `cd.needPort` 擋下來，不是安靜地變成 COM1（BUG-AUDIT E14）
+    port: el.port.value.trim(),
     baud: Math.max(1, Number(el.baud.value) || 115200),
     dataBits: Number(el.data.value) || 8,
     parity: el.parity.value || 'None',
@@ -200,7 +201,8 @@ export function initComDialog() {
   });
   el.cancel.addEventListener('click', () => close(null));
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && !el.root.hidden) close(null);
+    // 頁內 #modal（字型清單、確認框…）開著時 Esc 只關 modal，不連底下這個視窗一起關（BUG-AUDIT B3）
+    if (e.key === 'Escape' && !el.root.hidden && document.getElementById('modal').hidden) close(null);
   });
 }
 

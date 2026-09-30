@@ -1,6 +1,6 @@
 # TTL 巨集：還沒做的指令（TASK-014 之後的狀態）
 
-已實作的 127 個在 `docs/TTL.md` 第 4.1 節。這裡只列**還沒做的**，每一條都寫原因，
+已實作的 128 個在 `docs/TTL.md` 第 4.1 節。這裡只列**還沒做的**，每一條都寫原因，
 免得之後有人以為是漏掉的。
 
 ## 1. 要等其他功能才有意義
@@ -19,6 +19,16 @@
 | `crc16` `crc32` `checksum8/16/32`（含 `*file`） | 純計算，隨時可加；沒有使用案例就先不加（多一組要維護的表） |
 | `gethostname` `getipv4addr` `getipv6addr` `uptime` `getmodemstatus` | 系統資訊，同上 |
 | `bringupbox` | 把 statusbox 拉到最前面；我們的 statusbox 是右下角的常駐提示，不需要 |
+
+## 1.1 稽核（2026-09-30）補列：以前漏列的
+
+| 指令 | 狀態 |
+|---|---|
+| `waitrecv` | **已實作**（照 `Wait2()`，見 `docs/TTL.md` 3.7） |
+| `waitevent` | 等「多種事件（收到資料／逾時／按鍵…）的位元旗標」：原碼靠 ttermpro 的訊息迴圈回報事件，我們要先決定哪些事件在單程式多分頁下有意義 |
+| `sendtext` | 原碼是「以 Unicode 文字送出，由 ttermpro 依連線的編碼轉換」。我們的 `send` 已經是 UTF-8 直送；要做得先有「分頁的送出編碼」設定（Big5 之類）才有差別 |
+| `sendbinary` | 原碼是「不做換行／編碼轉換，原樣送」。我們的 `send` 本來就不轉換，可直接別名過去——但要先確認 COM／Telnet 後端沒有自己加 CR/LF 轉換（Telnet 的 CR NUL） |
+| `outputdebugstring` | Win32 `OutputDebugString`，只有掛除錯器才看得到。跨平台沒有對應物；要做就印到 app 的主控台 log |
 
 ## 2. 不做（有明確理由）
 

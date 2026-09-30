@@ -576,7 +576,7 @@ fn run(app: &AppHandle, tab: Option<u32>) -> Result<Vec<String>, String> {
             let before = bot.count("sendMessage");
             bot.say(CHAT, "echo verify-telegram-marker");
             std::thread::sleep(Duration::from_millis(1500));
-            let screen = super::screen::recent_text(app, id, Duration::from_secs(2));
+            let screen = super::screen::recent_text(app, id, Duration::from_secs(2)).unwrap_or_default();
             r.check(
                 "純文字打進分頁（畫面上找得到）",
                 screen.contains("verify-telegram-marker"),
@@ -803,7 +803,7 @@ mod tests {
         let bot = FakeBot::start().expect("起不來");
         let api = super::super::api::Api::new(&bot.base(), FAKE_TOKEN);
         // prime 回的是「最後一則」→ offset 要是 5001，不是 0
-        assert_eq!(api.prime_offset(), 5001);
+        assert_eq!(api.prime_offset(), Ok(5001));
         bot.say(CHAT, "hello");
         let (msgs, next) = api.get_updates(0).expect("getUpdates 失敗");
         assert_eq!(msgs.len(), 1);

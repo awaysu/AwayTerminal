@@ -101,19 +101,30 @@ impl Api {
     /// ⚠️ 一定要用 `offset=-1`（只要最後一則）：預設一次最多回 100 則，關著超過 100 則訊息時
     /// offset 會停在第 101 則，第一次輪詢就把 101～N 當成現在的指令全部重播
     /// （打進附著的分頁、`/close`…）——舊版的註解就是這個教訓。
-    pub fn prime_offset(&self) -> i64 {
+    ///
+    /// 失敗時回 `Err`（BUG H1）：以前退回 `offset=0`，開機時網路還沒好的話，第一次成功輪詢
+    /// 就把關機期間累積的舊指令整批重播。呼叫端要**重試到成功**才開始輪詢。
+    /// 錯誤字串格式同 [`Self::get_updates`]（`HTTP <code>`），[`is_fatal`] 認得。
+    pub fn prime_offset(&self) -> Result<i64, String> {
         let agent = self.agent(10);
         let url = format!("{}?timeout=0&offset=-1", self.url("getUpdates"));
-        match agent.get(&url).call() {
-            Ok(mut resp) => {
-                let body = resp.body_mut().read_to_string().unwrap_or_default();
-                parse_updates(&body, 0).map(|(_, next)| next).unwrap_or(0)
-            }
-            Err(e) => {
-                println!("[AwayTerminal] Telegram：prime offset 失敗（{}）", describe(&e));
-                0
-            }
+        let mut resp = agent.get(&url).call().map_err(|e| describe(&e))?;
+        let status = resp.status().as_u16();
+        if status != 200 {
+            return Err(format!("HTTP {status}"));
         }
+        // i18n-audit:log-only-begin 錯誤字串只會進 println! 的診斷行，使用者看不到
+        let body = resp
+            .body_mut()
+            .read_to_string()
+            .map_err(|e| format!("prime offset 讀取失敗：{e}"))?;
+        // i18n-audit:log-only-end
+        parse_updates(&body, 0).map(|(_, next)| next)
+    }
+
+    /// 這是 `--verify` 的本機假 Bot API 嗎（見 [`Self::new`]）。
+    pub fn is_local(&self) -> bool {
+        self.base.contains("127.0.0.1") || self.base.contains("localhost")
     }
 
     /// 「取得 chat id」：抓最近一則**訊息**的 chat id（舊版 `TelegramRemote.TryGetLatestChatId`）。

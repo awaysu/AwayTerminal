@@ -217,7 +217,8 @@ impl Interp {
         self.end_of_args()?;
 
         let cur = self.get_str_ref(&target)?;
-        if len <= 0 || index <= 0 || (index - 1 + len) > cur.len() as i32 {
+        // i64 算：`index - 1 + len` 在 i32 會溢位（debug panic、release 繞成負數後切片 panic）
+        if len <= 0 || index <= 0 || (i64::from(index) - 1 + i64::from(len)) > cur.len() as i64 {
             return Err(Err::Syntax);
         }
         let at = (index - 1) as usize;
@@ -274,8 +275,16 @@ impl Interp {
         let limit = maxvar + i32::from(omit);
         let mut parts: Vec<Vec<u8>> = vec![Vec::new()];
         let mut count = 1;
-        for &b in src.iter() {
+        for (i, &b) in src.iter().enumerate() {
             if count >= limit {
+                // 原碼的 tok[count-1] 指在來源緩衝區裡、一路到結尾的 NUL：
+                // **明給「最多幾段」時最後一段是「剩下整段」**（`strsplit 'a,b,c,d' ',' 2`
+                // → `a`／`b,c,d`）。省略時多走的那一格是要丟掉的，不接。
+                if !omit {
+                    if let Some(last) = parts.last_mut() {
+                        last.extend_from_slice(&src[i..]);
+                    }
+                }
                 break;
             }
             if b == d {
@@ -742,7 +751,7 @@ impl Interp {
 
         match strftime(&fmt) {
             Some(s) => {
-                self.set_str_ref(&target, s.as_bytes())?;
+                self.set_str_ref(&target, &s)?;
                 if set_result {
                     self.vars.set_result(0);
                 }
@@ -777,8 +786,20 @@ impl Interp {
         self.end_of_args()?;
         let name = String::from_utf8_lossy(&name).into_owned();
         let val = String::from_utf8_lossy(&val).into_owned();
-        // SAFETY: 單執行緒的巨集執行期間設環境變數；同原碼的 `_putenv_s`。
-        unsafe { std::env::set_var(name, val) };
+        // 名稱空的／含 `=`、名稱或值含 NUL：`std::env::set_var` 會 **panic**（release 是
+        // abort ＝整個 app 關掉）。原碼的 `_wputenv_s` 遇到這些回 EINVAL，TTLSetEnv 不看
+        // 回傳值 → 巨集照跑、什麼都沒設。照做：靜默略過。
+        if !env_name_ok(&name) || val.contains('\0') {
+            return Ok(());
+        }
+        if val.is_empty() {
+            // `_putenv_s(name, "")` 在 MSVC 是**刪掉**這個變數（不是設成空字串）
+            // SAFETY: 同下
+            unsafe { std::env::remove_var(name) };
+        } else {
+            // SAFETY: 單執行緒的巨集執行期間設環境變數；同原碼的 `_putenv_s`。
+            unsafe { std::env::set_var(name, val) };
+        }
         Ok(())
     }
 
@@ -977,7 +998,9 @@ fn pad(body: Vec<u8>, f: &Flags, width: Option<usize>, _is_str: bool) -> Vec<u8>
 /// `strftime` 的子集——**只認原碼白名單裡的代號**
 /// （`IsValidStrftimeCode`：`a A b B c d H I j m M p S U w W x X y Y z Z %`）。
 /// 遇到白名單以外的 `%x` 回 `None`（＝原碼的 `isInvalidStrftimeChar` → `result=2`）。
-fn strftime(fmt: &[u8]) -> Option<String> {
+/// 回傳**位元組**：格式裡的中文（UTF-8 多位元組）要原封不動搬過去，
+/// 不能一個位元組一個位元組 `as char`（那是 Latin-1 對映，中文會變亂碼）。
+fn strftime(fmt: &[u8]) -> Option<Vec<u8>> {
     use chrono::{Datelike, Local, Timelike};
     let now = Local::now();
     const WD_SHORT: [&str; 7] = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -1009,11 +1032,11 @@ fn strftime(fmt: &[u8]) -> Option<String> {
     ];
     let wd = now.weekday().num_days_from_sunday() as usize;
     let mon0 = now.month0() as usize;
-    let mut out = String::new();
+    let mut out: Vec<u8> = Vec::new();
     let mut i = 0;
     while i < fmt.len() {
         if fmt[i] != b'%' {
-            out.push(fmt[i] as char);
+            out.push(fmt[i]);
             i += 1;
             continue;
         }
@@ -1068,10 +1091,15 @@ fn strftime(fmt: &[u8]) -> Option<String> {
             b'%' => "%".to_string(),
             _ => return None,
         };
-        out.push_str(&piece);
+        out.extend_from_slice(piece.as_bytes());
         i = j + 1;
     }
     Some(out)
+}
+
+/// `setenv` 的名稱能不能交給 `std::env::set_var`（不能的會 panic）。
+fn env_name_ok(name: &str) -> bool {
+    !name.is_empty() && !name.contains('=') && !name.contains('\0')
 }
 
 /// 小亂數器（xorshift64*，種子取自系統時間）。巨集的 `random` 不需要更好的。
@@ -1198,6 +1226,68 @@ mod tests {
         assert_eq!(err_of("strsplit 'a,b' ',,'"), Err::Syntax);
         assert_eq!(err_of("strsplit 'a' ',' 0"), Err::Syntax);
         assert_eq!(err_of("strsplit 'a' ',' 10"), Err::Syntax);
+    }
+
+    /// 明給「最多幾段」時，最後一段是**剩下整段**（原碼 tok 指在來源緩衝區裡一路到結尾）。
+    #[test]
+    fn strsplit_limit_keeps_the_rest() {
+        let v = run("strsplit 'a,b,c,d' ',' 2\nn = result");
+        assert_eq!(v.int_of("n"), Some(2));
+        assert_eq!(v.str_of("groupmatchstr1").unwrap(), b"a");
+        assert_eq!(v.str_of("groupmatchstr2").unwrap(), b"b,c,d");
+        assert_eq!(v.str_of("groupmatchstr3").unwrap(), b"");
+        // 常見寫法：`strsplit line ' ' 2` ＝ 第一個字 + 其餘
+        let v = run("strsplit 'cmd arg1 arg2' ' ' 2");
+        assert_eq!(v.str_of("groupmatchstr2").unwrap(), b"arg1 arg2");
+        // 1 段＝整串
+        let v = run("strsplit 'a,b' ',' 1\nn = result");
+        assert_eq!(v.int_of("n"), Some(1));
+        assert_eq!(v.str_of("groupmatchstr1").unwrap(), b"a,b");
+        // 段數不夠 limit：和沒給一樣
+        let v = run("strsplit 'a,b' ',' 5\nn = result");
+        assert_eq!(v.int_of("n"), Some(2));
+        assert_eq!(v.str_of("groupmatchstr2").unwrap(), b"b");
+        // 省略時超過 9 段的部分丟掉（不接到第 9 段）
+        let v = run("strsplit '1,2,3,4,5,6,7,8,9,10,11' ','");
+        assert_eq!(v.str_of("groupmatchstr9").unwrap(), b"9");
+    }
+
+    /// `strremove` 的 `index - 1 + len` 溢位：語法錯誤，不可以 panic。
+    #[test]
+    fn strremove_overflow_is_syntax_error() {
+        assert_eq!(err_of("s = 'abc'\nstrremove s 2 2147483647"), Err::Syntax);
+        assert_eq!(err_of("s = 'abc'\nstrremove s 2147483647 2147483647"), Err::Syntax);
+        let v = run("s = 'abc'\nstrremove s 3 1");
+        assert_eq!(v.str_of("s").unwrap(), b"ab");
+    }
+
+    /// `setenv` 名稱空的／含 `=`：照原碼靜默略過，不可以 panic（`set_var` 會）；
+    /// 值是空字串＝刪掉（MSVC `_putenv_s` 的語意）。
+    #[test]
+    fn setenv_rejects_invalid_names() {
+        run("setenv '' 'x'");
+        run("setenv 'A=B' 'x'");
+        run("setenv '=' ''");
+        let v = run("setenv 'AWAY_TTL_SETENV_T' 'v1'\ngetenv 'AWAY_TTL_SETENV_T' s");
+        assert_eq!(v.str_of("s").unwrap(), b"v1");
+        run("setenv 'AWAY_TTL_SETENV_T' ''");
+        assert!(std::env::var_os("AWAY_TTL_SETENV_T").is_none(), "空值＝刪掉");
+        assert!(env_name_ok("PATH"));
+        assert!(!env_name_ok(""));
+        assert!(!env_name_ok("A=B"));
+        assert!(!env_name_ok("A\0B"));
+    }
+
+    /// `gettime`／`getdate` 的格式含中文：原樣搬過去（以前一個位元組 `as char` → 亂碼）。
+    #[test]
+    fn gettime_keeps_cjk_format_text() {
+        let v = run("gettime s '%H時%M分'\nr = result");
+        assert_eq!(v.int_of("r"), Some(0));
+        let s = String::from_utf8(v.str_of("s").unwrap().to_vec()).expect("要是合法的 UTF-8");
+        assert!(s.contains('時') && s.ends_with('分'), "{s}");
+        let v = run("getdate d '%Y年'");
+        let d = String::from_utf8(v.str_of("d").unwrap().to_vec()).unwrap();
+        assert!(d.ends_with('年') && d.len() == 4 + 3, "{d}");
     }
 
     /// `strjoin` 把 `groupmatchstr1..N` 接起來。

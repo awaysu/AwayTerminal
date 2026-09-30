@@ -199,10 +199,14 @@ let fontSources = new Map();
 
 /** 正在下載的那一套（`font-download` 事件的 id）。 */
 let downloading = null;
+/** 正在下載的那一套的家族名（進度文字要顯示這個，不是目錄 id；BUG-AUDIT B13）。 */
+let downloadingFamily = '';
 
 /** 下拉重畫＋維持目前選擇（匯入／下載／移除之後用）。 */
 async function refreshFonts(keep) {
-  const want = keep || el.family.value;
+  // `''` 是「退回預設」（移除了正在選的字型），不是「沒指定」——只有 undefined 才沿用目前的值
+  //（BUG-AUDIT B10：原本 `keep || …` 把空字串當沒指定，已移除的名字留在輸入框被存檔）
+  const want = keep === undefined ? el.family.value : keep;
   await fillFonts(opened ? opened.fontFamily : want);
   syncFontSelect(want);
   el.family.value = want;
@@ -239,6 +243,7 @@ async function downloadFont() {
   if (!id) return;
   const entry = list.find((c) => c.id === id);
   downloading = id;
+  downloadingFamily = entry ? entry.family : id;
   el.fontDownload.disabled = true;
   el.fontImport.disabled = true;
   el.fontCancel.hidden = false;
@@ -367,6 +372,12 @@ async function save(e) {
   // 兩個地方改同一組欄位會互相蓋，所以這裡**不要**再放一份。
   // 介面文字：前端自己換（Rust 那邊有自己的一份表，見 src-tauri/src/i18n.rs）
   applyLang(after.language);
+  // BUG D6：settings.json 壞掉（解析失敗）時這次改的只留在記憶體、重開就不見——要說出來，視窗不關
+  const readonly = await invoke('settings_readonly_reason').catch(() => null);
+  if (readonly) {
+    el.note.textContent = readonly;
+    return;
+  }
   close();
   log(
     `[settings] 已套用：語言=${after.language} 字型=${after.fontFamily} ${after.fontSize}px ` +
@@ -514,7 +525,8 @@ export function initSettings(injected) {
   el.cancel.addEventListener('click', close);
   el.reset.addEventListener('click', resetDefaults);
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && !el.root.hidden) close();
+    // 頁內 #modal（字型清單、確認框…）開著時 Esc 只關 modal，不連底下這個視窗一起關（BUG-AUDIT B3）
+    if (e.key === 'Escape' && !el.root.hidden && document.getElementById('modal').hidden) close();
   });
 
   // 字型下拉：選「自訂…」才把輸入框叫出來；選真的字型就把值收回輸入框
@@ -531,7 +543,7 @@ export function initSettings(injected) {
     if (!downloading || p.id !== downloading) return;
     if (p.done) return; // 結束的訊息由 downloadFont 的 then/catch 寫
     const pct = p.total ? Math.round((p.got / p.total) * 100) : 0;
-    el.fontNote.textContent = fmt('font.downloading', p.id, String(pct), mb(p.total || 0));
+    el.fontNote.textContent = fmt('font.downloading', downloadingFamily || p.id, String(pct), mb(p.total || 0));
   }).catch((e) => log(`[settings] 掛下載進度 listener 失敗：${e}`));
 
   el.familySel.addEventListener('change', () => {
