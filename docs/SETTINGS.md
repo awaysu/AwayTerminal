@@ -178,7 +178,7 @@ node scripts/test-i18n.mjs
 | 項目 | 舊版 | 新版 |
 |---|---|---|
 | 什麼時候查 | **只有按下「檢查更新」**（啟動時不自動查） | 同 |
-| 查哪裡 | `GET https://www.awaysu.cc/software/api.php?action=check_update&app=awayterminal&platform=windows&version=<版本>` | 同一支 API，`app=`**`awayterminal2`**、`platform` 依平台（windows／macos／linux） |
+| 查哪裡 | `GET https://www.awaysu.cc/software/api.php?action=check_update&app=awayterminal&platform=windows&version=<版本>` | 同一支 API、同一個 `app=awayterminal`（2.0 接手舊版的產品頁），`platform` 依平台（windows／macos／linux） |
 | User-Agent | `AwayTerminal/<版本>` | 同 |
 | 逾時 | 10 秒 | 同 |
 | 版本比較 | 伺服器的 `update_available`；沒帶才自己比（逐段數字、補 0、`-beta` 視為較小） | 同（`update::compare`，9 條測試） |
@@ -188,9 +188,7 @@ node scripts/test-i18n.mjs
 | 下載 | 開軟體頁，讓使用者自己選安裝版／免安裝版 | 同 |
 | 自動下載安裝 | 沒有 | **這次也沒有**（Tauri updater 是階段 5） |
 
-⚠️ **要請使用者確認**：`app=awayterminal2` 這個「參數代號」要先在
-`awaysu.cc/software` 後台建好，否則 API 會回 `ok:false` → 畫面顯示「檢查失敗」。
-新版的下載頁網址也還沒定（目前先用舊版那頁）。
+2026-10-01 使用者定案：2.0 **沿用舊版的 `awayterminal` 代號與下載頁**，不另開產品頁。
 
 ### 3.3 只有這一個功能會連外
 

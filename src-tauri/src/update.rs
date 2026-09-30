@@ -13,9 +13,6 @@
 //!
 //! ## 刻意不同
 //!
-//! - `app=awayterminal2`：新版是另一個產品頁。⚠️ **網站上的「參數代號」要先建好**，
-//!   否則 API 會回 `ok:false` → 畫面顯示「檢查失敗」。這件事要請使用者確認
-//!   （見 `docs/SETTINGS.md` 的待確認清單）。
 //! - `platform`：Windows 送 `windows`、mac 送 `macos`、Linux 送 `linux`（舊版只有 Windows）。
 //! - **Tauri updater（自動下載安裝）不做**，那是階段 5。這裡只到「開下載頁」。
 
@@ -23,8 +20,9 @@ use std::time::Duration;
 
 /// 軟體頁的公開 API（舊版同一支；不需密碼）。
 pub const API: &str = "https://www.awaysu.cc/software/api.php";
-/// 網站上的「參數代號」。
-pub const APP_SLUG: &str = "awayterminal2";
+/// 網站上的「參數代號」。**和舊版同一個 `awayterminal`**（2026-10-01 使用者定案：
+/// 2.0 直接接手舊版的產品頁，舊版使用者按「檢查更新」就會看到 2.0）。
+pub const APP_SLUG: &str = "awayterminal";
 /// `page_url` 沒帶時的下載頁。
 pub const FALLBACK_PAGE: &str = "https://www.awaysu.cc/software/awayterminal";
 /// 舊版是 10 秒。
@@ -323,7 +321,7 @@ mod tests {
     fn builds_the_same_url_as_v1() {
         let url = build_url(API, "2.0.0");
         assert!(url.starts_with("https://www.awaysu.cc/software/api.php?action=check_update"));
-        assert!(url.contains("&app=awayterminal2"));
+        assert!(url.contains("&app=awayterminal&"));
         assert!(url.contains("&version=2.0.0"));
         // 版本號有奇怪字元也要編碼
         assert!(build_url(API, "2.0.0 beta").contains("version=2.0.0%20beta"));

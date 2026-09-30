@@ -630,13 +630,13 @@ TEMP 路徑印出完整結果，Documents 路徑印完 `path = …` 就停住。
 | # | 怎麼測 | 預期結果 | 舊版出處 | Win | mac | Linux |
 |---|---|---|---|---|---|---|
 | AB1 | `cargo test update` | URL 參數、解析、壞回應、版本比較共 6 條全過 | `UpdateChecker` | PASS | | |
-| AB2 | `--verify` 的更新那一步 | 請求帶 `app=awayterminal2` 與 User-Agent、解析得出版本、**連不上時安靜回 null**；關於頁的 xterm.js 版本＝`package.json` 的版本 | — | PASS（**打 127.0.0.1 的假伺服器，不連真網站**） | | |
+| AB2 | `--verify` 的更新那一步 | 請求帶 `app=awayterminal` 與 User-Agent、解析得出版本、**連不上時安靜回 null**；關於頁的 xterm.js 版本＝`package.json` 的版本 | — | PASS（**打 127.0.0.1 的假伺服器，不連真網站**） | | |
 | AB3 | 👤 工具列「關於」 | 版式照舊版：名稱／版本／編譯時間／作者／下載／Source Code／授權／第三方元件 | `About_Click` | | | |
 | AB4 | 👤 作者那一行 | email 是**圖片**（選不到、複製不到文字） | `RenderTextImage` | | | |
 | AB5 | 👤 第三方元件 | xterm.js 的版本是**實際**版本（不是寫死的；舊版寫 5.5.0 而實際 6.0.0） | `CLAUDE.md` 的雷 | PASS（`--verify`） | | |
 | AB6 | 👤 展開「完整第三方授權聲明」 | 顯示 `THIRD-PARTY-NOTICES.md` 的內容（**不是複製品**） | ⬜ 新增 | PASS（`--verify` 讀到 11397 字） | | |
 | AB7 | 👤 點「下載」「Source Code」 | 用系統瀏覽器開（`awaysu.cc` / `github.com/awaysu/AwayTerminal2`） | `MakeLink` | | | |
-| AB8 | 👤 按「檢查更新」（**有網路**） | 按鈕旁顯示「檢查中…」→「已是最新版本 (vX)」或跳「有新版本可用」 | `check.Click` | ⬜ 需網路 ＋ 網站要有 `awayterminal2` 這個代號 | | |
+| AB8 | 👤 按「檢查更新」（**有網路**） | 按鈕旁顯示「檢查中…」→「已是最新版本 (vX)」或跳「有新版本可用」 | `check.Click` | ⬜ 需網路 | | |
 | AB9 | 👤 按「檢查更新」（**拔網路**） | 只顯示一行「檢查失敗（請確認網路後再試）」，**不跳錯誤視窗** | 舊版刻意如此 | PASS（`--verify` 的離線路徑） | | |
 | AB10 | 👤 有新版時 | 跳視窗：目前／最新版本＋更新內容，按「前往下載頁」開軟體頁 | `ShowUpdateDialog` | | | |
 | AB11 | 啟動程式 | **不會自動查更新**（舊版也不會） | — | PASS（程式裡只有按鈕那條路） | | |
@@ -1147,7 +1147,7 @@ TEMP 路徑印出完整結果，Documents 路徑印完 `path = …` 就停住。
 | 字型下拉的來源 | `Fonts.SystemFontFamilies`（WPF 列得出全部字型） | **候選清單 ∩ `%WINDIR%\Fonts`**，而且是可自己打的 `<input list>` | 瀏覽器沒有「列出系統字型」的標準做法（`queryLocalFonts` 要權限、WebView2 上不一定有） |
 | 關於頁的 xterm.js 版本 | 寫死字串（結果一直印 5.5.0，實際 6.0.0） | **build 時從 `node_modules` 讀** | `CLAUDE.md` 記著這條雷；寫死一定會過期 |
 | 關於頁的第三方授權 | 只列幾行元件名稱 | 多一個可展開的區塊，**直接讀 `THIRD-PARTY-NOTICES.md`** | 不想維護兩份；安裝檔本來就要附那個檔 |
-| 檢查更新的 `app=` 參數 | `awayterminal` | **`awayterminal2`** | 新版是另一個產品頁。⚠️ 網站後台要先建好這個代號 |
+| 檢查更新的 `app=` 參數 | `awayterminal` | `awayterminal`（同） | 2026-10-01 定案：2.0 接手舊版的產品頁 |
 | 介面語言 | 中文／English 兩種（radio） | **八種**（下拉：繁中／English／简中／日本語／한국어／Español／Deutsch／Français） | 使用者在 TASK-015 期間定案。除了繁中與英文之外都是機器翻譯，各語言檔頭、設定視窗、關於頁都註明 |
 | 預設語言 | 一律繁中 | **第一次啟動看系統語言**（`sys-locale`），對不到八種就用 `en`；改過就固定 | 新增；舊版沒有偵測 |
 | 語言字串的位置 | `Localization/Loc.cs`（一個檔、兩種語言） | `src/lang/<代碼>.js`（一種語言一個檔）＋ `strings.js` 合併 | 八種語言放一個檔會變成幾千行；一檔一語言好改也好加 |

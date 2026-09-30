@@ -1858,7 +1858,7 @@ async function verifyUpdate() {
   try {
     const r = await invoke('update_verify');
     lines.push(`[verify] 請求：${r.requestLine}`);
-    lines.push(`[verify] 帶了 app=awayterminal2：${r.sentSlug}、User-Agent：${r.sentUserAgent}`);
+    lines.push(`[verify] 帶了 app=awayterminal：${r.sentSlug}、User-Agent：${r.sentUserAgent}`);
     lines.push(
       `[verify] 解析出最新版 ${r.parsed ? r.parsed.latestVersion : '(null)'}、` +
         `有新版=${r.parsed ? r.parsed.updateAvailable : '?'}：${!!r.parsed && r.parsed.latestVersion === '9.9.9'}`,

@@ -282,19 +282,18 @@ signtool verify /pa /v <檔案>
 
 ### `awaysu.cc` 的 `check_update` 回應格式
 
-「關於 → 檢查更新」問的是 `https://awaysu.cc/software/api.php?action=check_update&app=awayterminal2&version=<目前版本>`
+「關於 → 檢查更新」問的是 `https://awaysu.cc/software/api.php?action=check_update&app=awayterminal&platform=windows&version=<目前版本>`
 （`update.rs`）。後端要回：
 
 ```json
 {
   "has_update": true,
   "latest_version": "2.0.1",
-  "download_url": "https://awaysu.cc/software/awayterminal2/"
+  "download_url": "https://www.awaysu.cc/software/awayterminal"
 }
 ```
 
-⚠️ **`awayterminal2` 這個代號還沒在 awaysu.cc 後台建立**（TASK-015 就回報過）。
-沒建立的話檢查更新永遠顯示「檢查失敗」——失敗是靜默的，不會跳錯誤視窗。
+2.0 **沿用舊版的 `awayterminal` 代號**（2026-10-01 使用者定案），上傳安裝檔與 zip 也傳到這個代號（見 §5 的上傳）。
 
 ---
 
@@ -328,7 +327,7 @@ signtool verify /pa /v <檔案>
 [ ] docs/MANUAL-TEST-PLAN.md 的 P0 一節由使用者跑過
 [ ] 工作樹乾淨、HEAD 已 push（release.mjs --publish 會用 --target <HEAD> 打 tag，沒 push 就擋）
 [ ] GitHub Release：tag v<版本>，資產命名見下
-[ ] awaysu.cc 後台的 awayterminal2 版本號更新
+[ ] awaysu.cc 的 awayterminal：上傳安裝檔＋zip（api.php?action=upload，帶 version／sha256／changelog）
 ```
 
 ### GitHub Release 的資產命名
@@ -351,6 +350,5 @@ latest.json                               有開自動更新時才有（檔名�
 |---|---|---|
 | 程式碼簽章憑證（沿用舊版那張，如果有） | `certificateThumbprint` 或 `signCommand` | SmartScreen 會擋，而且信譽從零開始 |
 | updater 金鑰對（使用者自己產生、自己保管） | `pubkey` ＋ build 時的環境變數 | 沒有自動更新（現在就是這個狀態） |
-| `awaysu.cc` 後台建立 `awayterminal2` 代號 ＋ 下載頁 URL | `update.rs` 的檢查更新 | 檢查更新永遠「失敗」 |
 | macOS 機器 ＋ Apple Developer ID（年費已付） | 簽章 ＋ notarization ＋ .dmg | mac 版做不了 |
 | Linux 機器（Ubuntu 22.04／24.04） | AppImage ＋ .deb | Linux 版做不了 |
