@@ -359,7 +359,8 @@ async function openDialog(dir, state, wantKind) {
     if (slot && slot.backend && !list.some((b) => b.value === slot.backend)) {
       list.push({ value: slot.backend, title: slot.backend });
     }
-    fillSelect(ui.backend, [{ value: '', title: '' }].concat(list), (b) => b.title);
+    // 不放空白選項：預設就選第一家找得到的，空的那一筆只會讓人選到「沒選」
+    fillSelect(ui.backend, list, (b) => b.title);
     ui.wantRestart = false;
     if (slot && (slot.enabled || slot.state !== 'notRunning')) {
       // 執行中／已結束的格：沿用目前的 CLI 與角色
