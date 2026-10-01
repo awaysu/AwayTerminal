@@ -37,6 +37,8 @@ pub fn spawn(app: AppHandle, manager: Arc<TabManager>) {
 fn tick(app: &AppHandle, manager: &TabManager) {
     let snapshot = manager.poll_snapshot();
     if snapshot.is_empty() {
+        // 沒有分頁 → 不顯示工作列的忙碌球（舊版 `Tabs.Count == 0` 那一行）
+        crate::taskbar::set_busy(app, false);
         return;
     }
 
@@ -73,6 +75,8 @@ fn tick(app: &AppHandle, manager: &TabManager) {
     if manager.apply_busy(&busy) {
         tabs::emit_state(app, manager);
     }
+    // 工作列 icon 右下：有分頁忙碌＝紅球跳動、全部閒置＝不顯示（舊版 `SetTaskbarBusy`）
+    crate::taskbar::set_busy(app, busy.iter().any(|&(_, b)| b));
 
     for ev in idled {
         if should_push(&ev) {

@@ -411,8 +411,12 @@ function render() {
     row.title = team ? `${tooltipFor(tab)}\n${teamTip(team)}` : tooltipFor(tab);
 
     const icon = document.createElement('span');
-    // 閒置染綠 #A5D6A7、忙碌染紅 #EF9A9A（舊版 TerminalTab.ReadyColor / BusyColor）
-    icon.className = 'tab-icon' + (tab.busy ? ' busy' : '');
+    // 閒置染綠 #A5D6A7、忙碌染紅 #EF9A9A（舊版 TerminalTab.ReadyColor / BusyColor）。
+    // 代理團隊整組只有這一列：只要有一格在忙就染紅，不是只看代表列那一格
+    const busy = team
+      ? team.agents.some((a) => a.tab !== null && state.tabs.some((t) => t.id === a.tab && t.busy))
+      : tab.busy;
+    icon.className = 'tab-icon' + (busy ? ' busy' : '');
     icon.appendChild(iconImg(tabIconKey(tab, team), 'tab-ico'));
     icon.title = kindTipFor(tab);
 
@@ -1151,7 +1155,7 @@ function installMenus() {
       return;
     }
     if (item.dataset.act === 'ma-limit') {
-      if (team) setTeamLimit(team.key, item.dataset.limit || '30');
+      if (team) setTeamLimit(team.key, item.dataset.limit || '50');
       return;
     }
     if (item.dataset.act === 'ma-stop') {
@@ -1629,9 +1633,9 @@ function applyTexts() {
       setText(el.pageMenu, sel, T[key]);
     }
     for (const [sel, key] of [
-      ['[data-term="copy"]', 'ctx.copy'],
-      ['[data-term="copyPaste"]', 'ctx.copyPaste'],
       ['[data-term="paste"]', 'tb.paste'],
+      ['[data-term="copyPaste"]', 'ctx.copyPaste'],
+      ['[data-term="copy"]', 'ctx.copy'],
       ['[data-term="copyall"]', 'tb.copyall'],
       ['[data-term="copyAllFile"]', 'ctx.copyAllFile'],
       ['[data-term="selectAll"]', 'ctx.selectAll'],

@@ -9,7 +9,7 @@
 //! | 組號取法 | 目前開著的組裡最小的空號；恢復時優先沿用上次的 | 同（[`next_free_number`]） |
 //! | 外框顏色 | 格 1 淡紅 `#EF9A9A`、2 淡藍 `#90CAF9`、3 淡綠 `#A5D6A7`、4 淡紫 `#CE93D8` | 同 |
 //! | pane 標題 | `Agent-12 · Software Engineer · Codex` | 同（[`Slot::label`]） |
-//! | 投遞上限 | 預設 30，可選 10／30／50／100／0（不限） | 同 |
+//! | 投遞上限 | 預設 30，可選 10／30／50／100／0（不限） | 選項同；**預設 50**（2026-10-01 使用者要求：30 則跑到一半就停） |
 //! | 閒置檢查 | 預設 30 分鐘，可選 15／30／60／0（不檢查） | 同 |
 //! | 上下列比例 | 0.15～0.85，預設 0.5 | 同（[`clamp_ratio`]） |
 
@@ -17,8 +17,9 @@ use std::collections::VecDeque;
 
 use super::message::AgentMessage;
 
-/// 投遞上限的預設值（照舊版 `DefaultMaxMessages`）。
-pub const DEFAULT_MAX_MESSAGES: u32 = 30;
+/// 投遞上限的預設值。舊版 `DefaultMaxMessages` 是 30；2026-10-01 使用者改成 50。
+/// 只影響**新開的**團隊——恢復的團隊沿用它存下來的上限。
+pub const DEFAULT_MAX_MESSAGES: u32 = 50;
 /// 設定視窗與右鍵選單可選的上限（0＝不限）。
 pub const LIMIT_CHOICES: &[u32] = &[10, 30, 50, 100, 0];
 /// 閒置檢查的預設分鐘數（照舊版 `DefaultIdleCheckMinutes`）。
@@ -441,9 +442,10 @@ mod tests {
     #[test]
     fn tracks_the_delivery_limit() {
         let mut t = Team::new("k", 1, "C:\\p");
-        assert_eq!(t.max_messages, 30);
+        assert_eq!(t.max_messages, 50);
+        t.message_count = 49;
         assert!(!t.limit_reached());
-        t.message_count = 30;
+        t.message_count = 50;
         assert!(t.limit_reached());
         t.max_messages = 0;
         assert!(!t.limit_reached(), "0＝不限");

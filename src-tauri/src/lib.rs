@@ -33,6 +33,7 @@ pub mod status;
 pub mod tabs;
 pub mod update;
 pub mod tap;
+pub mod taskbar;
 pub mod telegram;
 pub mod telnet;
 pub mod toolbar;
