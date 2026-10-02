@@ -57,7 +57,7 @@ function fill(s) {
   el.autoReconnect.checked = !!s.autoReconnect;
   el.logTs.checked = s.logTimestamp !== false;
   el.logAppend.checked = s.logAppend !== false;
-  el.sandboxDefault.checked = s.sandboxDefault !== false;
+  el.sandboxDefault.checked = !!s.sandboxDefault;
   el.weakCount.textContent = fmt('settings.weakCount', (s.sshWeakAccepted || []).length);
   // Telegram 遠端：狀態從後端問（**token 不回傳**，只回「有沒有設定」）
   el.renderer.value = ['auto', 'webgl', 'canvas', 'dom'].includes(s.renderer)

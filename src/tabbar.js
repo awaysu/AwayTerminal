@@ -66,7 +66,7 @@ function activeId() {
   return state.activeId;
 }
 
-/** 分頁 tooltip：完整名稱 + 執行了多久（日:時:分），第二行＝目前路徑。同舊版 `ToolTipText`。 */
+/** 分頁 tooltip：完整名稱 + 執行了多久（`00d00h00m`），第二行＝目前路徑。同舊版 `ToolTipText`。 */
 function tooltipFor(tab) {
   let s = `${tab.title}  ${T['tip.tabElapsed']} ${elapsedText(tab.startedAt)}`;
   if (tab.cwdPath && tab.cwdPath !== tab.title) s += `\n${tab.cwdPath}`;
@@ -431,20 +431,31 @@ function render() {
     close.title = T['tip.tabClose'];
 
     row.append(icon, title, close);
-    // 代理團隊那一列：agent 數量與投遞計數（舊版是 tooltip ＋分頁列小字）
+    // 代理團隊那一列尾端的小字（舊版 `TerminalTab.AgentStateText`）
     if (team) {
-      const badge = document.createElement('span');
-      badge.className = 'tab-team-badge' + (team.paused && team.kind !== 'chat' ? ' paused' : '');
-      const n = team.agents.filter((a) => a.tab !== null).length;
+      let text;
       if (team.kind === 'chat') {
         // 聊天室：人數 ＋ 第幾回合（等主題時只有人數）
-        badge.textContent =
+        const n = team.agents.filter((a) => a.tab !== null).length;
+        text =
           team.phase === 'discussing' ? `${n}\u00b7${team.round}/${team.rounds}` : String(n);
       } else {
-        badge.textContent = team.pending > 0 ? `${n}\u2709${team.pending}` : String(n);
+        // \u5df2\u6295\u905e 3 \u5247\uff1d\u300c\u27093/50\u300d\uff08\u4e0d\u9650\uff1d\u300c\u27093/\u221e\u300d\uff09\u3001\u66ab\u505c\uff1d\u300c\u23f83/50\u300d\uff1b\u9084\u6c92\u6295\u905e\u904e\uff1d\u4e0d\u986f\u793a
+        const count = `${team.messageCount}/${team.maxMessages > 0 ? team.maxMessages : '\u221e'}`;
+        // U+FE0E\uff1a\u8981\u6587\u5b57\u6a23\u5f0f\u7684 \u23f8\uff0c\u4e0d\u8981\u5f69\u8272 emoji\uff08\u624d\u5403\u5f97\u5230\u66ab\u505c\u7684\u984f\u8272\uff09
+        text = team.paused
+          ? `\u23f8\ufe0e${count}`
+          : team.messageCount > 0
+            ? `\u2709${count}`
+            : '';
       }
-      badge.title = teamTip(team);
-      row.insertBefore(badge, close);
+      if (text) {
+        const badge = document.createElement('span');
+        badge.className = 'tab-team-badge' + (team.paused && team.kind !== 'chat' ? ' paused' : '');
+        badge.textContent = text;
+        badge.title = teamTip(team);
+        row.insertBefore(badge, close);
+      }
     }
     // 記錄 log 中：舊版 1.1.2 起分頁列不再放 log 圖示、只在 tooltip 註明，
     // 但一個小紅點不占空間又看得出來，所以這裡多一個（刻意不同，見文件）
@@ -481,7 +492,7 @@ function render() {
   }
 }
 
-/** tooltip 的「執行 日:時:分」要跟著走。分鐘級精度，30 秒刷一次就夠。 */
+/** tooltip 的「執行 00d00h00m」要跟著走。分鐘級精度，30 秒刷一次就夠。 */
 function refreshTooltips() {
   for (const row of el.strip.querySelectorAll('.tab-row')) {
     const tab = state.tabs.find((t) => String(t.id) === row.dataset.id);
@@ -1263,6 +1274,8 @@ function installMenus() {
         invoke('toolbar_search');
         break;
     }
+    // 搜尋會把焦點放進搜尋列，其餘動作做完焦點要回到終端機（點選單時被帶走了）
+    if (item.dataset.term !== 'search') focusTerminal();
   });
 
   el.urlMenu.addEventListener('click', async (e) => {
@@ -1488,6 +1501,17 @@ function installHostKeyDialog() {
   };
 }
 
+/**
+ * 把鍵盤焦點還給作用中的終端機（舊版每個工具列／右鍵動作後面的 `Web.Focus()`）。
+ *
+ * 舊版的工具列與選單是 WPF 的，網頁裡的焦點從頭到尾沒離開過終端機；我們的按鈕與選單
+ * 是同一頁裡的元素，一點下去焦點就被帶走——貼上之後接著打字會沒反應。
+ */
+function focusTerminal() {
+  const ta = document.querySelector('.active-pane .xterm-helper-textarea');
+  if (ta) ta.focus();
+}
+
 /** 純文字貼上（舊版 `Paste_Click`）：讀剪貼簿 → `v` 協定 → `terminal.js` 的 `doPaste`。 */
 async function pasteFromClipboard(id) {
   let text = '';
@@ -1514,14 +1538,17 @@ function installToolbar() {
   el.btnCopy.addEventListener('click', () => {
     const id = activeId();
     if (id !== null) invoke('toolbar_copy', { id });
+    focusTerminal();
   });
   el.btnCopyAll.addEventListener('click', () => {
     const id = activeId();
     if (id !== null) invoke('toolbar_copy_all', { id });
+    focusTerminal();
   });
   el.btnPaste.addEventListener('click', () => {
     const id = activeId();
     if (id !== null) pasteFromClipboard(id);
+    focusTerminal();
   });
   el.btnClear.addEventListener('click', async () => {
     const id = activeId();

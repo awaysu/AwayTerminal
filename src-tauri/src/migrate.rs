@@ -244,7 +244,8 @@ pub fn apply(old: &serde_json::Value, to: &mut AppSettings) -> ImportReport {
                 pick_dir: b(c, "PickDir").unwrap_or(false),
                 hidden: b(c, "Hidden").unwrap_or(false),
                 via_powershell: b(c, "ViaPowerShell").unwrap_or(false),
-                // 舊版沒有沙盒 → 用新版的規則決定（AI agent 開、WSL／ADB 關）
+                // 舊版沒有沙盒 → 用新版的規則決定：照「新增的自訂連線預設開啟沙盒」
+                //（出廠值是關），WSL／ADB 永遠關
                 sandbox: to.sandbox_default && !matches!(name.as_str(), "WSL" | "ADB"),
             };
             // 同名的不重複加（使用者可能已經自己加過）
@@ -603,7 +604,7 @@ mod tests {
         assert_eq!(r.warnings.len(), 3, "三個降級都要提醒：{:?}", r.warnings);
     }
 
-    /// 自訂連線：全部進來，沙盒依新版規則（agent 開、WSL 關）。
+    /// 自訂連線：全部進來，沙盒依新版規則（照全域預設——出廠值是關；WSL 永遠關）。
     #[test]
     fn imports_custom_connections() {
         let mut s = AppSettings::default();
@@ -613,9 +614,18 @@ mod tests {
         assert_eq!(claude.close_key, "ctrl-d");
         assert_eq!(claude.close_count, 2);
         assert!(claude.pick_dir);
-        assert!(claude.sandbox, "agent 預設開沙盒");
+        assert!(!claude.sandbox, "出廠預設不開沙盒");
         let wsl = s.custom_conns.iter().find(|c| c.name == "WSL").unwrap();
         assert!(!wsl.sandbox, "WSL 預設不開沙盒");
+
+        // 使用者先把「新增的自訂連線預設開啟沙盒」打開再匯入 → agent 開、WSL 仍然關
+        let mut on = AppSettings::default();
+        on.sandbox_default = true;
+        apply(&old_json(), &mut on);
+        let claude = on.custom_conns.iter().find(|c| c.name == "ClaudeCode").unwrap();
+        assert!(claude.sandbox, "全域預設開著時 agent 要開沙盒");
+        let wsl = on.custom_conns.iter().find(|c| c.name == "WSL").unwrap();
+        assert!(!wsl.sandbox);
     }
 
     /// 我的最愛：ps／ssh／com 進來，代理團隊與 adb 跳過並記原因。

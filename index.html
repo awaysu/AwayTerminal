@@ -406,7 +406,7 @@
         <label id="ma-l-idle" data-row="idle"></label>
         <span class="sd-row" data-row="idle"><select id="ma-idle"></select><span id="ma-idle-hint" class="sd-hint"></span></span>
       </div>
-      <label class="sd-check"><input id="ma-sandbox" type="checkbox" checked /><span id="ma-l-sandbox"></span></label>
+      <label class="sd-check"><input id="ma-sandbox" type="checkbox" /><span id="ma-l-sandbox"></span></label>
       <div id="ma-slots"></div>
       <div id="ma-nobackend" hidden></div>
       <div id="ma-hint" class="sd-hint"></div>
@@ -428,16 +428,24 @@
       <div id="comdlg-title"></div>
       <div class="sd-grid">
         <label id="cd-l-port">Port</label>
+        <!-- Port／Baud rate 是**可編輯下拉**（舊版 `ComboBox IsEditable="True"`）：`<select>` 墊在下面
+             負責列出全部選項（只露出右邊的箭頭），`<input>` 疊在上面負責顯示與自己打字。
+             **不能用 `<input list>` ＋ `<datalist>`**——Chromium 會拿輸入框裡現有的字去篩，
+             填著 115200 時下拉就只剩 115200 一個選項（字型下拉 TASK-032 踩過同一個雷）。 -->
         <span class="sd-row">
-          <input id="cd-port" list="cd-port-list" type="text" autocomplete="off" spellcheck="false" />
-          <datalist id="cd-port-list"></datalist>
+          <span class="combo">
+            <select id="cd-port-list" tabindex="-1" aria-hidden="true"></select>
+            <input id="cd-port" type="text" autocomplete="off" spellcheck="false" />
+          </span>
           <button id="cd-refresh" type="button">重新掃描</button>
         </span>
 
         <label id="cd-l-baud">Baud rate</label>
         <span class="sd-row">
-          <input id="cd-baud" list="cd-baud-list" type="text" autocomplete="off" spellcheck="false" />
-          <datalist id="cd-baud-list"></datalist>
+          <span class="combo">
+            <select id="cd-baud-list" tabindex="-1" aria-hidden="true"></select>
+            <input id="cd-baud" type="text" autocomplete="off" spellcheck="false" />
+          </span>
         </span>
 
         <label id="cd-l-data">Data bits</label>

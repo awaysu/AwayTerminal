@@ -80,7 +80,7 @@ behaviour will produce different results.
 
 ### New features (not in the old version)
 
-- **Sandbox mode** (custom connections and agent teams, on by default): a `git worktree`
+- **Sandbox mode** (an option for custom connections and agent teams, off by default): a `git worktree`
   per tab, `TEMP`/`CARGO_TARGET_DIR` redirected into the sandbox (**`HOME`/`APPDATA` are
   deliberately not isolated** — that would log Claude Code and Codex out), a Windows Job
   Object with kill-on-close (process groups on Unix), and generated guard configuration for

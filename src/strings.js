@@ -10,7 +10,7 @@
 // 然後跑 `node scripts/test-i18n.mjs`（會列出漏掉的 key）。
 //
 // ⚠️ **日期／時間格式不跟著語言變**：log 的時間戳是舊版的相容格式，
-// 分頁 tooltip 的「執行 時:分」也照舊版（見 `elapsedText`）。這裡只翻文字。
+// 分頁 tooltip 的「執行 00d00h00m」也不跟著語言變（見 `elapsedText`）。這裡只翻文字。
 
 import zhTW from './lang/zh-TW.js';
 import en from './lang/en.js';
@@ -143,12 +143,14 @@ export function fmt(key, ...args) {
 // 這裡本來有一組自畫的 inline SVG，外觀和舊版對不起來——使用者一眼就看出來了。
 
 /**
- * 執行時長：格式「日:時:分」（日不補零、時分兩位）。
- * 逐字照抄舊版 `TerminalTab.ElapsedText`——未來時間／時鐘倒退視為 0。
+ * 執行時長：格式 `00d00h00m`（日、時、分各兩位；超過 99 天就照實多一位）。
+ * 舊版 `TerminalTab.ElapsedText` 是「日:時:分」（`0:00:00`），看起來像時:分:秒，
+ * 2026-10-02 使用者要求改成帶單位的寫法。未來時間／時鐘倒退視為 0（同舊版）。
+ * 單位字母不跟著介面語言變（LG16）。
  */
 export function elapsedText(startedAtMs) {
   let mins = Math.floor((Date.now() - startedAtMs) / 60000);
   if (!(mins >= 0)) mins = 0;
   const pad = (n) => String(n).padStart(2, '0');
-  return `${Math.floor(mins / 1440)}:${pad(Math.floor(mins / 60) % 24)}:${pad(mins % 60)}`;
+  return `${pad(Math.floor(mins / 1440))}d${pad(Math.floor(mins / 60) % 24)}h${pad(mins % 60)}m`;
 }

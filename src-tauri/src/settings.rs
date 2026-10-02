@@ -119,8 +119,8 @@ pub struct AppSettings {
     pub telegram_bot_token: String,
     pub telegram_chat_id: i64,
     pub remote_notify: bool,
-    /// **新版多的**：新加入的自訂連線預設要不要開沙盒（設定視窗可改；預設開，
-    /// 同 `CLAUDE.md`「沙盒模式…預設開啟」）。已存在的連線不受影響。
+    /// **新版多的**：新加入的自訂連線預設要不要開沙盒（設定視窗可改；**預設關**，
+    /// 2026-10-02 使用者改的，原本是開）。已存在的連線不受影響。
     /// ⚠️ WSL／ADB 這類「拿來操作機器」的工具即使這裡是開，自動偵測仍然預設關
     ///（見 `custom::default_sandbox`）。
     pub sandbox_default: bool,
@@ -187,13 +187,9 @@ pub struct CustomConn {
     pub via_powershell: bool,
     /// **沙盒模式**（TASK-007 新增，`CLAUDE.md`「新增功能」一節）。
     ///
-    /// **預設 true**——所以這裡不能用 `bool` 的 `Default`（false），要自己給。
-    #[serde(default = "default_true")]
+    /// **預設關**（2026-10-02 使用者改的，原本預設開）：設定檔裡沒有這個欄位的連線
+    ///（例如從舊版匯入的）一律當成沒開沙盒。
     pub sandbox: bool,
-}
-
-fn default_true() -> bool {
-    true
 }
 
 impl Default for CustomConn {
@@ -208,7 +204,7 @@ impl Default for CustomConn {
             pick_dir: false,
             hidden: false,
             via_powershell: false,
-            sandbox: true,
+            sandbox: false,
         }
     }
 }
@@ -272,7 +268,7 @@ impl Default for AppSettings {
             telegram_bot_token: String::new(),
             telegram_chat_id: 0,
             remote_notify: false,
-            sandbox_default: true,
+            sandbox_default: false,
             compose_send_enter: true,
             custom_conns: Vec::new(),
             // 舊版 MainWindow.xaml 的「配色」子選單那五組，順序照抄

@@ -109,8 +109,8 @@ function loadForm(c) {
   el.pickDir.checked = !!c.pickDir;
   el.viaPs.checked = !!c.viaPowerShell;
   el.hidden.checked = !!c.hidden;
-  // 新增時預設開沙盒（後端 CustomConn::default 也是 true，兩邊要一致）
-  el.sandbox.checked = c.sandbox === undefined ? true : !!c.sandbox;
+  // 新增時預設不開沙盒（後端 CustomConn::default 也是 false，兩邊要一致）
+  el.sandbox.checked = !!c.sandbox;
   // 新增時預設 `run`（同舊版 `CustomConnDialog.DefaultIcon`）
   editingIcon = c.icon || 'run';
   renderIcons();

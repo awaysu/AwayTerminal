@@ -340,7 +340,8 @@ async function openDialog(dir, state, wantKind) {
       : String(existing ? existing.maxMessages : opts.defaultMaxMessages);
   el.idle.value = String(existing ? existing.idleCheckMinutes : opts.defaultIdleCheck);
   // 沙盒是建團隊時決定的（worktree 已經開好），既有團隊不能改 → 顯示目前狀態並停用
-  el.sandbox.checked = existing ? existing.sandbox : true;
+  // 新開的團隊預設不開沙盒（2026-10-02 使用者改的，原本預設開）
+  el.sandbox.checked = existing ? existing.sandbox : false;
   el.sandbox.disabled = !!existing;
   el.ok.textContent = existing ? T['ma.dlgApply'] : T['ma.dlgOpen'];
 

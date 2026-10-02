@@ -36,7 +36,7 @@ PM 在 TASK-015 A2 要求「`settings.json` 已有的欄位全部要能從這裡
 | log 預設資料夾 | `logDir` | 我的文件\AwayTerminalLogs | 空白時由後端補 |
 | log 每行加時間戳 | `logTimestamp` | `true` | |
 | log 檔已存在時附加在後面 | `logAppend` | `true` | |
-| 新增的自訂連線預設開啟沙盒 | `sandboxDefault` | `true` | **新欄位**；WSL／ADB 仍然預設關（`custom::default_sandbox`） |
+| 新增的自訂連線預設開啟沙盒 | `sandboxDefault` | `false` | **新欄位**（2026-10-02 起預設關，原本是 `true`）；打開之後 WSL／ADB 仍然預設關（`custom::default_sandbox`） |
 | 清除已接受的弱演算法記錄 | `sshWeakAccepted` | — | 只給一個**清除鈕**（記錄型欄位不給編輯 UI，PM 定） |
 
 ### 1.3 刻意不放進設定視窗的
@@ -152,8 +152,8 @@ node scripts/test-i18n.mjs
   **舊版沒有這個行為**（舊版預設一律繁中）→ 新增。
 - 舊設定檔寫的是 `zh`（只有中英兩種的時期）→ 讀進來當 `zh-TW`（`setLang` 有處理，有測試）。
 - **日期／時間格式不跟著語言變**：log 的時間戳是舊版的相容格式
-  （`[yy-MM-dd HH:mm:ss]`，改了會讓舊的 log 解析不了），分頁 tooltip 的「執行 日:時:分」
-  也照舊版（`elapsedText`）。這次只翻文字。
+  （`[yy-MM-dd HH:mm:ss]`，改了會讓舊的 log 解析不了），分頁 tooltip 的「執行 00d00h00m」
+  也是固定格式（`elapsedText`；2026-10-02 由舊版的 `日:時:分` 改成帶單位）。這次只翻文字。
 
 ## 3. 關於頁與更新檢查
 

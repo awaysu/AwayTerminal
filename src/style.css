@@ -418,6 +418,13 @@ body.col-resizing { cursor: col-resize; user-select: none; }
 .sd-grid > label { color: #999; font-size: 12px; white-space: nowrap; }
 .sd-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .sd-row > input[type="text"] { flex: 1 1 auto; min-width: 0; }
+/* 可編輯下拉：<select> 墊底（只露出右邊 22px 的箭頭），<input> 疊在上面。見 index.html 的 #comdlg */
+.combo { position: relative; display: flex; flex: 1 1 auto; min-width: 0; }
+.combo > select { flex: 1 1 auto; min-width: 0; width: 100%; }
+.combo > input[type="text"] {
+  position: absolute; left: 0; top: 0; bottom: 0; width: calc(100% - 22px);
+  box-sizing: border-box; border-right: none;
+}
 #sshdlg input[type="text"], #sshdlg input[type="number"], #sshdlg textarea, #sshdlg select {
   background: #1e1e1e; color: #e0e0e0; border: 1px solid #555; outline: none;
   padding: 4px 6px; font-size: 13px; font-family: inherit;
@@ -676,8 +683,15 @@ body.col-resizing { cursor: col-resize; user-select: none; }
   align-items: center;
   justify-content: center;
   z-index: 62;
-  /* TASK-030：這一族原本沒設字型 → 吃到瀏覽器預設（16px 襯線體），
-     和其他對話框（13px 微軟正黑體）大小不一。固定 13px，不隨語言或元件而變。 */
+}
+/* TASK-030：這一族原本沒設字型 → 吃到瀏覽器預設（16px 襯線體），
+   和其他對話框（13px 微軟正黑體）大小不一。固定 13px，不隨語言或元件而變。
+   `#madlg`（代理團隊／AI 聊天室的設定視窗）是 2026-10-02 補進來的，同一個毛病。 */
+#setdlg,
+#remotedlg,
+#aboutdlg,
+#updatedlg,
+#madlg {
   font: 13px "Microsoft JhengHei", "微軟正黑體", sans-serif;
 }
 /* 表單元件不會自動繼承字型（input/select/button 各有 UA 預設）→ 全部押回 13px */
@@ -686,7 +700,10 @@ body.col-resizing { cursor: col-resize; user-select: none; }
 #setdlg button,
 #remotedlg input,
 #remotedlg select,
-#remotedlg button {
+#remotedlg button,
+#madlg input,
+#madlg select,
+#madlg button {
   font: inherit;
 }
 #setdlg[hidden],
@@ -999,7 +1016,7 @@ body.col-resizing { cursor: col-resize; user-select: none; }
 .ma-slot.off { opacity: 0.55; }
 #ma-nobackend { color: #EF9A9A; margin-top: 8px; }
 #ma-hint { margin-top: 8px; white-space: pre-line; }
-/* 代理團隊那一列的小標記：agent 數（有信待投遞時多一個 ✉n） */
+/* 代理團隊那一列尾端的小字：投遞狀態 ✉3/50、暫停 ⏸3/50（聊天室＝人數·回合） */
 .tab-team-badge {
   font-size: 10px;
   color: #90CAF9;

@@ -125,8 +125,8 @@ pub struct TeamSetup {
     /// 閒置檢查分鐘數（0＝不檢查）。
     #[serde(default = "default_idle")]
     pub idle_check_minutes: u32,
-    /// **沙盒模式**（新增；預設開，`CLAUDE.md`「新增功能」一節）。
-    #[serde(default = "default_sandbox")]
+    /// **沙盒模式**（新增，`CLAUDE.md`「新增功能」一節；**預設關**，2026-10-02 使用者改的）。
+    #[serde(default)]
     pub sandbox: bool,
     /// 這一組是代理團隊還是 AI 聊天室（省略＝代理團隊）。
     #[serde(default)]
@@ -145,9 +145,6 @@ fn default_max() -> u32 {
 }
 fn default_idle() -> u32 {
     team::DEFAULT_IDLE_CHECK_MINUTES
-}
-fn default_sandbox() -> bool {
-    true
 }
 
 /// 一格的啟動計畫（前端照它呼叫 `session_create`）。

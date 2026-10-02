@@ -72,7 +72,7 @@ log 記錄（去 ANSI、時間戳、append）、我的最愛、恢復分頁（**
 
 ### 新功能（舊版沒有）
 
-- **沙盒模式**（自訂連線與代理團隊，預設開啟）：每個分頁一棵 `git worktree`、
+- **沙盒模式**（自訂連線與代理團隊的選項，預設關閉）：每個分頁一棵 `git worktree`、
   `TEMP`／`CARGO_TARGET_DIR` 導到沙盒目錄（**不隔離 `HOME`／`APPDATA`**——那會讓
   Claude Code、Codex 掉登入）、Windows Job Object kill-on-close（Unix 用行程群組）、
   自動產生各工具的護欄設定（Claude Code 的 `PreToolUse` hook 會拒絕 `taskkill /IM`、

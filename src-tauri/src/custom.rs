@@ -97,10 +97,10 @@ pub const KNOWN_TOOLS: &[KnownTool] = &[
 
 /// 這個工具要不要沙盒？
 ///
-/// `CLAUDE.md` 說「自訂連線…各多一個沙盒選項，**預設開啟**」。自動偵測加進來的
-/// AI coding agent 一律預設開；WSL／ADB 這種「使用者拿來操作機器」的工具預設**關**——
+/// `global`＝設定視窗的「新增的自訂連線預設開啟沙盒」（`settings.sandbox_default`；
+/// **出廠值是關**，2026-10-02 使用者改的）。使用者把它打開之後，自動偵測加進來的
+/// AI coding agent 才預設開；WSL／ADB 這種「使用者拿來操作機器」的工具永遠預設**關**——
 /// 對它們開沙盒只會讓使用者莫名其妙進到一個 worktree 裡。
-/// `global`＝設定視窗的「新增的自訂連線預設開啟沙盒」（`settings.sandbox_default`）。
 fn default_sandbox(name: &str, global: bool) -> bool {
     global && !matches!(name, "WSL" | "ADB")
 }
@@ -360,16 +360,18 @@ mod tests {
     }
 
     #[test]
-    fn sandbox_defaults_on_for_agents_off_for_shells() {
+    fn sandbox_follows_the_global_default_except_for_shells() {
+        // 設定裡把「新增的自訂連線預設開啟沙盒」打開 → agent 開、WSL／ADB 仍然關
         assert!(default_sandbox("ClaudeCode", true));
         assert!(default_sandbox("Codex", true));
         assert!(default_sandbox("Aider", true));
         assert!(!default_sandbox("WSL", true));
         assert!(!default_sandbox("ADB", true));
-        // 設定裡把全域預設關掉 → 連 agent 也不開（TASK-015 A4）
+        // 全域預設是關的（**出廠值**，2026-10-02 起）→ 連 agent 也不開（TASK-015 A4）
         assert!(!default_sandbox("ClaudeCode", false));
-        // 新建一條（使用者自己加的）預設也是開的
-        assert!(CustomConn::default().sandbox);
+        assert!(!crate::settings::AppSettings::default().sandbox_default);
+        // 新建一條（使用者自己加的）預設也是關的
+        assert!(!CustomConn::default().sandbox);
     }
 
     #[test]

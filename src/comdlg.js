@@ -34,13 +34,40 @@ const FLOW_LABEL = {
   RequestToSendXOnXOff: 'RTS/CTS+XON/XOFF',
 };
 
+/** 可編輯下拉（Port／Baud rate）底下那個 `<select>` 的選項。 */
 function fillList(node, values) {
   node.textContent = '';
   for (const v of values) {
     const opt = document.createElement('option');
     opt.value = String(v);
+    opt.textContent = String(v);
     node.appendChild(opt);
   }
+}
+
+/** 讓底下的 `<select>` 跟著輸入框：字剛好是清單裡的就選起來，自己打的值＝不選任何一項。 */
+function syncCombo(input, list) {
+  list.value = input.value.trim();
+}
+
+/** 把一組 `<input>` ＋ `<select>` 接成可編輯下拉（舊版 `ComboBox IsEditable="True"`）。 */
+function wireCombo(input, list) {
+  list.addEventListener('change', () => {
+    input.value = list.value;
+    input.focus();
+  });
+  input.addEventListener('input', () => syncCombo(input, list));
+  // 上下鍵在清單裡移動（同舊版的 ComboBox）
+  input.addEventListener('keydown', (e) => {
+    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+    const n = list.options.length;
+    if (n === 0) return;
+    e.preventDefault();
+    const step = e.key === 'ArrowDown' ? 1 : -1;
+    const at = list.selectedIndex;
+    list.selectedIndex = at < 0 ? (step > 0 ? 0 : n - 1) : Math.min(n - 1, Math.max(0, at + step));
+    input.value = list.value;
+  });
 }
 
 function fillSelect(node, values, labels) {
@@ -72,6 +99,9 @@ async function loadPorts(keep) {
   fillSelect(el.parity, (catalog && catalog.parities) || ['None']);
   fillSelect(el.stop, (catalog && catalog.stopBits) || ['One'], STOP_LABEL);
   fillSelect(el.flow, (catalog && catalog.flows) || ['None'], FLOW_LABEL);
+  // 清單重建了（「重新掃描」）：把目前填的值重新對回去
+  syncCombo(el.port, el.portList);
+  syncCombo(el.baud, el.baudList);
 
   // 埠旁邊顯示 USB 描述，讓使用者分得出哪個是哪條線（舊版只有 COM 編號）
   el.portsNote.textContent =
@@ -103,6 +133,8 @@ function write(p) {
   el.stop.value = p.stopBits || 'One';
   el.flow.value = p.flow || 'None';
   el.reconnect.checked = !!p.autoReconnect;
+  syncCombo(el.port, el.portList);
+  syncCombo(el.baud, el.baudList);
 }
 
 /** 舊版「回到預設」：COM5 / 115200 / 8 / None / 1 / None（**不動**自動重連的勾選）。 */
@@ -113,6 +145,8 @@ function resetFields() {
   el.parity.value = 'None';
   el.stop.value = 'One';
   el.flow.value = 'None';
+  syncCombo(el.port, el.portList);
+  syncCombo(el.baud, el.baudList);
 }
 
 function close(result) {
@@ -178,6 +212,8 @@ export function initComDialog() {
   el.cancel = $('cd-cancel');
 
   onLangChange(applyTexts);
+  wireCombo(el.port, el.portList);
+  wireCombo(el.baud, el.baudList);
 
   el.refresh.addEventListener('click', () => loadPorts(el.port.value.trim()));
   el.reset.addEventListener('click', resetFields);

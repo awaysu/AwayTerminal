@@ -224,7 +224,7 @@ pub struct Team {
     pub all_idle_since_ms: u128,
     /// 本次執行內的投遞序號（「訊息 #n」用，從 1 起）。
     pub delivery_seq: u32,
-    /// 沙盒模式（新版才有；預設開）。
+    /// 沙盒模式（新版才有；預設關）。
     pub sandbox: bool,
     /// 這個團隊的沙盒配置（`None`＝沒開或準備失敗）。**一個團隊一個**，所有 agent 共用。
     pub sandbox_cfg: Option<crate::sandbox::Sandbox>,
@@ -283,7 +283,7 @@ impl Team {
             idle_check_minutes: DEFAULT_IDLE_CHECK_MINUTES,
             all_idle_since_ms: 0,
             delivery_seq: 0,
-            sandbox: true,
+            sandbox: false,
             sandbox_cfg: None,
             bus: None,
             last_focused: None,

@@ -82,7 +82,7 @@ pub struct Tab {
     /// 舊版 `n` 協定第三欄。目前只有 `c`＝claude 分頁。
     pub flags: String,
     pub pid: u32,
-    /// 分頁開啟時間（epoch ms）。tooltip 的「執行 日:時:分」從這裡算。
+    /// 分頁開啟時間（epoch ms）。tooltip 的「執行 00d00h00m」從這裡算。
     pub started_at: u64,
     /// 最後一次收到輸出的時間（epoch ms）。狀態燈用。
     ///
