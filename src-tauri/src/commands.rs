@@ -667,8 +667,6 @@ pub fn session_create(
     if let (Some(a), Some(plan)) = (&agent, &agent_slot) {
         crate::agent::slot_started(&teams, &a.team, a.index, id, plan);
     }
-    // 恢復分頁：把最初的開啟時間填回去（tooltip 的執行時長接著算）
-    crate::restore::apply_opened(&app, id, restore);
     manager.insert(id, session);
     tabs::emit_state(&app, &tabs_state);
     Ok(info)
@@ -826,7 +824,6 @@ fn create_remote(
         backend: backend.to_string(),
     });
     tabs_state.set_active(id);
-    crate::restore::apply_opened(&app, id, restore);
 
     let parts = tabs_state
         .session_parts_of(id)

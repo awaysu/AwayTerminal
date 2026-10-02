@@ -12,15 +12,18 @@
 //! | 6. 下次啟動自動恢復 | `OnLoaded`：`SavedTabs` 不是空的就 `RestoreTabs`，**不問使用者** | [`restore_list`] + 前端照序開分頁 |
 //! | 7. 畫面倒回去 | `AddTab` 在 `n` 之後、`SelectTab`（`s`）之前送 `b{id}US{內容}US{分隔行}` | [`emit_buffer`]（在 `session_create` 裡呼叫，順序一樣） |
 //! | 8. 分隔行 | 灰字 `──── 以上為上次關閉前的紀錄（存檔時間）────` | [`SEP_FORMAT`] |
-//! | 9. 原始開啟時間 | `SavedTab.OpenedUtc` → `tab.StartUtc`，讓 tooltip 的執行時長接著算、不歸零 | `SavedTab::opened_ms` → `Tab::started_at` |
+//! | 9. 原始開啟時間 | `SavedTab.OpenedUtc` → `tab.StartUtc`，讓 tooltip 的執行時長接著算、不歸零 | **不照做**：恢復後從恢復那一刻重新計時（見下面第 3 點） |
 //! | 10. 個別分頁恢復失敗 | `catch { }` 跳過那一筆，其餘照開 | 前端逐筆 try |
 //!
-//! ## 兩個刻意的差別
+//! ## 三個刻意的差別
 //!
 //! 1. **SSH 帳號**：舊版恢復 SSH 分頁時只印 `login as: ` 等使用者打帳號（因為它要把帳號塞進
 //!    `ssh.exe` 的命令列）。我們存的 `SshConnParams` 已經有帳號（登入時記下來的），所以直接連；
 //!    沒有帳號才會問 `login as:`——和第一次連線的行為一致。
 //! 2. **密碼**：一律重問。存下來的東西裡沒有密碼欄位（見 `reconnect.rs` 的單元測試）。
+//! 3. **執行時長**：舊版恢復後接著原本的開啟時間算（關掉程式的那段也算進去）。2026-10-02
+//!    使用者回報「重開之後執行時間沒有重新算」→ 恢復的分頁從恢復那一刻重新計時
+//!    （行程本來就是新開的）。`SavedTab::opened_ms` 照樣存著，只是不再讀回來。
 
 use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -56,7 +59,8 @@ pub struct SavedTab {
     pub conn: Option<crate::reconnect::ConnParams>,
     /// scrollback 的檔名（位於 [`dir_of`]）。空＝沒存到。
     pub buffer_file: String,
-    /// 分頁最初開啟的時間（epoch ms）。恢復後 tooltip 的執行時長接著算、不歸零（舊版 1.1.4）。
+    /// 分頁開啟的時間（epoch ms）。舊版拿它讓恢復後的執行時長接著算；我們**不讀回來**
+    ///（恢復後重新計時，見檔頭第 3 點），欄位留著是為了設定檔格式不變。
     pub opened_ms: u64,
     /// `adb`：裝置序號（空＝只有一台時直接開的那種）。舊版 `SavedTab.AdbSerial`。
     pub adb_serial: String,
@@ -291,21 +295,6 @@ pub fn emit_buffer(app: &AppHandle, id: u32, index: Option<usize>) {
             crate::b64::encode(sep.as_bytes())
         ),
     );
-}
-
-/// 恢復分頁時把「最初的開啟時間」填回分頁（tooltip 的執行時長不歸零，舊版 1.1.4）。
-///
-/// 在 `session_create` 把分頁放進 `TabManager` 之後呼叫。
-pub fn apply_opened(app: &AppHandle, id: u32, index: Option<usize>) {
-    let Some(index) = index else { return };
-    let Some(tabs) = app.try_state::<Arc<TabManager>>() else {
-        return;
-    };
-    let ms = {
-        let g = pending().lock().unwrap_or_else(|e| e.into_inner());
-        g.get(index).map(|e| e.opened_ms).unwrap_or(0)
-    };
-    tabs.set_started_at(id, ms);
 }
 
 // ---------------------------------------------------------------- 只給 --verify 用

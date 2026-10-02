@@ -110,6 +110,10 @@
     <div class="menu-item" data-act="rename">更改名稱</div>
     <div class="menu-item" data-act="log">記錄 log…</div>
     <div class="menu-item" data-act="macro">執行巨集…</div>
+    <!-- 沙盒模式（新功能）：勾勾（在文字後面）顯示的是**連線設定**的值，改了下次啟動生效 -->
+    <div class="menu-item" data-act="sandbox">沙盒模式</div>
+    <div class="menu-item" data-act="sandbox-clear">清除沙盒…</div>
+    <!-- 配色排在沙盒模式下面（2026-10-02 使用者指定的順序） -->
     <div class="menu-item has-sub" data-act="color">配色
       <span class="menu-arrow">▸</span>
       <div class="popup-menu submenu" id="color-menu">
@@ -118,9 +122,6 @@
         <div id="color-items"></div>
       </div>
     </div>
-    <!-- 沙盒模式（新功能）：勾勾顯示的是**連線設定**的值，改了下次啟動生效 -->
-    <div class="menu-item" data-act="sandbox">沙盒模式</div>
-    <div class="menu-item" data-act="sandbox-clear">清除沙盒…</div>
     <!-- 推播到 Telegram（v2 多的；舊版只有全域的 /notify）。遠端沒開時整項隱藏 -->
     <div class="menu-item" data-act="tg-notify">推播到 Telegram</div>
     <!-- 代理團隊那一列才顯示（舊版分頁右鍵的 ma.* 那幾項） -->

@@ -440,14 +440,11 @@ function render() {
         text =
           team.phase === 'discussing' ? `${n}\u00b7${team.round}/${team.rounds}` : String(n);
       } else {
-        // \u5df2\u6295\u905e 3 \u5247\uff1d\u300c\u27093/50\u300d\uff08\u4e0d\u9650\uff1d\u300c\u27093/\u221e\u300d\uff09\u3001\u66ab\u505c\uff1d\u300c\u23f83/50\u300d\uff1b\u9084\u6c92\u6295\u905e\u904e\uff1d\u4e0d\u986f\u793a
-        const count = `${team.messageCount}/${team.maxMessages > 0 ? team.maxMessages : '\u221e'}`;
+        // \u5df2\u6295\u905e 3 \u5247\uff1d\u300c\u27093/50\u300d\uff08\u4e0d\u9650\uff1d\u300c\u27093/\u221e\u300d\uff09\u3001\u66ab\u505c\uff1d\u300c\u23f83/50\u300d\u3002\u820a\u7248\u9084\u6c92\u6295\u905e\u904e\u6642\u4e0d\u986f\u793a\uff1b
+        // \u4f7f\u7528\u8005\u8981\u4e00\u958b\u59cb\u5c31\u770b\u5f97\u5230\uff08\u525b\u958b\uff0f\u525b\u6062\u5fa9\u7684\u5718\u968a\u662f\u300c\u27090/50\u300d\uff09
+        const count = `${team.messageCount || 0}/${team.maxMessages > 0 ? team.maxMessages : '\u221e'}`;
         // U+FE0E\uff1a\u8981\u6587\u5b57\u6a23\u5f0f\u7684 \u23f8\uff0c\u4e0d\u8981\u5f69\u8272 emoji\uff08\u624d\u5403\u5f97\u5230\u66ab\u505c\u7684\u984f\u8272\uff09
-        text = team.paused
-          ? `\u23f8\ufe0e${count}`
-          : team.messageCount > 0
-            ? `\u2709${count}`
-            : '';
+        text = team.paused ? `\u23f8\ufe0e${count}` : `\u2709${count}`;
       }
       if (text) {
         const badge = document.createElement('span');
@@ -578,7 +575,7 @@ async function toggleTgNotify(id) {
 async function toggleSandbox(id) {
   const tab = state.tabs.find((t) => t.id === id);
   if (!tab || !tab.connName) return;
-  const next = tab.connSandbox === false; // 目前關著就要打開
+  const next = tab.connSandbox !== true; // 目前關著就要打開
   try {
     await invoke('conn_set_sandbox', { name: tab.connName, sandbox: next });
   } catch (e) {
@@ -845,9 +842,10 @@ function installStripEvents() {
     el.menuSandbox.hidden = !hasConn;
     el.menuSandboxClear.hidden = !(tab && tab.sandbox && tab.sandbox.hasWorktree);
     if (hasConn) {
-      // 勾勾顯示的是**連線設定**的值（改了下次啟動才生效），不是目前分頁的狀態
-      const on = tab.connSandbox !== false;
-      el.menuSandbox.textContent = `${on ? '✓ ' : '　'}${T['sb.menu']}`;
+      // 勾勾顯示的是**連線設定**的值（改了下次啟動才生效），不是目前分頁的狀態。
+      // 勾勾放在文字**後面**：放前面的話這一項的字會比其他項目往右縮，整排對不齊
+      const on = tab.connSandbox === true;
+      el.menuSandbox.textContent = `${T['sb.menu']}${on ? ' ✓' : ''}`;
     }
     // 推播到 Telegram：遠端沒開就整項隱藏（沒開的話這個勾勾沒有任何意義）
     el.menuTgNotify.hidden = true;
@@ -856,7 +854,7 @@ function installStripEvents() {
         if (!st.running) return;
         el.menuTgNotify.hidden = false;
         return invoke('telegram_tab_state', { id }).then((on) => {
-          el.menuTgNotify.textContent = `${on ? '✓ ' : '　'}${T['menu.tgNotify']}`;
+          el.menuTgNotify.textContent = `${T['menu.tgNotify']}${on ? ' ✓' : ''}`;
         });
       })
       .catch(() => {});

@@ -642,15 +642,6 @@ impl TabManager {
         out
     }
 
-    /// 恢復分頁時把最初的開啟時間填回去（tooltip 的執行時長不歸零，舊版 1.1.4）。
-    pub fn set_started_at(&self, id: u32, ms: u64) {
-        if ms > 0 {
-            if let Some(t) = self.lock().tabs.get_mut(&id) {
-                t.started_at = ms;
-            }
-        }
-    }
-
     /// 這個分頁的遠端連線參數（`None`＝本機分頁，不能重連）。
     pub fn conn_params_of(&self, id: u32) -> Option<crate::reconnect::ConnParams> {
         self.lock().tabs.get(&id).and_then(|t| t.conn.clone())
