@@ -197,7 +197,7 @@ pub fn pick_work_dir(
     Some(dir)
 }
 
-/// 網址選單的「從瀏覽器開啟」（舊版 `OpenUrlExternal`）。
+/// 網址選單的「用瀏覽器開啟」（舊版 `OpenUrlExternal`）。
 ///
 /// **只放行 http/https**：擋掉 `file:`、`javascript:` 等，避免點到終端機輸出的怪字串
 /// 就觸發本機動作（舊版 1.1.6 的註解）。

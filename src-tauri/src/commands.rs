@@ -1039,6 +1039,24 @@ pub fn tab_rename(app: AppHandle, id: u32, title: String, tabs_state: State<'_, 
     tabs::emit_state(&app, &tabs_state);
 }
 
+/// `tab_adb` 的回傳：欄位和 `session_create` 的 `adb` 參數（[`AdbArgs`]）同名，前端可以原樣帶回來。
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TabAdb {
+    pub path: String,
+    /// 空＝開的時候只有一台裝置（`adb shell` 不帶 `-s`）。
+    pub serial: String,
+}
+
+/// ADB 分頁當初用的 `adb.exe` 與裝置序號（分頁右鍵「重新啟動」用，2.0.5）。
+/// 不是 ADB 分頁＝`None`。重開時直接用這一份，不再跑 `adb devices`（同恢復分頁）。
+#[tauri::command]
+pub fn tab_adb(id: u32, tabs_state: State<'_, Arc<TabManager>>) -> Option<TabAdb> {
+    tabs_state
+        .adb_of(id)
+        .map(|(path, serial)| TabAdb { path, serial })
+}
+
 /// 分頁列拖曳排序 → 存新順序並用 `K` 同步分割／分欄模式的 pane 順序（舊版 `Tab_DragDrop`）。
 #[tauri::command]
 pub fn tabs_reorder(app: AppHandle, ids: Vec<u32>, tabs_state: State<'_, Arc<TabManager>>) {

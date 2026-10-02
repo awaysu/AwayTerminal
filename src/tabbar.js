@@ -605,9 +605,9 @@ async function openShellHere(id) {
   }
 }
 
-/** 這個分頁有辦法「用同樣的東西重開」嗎（自訂連線、PowerShell、SSH／Telnet／連接埠）。 */
+/** 這個分頁有辦法「用同樣的東西重開」嗎（自訂連線、PowerShell、SSH／Telnet／連接埠、ADB）。 */
 function canRestart(tab) {
-  return !!tab.connName || ['powershell', 'ssh', 'telnet', 'com'].includes(tab.kind);
+  return !!tab.connName || ['powershell', 'ssh', 'telnet', 'com', 'adb'].includes(tab.kind);
 }
 
 /**
@@ -616,12 +616,18 @@ function canRestart(tab) {
  * 自訂連線＝同一條連線、同一個工作目錄、同一個模型（不再問模型）；PowerShell＝目前所在的
  * 目錄；SSH／Telnet／連接埠＝同一組連線參數（密碼照樣當場問）。那些參數和「加到我的最愛」
  * 記的是同一份，所以直接跟後端要 `fav_candidate`。
+ *
+ * ADB＝同一支 adb.exe、同一台裝置（序號），**不再跑 `adb devices` 選一次**（同恢復分頁）。
+ * ADB 不是我的最愛的種類，參數另外跟後端要（`tab_adb`）。
  */
 async function restartTab(id) {
   const tab = state.tabs.find((t) => t.id === id);
   if (!tab || !canRestart(tab)) return;
   let args = null;
-  if (tab.connName) {
+  if (tab.kind === 'adb') {
+    const adb = await invoke('tab_adb', { id }).catch(() => null);
+    if (adb) args = { kind: 'adb', adb: { path: adb.path || null, serial: adb.serial || null } };
+  } else if (tab.connName) {
     args = { kind: 'conn', conn: tab.connName, cwd: tab.workDir || null, model: tab.model || '' };
   } else {
     const f = await invoke('fav_candidate', { id }).catch(() => null);
@@ -1098,11 +1104,22 @@ function showMenuUnder(menu, button) {
   showMenu(menu, r.left, r.bottom + 2);
 }
 
+/**
+ * 網址選單剛被「這一下點擊」打開（2.0.5 修正）。
+ *
+ * xterm 的 Linkifier 是在 **mouseup** 觸發連結的（選單在那時候開），同一下點擊接著還會有一個
+ * `click` 冒泡到 document——而 document 的 click 是用來「點別的地方就收選單」的，結果選單一開
+ * 就被自己那一下關掉，使用者什麼都看不到。舊版沒這個問題是因為選單是 WPF 的 ContextMenu。
+ * 所以：開選單時立旗標，緊接著的那一個 click 不收選單；下一次 mousedown 就解除。
+ */
+let urlMenuFreshClick = false;
+
 /** 網址選單（舊版 `ShowUrlMenu`，由 `U` 協定觸發）。 */
 export function showUrlMenu(url, x, y) {
   if (!url) return;
   pendingUrl = url;
   showMenu(el.urlMenu, x, y);
+  urlMenuFreshClick = true;
 }
 
 /**
@@ -1384,7 +1401,21 @@ function installMenus() {
     }
   });
 
-  document.addEventListener('click', hideMenus);
+  document.addEventListener('click', () => {
+    // 打開網址選單的那一下點擊自己的 click：不收（見 `urlMenuFreshClick`）
+    if (urlMenuFreshClick) {
+      urlMenuFreshClick = false;
+      return;
+    }
+    hideMenus();
+  });
+  document.addEventListener(
+    'mousedown',
+    () => {
+      urlMenuFreshClick = false;
+    },
+    true
+  );
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
       hideMenus();

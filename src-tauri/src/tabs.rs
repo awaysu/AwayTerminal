@@ -667,6 +667,12 @@ impl TabManager {
         self.conn_params_of(id).and_then(|c| c.as_com().cloned())
     }
 
+    /// ADB 分頁當初用的 `adb.exe` 路徑與裝置序號（序號空＝只有一台時開的）。
+    /// 不是 ADB 分頁＝`None`。和恢復分頁記的是同一份。
+    pub fn adb_of(&self, id: u32) -> Option<(String, String)> {
+        self.lock().tabs.get(&id).and_then(|t| t.adb.clone())
+    }
+
     /// 登入之後把帳號記進參數：重連就不必再問 `login as:`
     /// （同舊版把 `Restore.Host` 改成 `user@host`）。
     pub fn set_ssh_user(&self, id: u32, user: &str) {
@@ -998,6 +1004,11 @@ mod tests {
         assert_eq!(saved[0].1.kind, "adb");
         assert_eq!(saved[0].1.adb_path, "C:\\adb.exe");
         assert_eq!(saved[0].1.adb_serial, "R5CT");
+        // 分頁右鍵「重新啟動」拿的是同一份；不是 ADB 分頁就沒有
+        assert_eq!(m.adb_of(7), Some(("C:\\adb.exe".to_string(), "R5CT".to_string())));
+        m.insert(tab(8));
+        assert_eq!(m.adb_of(8), None);
+        assert_eq!(m.adb_of(99), None);
     }
 
     /// 退避次數：每排一次 +1，一收到輸出就歸零（同舊版）。

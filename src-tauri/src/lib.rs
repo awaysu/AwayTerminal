@@ -112,6 +112,7 @@ pub fn run() {
             commands::tab_select,
             commands::tab_rename,
             commands::tabs_reorder,
+            commands::tab_adb,
             commands::view_mode_cycle,
             commands::tab_panel_set,
             adb::adb_devices,

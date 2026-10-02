@@ -243,7 +243,7 @@ function postMessage(raw) {
       return;
     }
     case 'U':
-      // U{url}：點了終端機裡的連結 → 跳「從瀏覽器開啟／複製網址」選單（舊版 ShowUrlMenu）。
+      // U{url}：點了終端機裡的連結 → 跳「複製網址／用瀏覽器開啟」選單（舊版 ShowUrlMenu）。
       // 選單開在游標位置（舊版 PlacementMode.MousePoint）
       showUrlMenu(rest, lastMouse.x, lastMouse.y);
       return;

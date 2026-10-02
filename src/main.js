@@ -579,7 +579,16 @@ async function verifyDialogs() {
       '終端機右鍵選單',
       () => fire($id('termframe'), 'contextmenu', { clientX: 200, clientY: 200 }),
     ],
-    ['url-menu', '網址選單', () => showUrlMenu('https://example.invalid/', 200, 200)],
+    // 照真的那一下點擊的順序：xterm 在 mouseup 觸發連結（選單這時候開），同一下的 click 接著冒泡到
+    // document——那個 click 不可以把剛開的選單關掉（2.0.5 以前就是這樣：選單一開就不見）
+    [
+      'url-menu',
+      '網址選單',
+      () => {
+        showUrlMenu('https://example.invalid/', 200, 200);
+        return fire($id('termframe'), 'click', { clientX: 200, clientY: 200 });
+      },
+    ],
     ['tab-menu', '分頁右鍵選單', openTabMenu],
     // 子選單：先開分頁右鍵選單，再滑到「配色 ▸」上面。CSS `:hover` 沒辦法用程式觸發，
     // 所以 tabbar.js 改成 `mouseover` → `.sub-open`，這裡才驗得到（TASK-031 的根因就在這）。

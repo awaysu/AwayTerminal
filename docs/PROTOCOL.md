@@ -203,6 +203,7 @@ TASK-019 的 AI 聊天室**沒有用到新的協定**：它和代理團隊共用
 | `temp_dir()` | 系統暫存資料夾（`--verify` 用，以及寫入被擋時的後備位置建議） |
 | `launch_args()` | CLI 參數（`--cmd` / `--verify` / `--bench`），URL 參數優先 |
 | `tab_select(id)` / `tab_rename(id, title)` / `tabs_reorder(ids)` | 分頁列的點選／改名／拖曳排序 |
+| `tab_adb(id)` | ADB 分頁當初用的 `{ path, serial }`（不是 ADB 分頁＝`null`）。分頁右鍵「重新啟動」拿它原樣帶回 `session_create` 的 `adb`，不再跑 `adb devices` |
 | `view_mode_cycle()` | 檢視三態循環，回傳新模式 |
 | `tab_panel_set(visible?, width?)` | 分頁列顯示狀態／寬度 → `settings.json` |
 | `settings_get()` | 目前設定（前端啟動時讀一次） |

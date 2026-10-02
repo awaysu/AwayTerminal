@@ -71,7 +71,7 @@ export default {
   'ctx.copyPaste': '複製且貼上',
   'ctx.copyAllFile': '複製全部存至檔案',
   'ctx.search': '搜尋',
-  'ctx.openUrl': '從瀏覽器開啟',
+  'ctx.openUrl': '用瀏覽器開啟',
   'ctx.copyUrl': '複製網址',
 
   // 分頁右鍵：配色與 log（舊版 menu.*）
