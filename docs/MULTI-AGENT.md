@@ -36,6 +36,7 @@ Agent ID ＝ `Agent-{組號}{格號}`，組號 1～9（最多同時 9 組），�
 | 每格：啟用 | 格 1、2 | 格 1 一定啟用（使用者就是要跟它說話），不能取消 |
 | 每格：代理人類型 | 第一個找得到的 | ClaudeCode／Codex／OpenCode／GeminiCLI；**這台沒裝的不列** |
 | 每格：代理人角色 | PM／SE／Architect／QA | `roles/*.md` 的檔名，可自己加 |
+| 每格：**模型** | 那一家 CLI 上次選的（沒選過＝預設） | 2.0.2 新增。可編輯下拉：清單是視窗打開前問 CLI 的（Codex `codex debug models`、OpenCode `opencode models`；Claude Code 只有別名、Gemini 沒有清單），也可以自己打。選了就用 `--model <名稱>` 啟動那一格；「預設」＝不加參數。**啟動時才生效**，既有團隊改模型＝重開那一格。恢復分頁與我的最愛都會記住；記下來的模型不在清單裡時才再問一次（`agent/models.rs`） |
 
 底下兩個按鈕：**還原角色檔預設**、**開啟角色檔資料夾**。
 

@@ -15,6 +15,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { T, fmt } from './strings.js';
 import { onLangChange } from './i18n.js';
 import { log } from './bridge.js';
+import { fillCombo, syncCombo, wireCombo } from './combo.js';
 
 const el = {};
 /** `com_ports()` 的結果。 */
@@ -34,41 +35,8 @@ const FLOW_LABEL = {
   RequestToSendXOnXOff: 'RTS/CTS+XON/XOFF',
 };
 
-/** 可編輯下拉（Port／Baud rate）底下那個 `<select>` 的選項。 */
-function fillList(node, values) {
-  node.textContent = '';
-  for (const v of values) {
-    const opt = document.createElement('option');
-    opt.value = String(v);
-    opt.textContent = String(v);
-    node.appendChild(opt);
-  }
-}
-
-/** 讓底下的 `<select>` 跟著輸入框：字剛好是清單裡的就選起來，自己打的值＝不選任何一項。 */
-function syncCombo(input, list) {
-  list.value = input.value.trim();
-}
-
-/** 把一組 `<input>` ＋ `<select>` 接成可編輯下拉（舊版 `ComboBox IsEditable="True"`）。 */
-function wireCombo(input, list) {
-  list.addEventListener('change', () => {
-    input.value = list.value;
-    input.focus();
-  });
-  input.addEventListener('input', () => syncCombo(input, list));
-  // 上下鍵在清單裡移動（同舊版的 ComboBox）
-  input.addEventListener('keydown', (e) => {
-    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
-    const n = list.options.length;
-    if (n === 0) return;
-    e.preventDefault();
-    const step = e.key === 'ArrowDown' ? 1 : -1;
-    const at = list.selectedIndex;
-    list.selectedIndex = at < 0 ? (step > 0 ? 0 : n - 1) : Math.min(n - 1, Math.max(0, at + step));
-    input.value = list.value;
-  });
-}
+// Port／Baud rate 是可編輯下拉（見 `combo.js`）
+const fillList = fillCombo;
 
 function fillSelect(node, values, labels) {
   node.textContent = '';

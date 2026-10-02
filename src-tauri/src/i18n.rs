@@ -425,6 +425,9 @@ static TABLE: &[(&str, &str, &str)] = &[
                           "{0} was not found, so {1} was not started.\nInstall it, or set its path in New \u{2192} Custom\u{2026}."),
     ("ma.dlgFolderMissing", "資料夾不存在：\n{0}", "Folder not found:\n{0}"),
     ("ma.dlgNeedBackend",   "{0} 沒有選代理人類型。", "{0} has no Agent Type selected."),
+    // 2.0.2：模型名稱會原樣接在命令列上，不合法的字元直接拒絕
+    ("model.invalid", "模型名稱只能用英文、數字和 . _ - / : @ 這些符號。",
+                      "A model name may only contain letters, digits and . _ - / : @"),
     // 新版才有的（舊版組角色檔失敗只記 log；我們讓建團隊直接失敗，否則 agent 會拿到空角色）
     ("ma.roleComposeFailed", "{0} 的角色檔組合失敗：{1}", "Could not compose the role file for {0}: {1}"),
     ("ma.idleCheckPrompt",

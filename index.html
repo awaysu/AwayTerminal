@@ -475,6 +475,31 @@
     </form>
   </div>
 
+  <!-- 選擇模型（2.0.2 新增）：AI CLI 的自訂連線在選完目錄之後跳這個；恢復分頁／我的最愛
+       只有在「原本的模型已經不在清單裡」時才跳。清單由後端問 CLI（`conn_models`）。
+       欄位是可編輯下拉（見 combo.js）：第一筆是「預設」，也可以自己打模型名稱。 -->
+  <div id="modeldlg" hidden>
+    <form id="modeldlg-box">
+      <div id="modeldlg-title"></div>
+      <div id="mo-prompt"></div>
+      <div class="sd-grid">
+        <label id="mo-l-model"></label>
+        <span class="sd-row">
+          <span class="combo">
+            <select id="mo-list" tabindex="-1" aria-hidden="true"></select>
+            <input id="mo-model" type="text" autocomplete="off" spellcheck="false" />
+          </span>
+        </span>
+      </div>
+      <div id="mo-hint" class="sd-hint"></div>
+      <div id="mo-note"></div>
+      <div class="modal-buttons">
+        <button id="mo-ok" type="submit"></button>
+        <button id="mo-cancel" type="button"></button>
+      </div>
+    </form>
+  </div>
+
   <!-- 離開程式（舊版 Dialogs/ExitDialog）：兩個勾選——「下次開啟恢復目前分頁（含畫面上的舊訊息）」
        與「Claude Code 離開前更新 CLAUDE.md」（記在 settings 的 exitRestoreTabs／exitUpdateMd）。
        第二個只在有**一般的** Claude Code 分頁時能勾：代理團隊的格不算（好幾個 agent 同時改

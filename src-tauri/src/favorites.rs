@@ -12,7 +12,8 @@
 //! | SSH 登入後記 `user@host`，重開直接連 | 同（`SshConnParams.user` 在登入後被填上） |
 //! | 同一個連線（種類＋主機／路徑＋目錄）只收一筆 | [`key_of`] |
 //! | 名稱重複 → 後面補 ` (2)`、` (3)` | [`add`] |
-//! | 代理團隊記整組設定 | ⬜ 階段 4 |
+//! | 代理團隊記整組設定（`MultiAgentSetup`），重開不跳設定視窗 | 同（`team`，2.0.2；含每格的模型） |
+//! | —（舊版沒有） | 自訂連線記啟動時選的**模型**（`model`，2.0.2）；模型不在清單裡時前端會再問一次 |
 //! | Telnet／COM | ⬜ 欄位留在模型裡，UI 不顯示 |
 //!
 //! ## 密碼
@@ -36,12 +37,17 @@ use crate::telnet::TelnetParams;
 pub struct FavoriteItem {
     /// 下拉裡顯示的名稱（可改）。
     pub name: String,
-    /// `shell`｜`ssh`｜`telnet`｜`com`｜`conn`（自訂連線）。
+    /// `shell`｜`ssh`｜`telnet`｜`com`｜`conn`（自訂連線）｜`team`（代理團隊）｜`chat`（AI 聊天室）。
     pub kind: String,
     /// `shell`：工作目錄。`conn`：實際工作目錄（有值就不再跳資料夾選擇）。
+    /// `team`／`chat`：專案資料夾。
     pub dir: String,
     /// `conn`：自訂連線的名稱。
     pub conn_name: String,
+    /// `conn`：啟動時選的模型（空＝預設）。
+    pub model: String,
+    /// `team`／`chat`：整組設定（每格的 CLI／角色／模型、投遞上限、沙盒…）。
+    pub team: Option<crate::agent::TeamSetup>,
     /// `ssh`：完整連線參數（**不含密碼**）。
     pub ssh: Option<SshConnParams>,
     /// `telnet`：完整連線參數（Telnet 本來就沒有帳號密碼欄）。
@@ -57,6 +63,8 @@ impl Default for FavoriteItem {
             kind: "shell".to_string(),
             dir: String::new(),
             conn_name: String::new(),
+            model: String::new(),
+            team: None,
             ssh: None,
             telnet: None,
             com: None,
@@ -79,13 +87,36 @@ pub fn key_of(f: &FavoriteItem) -> String {
             let c = f.com.clone().unwrap_or_default();
             format!("com|{}|{}", c.port.to_lowercase(), c.baud)
         }
-        "conn" => format!("conn|{}|{}", f.conn_name.to_lowercase(), f.dir.to_lowercase()),
+        // 同一條連線、同一個目錄但模型不同＝不同的最愛（一個開 opus、一個開 sonnet）
+        "conn" => format!(
+            "conn|{}|{}|{}",
+            f.conn_name.to_lowercase(),
+            f.dir.to_lowercase(),
+            f.model
+        ),
+        // 代理團隊／聊天室：同一個資料夾只收一筆（`team|目錄`、`chat|目錄`）
         _ => format!("{}|{}", f.kind, f.dir.to_lowercase()),
     }
 }
 
 /// 目前這個分頁能不能存成最愛？能的話回一筆候選（舊版 `FavoriteFromTab`）。
-pub fn from_tab(tabs: &crate::tabs::TabManager, id: u32) -> Option<FavoriteItem> {
+///
+/// `teams` 給了而且這個分頁是代理團隊／聊天室的一格 → 存的是**整組**。
+pub fn from_tab(
+    tabs: &crate::tabs::TabManager,
+    teams: Option<&crate::agent::TeamManager>,
+    id: u32,
+) -> Option<FavoriteItem> {
+    if let Some((title, setup)) = teams.and_then(|t| crate::agent::favorite_setup(t, id)) {
+        return Some(FavoriteItem {
+            name: title,
+            kind: if setup.kind == crate::agent::team::GroupKind::Chat { "chat" } else { "team" }
+                .to_string(),
+            dir: setup.dir.clone(),
+            team: Some(setup),
+            ..FavoriteItem::default()
+        });
+    }
     let view = tabs.state_with(&[]).tabs.into_iter().find(|t| t.id == id)?;
     match view.kind {
         crate::tabs::TabKind::Ssh => {
@@ -129,6 +160,7 @@ pub fn from_tab(tabs: &crate::tabs::TabManager, id: u32) -> Option<FavoriteItem>
                 kind: "conn".to_string(),
                 dir: view.cwd_path.clone(),
                 conn_name: conn,
+                model: view.model.clone(),
                 ..FavoriteItem::default()
             })
         }
@@ -149,8 +181,9 @@ pub fn fav_list(settings: State<'_, Arc<SettingsStore>>) -> Vec<FavoriteItem> {
 pub fn fav_candidate(
     id: u32,
     tabs_state: State<'_, Arc<crate::tabs::TabManager>>,
+    teams: State<'_, Arc<crate::agent::TeamManager>>,
 ) -> Option<FavoriteItem> {
-    from_tab(&tabs_state, id)
+    from_tab(&tabs_state, Some(&teams), id)
 }
 
 /// 加一筆。回傳實際存下來的名稱（可能被補了 ` (2)`），或 `Err` 說明為什麼沒加。
@@ -284,6 +317,47 @@ mod tests {
             ..Default::default()
         };
         assert_ne!(key_of(&a), key_of(&c));
+    }
+
+    /// 同一條連線、同一個目錄，模型不同＝兩筆不同的最愛；代理團隊同一個資料夾只收一筆。
+    #[test]
+    fn model_and_team_keys() {
+        let opus = FavoriteItem {
+            kind: "conn".into(),
+            conn_name: "ClaudeCode".into(),
+            dir: "C:\\Work".into(),
+            model: "opus".into(),
+            ..Default::default()
+        };
+        let sonnet = FavoriteItem { model: "sonnet".into(), ..opus.clone() };
+        assert_ne!(key_of(&opus), key_of(&sonnet));
+        assert_eq!(key_of(&opus), key_of(&FavoriteItem { name: "x".into(), ..opus.clone() }));
+
+        let team = FavoriteItem { kind: "team".into(), dir: "C:\\Work".into(), ..Default::default() };
+        let chat = FavoriteItem { kind: "chat".into(), ..team.clone() };
+        assert_ne!(key_of(&team), key_of(&chat), "同一個資料夾的團隊與聊天室是兩筆");
+        assert_eq!(key_of(&team), key_of(&FavoriteItem { dir: "c:\\work".into(), ..team.clone() }));
+    }
+
+    /// 代理團隊的最愛存整組設定（含每格的模型），而且舊的設定檔（沒有 `model`／`team`）讀得進來。
+    #[test]
+    fn team_favorite_round_trips_and_old_items_still_load() {
+        let json = r#"{"name":"proj","kind":"team","dir":"C:\\p","team":{"dir":"C:\\p","slots":[
+            {"enabled":true,"backend":"codex","role":"product-manager","model":"gpt-6-sol"},
+            {"enabled":true,"backend":"claude-code","role":"software-engineer"}
+        ],"maxMessages":50,"idleCheckMinutes":30,"sandbox":false,"kind":"team","rounds":3}}"#;
+        let f: FavoriteItem = serde_json::from_str(json).expect("讀得進來");
+        let t = f.team.as_ref().expect("有整組設定");
+        assert_eq!(t.slots[0].model, "gpt-6-sol");
+        assert_eq!(t.slots[1].model, "", "沒寫模型＝預設");
+        let back: FavoriteItem = serde_json::from_str(&serde_json::to_string(&f).unwrap()).unwrap();
+        assert_eq!(back.team.unwrap().slots[0].model, "gpt-6-sol");
+
+        // 2.0.1 以前存的自訂連線最愛沒有 model／team 欄位
+        let old: FavoriteItem =
+            serde_json::from_str(r#"{"name":"cc","kind":"conn","dir":"C:\\p","connName":"ClaudeCode"}"#).unwrap();
+        assert_eq!(old.model, "");
+        assert!(old.team.is_none());
     }
 
     /// 我的最愛存的東西裡不可以有密碼（舊版 `SavedTab` 也沒有）。

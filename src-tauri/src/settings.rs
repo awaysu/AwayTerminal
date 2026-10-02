@@ -128,6 +128,10 @@ pub struct AppSettings {
     /// 「輸入文字」視窗的「送出後送 Enter」勾選（舊版 `ComposeSendEnter`，預設開）。
     pub compose_send_enter: bool,
 
+    /// 各家 AI CLI **上次選的模型**（key＝`claude-code`／`codex`／`opencode`／`geminicli`；
+    /// 空字串＝選了「預設」）。選模型的視窗用它當預選值（2.0.2 新增，見 `agent/models.rs`）。
+    pub last_models: std::collections::BTreeMap<String, String>,
+
     /// 自訂連線清單（舊版 `AppSettings.CustomConns`）。
     ///
     /// 舊版 v1.0.18 起**不自動建立任何自訂連線**：全新安裝是空的，使用者自己按
@@ -270,6 +274,7 @@ impl Default for AppSettings {
             remote_notify: false,
             sandbox_default: false,
             compose_send_enter: true,
+            last_models: std::collections::BTreeMap::new(),
             custom_conns: Vec::new(),
             // 舊版 MainWindow.xaml 的「配色」子選單那五組，順序照抄
             palette: vec![

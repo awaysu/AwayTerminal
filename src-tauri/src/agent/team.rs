@@ -78,6 +78,9 @@ pub struct Slot {
     pub role_title: String,
     /// CLI 種類（`claude-code`／`codex`／`opencode`／`geminicli`）。
     pub backend: String,
+    /// 這一格用的模型（傳給 CLI 的 `--model`；空＝預設，不加參數）。**啟動時才生效**，
+    /// 所以改模型和改 CLI／角色一樣要重開那一格。
+    pub model: String,
     /// 設定視窗勾了「啟用」。
     pub enabled: bool,
     /// 這格的分頁 id（還沒啟動＝`None`）。

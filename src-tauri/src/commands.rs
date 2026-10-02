@@ -253,6 +253,9 @@ pub fn session_create(
     conn: Option<String>,
     // `kind = "agent"`：代理團隊的哪一格。
     agent: Option<AgentArgs>,
+    // `kind = "conn"`：要用哪個模型（接成 `--model <名稱>`；省略或空＝預設，不加參數）。
+    // 只對 AI CLI 的連線有作用（Claude Code／Codex／OpenCode／Gemini，見 `agent/models.rs`）。
+    model: Option<String>,
     // 恢復分頁：要倒回哪一筆的畫面（`restore_list` 的索引）。
     restore: Option<usize>,
     on_event: Channel<InvokeResponseBody>,
@@ -328,7 +331,7 @@ pub fn session_create(
     }
 
     // `kind = "conn"` ＝自訂連線（有名稱、有設定、可能有沙盒）。
-    let conn_def = if kind == "conn" {
+    let mut conn_def = if kind == "conn" {
         let name = conn
             .as_deref()
             .map(str::trim)
@@ -342,6 +345,28 @@ pub fn session_create(
         // 代理團隊的一格：連線是後端查出來的（使用者的自訂連線優先）
         agent_slot.as_ref().map(|a| a.conn.clone())
     };
+
+    // ---- 模型（2.0.2）：自訂連線＝前端帶來的；代理團隊的格＝`plan_slot` 已經接進參數了 ----
+    let mut conn_model = String::new();
+    let mut model_extra = String::new();
+    if kind == "conn" {
+        let want = model.as_deref().map(str::trim).unwrap_or("");
+        if let (false, Some(c)) = (want.is_empty(), conn_def.as_mut()) {
+            // 名稱會原樣接在命令列上 → 不合法的字元直接拒絕
+            if !crate::agent::models::valid_model(want) {
+                return Err(t("model.invalid").to_string());
+            }
+            // 不是 AI CLI 的連線（WSL、使用者自己的工具）沒有 `--model` 這回事 → 不加
+            if crate::agent::adapters::backend_of(c).is_some() {
+                // 使用者自己在「參數」欄寫的 `--model` 先拿掉（重複給 Codex 會報錯）
+                c.args = crate::agent::models::strip_model_arg(&c.args);
+                model_extra = crate::agent::models::model_arg(want);
+                conn_model = want.to_string();
+            }
+        }
+    } else if let Some(a) = &agent_slot {
+        conn_model = a.model.clone();
+    }
 
     let mut sh = match kind.as_str() {
         // "powershell" 是 TASK-003 的舊名，留著相容 `?cmd=` 之前的呼叫
@@ -466,6 +491,8 @@ pub fn session_create(
             args.push(' ');
             args.push_str(c.args.trim());
         }
+        // 自訂連線選的模型（代理團隊的格已經含在 `extra` 裡，這裡是空的）
+        args.push_str(&model_extra);
         args.push_str(extra);
         sh.command_line = if c.via_powershell {
             // 舊版是「先開互動 PowerShell，尺寸就緒後再把指令打進去」（避免以 80 欄啟動）。
@@ -647,6 +674,7 @@ pub fn session_create(
         reconnect_gen: 0,
         sandbox: sandbox.clone(),
         conn_name: conn_def.as_ref().map(|c| c.name.clone()),
+        model: conn_model,
         work_dir: base_dir,
         // 恢復分頁用：實際用的 adb.exe 與序號（下次不再跑 `adb devices`）
         adb: (kind == "adb").then(|| {
@@ -818,6 +846,7 @@ fn create_remote(
         reconnect_gen: 0,
         sandbox: None, // 遠端連線沒有本機子行程可以隔離，不需要沙盒
         conn_name: None,
+        model: String::new(),
         work_dir: String::new(),
         adb: None,
         command_line: params.target(),

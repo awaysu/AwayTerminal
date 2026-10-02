@@ -240,6 +240,10 @@ pub fn run() {
             agent::agent_verify_state,
             agent::agent_verify_end,
             agent::chat_verify_transcript,
+            // 模型清單與「上次選的模型」（2.0.2；單一連線與代理團隊共用）
+            agent::models::cli_models,
+            agent::models::conn_models,
+            agent::models::model_remember,
             telegram::telegram_state,
             telegram::telegram_apply,
             telegram::telegram_get_chat_id,

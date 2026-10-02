@@ -67,11 +67,18 @@ export async function restoreSavedTabs(createSession) {
         if (doneTeams.has(key)) continue; // 這一組已經在前面整組恢復過了
         doneTeams.add(key);
         const { restoreAgentTeam } = await import('./agentdlg.js');
-        ok += await restoreAgentTeam(teamIndices.get(key) || [i], createSession);
+        const indices = teamIndices.get(key) || [i];
+        ok += await restoreAgentTeam(indices, createSession, indices.map((j) => list[j]));
         continue;
       }
       const args = argsOf(st, i);
       if (!args) continue;
+      if (st.kind === 'conn' && st.model) {
+        // 模型照上次的；只有它已經不在 CLI 的清單裡才問（取消＝退回預設，分頁照樣恢復）
+        const { resolveSavedModel } = await import('./modeldlg.js');
+        const model = await resolveSavedModel(st.connName, st.model);
+        args.model = model === null ? '' : model;
+      }
       await createSession(args);
       ok++;
     } catch (e) {

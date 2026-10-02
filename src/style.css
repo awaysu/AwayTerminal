@@ -479,6 +479,41 @@ body.col-resizing { cursor: col-resize; user-select: none; }
 #comdlg .modal-buttons button:hover { background: #50505a; }
 #cd-ok { border-color: #FDFFB0; }
 
+/* 選擇模型（2.0.2）。樣式和連接埠對話框同一族；z-index 345＝蓋得住自訂連線／我的最愛
+   設定（320）與代理團隊設定（62），但讓主機金鑰確認（350）壓在它上面。 */
+#modeldlg {
+  position: fixed; inset: 0; z-index: 345; display: flex; align-items: center; justify-content: center;
+  background: rgba(0,0,0,.45);
+  font: 13px "Microsoft JhengHei", "微軟正黑體", sans-serif;
+}
+#modeldlg[hidden] { display: none; }
+#modeldlg-box {
+  width: 460px; max-width: 92vw; max-height: 88vh; overflow: auto; padding: 16px 18px;
+  background: #2d2d30; border: 1px solid #FDFFB0; border-radius: 6px; color: #e0e0e0;
+}
+#modeldlg-title { font-size: 14px; color: #FDFFB0; margin-bottom: 8px; }
+#mo-prompt { margin-bottom: 10px; white-space: pre-line; word-break: break-word; }
+#modeldlg input[type="text"], #modeldlg select {
+  background: #1e1e1e; color: #e0e0e0; border: 1px solid #555; outline: none;
+  padding: 4px 6px; font-size: 13px; font-family: inherit;
+}
+#modeldlg input:focus, #modeldlg select:focus { border-color: #FDFFB0; }
+#mo-hint { margin-top: 6px; }
+#mo-note { margin-top: 8px; color: #EF9A9A; font-size: 12px; min-height: 16px; }
+#modeldlg .modal-buttons button {
+  min-width: 96px; padding: 5px 12px; cursor: pointer; font-size: 13px; font-family: inherit;
+  background: #3a3a3d; color: #e0e0e0; border: 1px solid #555; border-radius: 4px;
+}
+#modeldlg .modal-buttons button:hover { background: #50505a; }
+#mo-ok { border-color: #FDFFB0; }
+/* 代理團隊設定視窗每一格的模型欄位（可編輯下拉；格子停用時跟著變淡） */
+.ma-slot .combo { margin-bottom: 8px; }
+.ma-slot .combo > select { margin-bottom: 0; }
+.ma-slot .combo > input[type="text"] {
+  background: #1e1e1e; color: #e0e0e0; border: 1px solid #555; outline: none; padding: 1px 4px;
+}
+.ma-slot .combo > input[type="text"]:focus { border-color: #FDFFB0; }
+
 /* 我的最愛 */
 .popup-menu .menu-item.disabled { color: #666; cursor: default; }
 .popup-menu .menu-item.disabled:hover { background: transparent; color: #666; }

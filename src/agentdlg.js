@@ -18,10 +18,14 @@ import { invoke } from '@tauri-apps/api/core';
 import { T, fmt } from './strings.js';
 import { onLangChange } from './i18n.js';
 import { log } from './bridge.js';
+import { fillCombo, syncCombo, wireCombo } from './combo.js';
+import { askModel, isMissing, modelHint, modelItems, rememberModel, validModel } from './modeldlg.js';
 
 const el = {};
 /** `agent_setup_options()` 的結果。 */
 let opts = null;
+/** 各家 CLI 的模型清單（`cli_models()`；key＝backend）。開設定視窗前先問好。 */
+let modelLists = {};
 /** 既有團隊的目前狀態（`agent_team_state()`）；`null`＝正在建新團隊。 */
 let existing = null;
 /** 這次開的是 `team`（代理團隊）還是 `chat`（AI 聊天室）。 */
@@ -85,6 +89,18 @@ function buildSlots() {
     const backend = document.createElement('select');
     const roleLabel = document.createElement('label');
     const role = document.createElement('select');
+    // 模型（2.0.2）：可編輯下拉——清單是那一家 CLI 回報的，也可以自己打（見 combo.js）
+    const modelLabel = document.createElement('label');
+    const modelBox = document.createElement('span');
+    modelBox.className = 'combo';
+    const modelList = document.createElement('select');
+    modelList.tabIndex = -1;
+    modelList.setAttribute('aria-hidden', 'true');
+    const model = document.createElement('input');
+    model.type = 'text';
+    model.autocomplete = 'off';
+    model.spellcheck = false;
+    modelBox.append(modelList, model);
     // 狀態列（執行中／已結束／未啟用 ＋ 套用後會怎樣 ＋ 重新啟動）：**只有既有的組才顯示**，
     // 新開的組不留空白（同舊版 `foot.Visibility = _group == null ? Collapsed : Visible`）
     const foot = document.createElement('div');
@@ -95,7 +111,7 @@ function buildSlots() {
     restart.type = 'button';
     restart.className = 'ma-slot-restart';
     foot.append(status, restart);
-    box.append(head, cliLabel, backend, roleLabel, role, foot);
+    box.append(head, cliLabel, backend, roleLabel, role, modelLabel, modelBox, foot);
     el.slots.appendChild(box);
 
     const ui = {
@@ -107,6 +123,9 @@ function buildSlots() {
       backend,
       roleLabel,
       role,
+      modelLabel,
+      model,
+      modelList,
       foot,
       status,
       restart,
@@ -114,12 +133,21 @@ function buildSlots() {
       state: 'notRunning',
       origBackend: '',
       origRole: '',
+      origModel: '',
       wantRestart: false,
     };
     el.slotUi.push(ui);
     enable.addEventListener('change', () => refreshSlot(i));
-    backend.addEventListener('change', () => refreshSlot(i));
+    backend.addEventListener('change', () => {
+      // 換了一家 CLI：模型清單整個不一樣 → 換成那一家的清單，預選它上次用的
+      fillSlotModels(i, lastModelOf(backend.value));
+      refreshSlot(i);
+    });
     role.addEventListener('change', () => refreshSlot(i));
+    wireCombo(model, modelList, () => {
+      el.noBackend.hidden = true;
+      refreshSlot(i);
+    });
     restart.addEventListener('click', () => {
       ui.wantRestart = !ui.wantRestart;
       refreshSlot(i);
@@ -137,10 +165,30 @@ function actionOf(i) {
   if (!existing) return on ? 'start' : '';
   if (ui.state === 'notRunning') return on ? 'start' : '';
   if (!on) return 'close';
+  // 模型和 CLI／角色一樣是啟動時才生效的 → 改了也要重開那一格
   const changed =
     ui.backend.value.toLowerCase() !== (ui.origBackend || '').toLowerCase() ||
-    ui.role.value.toLowerCase() !== (ui.origRole || '').toLowerCase();
+    ui.role.value.toLowerCase() !== (ui.origRole || '').toLowerCase() ||
+    ui.model.value.trim() !== (ui.origModel || '');
   return changed || ui.wantRestart ? 'restart' : '';
+}
+
+/** 這家 CLI 上次選的模型（新開的格預選它）。 */
+function lastModelOf(backendKey) {
+  const b = opts && opts.backends.find((x) => x.key === backendKey);
+  return (b && b.lastModel) || '';
+}
+
+/** 把第 i 格的模型下拉換成它目前那家 CLI 的清單，並填上 `value`。 */
+function fillSlotModels(i, value) {
+  const ui = el.slotUi[i];
+  const list = modelLists[ui.backend.value] || null;
+  fillCombo(ui.modelList, modelItems(list));
+  ui.model.value = value || '';
+  syncCombo(ui.model, ui.modelList);
+  ui.model.placeholder = T['model.default'];
+  // 清單哪裡來的（CLI 回報／內建別名／讀不到）放在 tooltip，格子裡沒有地方多放一行
+  ui.model.title = modelHint(list);
 }
 
 function refreshSlot(i) {
@@ -154,6 +202,8 @@ function refreshSlot(i) {
   ui.backend.disabled = !on;
   // 聊天室第 1 位的角色固定主持人 → 永遠停用
   ui.role.disabled = !on || (kind === 'chat' && i === 0);
+  ui.model.disabled = !on;
+  ui.modelList.disabled = !on;
   ui.box.classList.toggle('off', !on);
 
   ui.foot.hidden = !existing;
@@ -194,6 +244,8 @@ function applyTexts() {
     el.slotUi[i].enableText.textContent = T['ma.dlgEnable'];
     el.slotUi[i].cliLabel.textContent = T[chat ? 'chat.dlgAiType' : 'ma.dlgAgentType'];
     el.slotUi[i].roleLabel.textContent = T[chat ? 'chat.dlgRole' : 'ma.dlgAgentRole'];
+    el.slotUi[i].modelLabel.textContent = T['model.label'];
+    el.slotUi[i].model.placeholder = T['model.default'];
   }
   if (opts) {
     if (chat) {
@@ -284,6 +336,7 @@ function read() {
     enabled: i === 0 ? true : ui.enable.checked,
     backend: ui.backend.value,
     role: ui.role.value,
+    model: ui.model.value.trim(),
     restart: ui.wantRestart,
   }));
   for (let i = 0; i < slots.length; i++) {
@@ -292,6 +345,12 @@ function read() {
     if ((act === 'start' || act === 'restart') && !slots[i].backend) {
       el.noBackend.hidden = false;
       el.noBackend.textContent = fmt('ma.dlgNeedBackend', `Agent-x${i + 1}`);
+      return null;
+    }
+    // 模型名稱會原樣接在命令列上 → 不合法的字元在這裡就擋下來（後端也會再擋一次）
+    if ((act === 'start' || act === 'restart') && !validModel(slots[i].model)) {
+      el.noBackend.hidden = false;
+      el.noBackend.textContent = `Agent-x${i + 1}：${T['model.invalid']}`;
       return null;
     }
   }
@@ -313,6 +372,56 @@ function read() {
   };
 }
 
+/** 問這幾家 CLI 目前有哪些模型，存進 `modelLists`。問不到的那一家就沒有清單（只能自己打）。 */
+async function loadModelLists(backends) {
+  const keys = Array.from(new Set(backends.filter(Boolean)));
+  if (keys.length === 0) return;
+  try {
+    const { toast } = await import('./tabbar.js');
+    toast(T['model.loading']);
+  } catch {
+    /* 提示出不來不影響功能 */
+  }
+  try {
+    const lists = await invoke('cli_models', { backends: keys });
+    for (const l of lists) modelLists[l.backend] = l;
+  } catch (e) {
+    log(`[agentdlg] 讀取模型清單失敗：${e}`);
+  }
+}
+
+/** 團隊開起來之後，記住每一家 CLI 這次選的模型（下次預選它）。 */
+function rememberSetupModels(setup) {
+  for (const s of setup.slots) {
+    if (s.enabled && s.backend) rememberModel(s.backend, s.model || '');
+  }
+}
+
+/**
+ * 記下來的設定（恢復分頁／我的最愛）裡，有沒有哪一格的模型已經不在那家 CLI 的清單裡。
+ * 有就逐格請使用者重選。回傳 `{ 格號: 新模型 }`；使用者取消＝`null`。
+ *
+ * @param {{ index: number, backend: string, model: string, label: string }[]} slots
+ */
+async function resolveSlotModels(slots) {
+  const withModel = slots.filter((s) => s.model);
+  if (withModel.length === 0) return {};
+  await loadModelLists(withModel.map((s) => s.backend));
+  const out = {};
+  for (const s of withModel) {
+    const list = modelLists[s.backend] || null;
+    if (!isMissing(list, s.model)) continue;
+    const picked = await askModel({
+      prompt: fmt('model.missing', s.label, s.model),
+      list,
+      current: '',
+    });
+    if (picked === null) return null;
+    out[s.index] = picked;
+  }
+  return out;
+}
+
 /**
  * 開對話框，回傳 `TeamSetup`（取消＝null）。
  * `state` 給了＝既有團隊的「代理團隊設定…」（舊版 `MultiAgentDialog(dir, group)`）。
@@ -325,6 +434,8 @@ async function openDialog(dir, state, wantKind) {
     log(`[agentdlg] 讀取設定選項失敗：${e}`);
     return null;
   }
+  // 視窗打開之前先問每一家 CLI 目前有哪些模型（Codex／OpenCode 各要一兩秒，有快取）
+  await loadModelLists(opts.backends.map((b) => b.key));
   existing = state || null;
   // 聊天室沒有「閒置檢查」那一列（它不投遞信）
   for (const n of el.idleRow) n.hidden = kind === 'chat';
@@ -368,24 +479,31 @@ async function openDialog(dir, state, wantKind) {
       ui.state = slot.state;
       ui.origBackend = slot.backend;
       ui.origRole = slot.role;
+      ui.origModel = slot.model || '';
       ui.backend.value = slot.backend;
       ui.role.value = slot.role;
+      fillSlotModels(i, slot.model || '');
       ui.enable.checked = true;
     } else if (slot) {
       // 從沒啟動過＝預設；之前開過又被關掉的格＝沿用它上次的 CLI／角色（舊版同款）
       ui.state = 'notRunning';
       ui.origBackend = '';
       ui.origRole = '';
+      ui.origModel = '';
       ui.backend.value = slot.backend || (opts.backends.length ? opts.backends[0].key : '');
       ui.role.value = slot.backend ? slot.role : opts.defaultRoles[i] || '';
+      fillSlotModels(i, slot.backend ? slot.model || '' : lastModelOf(ui.backend.value));
       ui.enable.checked = false;
     } else {
       ui.state = 'notRunning';
       ui.origBackend = '';
       ui.origRole = '';
+      ui.origModel = '';
       // 預設：每一格都用第一家找得到的 CLI（舊版也是拿第一個可用的）
       ui.backend.value = opts.backends.length ? opts.backends[0].key : '';
       ui.role.value = opts.defaultRoles[i] || '';
+      // 模型預選這家 CLI 上次用的（沒選過＝預設）
+      fillSlotModels(i, lastModelOf(ui.backend.value));
       // 新開的組：格 1、2 預設啟用（PM ＋ SE 是最小可用團隊），3、4 使用者自己勾
       ui.enable.checked = i < 2;
     }
@@ -448,6 +566,7 @@ export async function openAgentSetup(key, createSession) {
     log('[agentdlg] 套用設定：沒有要變動的');
     return;
   }
+  rememberSetupModels(setup);
   log(
     `[agentdlg] 套用設定：關 ${plan.closeTabs.join(',') || '-'}　開 ${
       plan.launch.map((x) => x.agentId).join(',') || '-'
@@ -486,13 +605,31 @@ function agentLabel(state, i) {
 }
 
 /**
- * 恢復代理團隊分頁（舊版 `RestoreAgentGroup`）。`entries` ＝`restore_list()` 的
- * `[{ index, tab }]`，同一個 `agentKey` 的那幾筆。
+ * 恢復代理團隊分頁（舊版 `RestoreAgentGroup`）。`indices` ＝`restore_list()` 裡同一個
+ * `agentKey` 的那幾筆的索引，`entries` ＝那幾筆的內容（順序相同）。
+ *
+ * 每格的模型照存檔裡的；只有它已經不在那家 CLI 的清單裡才請使用者重選
+ * （取消＝那幾格退回預設模型，團隊照樣恢復）。
  */
-export async function restoreAgentTeam(indices, createSession) {
+export async function restoreAgentTeam(indices, createSession, entries) {
+  const saved = (entries || []).filter((e) => e && e.agentIndex >= 1 && e.agentIndex <= 4);
+  const slots = saved.map((e) => ({
+    index: e.agentIndex,
+    backend: e.agentBackend,
+    model: e.model || '',
+    label: `${e.title || T['ma.title']} Agent-x${e.agentIndex}`,
+  }));
+  let models = await resolveSlotModels(slots);
+  if (models === null) {
+    // 取消：模型不見的那幾格用預設，不要讓整組恢復不了
+    models = {};
+    for (const s of slots) {
+      if (isMissing(modelLists[s.backend] || null, s.model)) models[s.index] = '';
+    }
+  }
   let plan;
   try {
-    plan = await invoke('agent_team_restore', { indices });
+    plan = await invoke('agent_team_restore', { indices, models });
   } catch (e) {
     // 資料夾不見了之類 → 這一組不恢復，其餘分頁照開（同舊版的 log-and-skip）
     log(`[agentdlg] 代理團隊不恢復：${e}`);
@@ -526,7 +663,6 @@ export async function restoreAgentTeam(indices, createSession) {
  * `OpenChatRoom` → `AskChatTopic`）。取消主題也沒關係，之後右鍵「開始討論…」再給。
  */
 export async function openChatRoom(createSession) {
-  const { showInfo, askMultiline } = await import('./tabbar.js');
   let dir;
   try {
     dir = await invoke('pick_work_dir', { title: T['chat.pickDir'] });
@@ -537,25 +673,42 @@ export async function openChatRoom(createSession) {
   if (!dir) return;
   const setup = await openDialog(dir, null, 'chat');
   if (!setup) return;
+  await launchTeam(setup, createSession);
+}
+
+/**
+ * 照一份 `TeamSetup` 把團隊（或聊天室）開起來：建團隊 → 逐格啟動 → 綁組；
+ * 聊天室開好之後接著問主題（舊版 `OpenChatRoom` → `AskChatTopic`）。
+ *
+ * 設定視窗（新開）與我的最愛（照記下來的設定重開）共用這一段。回傳有沒有開成。
+ */
+async function launchTeam(setup, createSession) {
+  const { showInfo, askMultiline } = await import('./tabbar.js');
+  const chat = setup.kind === 'chat';
+  const title = T[chat ? 'chat.title' : 'ma.title'];
+  const what = chat ? '聊天室' : '代理團隊';
 
   let plan;
   try {
     plan = await invoke('agent_team_create', { setup });
   } catch (e) {
-    log(`[agentdlg] 建聊天室失敗：${e}`);
-    await showInfo(T['chat.title'], String(e));
-    return;
+    log(`[agentdlg] 建${what}失敗：${e}`);
+    await showInfo(title, String(e));
+    return false;
   }
+  rememberSetupModels(setup);
   log(
-    `[agentdlg] 聊天室 ${plan.number} 計畫：${plan.slots
+    `[agentdlg] ${what} ${plan.number} 計畫：${plan.slots
       .map((s) => `${s.agentId}/${s.backendName}/${s.roleTitle}`)
       .join(' ')}（工作區 ${plan.workDir}）`
   );
+
   const failed = [];
   for (const slot of plan.slots) {
     try {
       await createSession({ kind: 'agent', agent: { team: plan.key, index: slot.index } });
     } catch (e) {
+      // CLI 找不到／被移除：那一格從名單裡拿掉，其餘照開（舊版 `anyFailed` 那條路）
       log(`[agentdlg] ${slot.agentId} 啟動失敗：${e}`);
       failed.push(String(e));
       await invoke('agent_slot_failed', { key: plan.key, index: slot.index }).catch(() => {});
@@ -563,22 +716,44 @@ export async function openChatRoom(createSession) {
   }
   try {
     const n = await invoke('agent_team_ready', { key: plan.key });
-    log(`[agentdlg] 聊天室 ${plan.number} 就緒：${n} 位參加者`);
+    log(`[agentdlg] ${what} ${plan.number} 就緒：${n} 個 agent`);
   } catch (e) {
-    await showInfo(T['chat.title'], String(e));
-    return;
+    await showInfo(title, String(e));
+    return false;
   }
-  if (failed.length) await showInfo(T['chat.title'], failed.join('\n'));
+  if (failed.length) await showInfo(title, failed.join('\n'));
+  if (!chat) return true;
 
   // 開好就問主題（舊版 `AskChatTopic`）。按取消也行，之後右鍵「開始討論…」再給。
   const topic = await askMultiline(T['chat.title'], T['chat.topicPrompt'], '');
-  if (topic === null || !topic.trim()) return;
+  if (topic === null || !topic.trim()) return true;
   try {
     const folder = await invoke('chat_start', { key: plan.key, topic });
     log(`[agentdlg] 聊天室 ${plan.number}：開始討論，紀錄資料夾 ${folder}`);
   } catch (e) {
     await showInfo(T['chat.title'], String(e));
   }
+  return true;
+}
+
+/**
+ * 從「我的最愛」重開一組代理團隊／AI 聊天室（舊版 `OpenFavorite` 的團隊分支）：
+ * 照記下來的整組設定直接開，**不跳設定視窗**；組名用最愛的名稱。
+ *
+ * 只有一種情況會問：某一格記下來的模型已經不在那家 CLI 的清單裡 → 請使用者重選。
+ */
+export async function openTeamFavorite(f, createSession) {
+  if (!f.team) return;
+  const setup = { ...f.team, slots: f.team.slots.map((s) => ({ ...s })), dir: f.dir || f.team.dir, title: f.name };
+  const picked = await resolveSlotModels(
+    setup.slots
+      .map((s, i) => ({ index: i + 1, backend: s.backend, model: s.model || '', enabled: s.enabled }))
+      .filter((s) => s.enabled)
+      .map((s) => ({ ...s, label: `${f.name} Agent-x${s.index}` })),
+  );
+  if (picked === null) return; // 在選模型的視窗按了取消＝不開
+  for (const [index, model] of Object.entries(picked)) setup.slots[Number(index) - 1].model = model;
+  await launchTeam(setup, createSession);
 }
 
 /**
@@ -586,7 +761,6 @@ export async function openChatRoom(createSession) {
  * → 建團隊 → 逐格啟動 → 綁組。
  */
 export async function openAgentTeam(createSession) {
-  const { showInfo } = await import('./tabbar.js');
   let dir;
   try {
     dir = await invoke('pick_work_dir', { title: T['ma.pickDir'] });
@@ -597,44 +771,5 @@ export async function openAgentTeam(createSession) {
   if (!dir) return; // 取消（同舊版：PickWorkDir 回 null 就不開）
   const setup = await openDialog(dir, null, 'team');
   if (!setup) return;
-
-  let plan;
-  try {
-    plan = await invoke('agent_team_create', { setup });
-  } catch (e) {
-    log(`[agentdlg] 建團隊失敗：${e}`);
-    await showInfo(T['ma.title'], String(e));
-    return;
-  }
-  log(
-    `[agentdlg] 代理團隊 ${plan.number} 計畫：${plan.slots
-      .map((s) => `${s.agentId}/${s.backendName}/${s.roleTitle}`)
-      .join(' ')}（工作區 ${plan.workDir}）`,
-  );
-
-  const failed = [];
-  for (const slot of plan.slots) {
-    try {
-      await createSession({
-        kind: 'agent',
-        agent: { team: plan.key, index: slot.index },
-      });
-    } catch (e) {
-      // CLI 找不到／被移除：那一格從名單裡拿掉，其餘照開（舊版 `anyFailed` 那條路）
-      log(`[agentdlg] ${slot.agentId} 啟動失敗：${e}`);
-      failed.push(String(e));
-      await invoke('agent_slot_failed', {
-        key: plan.key,
-        index: slot.index,
-      }).catch(() => {});
-    }
-  }
-  try {
-    const n = await invoke('agent_team_ready', { key: plan.key });
-    log(`[agentdlg] 代理團隊 ${plan.number} 就緒：${n} 個 agent`);
-  } catch (e) {
-    await showInfo(T['ma.title'], String(e));
-    return;
-  }
-  if (failed.length) await showInfo(T['ma.title'], failed.join('\n'));
+  await launchTeam(setup, createSession);
 }

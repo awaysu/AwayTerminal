@@ -131,6 +131,8 @@ pub struct Tab {
     pub sandbox: Option<crate::sandbox::Sandbox>,
     /// 這個分頁是哪一條自訂連線開的（右鍵切換沙盒、重新啟動分頁要用）。
     pub conn_name: Option<String>,
+    /// 啟動時選的模型（傳給 CLI 的 `--model`；空＝預設）。恢復分頁與我的最愛要存。
+    pub model: String,
     /// 啟動時的工作目錄，**沙盒改寫之前**的那一個（恢復分頁要存這個，
     /// 不能存 worktree 路徑——否則下次會在沙盒裡再開一層沙盒）。
     pub work_dir: String,
@@ -183,6 +185,8 @@ pub struct TabView {
     /// 不是目前分頁的狀態——改設定是下次啟動才生效）。
     pub conn_sandbox: Option<bool>,
     pub conn_name: Option<String>,
+    /// 啟動時選的模型（空＝預設）。tooltip 顯示；「沙盒切換後重新啟動分頁」要沿用。
+    pub model: String,
     /// 目前沒有連線、但這個分頁可以重連（SSH 分頁斷線後）。
     ///
     /// ＝「有連線參數」**且**「`SessionManager` 裡沒有這個分頁的 session」（A2）。
@@ -616,6 +620,7 @@ impl TabManager {
                         kind: "conn".to_string(),
                         conn_name: name.clone(),
                         dir: t.work_dir.clone(),
+                        model: t.model.clone(),
                         ..base
                     },
                     None => continue, // 自訂指令：舊版也沒有重開資訊
@@ -767,6 +772,7 @@ impl TabManager {
                     sandbox: t.sandbox.clone(),
                     conn_sandbox: conn_sandbox_of(t.conn_name.as_deref(), conns),
                     conn_name: t.conn_name.clone(),
+                    model: t.model.clone(),
                     reconnectable: t.conn.is_some()
                         && live.is_none_or(|ids| !ids.contains(&t.id)),
                     reconnect_attempt: t.reconnect_attempt,
@@ -957,6 +963,7 @@ mod tests {
             reconnect_gen: 0,
             sandbox: None,
             conn_name: None,
+            model: String::new(),
             work_dir: String::new(),
             adb: None,
             command_line: String::new(),

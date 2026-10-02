@@ -384,6 +384,8 @@ export async function createSession(opts = {}) {
     adb: opts.adb || null,
     // 代理團隊的一格（`kind: 'agent'`）：要開哪個團隊的第幾格
     agent: opts.agent || null,
+    // 自訂連線要用的模型（`--model`；空或省略＝預設，不加參數）
+    model: opts.model || null,
     // 恢復分頁：要倒回第幾筆的畫面（`restore_list` 的索引）
     restore: opts.restore === undefined ? null : opts.restore,
     onEvent,

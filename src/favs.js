@@ -71,8 +71,36 @@ function detailOf(f) {
     if (s.keepaliveMins > 0) parts.push(fmt('fav.tipKeepalive', s.keepaliveMins));
     return parts.join('\n');
   }
-  if (f.kind === 'conn') return `${f.connName}${f.dir ? `\n${f.dir}` : ''}`;
+  if (f.kind === 'conn') {
+    const parts = [f.connName];
+    if (f.dir) parts.push(f.dir);
+    if (f.model) parts.push(fmt('model.tip', f.model));
+    return parts.join('\n');
+  }
+  if (isTeam(f)) {
+    // 代理團隊／聊天室：資料夾 ＋ 每一格是誰（舊版 `FavoriteDetail` 的 members）
+    const parts = [`${T[f.kind === 'chat' ? 'chat.title' : 'ma.title']}  ${teamMembers(f)}`];
+    if (f.dir) parts.push(f.dir);
+    return parts.join('\n');
+  }
   return f.dir || T['kind.powershell'];
+}
+
+/** 這一筆是代理團隊或 AI 聊天室（記的是整組設定）。 */
+function isTeam(f) {
+  return (f.kind === 'team' || f.kind === 'chat') && !!f.team;
+}
+
+/** 團隊成員的簡述：`ClaudeCode／Codex·gpt-6-sol`（有選模型的格多標模型）。 */
+function teamMembers(f) {
+  const names = { 'claude-code': 'ClaudeCode', codex: 'Codex', opencode: 'OpenCode', geminicli: 'GeminiCLI' };
+  return ((f.team && f.team.slots) || [])
+    .filter((s) => s.enabled)
+    .map((s) => {
+      const name = names[s.backend] || s.backend;
+      return s.model ? `${name}·${s.model}` : name;
+    })
+    .join('／');
 }
 
 /** 種類 → 圖示 key（沿用分頁列那組 SVG）。 */
@@ -89,6 +117,8 @@ function iconOf(f) {
     const c = (hooks.conns ? hooks.conns() : []).find((x) => x.name === f.connName);
     return (c && c.icon) || 'run';
   }
+  if (f.kind === 'team') return 'multi-agent';
+  if (f.kind === 'chat') return 'chatroom';
   return 'powershell';
 }
 
@@ -150,7 +180,11 @@ function renderList() {
             ? 'COM'
             : f.kind === 'conn'
               ? f.connName
-              : 'PowerShell';
+              : f.kind === 'team'
+                ? T['ma.title']
+                : f.kind === 'chat'
+                  ? T['chat.title']
+                  : 'PowerShell';
     row.append(icon, name, tag);
     row.title = detailOf(f);
     el.list.appendChild(row);
@@ -243,8 +277,16 @@ export async function openFavorite(name) {
       return;
     }
     if (f.kind === 'conn') {
+      // 模型照記下來的；只有它已經不在 CLI 的清單裡才再問一次（取消＝不開）
+      const model = await hooks.resolveSavedModel(f.connName, f.model || '');
+      if (model === null) return;
       // 有記下實際工作目錄就直接用，不再跳資料夾選擇（同舊版）
-      await hooks.createSession({ kind: 'conn', conn: f.connName, cwd: f.dir || null });
+      await hooks.createSession({ kind: 'conn', conn: f.connName, cwd: f.dir || null, model });
+      return;
+    }
+    if (isTeam(f)) {
+      // 代理團隊／聊天室：照記下來的整組設定重開，不跳設定視窗（同舊版）
+      await hooks.openTeam(f);
       return;
     }
     await hooks.createSession({ kind: 'shell', cwd: f.dir || null });

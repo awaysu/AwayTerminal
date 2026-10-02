@@ -167,6 +167,18 @@ pub fn resolve(settings: &SettingsStore, backend: Backend) -> Option<CustomConn>
     })
 }
 
+/// 這條自訂連線是哪一家 AI CLI（[`resolve`] 的反方向）：圖示就是那一家的，或執行檔名含
+/// 那一家的字。都不是（WSL、ADB、使用者自己的工具）回 `None`。
+pub fn backend_of(conn: &CustomConn) -> Option<Backend> {
+    if let Some(b) = Backend::by_key(&conn.icon) {
+        return Some(b);
+    }
+    ALL_KEYS
+        .iter()
+        .filter_map(|k| Backend::by_key(k))
+        .find(|b| exe_matches(&conn.path, b.exe_word()))
+}
+
 fn exe_matches(path: &str, word: &str) -> bool {
     std::path::Path::new(path)
         .file_stem()
@@ -282,6 +294,19 @@ mod tests {
         assert_eq!(Backend::by_key("aider"), None);
         assert_eq!(display_name_of("codex"), "Codex");
         assert_eq!(display_name_of("nope"), "nope", "認不出來就原樣回傳");
+    }
+
+    /// 自訂連線 → 是哪一家 AI CLI：圖示優先，其次看執行檔名；WSL／ADB 這類不是。
+    #[test]
+    fn recognises_which_cli_a_connection_is() {
+        let mut c = conn("C:\\x\\whatever.exe", "", false);
+        c.icon = "codex".to_string();
+        assert_eq!(backend_of(&c), Some(Backend::Codex), "圖示是 codex");
+        assert_eq!(backend_of(&conn("C:\\npm\\opencode.cmd", "", true)), Some(Backend::OpenCode));
+        assert_eq!(backend_of(&conn("C:\\bin\\claude.exe", "", false)), Some(Backend::ClaudeCode));
+        assert_eq!(backend_of(&conn("/usr/bin/gemini", "", false)), Some(Backend::GeminiCli));
+        assert_eq!(backend_of(&conn("C:\\Windows\\System32\\wsl.exe", "", false)), None);
+        assert_eq!(backend_of(&conn("C:\\adb\\adb.exe", "shell", false)), None);
     }
 
     /// Claude Code：角色走旗標，不用打字。

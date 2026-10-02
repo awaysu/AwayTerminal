@@ -31,9 +31,11 @@ import {
   openAgentTeam,
   openAgentSetup,
   openChatRoom,
+  openTeamFavorite,
 } from './agentdlg.js';
 import { onLangChange } from './i18n.js';
 import { initFavs, addConnFavorite } from './favs.js';
+import { initModelDialog, pickConnModel, resolveSavedModel } from './modeldlg.js';
 
 const MIN_PANEL_WIDTH = 120; // 舊版 TabPanelMinWidth
 
@@ -70,6 +72,7 @@ function activeId() {
 function tooltipFor(tab) {
   let s = `${tab.title}  ${T['tip.tabElapsed']} ${elapsedText(tab.startedAt)}`;
   if (tab.cwdPath && tab.cwdPath !== tab.title) s += `\n${tab.cwdPath}`;
+  if (tab.model) s += `\n${fmt('model.tip', tab.model)}`;
   if (tab.logging) s += `\n${T['tip.tabLogging']}`;
   // 沙盒狀態（新功能）：有 worktree 就顯示路徑與分支，沒有就說明為什麼
   if (tab.sandbox) {
@@ -597,7 +600,8 @@ async function toggleSandbox(id) {
   const cwd = tab.workDir || null;
   await invoke('tab_close', { id });
   try {
-    await createSession({ kind: 'conn', conn, cwd });
+    // 模型沿用這個分頁原本選的（只是切沙盒，不該再問一次）
+    await createSession({ kind: 'conn', conn, cwd, model: tab.model || '' });
   } catch (e) {
     await showInfo(T['msg.connectFail'], String(e));
   }
@@ -655,7 +659,11 @@ function teamTip(t) {
   if (t.kind !== 'chat' && t.paused) lines.push(T['ma.tipPaused']);
   if (t.kind !== 'chat' && t.pending > 0) lines.push(fmt('ma.tipPending', t.pending));
   for (const a of t.agents) {
-    if (a.tab !== null) lines.push(`${a.agentId} ${a.roleTitle} (${a.backendName})`);
+    if (a.tab !== null) {
+      // 有選模型的格多標一段：Agent-12 Software Engineer (Codex · gpt-6-sol)
+      const what = a.model ? `${a.backendName} · ${a.model}` : a.backendName;
+      lines.push(`${a.agentId} ${a.roleTitle} (${what})`);
+    }
   }
   return lines.join('\n');
 }
@@ -1420,7 +1428,11 @@ async function openConn(name) {
       cwd = await invoke('pick_work_dir', { title: T['dlg.pickDirCustom'] });
       if (!cwd) return; // 取消（同舊版：PickWorkDir 回 null 就不開）
     }
-    await createSession({ kind: 'conn', conn: name, cwd });
+    // AI CLI 的連線：選完目錄後先問 CLI 目前有哪些模型，再讓使用者選（2.0.2）。
+    // 不是 AI CLI（WSL、自己的工具）→ undefined，照舊直接開。
+    const model = await pickConnModel(c, toast);
+    if (model === null) return; // 在選模型的視窗按了取消＝不開
+    await createSession({ kind: 'conn', conn: name, cwd, model });
   } catch (err) {
     log(`[tabbar] ${T['msg.connectFail']}：${err}`);
     await showInfo(T['msg.connectFail'], String(err));
@@ -1769,6 +1781,7 @@ export async function initTabBar() {
   initRemoteDialog({ showInfo, hideMenus });
   initAdb({ showInfo, askYesNo: (body) => askYesNo(T['tb.adb'], body), pickFromList: askFromList, createSession });
   initAgentDialog();
+  initModelDialog();
   await initFavs({
     createSession,
     askText,
@@ -1778,6 +1791,10 @@ export async function initTabBar() {
     hideMenus,
     showMenuUnder,
     activeId,
+    // 自訂連線的最愛：記下來的模型不在清單裡時才問（2.0.2）
+    resolveSavedModel,
+    // 代理團隊／AI 聊天室的最愛：整組照記下來的設定重開，不跳設定視窗
+    openTeam: (f) => openTeamFavorite(f, createSession),
     // 自訂連線那幾筆最愛，圖示要用連線自己選的那個（舊版 FavoriteIcon → CustomIconFile）
     conns: currentConns,
   });

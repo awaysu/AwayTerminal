@@ -26,6 +26,7 @@ pub mod bus;
 pub mod chat;
 pub mod deliver;
 pub mod message;
+pub mod models;
 pub mod roles;
 pub mod team;
 
@@ -96,7 +97,7 @@ impl TeamManager {
 }
 
 /// 建團隊視窗送過來的一格。
-#[derive(Clone, Debug, Default, serde::Deserialize)]
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SlotSetup {
     pub enabled: bool,
@@ -104,13 +105,18 @@ pub struct SlotSetup {
     pub backend: String,
     /// 角色檔名（空＝None）。
     pub role: String,
+    /// 這一格用的模型（空＝預設，不加 `--model`）。2.0.2 新增。
+    #[serde(default)]
+    pub model: String,
     /// 使用者按了「重新啟動」（設定沒變也要重開；舊版 `WantRestart`）。只有既有團隊用得到。
     #[serde(default)]
     pub restart: bool,
 }
 
 /// 建團隊視窗的全部欄位（舊版 `MultiAgentSetup`，多一個 `sandbox`）。
-#[derive(Clone, Debug, serde::Deserialize)]
+///
+/// 「我的最愛」存的也是這一份（舊版 `FavoriteItem.TeamSetup`），所以要能序列化。
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TeamSetup {
     /// 專案資料夾（所有 agent 共用）。
@@ -216,6 +222,8 @@ pub struct AgentView {
     pub role_title: String,
     pub backend: String,
     pub backend_name: String,
+    /// 這一格用的模型（空＝預設）。
+    pub model: String,
     pub tab: Option<u32>,
     pub queued: u32,
     pub color: String,
@@ -258,6 +266,7 @@ fn view_of(t: &Team) -> TeamView {
                 role_title: s.role_title.clone(),
                 backend: s.backend.clone(),
                 backend_name: s.backend_name(),
+                model: s.model.clone(),
                 tab: s.tab,
                 queued: s.queue.len() as u32,
                 color: s.color().to_string(),
@@ -410,6 +419,8 @@ pub struct LaunchedSlot {
     /// 角色要靠打字注入的那一句（`None`＝走啟動參數，一開始就算注入完成）。
     pub first_message: Option<String>,
     pub via_ps: bool,
+    /// 這一格用的模型（空＝預設）。記在分頁上，恢復分頁與我的最愛要存。
+    pub model: String,
 }
 
 /// 查一格的啟動方式。找不到 CLI 就回錯誤（呼叫端會 `agent_slot_failed`）。
@@ -445,7 +456,7 @@ pub fn plan_slot(
             c.via_powershell
         }
     });
-    let conn = match saved {
+    let mut conn = match saved {
         Some(c) => c.clone(),
         None => adapters::resolve(settings, backend).ok_or_else(|| {
             crate::i18n::tf(
@@ -454,6 +465,13 @@ pub fn plan_slot(
             )
         })?,
     };
+    // 這一格選了模型：連線參數裡使用者自己寫的 `--model` 先拿掉（重複給 Codex 會報錯），
+    // 再把選的接在最後面。選「預設」（空）就完全不動連線的參數。
+    let model = slot.model.trim().to_string();
+    let model_extra = models::model_arg(&model);
+    if !model_extra.is_empty() {
+        conn.args = models::strip_model_arg(&conn.args);
+    }
     let role_text = std::fs::read_to_string(&slot.role_file).unwrap_or_default();
     let launch = adapters::build_launch(
         backend,
@@ -474,7 +492,8 @@ pub fn plan_slot(
         || conn.path.to_ascii_lowercase().ends_with(".bat");
     Ok(LaunchedSlot {
         agent_id: slot.agent_id(),
-        extra_args: format!("{}{sb_extra}", launch.extra_args),
+        extra_args: format!("{}{model_extra}{sb_extra}", launch.extra_args),
+        model: if model_extra.is_empty() { String::new() } else { model },
         dir: team.dir.clone(),
         work_dir: team.work_dir.clone(),
         // 團隊的沙盒是用空的 tool_path 準備的（一組多家 CLI），`guard_warning` 永遠是空的 →
@@ -562,6 +581,8 @@ pub struct BackendOption {
     /// 找到的執行檔（前端只顯示，讓使用者知道會跑哪一支）。
     pub path: String,
     pub via_powershell: bool,
+    /// 這家 CLI 上次選的模型（新開的格預選它；空＝預設）。
+    pub last_model: String,
 }
 
 #[tauri::command]
@@ -573,6 +594,7 @@ pub fn agent_setup_options(
     let kind = kind.unwrap_or_default();
     let lib = library_for(kind);
     let data_dir = roles::data_dir_or_verify(settings.dir());
+    let last_models = settings.get().last_models;
     let backends = adapters::ALL_KEYS
         .iter()
         .filter_map(|k| {
@@ -583,6 +605,7 @@ pub fn agent_setup_options(
                 name: b.display_name().to_string(),
                 path: conn.path,
                 via_powershell: conn.via_powershell,
+                last_model: last_models.get(b.key()).cloned().unwrap_or_default(),
             })
         })
         .collect();
@@ -716,6 +739,7 @@ pub fn create_team(
         // 新開的組格 1 一定啟用（使用者就是要跟它說話；聊天室＝主持人）
         s.enabled = ss.enabled || i == 0;
         s.backend = ss.backend;
+        s.model = ss.model.trim().to_string();
         // 聊天室的第 1 位固定主持人（舊版設定視窗的角色下拉是停用的）
         s.role = if is_chat && i == 0 {
             roles::CHAT_HOST_ROLE.to_string()
@@ -731,6 +755,10 @@ pub fn create_team(
     for s in t.slots.iter().filter(|s| s.enabled) {
         if adapters::Backend::by_key(&s.backend).is_none() {
             return Err(crate::i18n::tf("ma.dlgNeedBackend", &[&s.agent_id()]));
+        }
+        // 模型名稱會原樣接在命令列上 → 不合法的字元在這裡就擋下來
+        if !s.model.is_empty() && !models::valid_model(&s.model) {
+            return Err(crate::i18n::t("model.invalid"));
         }
     }
 
@@ -1181,11 +1209,16 @@ pub fn agent_team_apply(
             continue;
         }
         let running = s.tab.is_some();
-        let same_setup =
-            s.backend.eq_ignore_ascii_case(&want.backend) && s.role.eq_ignore_ascii_case(&want.role);
+        let same_setup = s.backend.eq_ignore_ascii_case(&want.backend)
+            && s.role.eq_ignore_ascii_case(&want.role)
+            && s.model == want.model.trim();
         let will_launch = !running || !same_setup || want.restart;
         if will_launch && adapters::Backend::by_key(&want.backend).is_none() {
             return Err(crate::i18n::tf("ma.dlgNeedBackend", &[&s.agent_id()]));
+        }
+        let want_model = want.model.trim();
+        if will_launch && !want_model.is_empty() && !models::valid_model(want_model) {
+            return Err(crate::i18n::t("model.invalid"));
         }
     }
     // 組角色檔（寫檔）還是可能失敗 → 留一份快照，失敗時整個還原（分頁 id 也還回各格）
@@ -1248,8 +1281,10 @@ pub fn agent_team_apply(
         let idx = t.slots[i].index;
         let running = t.slots[i].tab.is_some();
         let enabled = t.slots[i].enabled;
+        // 模型和 CLI／角色一樣是啟動時才生效的 → 改了也要重開那一格
         let same_setup = t.slots[i].backend.eq_ignore_ascii_case(&want.backend)
-            && t.slots[i].role.eq_ignore_ascii_case(&want.role);
+            && t.slots[i].role.eq_ignore_ascii_case(&want.role)
+            && t.slots[i].model == want.model.trim();
         // 格 1 永遠啟用
         let want_enabled = want.enabled || idx == 1;
 
@@ -1272,13 +1307,16 @@ pub fn agent_team_apply(
         if !running || restart {
             if let Some(tab) = t.slots[i].tab.take() {
                 close_tabs.push(tab);
-                roster_changed |= !same_setup;
+                // 只換模型不算名單變動（Agent ID／角色／CLI 都沒變，不必請 PM 重讀名單）
+                roster_changed |= !(t.slots[i].backend.eq_ignore_ascii_case(&want.backend)
+                    && t.slots[i].role.eq_ignore_ascii_case(&want.role));
             } else {
                 roster_changed = true;
             }
-            // CLI 種類在第 0 步已經驗過
+            // CLI 種類與模型名稱在第 0 步已經驗過
             t.slots[i].enabled = true;
             t.slots[i].backend = want.backend.clone();
+            t.slots[i].model = want.model.trim().to_string();
             t.slots[i].role = want.role.clone();
             t.slots[i].role_title = roles::title_of(library_for(t.kind), &data_dir, &want.role);
             t.slots[i].queue.clear();
@@ -1453,6 +1491,8 @@ pub struct SlotState {
     pub enabled: bool,
     pub backend: String,
     pub role: String,
+    /// 這一格用的模型（空＝預設）。
+    pub model: String,
     /// `running`（有連線）／`exited`（分頁在但連線結束）／`notRunning`（沒有分頁）。
     pub state: String,
 }
@@ -1484,6 +1524,7 @@ pub fn agent_team_state(
                 enabled: s.enabled,
                 backend: s.backend.clone(),
                 role: s.role.clone(),
+                model: s.model.clone(),
                 state: match s.tab {
                     Some(id) => {
                         let alive = sessions.as_ref().is_some_and(|m| m.get(id).is_some());
@@ -1494,6 +1535,37 @@ pub fn agent_team_state(
             })
             .collect(),
     })
+}
+
+/// 這個分頁所在的團隊存成「我的最愛」要記的東西（舊版 `FavoriteFromTab` 的團隊分支：
+/// 記整組設定，重開不跳設定視窗）。不是團隊的分頁回 `None`。
+///
+/// 回 `(組名, 設定)`。只記**有在用**的格（啟用而且選了 CLI），同舊版
+/// `Enabled = s.Enabled && !string.IsNullOrEmpty(s.Backend)`。
+pub fn favorite_setup(teams: &TeamManager, tab: u32) -> Option<(String, TeamSetup)> {
+    let list = teams.lock();
+    let t = list.iter().find(|t| t.slot_by_tab(tab).is_some())?;
+    let setup = TeamSetup {
+        dir: t.dir.clone(),
+        title: String::new(),
+        slots: t
+            .slots
+            .iter()
+            .map(|s| SlotSetup {
+                enabled: s.enabled && !s.backend.is_empty(),
+                backend: s.backend.clone(),
+                role: s.role.clone(),
+                model: s.model.clone(),
+                restart: false,
+            })
+            .collect(),
+        max_messages: t.max_messages,
+        idle_check_minutes: t.idle_check_minutes,
+        sandbox: t.sandbox_cfg.is_some(),
+        kind: t.kind,
+        rounds: t.rounds,
+    };
+    Some((t.title.clone(), setup))
 }
 
 /// 存檔時把代理團隊的格改寫成 `kind = "agent"` 並補上組的資訊（`restore::save` 呼叫）。
@@ -1514,6 +1586,8 @@ pub fn annotate_saved(teams: &Arc<TeamManager>, entries: &mut [(u32, crate::rest
         entry.agent_group_number = team.number;
         entry.agent_backend = slot.backend.clone();
         entry.agent_role = slot.role.clone();
+        // 這一格的模型以團隊記的為準（分頁上那一份是啟動當下的）
+        entry.model = slot.model.clone();
         entry.agent_ratio = team.ratio;
         entry.agent_max_messages = team.max_messages;
         entry.agent_idle_check = team.idle_check_minutes;
@@ -1536,9 +1610,13 @@ pub fn annotate_saved(teams: &Arc<TeamManager>, entries: &mut [(u32, crate::rest
 /// - 每格照上次的執行檔／參數（見 [`plan_slot`] 的 `saved_conn`）
 /// - **角色檔以目前的 `roles/` 重新組合**（CLI 是新 session；OpenCode／Gemini 會重打第一句）
 /// - 沙盒團隊：`prepare()` 看到 worktree 還在就沿用
+///
+/// `models`＝格號 → 模型的覆寫（前端發現上次的模型已經不在清單裡、請使用者重選之後帶過來）；
+/// 沒有覆寫的格用存檔裡的模型。
 #[tauri::command]
 pub fn agent_team_restore(
     indices: Vec<usize>,
+    models: Option<std::collections::HashMap<u32, String>>,
     settings: State<'_, Arc<SettingsStore>>,
     teams: State<'_, Arc<TeamManager>>,
     tabs: State<'_, Arc<TabManager>>,
@@ -1570,6 +1648,10 @@ pub fn agent_team_restore(
                     enabled: true,
                     backend: e.agent_backend.clone(),
                     role: e.agent_role.clone(),
+                    model: models
+                        .as_ref()
+                        .and_then(|m| m.get(&i).cloned())
+                        .unwrap_or_else(|| e.model.clone()),
                     restart: false,
                 },
                 None => SlotSetup::default(),

@@ -62,6 +62,8 @@ pub struct SavedTab {
     /// 分頁開啟的時間（epoch ms）。舊版拿它讓恢復後的執行時長接著算；我們**不讀回來**
     ///（恢復後重新計時，見檔頭第 3 點），欄位留著是為了設定檔格式不變。
     pub opened_ms: u64,
+    /// `conn`／`agent`：啟動時選的模型（傳給 CLI 的 `--model`；空＝預設）。2.0.2 新增。
+    pub model: String,
     /// `adb`：裝置序號（空＝只有一台時直接開的那種）。舊版 `SavedTab.AdbSerial`。
     pub adb_serial: String,
     /// `adb`：當初用的 `adb.exe` 路徑。舊版 `SavedTab.Path`——
