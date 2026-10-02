@@ -575,6 +575,73 @@ async function toggleTgNotify(id) {
   }
 }
 
+/**
+ * 這個分頁實際在哪個目錄工作：開了沙盒＝沙盒的工作區（worktree），否則＝啟動時的工作目錄。
+ * 代理團隊的格也一樣（整組共用一個目錄）。不知道就回空字串。
+ */
+function workDirOf(tab) {
+  return (tab.sandbox && tab.sandbox.workDir) || tab.workDir || '';
+}
+
+/** 分頁右鍵「在這個目錄開啟 PowerShell」：在同一個工作目錄另開一個一般的 shell 分頁。 */
+async function openShellHere(id) {
+  const tab = state.tabs.find((t) => t.id === id);
+  const cwd = tab ? workDirOf(tab) : '';
+  if (!cwd) return;
+  try {
+    await createSession({ kind: 'shell', cwd });
+  } catch (e) {
+    log(`[tabbar] ${T['msg.connectFail']}：${e}`);
+    await showInfo(T['msg.connectFail'], String(e));
+  }
+}
+
+/** 這個分頁有辦法「用同樣的東西重開」嗎（自訂連線、PowerShell、SSH／Telnet／連接埠）。 */
+function canRestart(tab) {
+  return !!tab.connName || ['powershell', 'ssh', 'telnet', 'com'].includes(tab.kind);
+}
+
+/**
+ * 分頁右鍵「重新啟動」：關掉這個分頁，用同樣的連線重開一個，放回原本的位置。
+ *
+ * 自訂連線＝同一條連線、同一個工作目錄、同一個模型（不再問模型）；PowerShell＝目前所在的
+ * 目錄；SSH／Telnet／連接埠＝同一組連線參數（密碼照樣當場問）。那些參數和「加到我的最愛」
+ * 記的是同一份，所以直接跟後端要 `fav_candidate`。
+ */
+async function restartTab(id) {
+  const tab = state.tabs.find((t) => t.id === id);
+  if (!tab || !canRestart(tab)) return;
+  let args = null;
+  if (tab.connName) {
+    args = { kind: 'conn', conn: tab.connName, cwd: tab.workDir || null, model: tab.model || '' };
+  } else {
+    const f = await invoke('fav_candidate', { id }).catch(() => null);
+    if (f && f.kind === 'ssh' && f.ssh) args = { kind: 'ssh', ssh: f.ssh };
+    else if (f && f.kind === 'telnet' && f.telnet) args = { kind: 'telnet', telnet: f.telnet };
+    else if (f && f.kind === 'com' && f.com) args = { kind: 'com', com: f.com };
+    else if (tab.kind === 'powershell') args = { kind: 'shell', cwd: (f && f.dir) || tab.workDir || null };
+  }
+  if (!args) return;
+  // 正在跑的東西會被結束 → 先問（同關閉分頁）
+  if (!(await askYesNo(T['menu.restart'], fmt('msg.restartConfirm', tab.title)))) return;
+
+  const order = state.tabs.map((t) => t.id);
+  const at = order.indexOf(id);
+  await invoke('tab_close', { id });
+  try {
+    const info = await createSession(args);
+    // 新分頁預設排在最後 → 放回原本那個位置
+    if (at >= 0) {
+      const ids = order.filter((x) => x !== id);
+      ids.splice(at, 0, info.id);
+      await invoke('tabs_reorder', { ids }).catch((e) => log(`[tabbar] 重新啟動後排序失敗：${e}`));
+    }
+  } catch (e) {
+    log(`[tabbar] 重新啟動失敗：${e}`);
+    await showInfo(T['msg.connectFail'], String(e));
+  }
+}
+
 async function toggleSandbox(id) {
   const tab = state.tabs.find((t) => t.id === id);
   if (!tab || !tab.connName) return;
@@ -844,6 +911,10 @@ function installStripEvents() {
       if (end) end.classList.toggle('disabled', team.phase !== 'discussing');
     }
     if (team && !isChat) renderDeliveryMenu(team);
+    // 「在這個目錄開啟 PowerShell」：AI agent 的分頁（自訂連線、代理團隊的格）而且知道工作目錄才顯示
+    el.menuShellHere.hidden = !(tab && tab.connName && workDirOf(tab));
+    // 「重新啟動」：知道怎麼重開的分頁才顯示；代理團隊整組不在這裡重開
+    el.menuRestart.hidden = !(tab && !team && canRestart(tab));
     // 沙盒那兩項只對「自訂連線開的分頁」有意義（PowerShell／SSH 分頁沒有連線設定）
     // 代理團隊的沙盒是整組的、在建團隊時決定 → 不給逐分頁切換
     const hasConn = !!(tab && tab.connName) && !team;
@@ -1190,6 +1261,8 @@ function installMenus() {
     if (item.dataset.act === 'rename') renameTab(id);
     else if (item.dataset.act === 'log') logAction(id);
     else if (item.dataset.act === 'macro') runMacroForTab(id, state);
+    else if (item.dataset.act === 'shell-here') openShellHere(id);
+    else if (item.dataset.act === 'restart') restartTab(id);
     else if (item.dataset.act === 'sandbox') toggleSandbox(id);
     else if (item.dataset.act === 'sandbox-clear') clearSandbox(id);
     else if (item.dataset.act === 'tg-notify') toggleTgNotify(id);
@@ -1644,6 +1717,8 @@ function applyTexts() {
     setText(el.tabMenu, '[data-act="rename"]', T['menu.rename']);
     setText(el.tabMenu, '[data-act="log"]', T['menu.log']);
     setText(el.tabMenu, '[data-act="macro"]', T['menu.macro']);
+    setText(el.tabMenu, '[data-act="shell-here"]', fmt('menu.shellHere', T['tb.powershell']));
+    setText(el.tabMenu, '[data-act="restart"]', T['menu.restart']);
     setText(el.tabMenu, '[data-act="close"]', T['menu.close']);
     setText(el.tabMenu, '[data-act="sandbox-clear"]', T['sb.clear']);
     setText(el.tabMenu, '[data-act="tg-notify"]', T['menu.tgNotify']);
@@ -1724,6 +1799,8 @@ export async function initTabBar() {
   el.colorItems = $('color-items');
   el.newConns = $('new-conns');
   el.favsMenu = $('favs-menu');
+  el.menuShellHere = el.tabMenu.querySelector('[data-act="shell-here"]');
+  el.menuRestart = el.tabMenu.querySelector('[data-act="restart"]');
   el.menuSandbox = el.tabMenu.querySelector('[data-act="sandbox"]');
   el.menuSandboxClear = el.tabMenu.querySelector('[data-act="sandbox-clear"]');
   el.menuTgNotify = el.tabMenu.querySelector('[data-act="tg-notify"]');

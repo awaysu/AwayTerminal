@@ -40,6 +40,8 @@ pub struct PrefsPatch {
     pub log_append: Option<bool>,
     pub exit_restore_tabs: Option<bool>,
     pub sandbox_default: Option<bool>,
+    /// 「開啟時選模型」（2.0.3）。
+    pub ask_model_on_open: Option<bool>,
 }
 
 /// 顏色字串的驗證（舊版 `ValidColor`：認不出來就退回預設）。
@@ -146,6 +148,9 @@ pub fn settings_apply(
         }
         if let Some(b) = patch.sandbox_default {
             s.sandbox_default = b;
+        }
+        if let Some(b) = patch.ask_model_on_open {
+            s.ask_model_on_open = b;
         }
     });
 

@@ -58,6 +58,9 @@ function fill(s) {
   el.logTs.checked = s.logTimestamp !== false;
   el.logAppend.checked = s.logAppend !== false;
   el.sandboxDefault.checked = !!s.sandboxDefault;
+  el.askModel.checked = !!s.askModelOnOpen;
+  el.modelsNote.textContent = '';
+  syncModelsButton();
   el.weakCount.textContent = fmt('settings.weakCount', (s.sshWeakAccepted || []).length);
   // Telegram 遠端：狀態從後端問（**token 不回傳**，只回「有沒有設定」）
   el.renderer.value = ['auto', 'webgl', 'canvas', 'dom'].includes(s.renderer)
@@ -325,6 +328,11 @@ function close() {
   el.root.hidden = true;
 }
 
+/** 「更新模型清單」只有在「開啟時選模型」勾著的時候才能按（沒勾＝根本不會用到模型清單）。 */
+function syncModelsButton() {
+  el.modelsRefresh.disabled = !el.askModel.checked;
+}
+
 async function save(e) {
   e?.preventDefault();
   const lang = el.lang.value;
@@ -343,6 +351,7 @@ async function save(e) {
     logAppend: el.logAppend.checked,
     exitRestoreTabs: el.exitRestore.checked,
     sandboxDefault: el.sandboxDefault.checked,
+    askModelOnOpen: el.askModel.checked,
     // 渲染器：改了要重開分頁才生效（addon 在建 pane 時掛）
     renderer: el.renderer.value,
   };
@@ -422,6 +431,12 @@ function applyTexts() {
   el.weakClear.textContent = T['settings.weakClear'];
   el.lMigrate.textContent = T['settings.groupMigrate'];
   el.migrate.textContent = T['migrate.button'];
+  el.lModels.textContent = T['settings.groupModels'];
+  el.lAskModel.textContent = T['settings.askModel'];
+  el.lAskModel.parentElement.title = T['settings.askModelNote'];
+  el.modelsRefresh.textContent = T['settings.modelsRefresh'];
+  // 說明放在 tooltip：旁邊那一格要留給「更新了幾個」的結果，再多一行字設定視窗就要捲了
+  el.modelsRefresh.title = T['settings.modelsNote'];
   el.lShell.textContent = T['settings.groupShell'];
   el.lShellMenu.textContent = T['settings.shellMenu'];
   el.lRender.textContent = T['settings.groupRender'];
@@ -499,6 +514,11 @@ export function initSettings(injected) {
   el.lMigrate = $('st-l-migrate');
   el.migrate = $('st-migrate');
   el.migrateNote = $('st-migrate-note');
+  el.lModels = $('st-l-models');
+  el.askModel = $('st-askmodel');
+  el.lAskModel = $('st-l-askmodel');
+  el.modelsRefresh = $('st-models-refresh');
+  el.modelsNote = $('st-models-note');
   el.lShell = $('st-l-shell');
   el.lShellMenu = $('st-l-shellmenu');
   // ⚠️ 這一行從 TASK-016 就漏掉了（TASK-028 才發現）：`fill()` 第一件事就是
@@ -597,6 +617,31 @@ export function initSettings(injected) {
       if (r.warnings.length) el.note.textContent = r.warnings.join('　');
     } catch (e) {
       el.migrateNote.textContent = String(e);
+    }
+  });
+
+  // 「開啟時選模型」沒勾＝用不到模型清單 →「更新模型清單」跟著不能按
+  el.askModel.addEventListener('change', syncModelsButton);
+
+  // 更新模型清單（2.0.3）：不等 10 分鐘的快取，立刻重新向這台電腦上每一家 AI CLI 問一次
+  el.modelsRefresh.addEventListener('click', async () => {
+    el.modelsRefresh.disabled = true;
+    el.modelsNote.textContent = T['settings.modelsBusy'];
+    try {
+      const opts = await invoke('agent_setup_options', { kind: 'team' });
+      const backends = opts.backends.map((b) => b.key);
+      if (backends.length === 0) {
+        el.modelsNote.textContent = T['settings.modelsNone'];
+        return;
+      }
+      const lists = await invoke('cli_models', { backends, refresh: true });
+      // 每一家各有幾個；問不到清單的那一家標「—」
+      const parts = lists.map((l) => `${l.backendName} ${l.models.length > 0 ? l.models.length : '—'}`);
+      el.modelsNote.textContent = fmt('settings.modelsDone', parts.join('、'));
+    } catch (e) {
+      el.modelsNote.textContent = fmt('settings.modelsFail', String(e));
+    } finally {
+      syncModelsButton();
     }
   });
 

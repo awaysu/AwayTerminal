@@ -131,6 +131,10 @@ pub struct AppSettings {
     /// 各家 AI CLI **上次選的模型**（key＝`claude-code`／`codex`／`opencode`／`geminicli`；
     /// 空字串＝選了「預設」）。選模型的視窗用它當預選值（2.0.2 新增，見 `agent/models.rs`）。
     pub last_models: std::collections::BTreeMap<String, String>,
+    /// 設定視窗的「開啟時選模型」（2.0.3；**預設關**）。開著＝開 AI CLI 的自訂連線時跳
+    /// 「選擇模型」、代理團隊設定視窗每一格有模型欄位；關著＝完全不問，照 CLI 自己的預設
+    ///（同 2.0.1 以前），恢復分頁與我的最愛也不檢查模型還在不在。
+    pub ask_model_on_open: bool,
 
     /// 自訂連線清單（舊版 `AppSettings.CustomConns`）。
     ///
@@ -275,6 +279,7 @@ impl Default for AppSettings {
             sandbox_default: false,
             compose_send_enter: true,
             last_models: std::collections::BTreeMap::new(),
+            ask_model_on_open: false,
             custom_conns: Vec::new(),
             // 舊版 MainWindow.xaml 的「配色」子選單那五組，順序照抄
             palette: vec![

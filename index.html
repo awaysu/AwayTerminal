@@ -110,9 +110,15 @@
     <div class="menu-item" data-act="rename">更改名稱</div>
     <div class="menu-item" data-act="log">記錄 log…</div>
     <div class="menu-item" data-act="macro">執行巨集…</div>
+    <!-- 在這個分頁的工作目錄另開一個 PowerShell／終端機分頁（2.0.3 新增）。只有自訂連線開的分頁
+         （Claude Code、Codex… 與代理團隊的格）才顯示：AI agent 在跑的時候想自己下指令看一下 -->
+    <div class="menu-item" data-act="shell-here">在這個目錄開啟 PowerShell</div>
     <!-- 沙盒模式（新功能）：勾勾（在文字後面）顯示的是**連線設定**的值，改了下次啟動生效 -->
     <div class="menu-item" data-act="sandbox">沙盒模式</div>
     <div class="menu-item" data-act="sandbox-clear">清除沙盒…</div>
+    <!-- 重新啟動（2.0.3 新增，排在配色上面）：關掉這個分頁、用同樣的連線／目錄／模型重開一個，
+         放回原本的位置。代理團隊那一列不顯示（各格的重新啟動在「代理團隊設定…」裡） -->
+    <div class="menu-item" data-act="restart">重新啟動</div>
     <!-- 配色排在沙盒模式下面（2026-10-02 使用者指定的順序） -->
     <div class="menu-item has-sub" data-act="color">配色
       <span class="menu-arrow">▸</span>
@@ -682,6 +688,17 @@
         <div class="sd-row st-weak">
           <button id="st-migrate" type="button"></button>
           <span id="st-migrate-note" class="sd-hint"></span>
+        </div>
+      </fieldset>
+      <!-- AI 模型清單（2.0.3）：選模型的清單平常會沿用 10 分鐘內問過的結果；這顆按鈕＝立刻
+           重新向每一家 AI CLI 問一次（OpenCode 會順便更新它自己的模型快取），結果顯示在旁邊。 -->
+      <fieldset>
+        <legend id="st-l-models"></legend>
+        <!-- 開啟時選模型（預設不勾）：沒勾＝完全不問模型，「更新模型清單」也按不了 -->
+        <label class="sd-check"><input id="st-askmodel" type="checkbox" /><span id="st-l-askmodel"></span></label>
+        <div class="sd-row st-weak">
+          <button id="st-models-refresh" type="button"></button>
+          <span id="st-models-note" class="sd-hint"></span>
         </div>
       </fieldset>
         </div>

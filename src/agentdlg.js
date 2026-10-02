@@ -19,13 +19,26 @@ import { T, fmt } from './strings.js';
 import { onLangChange } from './i18n.js';
 import { log } from './bridge.js';
 import { fillCombo, syncCombo, wireCombo } from './combo.js';
-import { askModel, isMissing, modelHint, modelItems, rememberModel, validModel } from './modeldlg.js';
+import {
+  askModel,
+  askModelEnabled,
+  isMissing,
+  modelHint,
+  modelItems,
+  rememberModel,
+  validModel,
+} from './modeldlg.js';
 
 const el = {};
 /** `agent_setup_options()` 的結果。 */
 let opts = null;
 /** 各家 CLI 的模型清單（`cli_models()`；key＝backend）。開設定視窗前先問好。 */
 let modelLists = {};
+/**
+ * 設定裡的「開啟時選模型」有沒有勾（每次開設定視窗時重讀）。沒勾＝每一格的模型欄位整個藏起來：
+ * 新開的格用 CLI 自己的預設，既有的格沿用它原本的模型（不會因為欄位不見就被改掉、重開）。
+ */
+let askModels = false;
 /** 既有團隊的目前狀態（`agent_team_state()`）；`null`＝正在建新團隊。 */
 let existing = null;
 /** 這次開的是 `team`（代理團隊）還是 `chat`（AI 聊天室）。 */
@@ -124,6 +137,7 @@ function buildSlots() {
       roleLabel,
       role,
       modelLabel,
+      modelBox,
       model,
       modelList,
       foot,
@@ -140,7 +154,8 @@ function buildSlots() {
     enable.addEventListener('change', () => refreshSlot(i));
     backend.addEventListener('change', () => {
       // 換了一家 CLI：模型清單整個不一樣 → 換成那一家的清單，預選它上次用的
-      fillSlotModels(i, lastModelOf(backend.value));
+      // （沒勾「開啟時選模型」＝欄位藏著，別家的模型名稱也不能留著 → 清成預設）
+      fillSlotModels(i, defaultModelOf(backend.value));
       refreshSlot(i);
     });
     role.addEventListener('change', () => refreshSlot(i));
@@ -179,9 +194,16 @@ function lastModelOf(backendKey) {
   return (b && b.lastModel) || '';
 }
 
+/** 新開的格預設用哪個模型：有勾「開啟時選模型」＝這家上次選的；沒勾＝CLI 自己的預設。 */
+function defaultModelOf(backendKey) {
+  return askModels ? lastModelOf(backendKey) : '';
+}
+
 /** 把第 i 格的模型下拉換成它目前那家 CLI 的清單，並填上 `value`。 */
 function fillSlotModels(i, value) {
   const ui = el.slotUi[i];
+  ui.modelLabel.hidden = !askModels;
+  ui.modelBox.hidden = !askModels;
   const list = modelLists[ui.backend.value] || null;
   fillCombo(ui.modelList, modelItems(list));
   ui.model.value = value || '';
@@ -391,7 +413,9 @@ async function loadModelLists(backends) {
 }
 
 /** 團隊開起來之後，記住每一家 CLI 這次選的模型（下次預選它）。 */
-function rememberSetupModels(setup) {
+async function rememberSetupModels(setup) {
+  // 沒勾「開啟時選模型」＝使用者這次沒有選過模型，不要把「上次選的」蓋成空的
+  if (!(await askModelEnabled())) return;
   for (const s of setup.slots) {
     if (s.enabled && s.backend) rememberModel(s.backend, s.model || '');
   }
@@ -406,6 +430,8 @@ function rememberSetupModels(setup) {
 async function resolveSlotModels(slots) {
   const withModel = slots.filter((s) => s.model);
   if (withModel.length === 0) return {};
+  // 沒勾「開啟時選模型」＝不檢查、也不跳視窗，記下來的模型照用
+  if (!(await askModelEnabled())) return {};
   await loadModelLists(withModel.map((s) => s.backend));
   const out = {};
   for (const s of withModel) {
@@ -434,8 +460,10 @@ async function openDialog(dir, state, wantKind) {
     log(`[agentdlg] 讀取設定選項失敗：${e}`);
     return null;
   }
-  // 視窗打開之前先問每一家 CLI 目前有哪些模型（Codex／OpenCode 各要一兩秒，有快取）
-  await loadModelLists(opts.backends.map((b) => b.key));
+  // 視窗打開之前先問每一家 CLI 目前有哪些模型（Codex／OpenCode 各要一兩秒，有快取）。
+  // 設定裡沒勾「開啟時選模型」＝不問，模型欄位也不顯示
+  askModels = await askModelEnabled();
+  if (askModels) await loadModelLists(opts.backends.map((b) => b.key));
   existing = state || null;
   // 聊天室沒有「閒置檢查」那一列（它不投遞信）
   for (const n of el.idleRow) n.hidden = kind === 'chat';
@@ -492,7 +520,7 @@ async function openDialog(dir, state, wantKind) {
       ui.origModel = '';
       ui.backend.value = slot.backend || (opts.backends.length ? opts.backends[0].key : '');
       ui.role.value = slot.backend ? slot.role : opts.defaultRoles[i] || '';
-      fillSlotModels(i, slot.backend ? slot.model || '' : lastModelOf(ui.backend.value));
+      fillSlotModels(i, slot.backend ? slot.model || '' : defaultModelOf(ui.backend.value));
       ui.enable.checked = false;
     } else {
       ui.state = 'notRunning';
@@ -502,8 +530,8 @@ async function openDialog(dir, state, wantKind) {
       // 預設：每一格都用第一家找得到的 CLI（舊版也是拿第一個可用的）
       ui.backend.value = opts.backends.length ? opts.backends[0].key : '';
       ui.role.value = opts.defaultRoles[i] || '';
-      // 模型預選這家 CLI 上次用的（沒選過＝預設）
-      fillSlotModels(i, lastModelOf(ui.backend.value));
+      // 模型預選這家 CLI 上次用的（沒選過、或沒勾「開啟時選模型」＝預設）
+      fillSlotModels(i, defaultModelOf(ui.backend.value));
       // 新開的組：格 1、2 預設啟用（PM ＋ SE 是最小可用團隊），3、4 使用者自己勾
       ui.enable.checked = i < 2;
     }

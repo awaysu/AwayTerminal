@@ -513,6 +513,9 @@ body.col-resizing { cursor: col-resize; user-select: none; }
   background: #1e1e1e; color: #e0e0e0; border: 1px solid #555; outline: none; padding: 1px 4px;
 }
 .ma-slot .combo > input[type="text"]:focus { border-color: #FDFFB0; }
+/* 沒選模型時欄位裡顯示的「預設（由 CLI 自己決定）」是 placeholder，瀏覽器預設是灰的——
+   它其實是一個正常的選項（不是提示字），顏色要和其他模型一樣 */
+#mo-model::placeholder, .ma-slot .combo > input[type="text"]::placeholder { color: #e0e0e0; opacity: 1; }
 
 /* 我的最愛 */
 .popup-menu .menu-item.disabled { color: #666; cursor: default; }
@@ -927,6 +930,11 @@ body.col-resizing { cursor: col-resize; user-select: none; }
   margin-top: 8px;
   gap: 8px;
 }
+/* 旁邊的說明／結果很長時，按鈕不可以被擠窄（字會折成兩行） */
+.st-weak > button {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
 .st-weak button,
 #st-logdir-pick {
   background: #3F3F46;
@@ -939,6 +947,15 @@ body.col-resizing { cursor: col-resize; user-select: none; }
 .st-weak button:hover,
 #st-logdir-pick:hover {
   background: #50505a;
+}
+/* 不能按的時候要看得出來（「更新模型清單」在「開啟時選模型」沒勾時停用）——
+   上面那條把字色寫死了，瀏覽器預設的停用灰蓋不過它 */
+.st-weak button:disabled,
+.st-weak button:disabled:hover {
+  background: #333337;
+  color: #777;
+  border-color: #444;
+  cursor: default;
 }
 #setdlg .modal-buttons button {
   min-width: 84px;

@@ -89,6 +89,18 @@ export function askModel(o) {
   });
 }
 
+/**
+ * 設定裡的「開啟時選模型」有沒有勾（預設沒勾）。沒勾＝完全不問模型：開連線不跳視窗、
+ * 團隊設定視窗沒有模型欄位、恢復分頁與我的最愛也不檢查模型還在不在。
+ */
+export async function askModelEnabled() {
+  try {
+    return !!(await invoke('settings_get')).askModelOnOpen;
+  } catch {
+    return false;
+  }
+}
+
 /** 記住這家 CLI 這次選的模型（下次預選它）。 */
 export function rememberModel(backend, model) {
   if (!backend) return;
@@ -107,9 +119,12 @@ function looksLikeAiCli(conn) {
 /**
  * 開一條自訂連線之前問模型。
  *
- * 回傳：`undefined`＝這條連線不是 AI CLI，不用問；`null`＝使用者取消；字串＝選的模型（`''`＝預設）。
+ * 回傳：`undefined`＝不用問（這條連線不是 AI CLI，或設定裡沒勾「開啟時選模型」）；
+ * `null`＝使用者取消；字串＝選的模型（`''`＝預設）。
  */
 export async function pickConnModel(conn, toast) {
+  // 設定裡沒勾「開啟時選模型」＝不問，照舊直接開
+  if (!(await askModelEnabled())) return undefined;
   const connName = conn.name;
   // 「正在讀取模型清單…」只對看起來是 AI CLI 的連線顯示（WSL 之類的不要閃這一句）；
   // 到底是不是，由後端的 `conn_models` 說了算
@@ -139,6 +154,8 @@ export async function pickConnModel(conn, toast) {
  */
 export async function resolveSavedModel(connName, model) {
   if (!model) return '';
+  // 沒勾「開啟時選模型」＝不檢查、也不跳視窗，記下來的模型照用
+  if (!(await askModelEnabled())) return model;
   let list = null;
   try {
     list = await invoke('conn_models', { name: connName });
