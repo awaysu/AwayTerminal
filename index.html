@@ -110,9 +110,12 @@
     <div class="menu-item" data-act="rename">更改名稱</div>
     <div class="menu-item" data-act="log">記錄 log…</div>
     <div class="menu-item" data-act="macro">執行巨集…</div>
+    <!-- 「執行巨集…」下面一條分隔線（2.0.4，使用者指定）：上面三項是每個分頁都有的，下面是視分頁而定的 -->
+    <div class="menu-sep"></div>
     <!-- 在這個分頁的工作目錄另開一個 PowerShell／終端機分頁（2.0.3 新增）。只有自訂連線開的分頁
-         （Claude Code、Codex… 與代理團隊的格）才顯示：AI agent 在跑的時候想自己下指令看一下 -->
-    <div class="menu-item" data-act="shell-here">在這個目錄開啟 PowerShell</div>
+         （Claude Code、Codex… 與代理團隊的格）才顯示：AI agent 在跑的時候想自己下指令看一下。
+         文字是「PowerShell 開啟」（Windows）或「Terminal 開啟」（mac／Linux），由 tabbar.js 填 -->
+    <div class="menu-item" data-act="shell-here">PowerShell 開啟</div>
     <!-- 沙盒模式（新功能）：勾勾（在文字後面）顯示的是**連線設定**的值，改了下次啟動生效 -->
     <div class="menu-item" data-act="sandbox">沙盒模式</div>
     <div class="menu-item" data-act="sandbox-clear">清除沙盒…</div>

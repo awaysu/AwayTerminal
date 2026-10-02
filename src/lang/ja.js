@@ -12,6 +12,7 @@ export default {
   // 工具列（舊版 tb.*）
   'tb.new': '新しいタブ',
   'tb.powershell': 'PowerShell',
+  'tb.terminal': 'Terminal',
   'tb.customCmd': 'カスタムコマンド…',
   'tb.split': '分割表示',
   'tb.tabs': 'タブ表示',
@@ -191,7 +192,8 @@ export default {
 
   // ---- TTL 巨集（TASK-013；舊版 Loc 的 menu.macro／msg.stopMacroAsk／dlg.macroTitle）----
   'menu.macro': 'マクロを実行…',
-  'menu.shellHere': 'このフォルダーで {0} を開く',
+  'menu.shellHere': '{0} を開く',
+  'menu.shellHereTip': 'このタブの作業フォルダーで {0} タブをもう 1 つ開きます',
   'menu.restart': '再起動',
   'msg.restartConfirm': '「{0}」を再起動しますか？\nこのタブで実行中のプログラムは終了します。',
   'macro.title': 'マクロの実行',

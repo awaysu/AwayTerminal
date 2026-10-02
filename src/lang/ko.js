@@ -12,6 +12,7 @@ export default {
   // 工具列（舊版 tb.*）
   'tb.new': '새 탭',
   'tb.powershell': 'PowerShell',
+  'tb.terminal': 'Terminal',
   'tb.customCmd': '사용자 지정 명령…',
   'tb.split': '창 분할',
   'tb.tabs': '창 탭',
@@ -191,7 +192,8 @@ export default {
 
   // ---- TTL 巨集（TASK-013；舊版 Loc 的 menu.macro／msg.stopMacroAsk／dlg.macroTitle）----
   'menu.macro': '매크로 실행…',
-  'menu.shellHere': '이 폴더에서 {0} 열기',
+  'menu.shellHere': '{0} 열기',
+  'menu.shellHereTip': '이 탭의 작업 폴더에서 {0} 탭을 하나 더 엽니다',
   'menu.restart': '다시 시작',
   'msg.restartConfirm': '“{0}”을(를) 다시 시작할까요?\n이 탭에서 실행 중인 프로그램이 종료됩니다.',
   'macro.title': '매크로 실행',

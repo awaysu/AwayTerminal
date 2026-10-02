@@ -12,6 +12,7 @@ export default {
   // 工具列（舊版 tb.*）
   'tb.new': 'Neuer Tab',
   'tb.powershell': 'PowerShell',
+  'tb.terminal': 'Terminal',
   'tb.customCmd': 'Eigener Befehl…',
   'tb.split': 'Teilen',
   'tb.tabs': 'Tabs',
@@ -191,7 +192,8 @@ export default {
 
   // ---- TTL 巨集（TASK-013；舊版 Loc 的 menu.macro／msg.stopMacroAsk／dlg.macroTitle）----
   'menu.macro': 'Makro ausführen…',
-  'menu.shellHere': '{0} in diesem Ordner öffnen',
+  'menu.shellHere': '{0} öffnen',
+  'menu.shellHereTip': 'Öffnet einen weiteren {0}-Tab im Arbeitsordner dieses Tabs',
   'menu.restart': 'Neu starten',
   'msg.restartConfirm': '„{0}“ neu starten?\nAlles, was in diesem Tab läuft, wird beendet.',
   'macro.title': 'Makro ausführen',

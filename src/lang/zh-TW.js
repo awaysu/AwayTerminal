@@ -10,6 +10,7 @@ export default {
   // 工具列（舊版 tb.*）
   'tb.new': '新分頁',
   'tb.powershell': 'PowerShell',
+  'tb.terminal': 'Terminal',
   'tb.customCmd': '自訂指令…',
   'tb.split': '視窗分割',
   'tb.tabs': '視窗分頁',
@@ -196,7 +197,8 @@ export default {
 
   // ---- TTL 巨集（TASK-013；舊版 Loc 的 menu.macro／msg.stopMacroAsk／dlg.macroTitle）----
   'menu.macro': '執行巨集…',
-  'menu.shellHere': '在這個目錄開啟 {0}',
+  'menu.shellHere': '{0} 開啟',
+  'menu.shellHereTip': '在這個分頁的工作目錄另開一個 {0} 分頁',
   'menu.restart': '重新啟動',
   'msg.restartConfirm': '確定要重新啟動「{0}」？\n目前在這個分頁裡執行的程式會被結束。',
   'macro.title': '執行巨集',

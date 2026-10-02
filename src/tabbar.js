@@ -583,7 +583,16 @@ function workDirOf(tab) {
   return (tab.sandbox && tab.sandbox.workDir) || tab.workDir || '';
 }
 
-/** 分頁右鍵「在這個目錄開啟 PowerShell」：在同一個工作目錄另開一個一般的 shell 分頁。 */
+/**
+ * 本機 shell 在選單上叫什麼：Windows 開的是 PowerShell；mac／Linux 開的是使用者的 `$SHELL`
+ * （`pty/shell.rs` 的 `local_shell`）→ 叫 Terminal。看的是作業系統，不是 webview 引擎。
+ */
+function localShellLabel() {
+  const ua = (typeof navigator !== 'undefined' && navigator.userAgent) || '';
+  return /Windows/i.test(ua) ? T['tb.powershell'] : T['tb.terminal'];
+}
+
+/** 分頁右鍵「PowerShell 開啟」／「Terminal 開啟」：在同一個工作目錄另開一個一般的 shell 分頁。 */
 async function openShellHere(id) {
   const tab = state.tabs.find((t) => t.id === id);
   const cwd = tab ? workDirOf(tab) : '';
@@ -911,7 +920,7 @@ function installStripEvents() {
       if (end) end.classList.toggle('disabled', team.phase !== 'discussing');
     }
     if (team && !isChat) renderDeliveryMenu(team);
-    // 「在這個目錄開啟 PowerShell」：AI agent 的分頁（自訂連線、代理團隊的格）而且知道工作目錄才顯示
+    // 「PowerShell 開啟」／「Terminal 開啟」：AI agent 的分頁（自訂連線、代理團隊的格）而且知道工作目錄才顯示
     el.menuShellHere.hidden = !(tab && tab.connName && workDirOf(tab));
     // 「重新啟動」：知道怎麼重開的分頁才顯示；代理團隊整組不在這裡重開
     el.menuRestart.hidden = !(tab && !team && canRestart(tab));
@@ -1717,7 +1726,10 @@ function applyTexts() {
     setText(el.tabMenu, '[data-act="rename"]', T['menu.rename']);
     setText(el.tabMenu, '[data-act="log"]', T['menu.log']);
     setText(el.tabMenu, '[data-act="macro"]', T['menu.macro']);
-    setText(el.tabMenu, '[data-act="shell-here"]', fmt('menu.shellHere', T['tb.powershell']));
+    setText(el.tabMenu, '[data-act="shell-here"]', fmt('menu.shellHere', localShellLabel()));
+    // 選單上的字很短，「開在哪裡」放在 tooltip
+    const shellHere = el.tabMenu.querySelector('[data-act="shell-here"]');
+    if (shellHere) shellHere.title = fmt('menu.shellHereTip', localShellLabel());
     setText(el.tabMenu, '[data-act="restart"]', T['menu.restart']);
     setText(el.tabMenu, '[data-act="close"]', T['menu.close']);
     setText(el.tabMenu, '[data-act="sandbox-clear"]', T['sb.clear']);

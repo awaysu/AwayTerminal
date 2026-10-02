@@ -12,6 +12,7 @@ export default {
   // 工具列（舊版 tb.*）
   'tb.new': 'Nueva pestaña',
   'tb.powershell': 'PowerShell',
+  'tb.terminal': 'Terminal',
   'tb.customCmd': 'Comando personalizado…',
   'tb.split': 'Dividir',
   'tb.tabs': 'Pestañas',
@@ -191,7 +192,8 @@ export default {
 
   // ---- TTL 巨集（TASK-013；舊版 Loc 的 menu.macro／msg.stopMacroAsk／dlg.macroTitle）----
   'menu.macro': 'Ejecutar macro…',
-  'menu.shellHere': 'Abrir {0} en esta carpeta',
+  'menu.shellHere': 'Abrir {0}',
+  'menu.shellHereTip': 'Abre otra pestaña de {0} en la carpeta de trabajo de esta pestaña',
   'menu.restart': 'Reiniciar',
   'msg.restartConfirm': '¿Reiniciar «{0}»?\nLo que se esté ejecutando en esta pestaña se cerrará.',
   'macro.title': 'Ejecutar macro',

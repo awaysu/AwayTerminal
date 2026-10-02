@@ -12,6 +12,7 @@ export default {
   // 工具列（舊版 tb.*）
   'tb.new': 'Nouvel onglet',
   'tb.powershell': 'PowerShell',
+  'tb.terminal': 'Terminal',
   'tb.customCmd': 'Commande personnalisée…',
   'tb.split': 'Diviser',
   'tb.tabs': 'Onglets',
@@ -191,7 +192,8 @@ export default {
 
   // ---- TTL 巨集（TASK-013；舊版 Loc 的 menu.macro／msg.stopMacroAsk／dlg.macroTitle）----
   'menu.macro': 'Exécuter une macro…',
-  'menu.shellHere': 'Ouvrir {0} dans ce dossier',
+  'menu.shellHere': 'Ouvrir {0}',
+  'menu.shellHereTip': 'Ouvre un autre onglet {0} dans le dossier de travail de cet onglet',
   'menu.restart': 'Redémarrer',
   'msg.restartConfirm': 'Redémarrer « {0} » ?\nCe qui s’exécute dans cet onglet sera arrêté.',
   'macro.title': 'Exécuter une macro',

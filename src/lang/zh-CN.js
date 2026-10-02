@@ -12,6 +12,7 @@ export default {
   // 工具列（舊版 tb.*）
   'tb.new': '新标签页',
   'tb.powershell': 'PowerShell',
+  'tb.terminal': 'Terminal',
   'tb.customCmd': '自定义命令…',
   'tb.split': '窗口分割',
   'tb.tabs': '窗口标签页',
@@ -191,7 +192,8 @@ export default {
 
   // ---- TTL 巨集（TASK-013；舊版 Loc 的 menu.macro／msg.stopMacroAsk／dlg.macroTitle）----
   'menu.macro': '运行宏…',
-  'menu.shellHere': '在此目录打开 {0}',
+  'menu.shellHere': '{0} 打开',
+  'menu.shellHereTip': '在这个标签页的工作目录另开一个 {0} 标签页',
   'menu.restart': '重新启动',
   'msg.restartConfirm': '确定要重新启动“{0}”？\n这个标签页里正在运行的程序会被结束。',
   'macro.title': '运行宏',
