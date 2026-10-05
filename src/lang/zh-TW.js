@@ -160,6 +160,8 @@ export default {
   'sd.port': 'Port',
   'sd.user': '帳號',
   'sd.userHint': '留空＝連上後在終端機問 login as:',
+  'sd.password': '密碼',
+  'sd.passwordHint': '留空＝連上後在終端機問；不會存進我的最愛',
   'sd.key': '金鑰檔',
   'sd.keep': '保持連線',
   'sd.keepHint': '分鐘，0＝關閉',
@@ -240,7 +242,6 @@ export default {
   // {0} = 分頁數
   'restore.done': '已恢復 {0} 個分頁',
   'restore.failed': '有 {0} 個分頁恢復失敗（詳情見後端 log）',
-  'sd.quick': '快速連線（host[:port]）…',
 
   // ---- 我的最愛（TASK-009 C；舊版 fav.* / tb.favorites / tip.favorites）----
   'tb.favorites': '我的最愛',
@@ -551,14 +552,18 @@ export default {
   // ---- 匯入舊版設定（TASK-016 D；舊檔只讀）----
   'settings.groupMigrate': '舊版設定',
   'settings.groupModels': 'AI 模型',
-  'settings.askModel': '開啟時選模型',
+  'settings.askModel': '開啟時可選模型',
   'settings.askModelNote': '勾選後，開啟 AI CLI 的連線（ClaudeCode／Codex／OpenCode／GeminiCLI）與代理團隊時會先讓你選模型。沒勾＝不問，由 CLI 自己決定。',
-  'settings.modelsRefresh': '更新模型清單',
+  'settings.modelsRefresh': '手動更新',
   'settings.modelsNote': '立刻重新向每一家 AI CLI 詢問目前有哪些模型。平常 10 分鐘內會沿用上一次問到的結果。',
   'settings.modelsBusy': '正在更新模型清單…',
   'settings.modelsDone': '已更新：{0}',
   'settings.modelsNone': '這台電腦沒有找到 AI CLI（ClaudeCode／Codex／OpenCode／GeminiCLI）。',
   'settings.modelsFail': '更新失敗：{0}',
+  'settings.modelsAuto': '自動更新',
+  'settings.modelsAutoNote': '每天在選的整點自動重新向每一家 AI CLI 問一次模型清單（AwayTerminal 要開著）。',
+  'settings.pageLang': '語言和字體',
+  'settings.pageGeneral': '一般設定',
   'migrate.button': '匯入舊版設定…',
   'migrate.pick': '選舊版的 settings.json',
   'migrate.title': '匯入舊版設定',

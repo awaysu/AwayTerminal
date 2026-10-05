@@ -38,7 +38,9 @@ PM 在 TASK-015 A2 要求「`settings.json` 已有的欄位全部要能從這裡
 | log 檔已存在時附加在後面 | `logAppend` | `true` | |
 | 新增的自訂連線預設開啟沙盒 | `sandboxDefault` | `false` | **新欄位**（2026-10-02 起預設關，原本是 `true`）；打開之後 WSL／ADB 仍然預設關（`custom::default_sandbox`） |
 | 上次選的模型 | `lastModels` | `{}` | **新欄位**（2.0.2）。key＝`claude-code`／`codex`／`opencode`／`geminicli`／`antigravity`（2.0.6 起），值＝那家上次選的模型（空＝預設）。沒有編輯 UI，選模型的視窗自己記 |
-| 開啟時選模型 | `askModelOnOpen` | `false` | **新欄位**（2.0.3）。勾了，開 AI CLI 的自訂連線與代理團隊時才會讓使用者選模型（也才會檢查恢復分頁／我的最愛記下來的模型還在不在清單裡）；沒勾＝完全不問，由 CLI 自己決定。同一組裡的「更新模型清單」只有勾了才能按 |
+| 開啟時可選模型 | `askModelOnOpen` | `false` | **新欄位**（2.0.3）。勾了，開 AI CLI 的自訂連線與代理團隊時才會讓使用者選模型（也才會檢查恢復分頁／我的最愛記下來的模型還在不在清單裡）；沒勾＝完全不問，由 CLI 自己決定。同一組裡的「手動更新」「自動更新」只有勾了才能按 |
+| 模型清單自動更新 | `modelAutoRefresh` | `false` | **新欄位**（2.0.7）。勾了，每天在 `modelAutoRefreshHour` 那個整點重新向每一家 AI CLI 問一次（程式要開著；同一天只做一次） |
+| 自動更新的整點 | `modelAutoRefreshHour` | `3` | **新欄位**（2.0.7）。只收奇數 1／3／…／23（`prefs::valid_refresh_hour`） |
 | 清除已接受的弱演算法記錄 | `sshWeakAccepted` | — | 只給一個**清除鈕**（記錄型欄位不給編輯 UI，PM 定） |
 
 ### 1.3 刻意不放進設定視窗的

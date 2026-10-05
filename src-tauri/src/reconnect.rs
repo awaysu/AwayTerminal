@@ -311,7 +311,11 @@ pub fn start(
 
     let session: Arc<dyn crate::session::TerminalSession> = match params {
         ConnParams::Ssh(p) => {
-            crate::ssh::conn::start(app, id, p, &parts, on_output, on_exit, on_connected)?
+            // 連線視窗填的密碼只在分頁的記憶體裡（重連沿用；沒填＝在終端機問）
+            let password = app
+                .try_state::<Arc<TabManager>>()
+                .and_then(|tabs| tabs.ssh_password_of(id));
+            crate::ssh::conn::start(app, id, p, password, &parts, on_output, on_exit, on_connected)?
         }
         ConnParams::Com(p) => {
             // 開埠是同步的：失敗就回 Err（呼叫端會印紅字／收掉分頁，同舊版 SerialPort.Open()）

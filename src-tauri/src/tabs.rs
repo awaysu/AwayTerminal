@@ -123,6 +123,9 @@ pub struct Tab {
     pub rows: u16,
     /// 遠端連線參數（`None`＝本機分頁）。重連、我的最愛、恢復分頁都用這個結構。
     pub conn: Option<crate::reconnect::ConnParams>,
+    /// SSH 連線視窗填的密碼（2.0.7）。**只留在記憶體**：重連沿用它，但刻意不放進
+    /// `ConnParams`，所以我的最愛與恢復分頁永遠存不到密碼（`conn_params_have_no_password_field`）。
+    pub ssh_password: Option<String>,
     /// 連續重連次數（退避用；一收到輸出就歸零，同舊版 `ReconnectAttempt`）。
     pub reconnect_attempt: u32,
     /// 目前這條重連鏈的世代。排程時記下，醒來對不上就放棄（同舊版「一個分頁一條鏈」）。
@@ -667,6 +670,11 @@ impl TabManager {
         self.conn_params_of(id).and_then(|c| c.as_com().cloned())
     }
 
+    /// SSH 連線視窗填的密碼（重連用；`None`＝沒填或不是 SSH 分頁）。
+    pub fn ssh_password_of(&self, id: u32) -> Option<String> {
+        self.lock().tabs.get(&id).and_then(|t| t.ssh_password.clone())
+    }
+
     /// ADB 分頁當初用的 `adb.exe` 路徑與裝置序號（序號空＝只有一台時開的）。
     /// 不是 ADB 分頁＝`None`。和恢復分頁記的是同一份。
     pub fn adb_of(&self, id: u32) -> Option<(String, String)> {
@@ -965,6 +973,7 @@ mod tests {
             cols: 80,
             rows: 24,
             conn: Some(crate::reconnect::ConnParams::Ssh(Default::default())),
+            ssh_password: None,
             reconnect_attempt: 0,
             reconnect_gen: 0,
             sandbox: None,
@@ -975,6 +984,19 @@ mod tests {
             command_line: String::new(),
             backend: String::new(),
         }
+    }
+
+    /// 連線視窗填的 SSH 密碼只在記憶體：重連拿得到，恢復分頁的存檔裡沒有它。
+    #[test]
+    fn ssh_password_stays_in_memory_only() {
+        let m = TabManager::new("tab");
+        let mut t = tab(3);
+        t.ssh_password = Some("hunter2".into());
+        m.insert(t);
+        assert_eq!(m.ssh_password_of(3).as_deref(), Some("hunter2"));
+        assert_eq!(m.ssh_password_of(99), None);
+        let json = serde_json::to_string(&m.restorable().iter().map(|(_, s)| s).collect::<Vec<_>>()).unwrap();
+        assert!(!json.contains("hunter2"), "{json}");
     }
 
     /// A2：`reconnectable`＝有連線參數**且**目前沒有 session。

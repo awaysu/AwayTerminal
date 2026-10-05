@@ -136,6 +136,11 @@ pub struct AppSettings {
     /// 「選擇模型」、代理團隊設定視窗每一格有模型欄位；關著＝完全不問，照 CLI 自己的預設
     ///（同 2.0.1 以前），恢復分頁與我的最愛也不檢查模型還在不在。
     pub ask_model_on_open: bool,
+    /// 「自動更新」模型清單（2.0.7；預設關）：每天在 [`Self::model_auto_refresh_hour`] 那個整點
+    /// 重新向每一家 AI CLI 問一次（程式要開著；見 `agent/models.rs` 的 `spawn_auto_refresh`）。
+    pub model_auto_refresh: bool,
+    /// 自動更新的時間（本地時間的小時，**只收奇數** 1／3／…／23；預設 3）。
+    pub model_auto_refresh_hour: u8,
 
     /// 自訂連線清單（舊版 `AppSettings.CustomConns`）。
     ///
@@ -281,6 +286,8 @@ impl Default for AppSettings {
             compose_send_enter: true,
             last_models: std::collections::BTreeMap::new(),
             ask_model_on_open: false,
+            model_auto_refresh: false,
+            model_auto_refresh_hour: 3,
             custom_conns: Vec::new(),
             // 舊版 MainWindow.xaml 的「配色」子選單那五組，順序照抄
             palette: vec![

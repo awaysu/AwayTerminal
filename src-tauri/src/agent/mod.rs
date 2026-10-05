@@ -624,6 +624,16 @@ pub fn agent_setup_options(
     }
 }
 
+/// 這台機器上找得到任何一家代理團隊用的 CLI 嗎（「新分頁 ▾」要決定「代理團隊…」「AI聊天室…」
+/// 能不能選；2.0.7，使用者要求）。比 [`agent_setup_options`] 輕：不讀角色檔，找到第一家就停。
+#[tauri::command]
+pub fn agent_backends_any(settings: State<'_, Arc<SettingsStore>>) -> bool {
+    adapters::ALL_KEYS
+        .iter()
+        .filter_map(|k| adapters::Backend::by_key(k))
+        .any(|b| adapters::resolve(&settings, b).is_some())
+}
+
 /// 「還原角色檔預設」。
 #[tauri::command]
 pub fn agent_roles_restore(

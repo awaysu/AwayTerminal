@@ -7,8 +7,10 @@
 // 那些在舊版是 `ssh.exe` 的命令列參數（`-o SendEnv=…`）或根本沒有（內建 SSH 才有的東西）。
 // Telnet 沒有驗證的概念，所以選 Telnet 時那幾列會收起來。
 //
-// **密碼沒有欄位**：連上之後在終端機裡問（同 PuTTY 與舊版），所以也不會被存起來。
-// 這個對話框產出的物件就是 `SshConnParams`，也是「我的最愛」要存的內容。
+// 密碼欄（2.0.7，使用者要求）：填了就用它回答第一次的密碼提示，**只在那個分頁的記憶體裡**
+// （後端 `SshArgs::password`）；留空＝連上之後在終端機裡問（同 PuTTY 與舊版）。
+// 這個對話框產出的物件就是 `SshConnParams`（密碼除外），也是「我的最愛」要存的內容——
+// 「加到我的最愛」永遠不帶密碼。
 
 import { invoke } from '@tauri-apps/api/core';
 
@@ -104,8 +106,11 @@ function applyKind() {
   }
 }
 
-/** 把對話框的欄位讀成連線參數（`SshConnParams` 或 `TelnetParams`）。 */
-function read() {
+/**
+ * 把對話框的欄位讀成連線參數（`SshConnParams` 或 `TelnetParams`）。
+ * `withPassword`＝連線用（帶密碼欄）；加到我的最愛**不帶**（密碼不存檔）。
+ */
+function read(withPassword) {
   if (kindOf() === 'telnet') {
     return {
       host: el.host.value.trim(),
@@ -114,7 +119,7 @@ function read() {
       autoReconnect: el.reconnect.checked,
     };
   }
-  return {
+  const p = {
     host: el.host.value.trim(),
     port: Math.min(65535, Math.max(1, Number(el.port.value) || 22)),
     user: el.user.value.trim(),
@@ -125,6 +130,9 @@ function read() {
     algos: readAlgos(),
     env: readEnv(),
   };
+  // 密碼不 trim（空白也可能是密碼的一部分）；空＝在終端機問
+  if (withPassword && el.pass.value) p.password = el.pass.value;
+  return p;
 }
 
 function write(p, kind) {
@@ -133,6 +141,8 @@ function write(p, kind) {
   el.host.value = p.host || '';
   el.port.value = p.port || (kind === 'telnet' ? 23 : 22);
   el.user.value = p.user || '';
+  // 密碼永遠不回填（沒有地方存它）
+  el.pass.value = '';
   el.key.value = p.keyPath || '';
   el.agent.checked = p.useAgent !== false;
   el.keep.value = p.keepaliveMins === undefined ? 10 : p.keepaliveMins;
@@ -167,6 +177,8 @@ function applyTexts() {
   $('sd-l-port').textContent = T['sd.port'];
   $('sd-l-user').textContent = T['sd.user'];
   $('sd-user-hint').textContent = T['sd.userHint'];
+  $('sd-l-pass').textContent = T['sd.password'];
+  $('sd-pass-hint').textContent = T['sd.passwordHint'];
   $('sd-l-key').textContent = T['sd.key'];
   el.keyBrowse.textContent = T['log.browse'];
   $('sd-l-keep').textContent = T['sd.keep'];
@@ -200,6 +212,7 @@ export async function initConnDialog() {
   el.host = $('sd-host');
   el.port = $('sd-port');
   el.user = $('sd-user');
+  el.pass = $('sd-pass');
   el.key = $('sd-key');
   el.keyBrowse = $('sd-key-browse');
   el.keep = $('sd-keep');
@@ -238,7 +251,7 @@ export async function initConnDialog() {
 
   el.form.addEventListener('submit', (e) => {
     e.preventDefault();
-    const params = read();
+    const params = read(true);
     if (!params.host) {
       el.note.textContent = T['sd.needHost'];
       return;
@@ -246,7 +259,8 @@ export async function initConnDialog() {
     close({ action: 'connect', kind: kindOf(), params });
   });
   el.fav.addEventListener('click', () => {
-    const params = read();
+    // 我的最愛不存密碼（同舊版；後端 `SshConnParams` 也沒有這個欄位）
+    const params = read(false);
     if (!params.host) {
       el.note.textContent = T['sd.needHost'];
       return;

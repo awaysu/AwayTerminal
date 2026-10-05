@@ -155,6 +155,8 @@ export default {
   'sd.port': 'Port',
   'sd.user': 'Benutzername',
   'sd.userHint': 'Leer = nach dem Verbinden im Terminal nach login as: fragen',
+  'sd.password': 'Passwort',
+  'sd.passwordHint': 'Leer lassen, um im Terminal gefragt zu werden; wird nie in Favoriten gespeichert',
   'sd.key': 'Schlüsseldatei',
   'sd.keep': 'Verbindung halten',
   'sd.keepHint': 'Minuten, 0 = aus',
@@ -234,7 +236,6 @@ export default {
   // {0} = 分頁數
   'restore.done': '{0} Tab(s) wiederhergestellt',
   'restore.failed': '{0} Tab(s) konnten nicht wiederhergestellt werden (siehe Backend-Protokoll)',
-  'sd.quick': 'Schnellverbindung (Host[:Port])…',
 
   // ---- 我的最愛（TASK-009 C；舊版 fav.* / tb.favorites / tip.favorites）----
   'tb.favorites': 'Favoriten',
@@ -534,14 +535,18 @@ export default {
   // ---- Importing v1 settings (TASK-016 D; the old file is only read) ----
   'settings.groupMigrate': 'Einstellungen aus v1',
   'settings.groupModels': 'KI-Modelle',
-  'settings.askModel': 'Modell beim Öffnen wählen',
+  'settings.askModel': 'Modell kann beim Öffnen gewählt werden',
   'settings.askModelNote': 'Wenn aktiviert, wird beim Öffnen einer KI-CLI-Verbindung (ClaudeCode / Codex / OpenCode / GeminiCLI) oder eines Agententeams zuerst nach dem Modell gefragt. Deaktiviert: keine Nachfrage, die CLI entscheidet.',
-  'settings.modelsRefresh': 'Modelllisten aktualisieren',
+  'settings.modelsRefresh': 'Jetzt aktualisieren',
   'settings.modelsNote': 'Fragt jede KI-CLI jetzt erneut, welche Modelle sie hat. Normalerweise wird die letzte Antwort 10 Minuten lang wiederverwendet.',
   'settings.modelsBusy': 'Modelllisten werden aktualisiert…',
   'settings.modelsDone': 'Aktualisiert: {0}',
   'settings.modelsNone': 'Auf diesem Computer wurde keine KI-CLI gefunden (ClaudeCode / Codex / OpenCode / GeminiCLI).',
   'settings.modelsFail': 'Aktualisierung fehlgeschlagen: {0}',
+  'settings.modelsAuto': 'Automatisch aktualisieren',
+  'settings.modelsAutoNote': 'Fragt jeden Tag zur gewählten Stunde jede KI-CLI erneut nach ihren Modellen (AwayTerminal muss laufen).',
+  'settings.pageLang': 'Sprache & Schriften',
+  'settings.pageGeneral': 'Allgemein',
   'migrate.button': 'Einstellungen aus v1 importieren…',
   'migrate.pick': 'Die alte settings.json auswählen',
   'migrate.title': 'Einstellungen aus v1 importieren',

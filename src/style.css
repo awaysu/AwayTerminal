@@ -425,7 +425,7 @@ body.col-resizing { cursor: col-resize; user-select: none; }
   position: absolute; left: 0; top: 0; bottom: 0; width: calc(100% - 22px);
   box-sizing: border-box; border-right: none;
 }
-#sshdlg input[type="text"], #sshdlg input[type="number"], #sshdlg textarea, #sshdlg select {
+#sshdlg input[type="text"], #sshdlg input[type="password"], #sshdlg input[type="number"], #sshdlg textarea, #sshdlg select {
   background: #1e1e1e; color: #e0e0e0; border: 1px solid #555; outline: none;
   padding: 4px 6px; font-size: 13px; font-family: inherit;
 }
@@ -771,12 +771,26 @@ body.col-resizing { cursor: col-resize; user-select: none; }
   /* 其他對話框是 88vh；設定視窗內容最多，用滿一點（螢幕只有 864 邏輯像素高） */
   max-height: 92vh;
 }
+/* 設定分兩頁的下拉（2.0.7）：放在標題下面、內容上面 */
+.st-pagebar {
+  margin-bottom: 10px;
+}
+.st-pagebar > select {
+  min-width: 180px;
+}
 .sd-cols {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 0 14px;
   /* TASK-030：兩欄要一樣高（底部齊平），不要一長一短 */
   align-items: stretch;
+}
+/* 自動更新那一列：勾選框＋整點下拉同一行 */
+.st-models-auto > .sd-check {
+  margin-top: 0;
+}
+.st-models-auto > select {
+  width: auto;
 }
 .sd-col {
   min-width: 0;

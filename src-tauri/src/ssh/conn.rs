@@ -42,10 +42,14 @@ pub struct SshConnParams {
 }
 
 /// 建一條 SSH session（輸出／結束管線由 [`crate::reconnect`] 給，重連才能沿用同一條）。
+///
+/// `password`＝連線視窗填的密碼（2.0.7；只在分頁的記憶體裡，不在 `params`），`None`＝在終端機問。
+#[allow(clippy::too_many_arguments)]
 pub fn start(
     app: &AppHandle,
     id: u32,
     params: &SshConnParams,
+    password: Option<String>,
     parts: &tabs::SessionParts,
     on_output: OnOutput,
     on_exit: OnExit,
@@ -94,6 +98,7 @@ pub fn start(
                 key_path: (!params.key_path.trim().is_empty()).then(|| params.key_path.clone()),
                 key_passphrase: None, // 有密碼的金鑰當場問（同 PuTTY）
                 use_agent: params.use_agent,
+                password,
             },
             algos: params.algos.clone(),
             keepalive_mins: params.keepalive_mins,

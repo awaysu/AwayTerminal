@@ -212,6 +212,7 @@ pub fn run() {
             bench::bench_base64,
             bench::bench_channel,
             agent::agent_setup_options,
+            agent::agent_backends_any,
             agent::agent_roles_restore,
             agent::agent_roles_dir,
             agent::agent_bus_dir,
@@ -243,6 +244,7 @@ pub fn run() {
             agent::chat_verify_transcript,
             // 模型清單與「上次選的模型」（2.0.2；單一連線與代理團隊共用）
             agent::models::cli_models,
+            agent::models::cli_models_refresh_all,
             agent::models::conn_models,
             agent::models::model_remember,
             telegram::telegram_state,
@@ -319,6 +321,9 @@ pub fn run() {
             } else {
                 println!("[AwayTerminal] --verify：不啟動真的 Telegram 遠端（改由 telegram_probe 用假 Bot API 驗）");
             }
+
+            // 模型清單的「自動更新」（2.0.7）：每分鐘看一次時間，到了選的整點就重新問一次
+            agent::models::spawn_auto_refresh(store.clone());
 
             app.manage(store);
             app.manage(tabs);

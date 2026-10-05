@@ -78,6 +78,10 @@ pub struct SshAuth {
     pub key_passphrase: Option<String>,
     /// 要不要試 Windows Pageant／SSH agent。找不到就安靜跳過。
     pub use_agent: bool,
+    /// 連線視窗填的登入密碼（2.0.7）。有的話用它回答**第一次**的密碼提示——keyboard-interactive
+    /// 第一個不回顯的題目、或 password 驗證的第一次——不必在終端機裡打；被拒絕就回到當場問
+    /// （同 PuTTY 的 `-pw`）。`None`＝一律當場問。
+    pub password: Option<String>,
 }
 
 pub struct SshOptions {
@@ -711,6 +715,10 @@ async fn authenticate(
         }
     }
 
+    // 連線視窗填的密碼：只用一次（第一個不回顯的題目，或第一次 password 驗證），
+    // 之後不管對錯都回到當場問（同 PuTTY 的 `-pw`）
+    let mut stored = opts.auth.password.clone().filter(|p| !p.is_empty());
+
     // ---- 3. keyboard-interactive（提示由伺服器給，逐題問）----
     match handle
         .authenticate_keyboard_interactive_start(user, None)
@@ -733,6 +741,14 @@ async fn authenticate(
                     }
                     let mut answers = Vec::with_capacity(prompts.len());
                     for p in &prompts {
+                        // 不回顯的題目＝密碼：有填就直接答，畫面上照樣留下提示（看得出用了哪一步）
+                        if !p.echo {
+                            if let Some(pw) = stored.take() {
+                                echo(on_output, &format!("{}\r\n", p.prompt));
+                                answers.push(pw);
+                                continue;
+                            }
+                        }
                         answers.push(prompt_line(on_output, input, &p.prompt, p.echo).await?);
                     }
                     resp = handle
@@ -748,7 +764,14 @@ async fn authenticate(
     // ---- 4. 密碼（PuTTY 的提示文字）----
     for attempt in 1..=3 {
         let prompt = format!("{}@{}'s password: ", user, opts.host);
-        let pw = prompt_line(on_output, input, &prompt, false).await?;
+        let pw = match stored.take() {
+            // 連線視窗填的密碼：第一次直接用（提示照樣印出來，不印密碼）
+            Some(pw) => {
+                echo(on_output, &format!("{prompt}\r\n"));
+                pw
+            }
+            None => prompt_line(on_output, input, &prompt, false).await?,
+        };
         match handle.authenticate_password(user, pw).await {
             Ok(r) if r.success() => return Ok(()),
             Ok(_) => {

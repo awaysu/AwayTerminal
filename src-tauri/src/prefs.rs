@@ -40,8 +40,16 @@ pub struct PrefsPatch {
     pub log_append: Option<bool>,
     pub exit_restore_tabs: Option<bool>,
     pub sandbox_default: Option<bool>,
-    /// 「開啟時選模型」（2.0.3）。
+    /// 「開啟時可選模型」（2.0.3）。
     pub ask_model_on_open: Option<bool>,
+    /// 模型清單「自動更新」與它的整點（2.0.7）。
+    pub model_auto_refresh: Option<bool>,
+    pub model_auto_refresh_hour: Option<u8>,
+}
+
+/// 自動更新模型清單可以選的整點：01:00、03:00、…、23:00（使用者 2026-10-05 指定）。
+pub fn valid_refresh_hour(h: u8) -> bool {
+    (1..=23).contains(&h) && h % 2 == 1
 }
 
 /// 顏色字串的驗證（舊版 `ValidColor`：認不出來就退回預設）。
@@ -152,6 +160,15 @@ pub fn settings_apply(
         if let Some(b) = patch.ask_model_on_open {
             s.ask_model_on_open = b;
         }
+        if let Some(b) = patch.model_auto_refresh {
+            s.model_auto_refresh = b;
+        }
+        if let Some(h) = patch.model_auto_refresh_hour {
+            // 只收奇數整點；別的值不動（下拉只會送這幾個，但設定檔可能被手改）
+            if valid_refresh_hour(h) {
+                s.model_auto_refresh_hour = h;
+            }
+        }
     });
 
     // 語言要在重送 `T{json}` 之前設好（那包 JSON 裡有搜尋列與代理狀態的字）
@@ -207,6 +224,17 @@ mod tests {
         assert_eq!(valid_color("#12345", "#fallback"), "#fallback");
         assert_eq!(valid_color("", "#fallback"), "#fallback");
         assert_eq!(valid_color("#GGGGGG", "#fallback"), "#fallback");
+    }
+
+    /// 自動更新的整點只收 01／03／…／23。
+    #[test]
+    fn refresh_hour_is_odd_and_in_range() {
+        for h in [1u8, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23] {
+            assert!(valid_refresh_hour(h), "{h}");
+        }
+        for h in [0u8, 2, 4, 12, 22, 24, 25, 255] {
+            assert!(!valid_refresh_hour(h), "{h}");
+        }
     }
 
     /// 字型清單不會是空的（不然下拉會是空白，使用者以為壞了）。

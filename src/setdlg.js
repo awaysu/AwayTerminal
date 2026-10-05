@@ -59,6 +59,9 @@ function fill(s) {
   el.logAppend.checked = s.logAppend !== false;
   el.sandboxDefault.checked = !!s.sandboxDefault;
   el.askModel.checked = !!s.askModelOnOpen;
+  el.modelsAuto.checked = !!s.modelAutoRefresh;
+  el.modelsHour.value = String(s.modelAutoRefreshHour || 3);
+  if (el.modelsHour.value !== String(s.modelAutoRefreshHour || 3)) el.modelsHour.value = '3';
   el.modelsNote.textContent = '';
   syncModelsButton();
   el.weakCount.textContent = fmt('settings.weakCount', (s.sshWeakAccepted || []).length);
@@ -320,6 +323,9 @@ export async function openSettings() {
   el.fontNote.textContent = '';
   fill(opened);
   updateFontButtons();
+  // 每次開都從第一頁（語言和字體）開始；這次視窗裡切過的頁面不記到下一次。
+  // 焦點照舊放在字型下拉（ST23：鍵盤可操作）
+  showPage('lang');
   el.root.hidden = false;
   el.familySel.focus();
 }
@@ -328,9 +334,23 @@ function close() {
   el.root.hidden = true;
 }
 
-/** 「更新模型清單」只有在「開啟時選模型」勾著的時候才能按（沒勾＝根本不會用到模型清單）。 */
+/**
+ * 「手動更新」「自動更新」只有在「開啟時可選模型」勾著的時候才能按（沒勾＝根本不會用到模型清單）；
+ * 整點的下拉還要「自動更新」也勾著。
+ */
 function syncModelsButton() {
-  el.modelsRefresh.disabled = !el.askModel.checked;
+  const on = el.askModel.checked;
+  el.modelsRefresh.disabled = !on;
+  el.modelsAuto.disabled = !on;
+  el.modelsHour.disabled = !on || !el.modelsAuto.checked;
+}
+
+/** 設定分成兩頁（2.0.7）：`lang`＝語言和字體、`general`＝一般設定。 */
+function showPage(page) {
+  for (const node of el.root.querySelectorAll('.sd-cols[data-page]')) {
+    node.hidden = node.dataset.page !== page;
+  }
+  el.page.value = page;
 }
 
 async function save(e) {
@@ -352,6 +372,8 @@ async function save(e) {
     exitRestoreTabs: el.exitRestore.checked,
     sandboxDefault: el.sandboxDefault.checked,
     askModelOnOpen: el.askModel.checked,
+    modelAutoRefresh: el.modelsAuto.checked,
+    modelAutoRefreshHour: Number(el.modelsHour.value) || 3,
     // 渲染器：改了要重開分頁才生效（addon 在建 pane 時掛）
     renderer: el.renderer.value,
   };
@@ -437,6 +459,13 @@ function applyTexts() {
   el.modelsRefresh.textContent = T['settings.modelsRefresh'];
   // 說明放在 tooltip：旁邊那一格要留給「更新了幾個」的結果，再多一行字設定視窗就要捲了
   el.modelsRefresh.title = T['settings.modelsNote'];
+  el.lModelsAuto.textContent = T['settings.modelsAuto'];
+  el.lModelsAuto.parentElement.title = T['settings.modelsAutoNote'];
+  el.modelsHour.title = T['settings.modelsAutoNote'];
+  // 設定的兩頁（下拉）
+  for (const o of el.page.options) {
+    o.textContent = T[o.value === 'lang' ? 'settings.pageLang' : 'settings.pageGeneral'];
+  }
   el.lShell.textContent = T['settings.groupShell'];
   el.lShellMenu.textContent = T['settings.shellMenu'];
   el.lRender.textContent = T['settings.groupRender'];
@@ -519,6 +548,17 @@ export function initSettings(injected) {
   el.lAskModel = $('st-l-askmodel');
   el.modelsRefresh = $('st-models-refresh');
   el.modelsNote = $('st-models-note');
+  el.modelsAuto = $('st-models-auto');
+  el.lModelsAuto = $('st-l-models-auto');
+  el.modelsHour = $('st-models-hour');
+  // 自動更新的整點：01:00、03:00、…、23:00（使用者指定；後端 `valid_refresh_hour` 也只收這些）
+  for (let h = 1; h <= 23; h += 2) {
+    const o = document.createElement('option');
+    o.value = String(h);
+    o.textContent = `${String(h).padStart(2, '0')}:00`;
+    el.modelsHour.appendChild(o);
+  }
+  el.page = $('st-page');
   el.lShell = $('st-l-shell');
   el.lShellMenu = $('st-l-shellmenu');
   // ⚠️ 這一行從 TASK-016 就漏掉了（TASK-028 才發現）：`fill()` 第一件事就是
@@ -620,21 +660,23 @@ export function initSettings(injected) {
     }
   });
 
-  // 「開啟時選模型」沒勾＝用不到模型清單 →「更新模型清單」跟著不能按
+  // 「開啟時可選模型」沒勾＝用不到模型清單 → 手動／自動更新跟著不能按
   el.askModel.addEventListener('change', syncModelsButton);
+  el.modelsAuto.addEventListener('change', syncModelsButton);
+  // 設定的兩頁：切換只是顯示／隱藏，兩頁的欄位都會一起存
+  el.page.addEventListener('change', () => showPage(el.page.value));
 
-  // 更新模型清單（2.0.3）：不等 10 分鐘的快取，立刻重新向這台電腦上每一家 AI CLI 問一次
+  // 手動更新模型清單（2.0.3）：不等 10 分鐘的快取，立刻重新向這台電腦上每一家 AI CLI 問一次
+  //（和每天的「自動更新」做的是同一件事：後端 `refresh_all`）
   el.modelsRefresh.addEventListener('click', async () => {
     el.modelsRefresh.disabled = true;
     el.modelsNote.textContent = T['settings.modelsBusy'];
     try {
-      const opts = await invoke('agent_setup_options', { kind: 'team' });
-      const backends = opts.backends.map((b) => b.key);
-      if (backends.length === 0) {
+      const lists = await invoke('cli_models_refresh_all');
+      if (lists.length === 0) {
         el.modelsNote.textContent = T['settings.modelsNone'];
         return;
       }
-      const lists = await invoke('cli_models', { backends, refresh: true });
       // 每一家各有幾個；問不到清單的那一家標「—」
       const parts = lists.map((l) => `${l.backendName} ${l.models.length > 0 ? l.models.length : '—'}`);
       el.modelsNote.textContent = fmt('settings.modelsDone', parts.join('、'));

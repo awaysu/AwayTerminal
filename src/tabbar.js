@@ -18,7 +18,7 @@ import { T, fmt, elapsedText } from './strings.js';
 import { iconImg, kindIcon, setToolLabel } from './icons.js';
 import { createSession, log } from './bridge.js';
 import { initConns, openManager, currentConns, reload as reloadConns } from './conns.js';
-import { initConnDialog, openConnDialog, parseHostPort } from './sshdlg.js';
+import { initConnDialog, openConnDialog } from './sshdlg.js';
 import { initComDialog, openComDialog } from './comdlg.js';
 import { initMacro, runMacroForTab } from './macro.js';
 import { initCompose, openCompose } from './compose.js';
@@ -1306,7 +1306,10 @@ function installMenus() {
     e.stopPropagation();
     const show = el.newMenu.hidden;
     hideMenus();
-    if (show) showMenuUnder(el.newMenu, el.btnNew);
+    if (show) {
+      showMenuUnder(el.newMenu, el.btnNew);
+      refreshTeamItems();
+    }
   });
 
   el.newMenu.addEventListener('click', async (e) => {
@@ -1319,9 +1322,15 @@ function installMenus() {
     }
     const item = e.target.closest('[data-kind]');
     if (!item) return;
+    // 灰掉的（沒有 AI CLI 時的代理團隊／AI聊天室）：點了沒反應、選單留著
+    if (item.classList.contains('disabled')) return;
     hideMenus();
     if (item.dataset.kind === 'manage') {
       openManager();
+      return;
+    }
+    if (item.dataset.kind === 'detect') {
+      await detectConns();
       return;
     }
     await newSession(item.dataset.kind);
@@ -1434,6 +1443,42 @@ function installMenus() {
 // ------------------------------------------------------------------ 工具列
 
 /**
+ * 「新分頁 ▾ → 自動偵測」（2.0.7）：和「自訂連線設定…」裡那顆按鈕同一件事，
+ * 把這台機器上找得到的 AI CLI／WSL／ADB 加進自訂連線，結果用 toast 講。
+ */
+async function detectConns() {
+  try {
+    const added = await invoke('custom_detect');
+    await reloadConns();
+    toast(added.length === 0 ? T['conn.detectNone'] : `${T['conn.detectDone']}${added.join('、')}`);
+  } catch (e) {
+    log(`[tabbar] 自動偵測失敗：${e}`);
+    await showInfo(T['conn.detect'], String(e));
+  }
+}
+
+/**
+ * 「代理團隊…」「AI聊天室…」能不能選（2.0.7，使用者要求）：這台電腦一家 AI CLI
+ *（ClaudeCode／Codex／OpenCode／GeminiCLI）都找不到就灰掉，tooltip 說明原因。
+ * 每次打開「新分頁 ▾」問一次後端（找檔案很快）；問到之前維持上一次的狀態。
+ */
+async function refreshTeamItems() {
+  let any = true;
+  try {
+    any = await invoke('agent_backends_any');
+  } catch (e) {
+    log(`[tabbar] 查 AI CLI 失敗：${e}`);
+    return;
+  }
+  for (const kind of ['multiagent', 'chatroom']) {
+    const item = el.newMenu.querySelector(`[data-kind="${kind}"]`);
+    if (!item) continue;
+    item.classList.toggle('disabled', !any);
+    item.title = any ? '' : T['ma.dlgNoBackend'];
+  }
+}
+
+/**
  * 開新分頁。舊版工具列開 PowerShell 會**先跳資料夾選擇視窗**（`PickWorkDir`），
  * 取消就不開；自訂連線勾了 `PickDir` 也走同一個流程。這裡照做：
  * 兩種都先選工作目錄，取消＝不開分頁。
@@ -1441,17 +1486,8 @@ function installMenus() {
 async function newSession(kind) {
   try {
     // SSH 不需要本機工作目錄；帳號在終端機裡問（`login as:`，同 PuTTY／舊版）。
-    // 完整的 SSH 對話框（帳號、金鑰、保持連線、斷線重連）是 TASK-007。
-    if (kind === 'ssh' || kind === 'ssh-quick') {
-      // 快速連線：一行 host[:port]，其餘用設定的預設值（B6 之前的入口，保留）
-      if (kind === 'ssh-quick') {
-        const target = await askText(T['dlg.sshTitle'], T['dlg.sshPrompt'], '');
-        if (target === null || !target.trim()) return;
-        const { host, port } = parseHostPort(target.trim());
-        if (!host) return;
-        await createSession({ kind: 'ssh', ssh: { host, port } });
-        return;
-      }
+    // 「快速連線（host[:port]）…」那個入口 2.0.7 拿掉了（使用者要求）。
+    if (kind === 'ssh') {
       // 完整對話框（B6；TASK-010 起同一個對話框也能選 Telnet，同舊版的一個入口）
       const s = await invoke('settings_get');
       const r = await openConnDialog(
@@ -1750,8 +1786,8 @@ function applyTexts() {
     el.btnView.title = T['tip.viewCycle'];
     setText(el.newMenu, '[data-kind="shell"]', T['tb.powershell']);
     setText(el.newMenu, '[data-kind="ssh"]', T['tb.ssh']);
-    setText(el.newMenu, '[data-kind="ssh-quick"]', T['sd.quick']);
     setText(el.newMenu, '[data-kind="com"]', T['tb.com'] + '…');
+    setText(el.newMenu, '[data-kind="detect"]', T['conn.detect']);
     setText(el.newMenu, '[data-kind="multiagent"]', T['ma.title'] + '\u2026');
     setText(el.newMenu, '[data-kind="custom"]', T['tb.customCmd']);
     setText(el.tabMenu, '[data-act="rename"]', T['menu.rename']);

@@ -155,6 +155,8 @@ export default {
   'sd.port': '포트',
   'sd.user': '사용자 이름',
   'sd.userHint': '비워 두면＝연결 후 터미널에서 login as: 를 묻습니다',
+  'sd.password': '비밀번호',
+  'sd.passwordHint': '비워 두면 연결 후 터미널에서 묻습니다. 즐겨찾기에는 저장되지 않습니다',
   'sd.key': '키 파일',
   'sd.keep': '연결 유지',
   'sd.keepHint': '분, 0＝끄기',
@@ -234,7 +236,6 @@ export default {
   // {0} = 分頁數
   'restore.done': '{0}개 탭을 복원했습니다',
   'restore.failed': '{0}개 탭을 복원하지 못했습니다 (자세한 내용은 백엔드 로그 참조)',
-  'sd.quick': '빠른 연결 (host[:port])…',
 
   // ---- 我的最愛（TASK-009 C；舊版 fav.* / tb.favorites / tip.favorites）----
   'tb.favorites': '즐겨찾기',
@@ -534,14 +535,18 @@ export default {
   // ---- Importing v1 settings (TASK-016 D; the old file is only read) ----
   'settings.groupMigrate': '이전 버전 설정',
   'settings.groupModels': 'AI 모델',
-  'settings.askModel': '열 때 모델 선택',
+  'settings.askModel': '열 때 모델을 선택할 수 있음',
   'settings.askModelNote': '선택하면 AI CLI 연결(ClaudeCode／Codex／OpenCode／GeminiCLI)이나 에이전트 팀을 열 때 먼저 모델을 고릅니다. 선택하지 않으면 묻지 않고 CLI가 결정합니다.',
-  'settings.modelsRefresh': '모델 목록 새로 고침',
+  'settings.modelsRefresh': '지금 새로 고침',
   'settings.modelsNote': '각 AI CLI에 지금 사용할 수 있는 모델을 다시 물어봅니다. 평소에는 10분 동안 이전 결과를 다시 사용합니다.',
   'settings.modelsBusy': '모델 목록을 새로 고치는 중…',
   'settings.modelsDone': '새로 고침 완료: {0}',
   'settings.modelsNone': '이 컴퓨터에서 AI CLI(ClaudeCode／Codex／OpenCode／GeminiCLI)를 찾지 못했습니다.',
   'settings.modelsFail': '새로 고침 실패: {0}',
+  'settings.modelsAuto': '자동 새로 고침',
+  'settings.modelsAutoNote': '매일 선택한 시각에 각 AI CLI에 모델 목록을 다시 물어봅니다(AwayTerminal이 실행 중이어야 합니다).',
+  'settings.pageLang': '언어 및 글꼴',
+  'settings.pageGeneral': '일반',
   'migrate.button': '이전 버전 설정 가져오기…',
   'migrate.pick': '이전 버전의 settings.json 선택',
   'migrate.title': '이전 버전 설정 가져오기',

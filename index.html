@@ -159,17 +159,21 @@
        TASK-030：代理團隊與 AI 聊天室自成一組，放在「自訂連線設定…」上面、上下各一條分隔線。 -->
   <div id="new-menu" class="popup-menu" hidden>
     <div class="menu-item with-icon" data-kind="shell"><img class="menu-ico" src="icon/powershell.png" alt="" draggable="false" /><span class="menu-label">PowerShell</span></div>
+    <!-- 「快速連線（host[:port]）…」2.0.7 拿掉了（使用者要求）：SSH 對話框就夠用 -->
     <div class="menu-item with-icon" data-kind="ssh"><img class="menu-ico" src="icon/ssh-telnet.png" alt="" draggable="false" /><span class="menu-label">SSH…</span></div>
-    <div class="menu-item with-icon" data-kind="ssh-quick"><img class="menu-ico" src="icon/ssh-telnet.png" alt="" draggable="false" /><span class="menu-label">快速連線（host[:port]）…</span></div>
     <div class="menu-item with-icon" data-kind="com"><img class="menu-ico" src="icon/com.png" alt="" draggable="false" /><span class="menu-label">連接埠…</span></div>
     <div class="menu-sep"></div>
     <div id="new-conns"></div>
     <div class="menu-item with-icon" data-kind="custom"><img class="menu-ico" src="icon/run.png" alt="" draggable="false" /><span class="menu-label">自訂指令…</span></div>
     <div class="menu-sep"></div>
+    <!-- 這台電腦一家 AI CLI 都找不到時，這兩項是灰的不能選（2.0.7，使用者要求；tabbar.js 依
+         `agent_backends_any` 切換 .disabled） -->
     <div class="menu-item with-icon" data-kind="multiagent"><img class="menu-ico" src="icon/multi-agent.png" alt="" draggable="false" /><span class="menu-label">代理團隊…</span></div>
     <div class="menu-item with-icon" data-kind="chatroom"><img class="menu-ico" src="icon/chatroom.png" alt="" draggable="false" /><span class="menu-label">AI聊天室…</span></div>
     <div class="menu-sep"></div>
     <div class="menu-item with-icon" data-kind="manage"><img class="menu-ico" src="icon/settings.png" alt="" draggable="false" /><span class="menu-label">自訂連線設定…</span></div>
+    <!-- 自動偵測（2.0.7）：和「自訂連線設定…」裡的那顆按鈕同一件事，不必先開設定視窗 -->
+    <div class="menu-item with-icon" data-kind="detect"><img class="menu-ico" src="icon/new-connecting.png" alt="" draggable="false" /><span class="menu-label">自動偵測</span></div>
   </div>
 
   <!-- 我的最愛下拉（舊版 Favorites_Click：各筆最愛 → 分隔線 → 加到我的最愛 → 設定…） -->
@@ -297,7 +301,8 @@
   </div>
 
   <!-- SSH 連線對話框（B6）。欄位照舊版 ConnectDialog 的 SSH 頁，外加「進階」。
-       密碼**沒有欄位**——連上之後在終端機裡問（同 PuTTY／舊版），也不會被存起來。 -->
+       密碼欄（2.0.7，使用者要求）：填了就用它回答第一次的密碼提示；**只在這個分頁的記憶體裡**，
+       我的最愛與恢復分頁都不會存到它。留空＝連上之後在終端機裡問（同 PuTTY／舊版）。 -->
   <div id="sshdlg" hidden>
     <form id="sshdlg-box">
       <div id="sshdlg-title"></div>
@@ -322,6 +327,12 @@
         <span class="sd-row" data-ssh-only>
           <input id="sd-user" type="text" autocomplete="off" spellcheck="false" />
           <span id="sd-user-hint" class="sd-hint"></span>
+        </span>
+
+        <label id="sd-l-pass" data-ssh-only>密碼</label>
+        <span class="sd-row" data-ssh-only>
+          <input id="sd-pass" type="password" autocomplete="off" spellcheck="false" />
+          <span id="sd-pass-hint" class="sd-hint"></span>
         </span>
 
         <label id="sd-l-key" data-ssh-only>金鑰檔</label>
@@ -575,12 +586,19 @@
     <form id="setdlg-box">
       <div id="setdlg-title"></div>
 
-      <!-- 兩欄（TASK-030）：使用者的螢幕是 1536×864 邏輯像素，單欄八個區塊要捲才看得完。
-           左欄＝語言／字型顏色／Claude 輸入／渲染器／檔案總管，
-           右欄＝其他／沙盒／匯入舊版。這樣分是**量出來的**：日文最長，原本左 416／右 693
-           差太多（總高 824 > 可用 738 要捲），把「檔案總管」挪到左欄之後兩欄才拉平。
+      <!-- 設定分成兩頁（2.0.7，使用者指定）：下拉選「語言和字體」（語言／字體背景顏色）或
+           「一般設定」（其餘全部），每一頁各自兩欄。
+           兩欄（TASK-030）：使用者的螢幕是 1536×864 邏輯像素，單欄八個區塊要捲才看得完。
            視窗窄於 980px 時 `.sd-cols` 退回單欄（見 style.css 的 @media）。 -->
-      <div class="sd-cols">
+      <div class="st-pagebar">
+        <select id="st-page">
+          <option value="lang"></option>
+          <option value="general"></option>
+        </select>
+      </div>
+
+      <!-- 第 1 頁：語言和字體 -->
+      <div class="sd-cols" data-page="lang">
         <div class="sd-col">
       <fieldset>
         <legend id="st-l-lang"></legend>
@@ -591,6 +609,8 @@
         </div>
         <div id="st-lang-note" class="sd-hint"></div>
       </fieldset>
+        </div>
+        <div class="sd-col">
       <fieldset>
         <legend id="st-l-font"></legend>
         <div class="st-grid">
@@ -629,6 +649,13 @@
             <input id="st-bg-pick" type="color" /></span>
         </div>
       </fieldset>
+        </div>
+      </div>
+
+      <!-- 第 2 頁：一般設定。左欄＝Claude 輸入／渲染器／檔案總管／AI 模型，
+           右欄＝其他／沙盒／匯入舊版（高度大致相等） -->
+      <div class="sd-cols" data-page="general" hidden>
+        <div class="sd-col">
       <fieldset>
         <legend id="st-l-ime"></legend>
         <div class="st-grid">
@@ -656,6 +683,22 @@
         <legend id="st-l-shell"></legend>
         <label class="sd-check"><input id="st-shellmenu" type="checkbox" /><span id="st-l-shellmenu"></span></label>
         <div id="st-shell-note" class="sd-hint"></div>
+      </fieldset>
+      <!-- AI 模型（2.0.3；2.0.7 改名與加自動更新）：
+           「開啟時可選模型」沒勾＝完全不問模型，底下的手動／自動更新都按不了。
+           「手動更新」＝立刻重新向每一家 AI CLI 問一次（OpenCode 會順便更新它自己的模型快取）；
+           「自動更新」＝每天在選的整點（01:00…23:00）做一次（程式要開著）。 -->
+      <fieldset>
+        <legend id="st-l-models"></legend>
+        <label class="sd-check"><input id="st-askmodel" type="checkbox" /><span id="st-l-askmodel"></span></label>
+        <div class="sd-row st-weak">
+          <button id="st-models-refresh" type="button"></button>
+          <span id="st-models-note" class="sd-hint"></span>
+        </div>
+        <div class="sd-row st-weak st-models-auto">
+          <label class="sd-check"><input id="st-models-auto" type="checkbox" /><span id="st-l-models-auto"></span></label>
+          <select id="st-models-hour"></select>
+        </div>
       </fieldset>
         </div>
         <div class="sd-col">
@@ -692,17 +735,6 @@
         <div class="sd-row st-weak">
           <button id="st-migrate" type="button"></button>
           <span id="st-migrate-note" class="sd-hint"></span>
-        </div>
-      </fieldset>
-      <!-- AI 模型清單（2.0.3）：選模型的清單平常會沿用 10 分鐘內問過的結果；這顆按鈕＝立刻
-           重新向每一家 AI CLI 問一次（OpenCode 會順便更新它自己的模型快取），結果顯示在旁邊。 -->
-      <fieldset>
-        <legend id="st-l-models"></legend>
-        <!-- 開啟時選模型（預設不勾）：沒勾＝完全不問模型，「更新模型清單」也按不了 -->
-        <label class="sd-check"><input id="st-askmodel" type="checkbox" /><span id="st-l-askmodel"></span></label>
-        <div class="sd-row st-weak">
-          <button id="st-models-refresh" type="button"></button>
-          <span id="st-models-note" class="sd-hint"></span>
         </div>
       </fieldset>
         </div>

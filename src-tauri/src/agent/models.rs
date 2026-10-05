@@ -906,6 +906,76 @@ pub fn list_for(settings: &SettingsStore, cli: ModelCli, conn: &CustomConn, refr
     list
 }
 
+/// 把這台機器上找得到的每一家 CLI 的清單都重新問一次（設定視窗的「手動更新」與每天的
+/// 「自動更新」共用）。回傳每一家的結果；找不到任何一家＝空的。
+pub fn refresh_all(settings: &SettingsStore) -> Vec<ModelList> {
+    let jobs: Vec<(ModelCli, CustomConn)> = adapters::ALL_KEYS
+        .iter()
+        .filter_map(|k| Backend::by_key(k))
+        .filter_map(|b| adapters::resolve(settings, b).map(|c| (ModelCli::Agent(b), c)))
+        .collect();
+    std::thread::scope(|scope| {
+        let handles: Vec<_> = jobs
+            .iter()
+            .map(|(b, c)| scope.spawn(move || list_for(settings, *b, c, true)))
+            .collect();
+        handles.into_iter().filter_map(|h| h.join().ok()).collect()
+    })
+}
+
+/// 模型清單的「自動更新」（2.0.7）：設定裡有勾的話，每天在選的整點（01／03／…／23）
+/// 重新向每一家 AI CLI 問一次。程式要開著；那個小時裡只做一次，錯過那個小時就等明天
+/// （不補做——使用者選的就是那個時間）。
+pub fn spawn_auto_refresh(settings: Arc<SettingsStore>) {
+    std::thread::Builder::new()
+        .name("model-auto-refresh".into())
+        .spawn(move || {
+            use chrono::{Datelike, Timelike};
+            // 上一次做的是哪一天（本地日期的序號）；啟動那一小時若剛好是選的整點也會做
+            let mut done_day: Option<i32> = None;
+            loop {
+                std::thread::sleep(Duration::from_secs(60));
+                let s = settings.get();
+                if !s.model_auto_refresh || !s.ask_model_on_open {
+                    continue;
+                }
+                let now = chrono::Local::now();
+                if now.hour() != u32::from(s.model_auto_refresh_hour) {
+                    continue;
+                }
+                let today = now.num_days_from_ce();
+                if done_day == Some(today) {
+                    continue;
+                }
+                done_day = Some(today);
+                let lists = refresh_all(&settings);
+                println!(
+                    "[AwayTerminal] 模型清單自動更新（{:02}:00）：{}",
+                    s.model_auto_refresh_hour,
+                    if lists.is_empty() {
+                        "這台電腦沒有找到 AI CLI".to_string()
+                    } else {
+                        lists
+                            .iter()
+                            .map(|l| format!("{} {}", l.backend_name, l.models.len()))
+                            .collect::<Vec<_>>()
+                            .join("、")
+                    }
+                );
+            }
+        })
+        .expect("spawn model-auto-refresh thread");
+}
+
+/// 設定視窗的「手動更新」：所有找得到的 CLI 立刻重新問一次（和自動更新做的事一樣）。
+#[tauri::command]
+pub async fn cli_models_refresh_all(settings: State<'_, Arc<SettingsStore>>) -> Result<Vec<ModelList>, String> {
+    let settings = settings.inner().clone();
+    tokio::task::spawn_blocking(move || refresh_all(&settings))
+        .await
+        .map_err(|e| e.to_string())
+}
+
 /// 代理團隊／AI 聊天室的設定視窗：這幾家 CLI 各有哪些模型（平行問，整體最多等一個逾時）。
 #[tauri::command]
 pub async fn cli_models(

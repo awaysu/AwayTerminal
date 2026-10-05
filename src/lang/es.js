@@ -155,6 +155,8 @@ export default {
   'sd.port': 'Puerto',
   'sd.user': 'Usuario',
   'sd.userHint': 'Vacío = preguntar login as: en el terminal al conectar',
+  'sd.password': 'Contraseña',
+  'sd.passwordHint': 'Déjelo vacío para que se pida en el terminal; nunca se guarda en favoritos',
   'sd.key': 'Archivo de clave',
   'sd.keep': 'Mantener conexión',
   'sd.keepHint': 'minutos, 0 = desactivado',
@@ -234,7 +236,6 @@ export default {
   // {0} = 分頁數
   'restore.done': '{0} pestaña(s) restauradas',
   'restore.failed': 'No se pudieron restaurar {0} pestaña(s) (consulta el registro del backend)',
-  'sd.quick': 'Conexión rápida (host[:puerto])…',
 
   // ---- 我的最愛（TASK-009 C；舊版 fav.* / tb.favorites / tip.favorites）----
   'tb.favorites': 'Favoritos',
@@ -534,14 +535,18 @@ export default {
   // ---- Importing v1 settings (TASK-016 D; the old file is only read) ----
   'settings.groupMigrate': 'Configuración de la v1',
   'settings.groupModels': 'Modelos de IA',
-  'settings.askModel': 'Elegir modelo al abrir',
+  'settings.askModel': 'Se puede elegir el modelo al abrir',
   'settings.askModelNote': 'Si está marcado, al abrir una conexión de CLI de IA (ClaudeCode / Codex / OpenCode / GeminiCLI) o un equipo de agentes se pregunta primero qué modelo usar. Sin marcar: no pregunta, lo decide la CLI.',
-  'settings.modelsRefresh': 'Actualizar listas de modelos',
+  'settings.modelsRefresh': 'Actualizar ahora',
   'settings.modelsNote': 'Vuelve a preguntar ahora a cada CLI de IA qué modelos tiene. Normalmente se reutiliza la última respuesta durante 10 minutos.',
   'settings.modelsBusy': 'Actualizando las listas de modelos…',
   'settings.modelsDone': 'Actualizado: {0}',
   'settings.modelsNone': 'No se encontró ninguna CLI de IA en este equipo (ClaudeCode / Codex / OpenCode / GeminiCLI).',
   'settings.modelsFail': 'Error al actualizar: {0}',
+  'settings.modelsAuto': 'Actualización automática',
+  'settings.modelsAutoNote': 'Cada día, a la hora elegida, vuelve a preguntar a cada CLI de IA qué modelos tiene (AwayTerminal debe estar abierto).',
+  'settings.pageLang': 'Idioma y fuentes',
+  'settings.pageGeneral': 'General',
   'migrate.button': 'Importar la configuración de la v1…',
   'migrate.pick': 'Elige el settings.json antiguo',
   'migrate.title': 'Importar la configuración de la v1',

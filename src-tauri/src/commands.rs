@@ -159,6 +159,11 @@ pub struct SshArgs {
     pub auto_reconnect: Option<bool>,
     /// 要送給遠端的環境變數（SSH `env` request）。
     pub env: Option<Vec<(String, String)>>,
+    /// 連線視窗的「密碼」欄（2.0.7，使用者要求）。給了就用它回答第一次的密碼提示
+    /// （keyboard-interactive 或 password），不必在終端機裡打；錯了照樣改成當場問。
+    /// **只留在這個分頁的記憶體裡**（重連沿用）：不進 `SshConnParams`，所以我的最愛與
+    /// 恢復分頁都不會存到它。
+    pub password: Option<String>,
 }
 
 /// Telnet 連線的額外參數（`kind = "telnet"` 時才看）。
@@ -265,6 +270,11 @@ pub fn session_create(
     teams: State<'_, Arc<crate::agent::TeamManager>>,
 ) -> Result<SessionInfo, String> {
     if kind == "ssh" || kind == "telnet" || kind == "com" {
+        // SSH 的密碼只活在分頁的記憶體裡（見 `SshArgs::password`）
+        let ssh_password = ssh
+            .as_ref()
+            .and_then(|a| a.password.clone())
+            .filter(|p| !p.is_empty());
         let params = if kind == "com" {
             let args = com.unwrap_or_default();
             let saved = settings.get();
@@ -317,7 +327,7 @@ pub fn session_create(
             })
         };
         return create_remote(
-            app, params, title, cols, rows, restore, on_event, &manager, &tabs_state,
+            app, params, ssh_password, title, cols, rows, restore, on_event, &manager, &tabs_state,
         );
     }
 
@@ -671,6 +681,7 @@ pub fn session_create(
         cols,
         rows,
         conn: None,
+        ssh_password: None,
         reconnect_attempt: 0,
         reconnect_gen: 0,
         sandbox: sandbox.clone(),
@@ -782,9 +793,11 @@ pub fn macro_connect(
 /// 兩種後端共用這條路（退避重連、提示訊息、我的最愛、恢復分頁都在
 /// [`crate::reconnect`]），差別只有 `ConnParams` 裡面是哪一個變體。
 #[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)]
 fn create_remote(
     app: AppHandle,
     params: crate::reconnect::ConnParams,
+    ssh_password: Option<String>,
     title: Option<String>,
     cols: u16,
     rows: u16,
@@ -843,6 +856,7 @@ fn create_remote(
         cols,
         rows,
         conn: Some(params.clone()),
+        ssh_password,
         reconnect_attempt: 0,
         reconnect_gen: 0,
         sandbox: None, // 遠端連線沒有本機子行程可以隔離，不需要沙盒

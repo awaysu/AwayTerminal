@@ -409,9 +409,18 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
 
 ## 16. Rust crates
 
-Linked as dependencies, each under MIT or MIT/Apache-2.0:
-`windows-sys`, `libloading`, `serde`, `serde_json`, `tokio`, `chrono`,
-`tauri-plugin-dialog`, `tauri-plugin-opener`, `md5`, `sys-locale`, `ttf-parser`.
+Linked as direct dependencies (re-checked 2026-10-05 against `cargo metadata`):
+
+| Crate | Licence | What for |
+|---|---|---|
+| `windows-sys`, `serde`, `serde_json`, `chrono`, `sys-locale`, `ttf-parser`, `md5`, `sha2`, `ureq` | MIT OR Apache-2.0 (we take MIT) | Win32 bindings, JSON settings, timestamps, OS locale, font listing, host-key fingerprints, role-file hashes, update check |
+| `tokio`, `fancy-regex`, `winreg` | MIT | async runtime, TTL `waitregex`, Explorer context menu (HKCU) |
+| `tauri`, `tauri-build`, `tauri-plugin-dialog`, `tauri-plugin-opener`, `tauri-plugin-single-instance`, `tauri-plugin-updater` | Apache-2.0 OR MIT (we take MIT) | app shell, native dialogs, open-with-system, one window only, updater |
+| `libloading` | **ISC** (not MIT — corrected 2026-10-05) | loading `conpty.dll` at run time |
+| `russh` | Apache-2.0 | built-in SSH (section 4; ship the NOTICE) |
+| `serialport` | MPL-2.0 | serial ports (section 5) |
+| `encoding_rs` | (Apache-2.0 OR MIT) AND BSD-3-Clause | Big5 ↔ UTF-8 (section 8) |
+
 Full per-crate licence text is reproduced by `cargo about` / `cargo license` output.
 
 ---
@@ -421,24 +430,26 @@ Full per-crate licence text is reproduced by `cargo about` / `cargo license` out
 `cd src-tauri && cargo deny check` (config: `src-tauri/deny.toml`) enforces an
 **allow-list** of licences across four targets (Windows msvc, linux-gnu,
 aarch64/x86_64 apple-darwin). `cargo deny list` produces the full crate-by-crate
-inventory. The counts below are from **2026-09-27**; re-run before every release
-(it is in the `docs/RELEASE.md` checklist).
+inventory. The counts below were re-done on **2026-10-05** from `cargo metadata`
+(634 crates across all targets, counting the licence **we take** when a crate offers a
+choice — MIT first, then Apache-2.0); the 2026-09-27 table counted every option of a
+dual licence, which is why the old MIT/Apache numbers were larger. Re-run before every
+release (it is in the `docs/RELEASE.md` checklist).
 
-| Licence | Crates | Obligation when we redistribute |
+| Licence we take | Crates | Obligation when we redistribute |
 |---|---|---|
-| MIT | ~496 | Reproduce the notice and licence text (sections 1–12 cover the ones we use directly) |
-| Apache-2.0 | ~372 | Reproduce the notice, licence text and any `NOTICE` file (see section 4, russh) |
-| Unicode-3.0 | 19 | Reproduce the Unicode licence notice — see below |
-| Zlib | 12 | Keep the notice; do not misrepresent origin |
-| BSD-3-Clause | 8 | Reproduce copyright, conditions, disclaimer (sections 6, 8) |
-| ISC | 7 | Reproduce the notice (`ring`, `rustls`, `untrusted` — section 9) |
+| MIT | 584 | Reproduce the notice and licence text (sections 1–12, 16 cover the ones we use directly) |
+| Unicode-3.0 | 18 (+1 `AND MIT`) | Reproduce the Unicode licence notice — see below |
+| Apache-2.0 | 7 (+1 `WITH LLVM-exception`, +1 `AND ISC` = `ring`, +1 `AND MIT`) | Reproduce the notice, licence text and any `NOTICE` file (see section 4, russh) |
 | MPL-2.0 | 6 | File-level copyleft; unmodified linking is fine, ship the licence text (section 5) |
-| Unlicense | 6 | Public-domain dedication — no obligation |
-| Zlib/0BSD | 1 | 0BSD is a public-domain-equivalent; no attribution required |
-| BSD-2-Clause | 1 | Reproduce copyright, conditions, disclaimer |
-| MIT-0 | 1 | MIT without the attribution requirement |
-| CC0-1.0 | 1 | Public-domain dedication — no obligation |
-| CDLA-Permissive-2.0 | 1 | Permissive data licence; keep the notice |
+| BSD-3-Clause | 5 (+1 `AND MIT`, +1 `encoding_rs`) | Reproduce copyright, conditions, disclaimer (sections 6, 8) |
+| ISC | 4 | Reproduce the notice (`libloading`, `rustls-webpki`, `untrusted`, … — sections 9, 16) |
+| Zlib | 2 | Keep the notice; do not misrepresent origin |
+| CDLA-Permissive-2.0 | 2 (`webpki-roots`, `webpki-root-certs`) | Permissive data licence; keep the notice |
+
+Crates that *offer* Unlicense, 0BSD, MIT-0, CC0-1.0, BSD-2-Clause or Zlib as one option of
+a dual/triple licence are counted under MIT above (we take MIT); their texts stay below for
+completeness.
 
 **No GPL / LGPL / AGPL code is linked.** Two crates offer a copyleft option in a
 dual-licence expression, and we take the permissive one — recorded explicitly in

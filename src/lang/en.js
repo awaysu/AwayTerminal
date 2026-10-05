@@ -162,6 +162,8 @@ export default {
   'sd.port': 'Port',
   'sd.user': 'User',
   'sd.userHint': 'Leave empty = ask login as: in the terminal after connecting',
+  'sd.password': 'Password',
+  'sd.passwordHint': 'Leave empty to be asked in the terminal; never saved to favorites',
   'sd.key': 'Key file',
   'sd.keep': 'Keep-alive',
   'sd.keepHint': 'minutes, 0 = off',
@@ -241,7 +243,6 @@ export default {
   // {0} = 分頁數
   'restore.done': 'Restored {0} tab(s)',
   'restore.failed': '{0} tab(s) could not be restored (see the backend log)',
-  'sd.quick': 'Quick connect (host[:port])…',
 
   // ---- 我的最愛（TASK-009 C；舊版 fav.* / tb.favorites / tip.favorites）----
   'tb.favorites': 'Favorites',
@@ -553,14 +554,18 @@ export default {
   // ---- Importing v1 settings (TASK-016 D; the old file is only read) ----
   'settings.groupMigrate': 'Settings from v1',
   'settings.groupModels': 'AI models',
-  'settings.askModel': 'Choose a model when opening',
+  'settings.askModel': 'Model can be chosen when opening',
   'settings.askModelNote': 'When checked, opening an AI CLI connection (ClaudeCode / Codex / OpenCode / GeminiCLI) or an agent team asks which model to use first. Unchecked: never asks, the CLI decides.',
-  'settings.modelsRefresh': 'Refresh model lists',
+  'settings.modelsRefresh': 'Refresh now',
   'settings.modelsNote': 'Ask every AI CLI again right now which models it has. Normally the last answer is reused for 10 minutes.',
   'settings.modelsBusy': 'Refreshing the model lists…',
   'settings.modelsDone': 'Updated: {0}',
   'settings.modelsNone': 'No AI CLI was found on this computer (ClaudeCode / Codex / OpenCode / GeminiCLI).',
   'settings.modelsFail': 'Refresh failed: {0}',
+  'settings.modelsAuto': 'Auto refresh',
+  'settings.modelsAutoNote': 'Every day at the chosen hour, ask every AI CLI again which models it has (AwayTerminal must be running).',
+  'settings.pageLang': 'Language & fonts',
+  'settings.pageGeneral': 'General',
   'migrate.button': 'Import settings from v1…',
   'migrate.pick': 'Choose the old settings.json',
   'migrate.title': 'Import settings from v1',

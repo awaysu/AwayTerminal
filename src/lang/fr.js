@@ -155,6 +155,8 @@ export default {
   'sd.port': 'Port',
   'sd.user': 'Utilisateur',
   'sd.userHint': 'Vide = demander login as: dans le terminal après la connexion',
+  'sd.password': 'Mot de passe',
+  'sd.passwordHint': 'Laisser vide pour être demandé dans le terminal ; jamais enregistré dans les favoris',
   'sd.key': 'Fichier de clé',
   'sd.keep': 'Maintien de connexion',
   'sd.keepHint': 'minutes, 0 = désactivé',
@@ -234,7 +236,6 @@ export default {
   // {0} = 分頁數
   'restore.done': '{0} onglet(s) restauré(s)',
   'restore.failed': '{0} onglet(s) n’ont pas pu être restaurés (voir le journal du backend)',
-  'sd.quick': 'Connexion rapide (hôte[:port])…',
 
   // ---- 我的最愛（TASK-009 C；舊版 fav.* / tb.favorites / tip.favorites）----
   'tb.favorites': 'Favoris',
@@ -534,14 +535,18 @@ export default {
   // ---- Importing v1 settings (TASK-016 D; the old file is only read) ----
   'settings.groupMigrate': 'Paramètres de la v1',
   'settings.groupModels': 'Modèles d’IA',
-  'settings.askModel': 'Choisir le modèle à l’ouverture',
+  'settings.askModel': 'Le modèle peut être choisi à l’ouverture',
   'settings.askModelNote': 'Si la case est cochée, l’ouverture d’une connexion CLI d’IA (ClaudeCode / Codex / OpenCode / GeminiCLI) ou d’une équipe d’agents demande d’abord quel modèle utiliser. Décochée : aucune question, la CLI décide.',
-  'settings.modelsRefresh': 'Actualiser les listes de modèles',
+  'settings.modelsRefresh': 'Actualiser maintenant',
   'settings.modelsNote': 'Redemande immédiatement à chaque CLI d’IA quels modèles elle propose. En temps normal, la dernière réponse est réutilisée pendant 10 minutes.',
   'settings.modelsBusy': 'Actualisation des listes de modèles…',
   'settings.modelsDone': 'Mis à jour : {0}',
   'settings.modelsNone': 'Aucune CLI d’IA n’a été trouvée sur cet ordinateur (ClaudeCode / Codex / OpenCode / GeminiCLI).',
   'settings.modelsFail': 'Échec de l’actualisation : {0}',
+  'settings.modelsAuto': 'Actualisation automatique',
+  'settings.modelsAutoNote': 'Chaque jour, à l’heure choisie, redemande à chaque CLI d’IA quels modèles elle propose (AwayTerminal doit être ouvert).',
+  'settings.pageLang': 'Langue et polices',
+  'settings.pageGeneral': 'Général',
   'migrate.button': 'Importer les paramètres de la v1…',
   'migrate.pick': 'Choisir l’ancien settings.json',
   'migrate.title': 'Importer les paramètres de la v1',
