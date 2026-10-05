@@ -225,6 +225,11 @@ pub struct Team {
     pub idle_check_minutes: u32,
     /// 整組從什麼時候開始全部閒置（epoch ms；0＝現在不是全閒置）。
     pub all_idle_since_ms: u128,
+    /// 這一段連續輸出從什麼時候開始（epoch ms；0＝現在沒有）。閒置檢查用它分辨
+    /// 「真的在工作」和「閒置中偶爾重畫一下畫面」，見 `deliver::check_team_idle`。
+    pub busy_since_ms: u128,
+    /// 這一段連續輸出最後一次看到有人忙的時間（epoch ms）。
+    pub last_busy_ms: u128,
     /// 本次執行內的投遞序號（「訊息 #n」用，從 1 起）。
     pub delivery_seq: u32,
     /// 沙盒模式（新版才有；預設關）。
@@ -285,6 +290,8 @@ impl Team {
             max_messages: DEFAULT_MAX_MESSAGES,
             idle_check_minutes: DEFAULT_IDLE_CHECK_MINUTES,
             all_idle_since_ms: 0,
+            busy_since_ms: 0,
+            last_busy_ms: 0,
             delivery_seq: 0,
             sandbox: false,
             sandbox_cfg: None,

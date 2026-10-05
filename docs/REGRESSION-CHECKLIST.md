@@ -831,7 +831,7 @@ TEMP 路徑印出完整結果，Documents 路徑印完 `path = …` 就停住。
 | MA30 | 右鍵「投遞 → 暫停」 | 使用者自己暫停；之後調高上限**不會**自動解除 | `PausedByLimit` | PASS | — | — |
 | MA31 | 停止任務 | 每格 `Esc` → **1 秒後 `Ctrl+U`** → **1.5 秒時**打停止句＋Enter | `AgentStop_Click` | PASS | — | — |
 | MA32 | 停止流程中不投遞 | 三段都 `MarkTyped`，所以佇列裡的信要等 3 秒後才可能投 | 同上 | PASS（程式碼對照） | — | — |
-| MA33 | 閒置檢查 | ≥2 格在跑、都不忙、沒排隊、沒暫停，連續閒置 N 分鐘 → 打一句給 Agent-x1；**不算投遞則數** | `CheckTeamIdle` | PASS（程式碼對照） | — | — |
+| MA33 | 閒置檢查 | ≥2 格在跑、沒人在工作、沒排隊、沒暫停，連續閒置 N 分鐘 → 打一句給 Agent-x1；**不算投遞則數**。短暫的畫面重畫（連續輸出不到 10 秒、沒有人送出一行）不會讓計時歸零（2.0.9） | `CheckTeamIdle`（2.0.9 起和舊版不同：舊版任何輸出都歸零） | ⬜ 2.0.9 改過，待重驗 | — | — |
 | MA34 | pane 狀態標籤 | `E{id}US{0..4}`：閒置／忙碌／有信待送／已結束／**忙碌且有信待送**；只在變了才送 | `PostAgentState` | PASS | — | — |
 | MA35 | `g` 協定 | `g{下方id}US{比例}US{上列id,…}US{標籤\|…}US{顏色,…}`；標籤＝`Agent-12 · Software Engineer · Codex`，顏色照格號 | `PostAgentGroup` | PASS | — | — |
 | MA36 | `G` 協定 | 拖分隔線 → 比例記進團隊（clamp 0.15～0.85），雙擊回 0.5 | `case 'G'` | PASS（`agent_ratio`） | — | — |

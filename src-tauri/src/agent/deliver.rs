@@ -604,10 +604,57 @@ fn tick(app: &AppHandle) {
     super::post_state(app, &teams);
 }
 
+/// 閒置計時把「連續輸出不到這麼久」當成畫面重畫，不當成有人在工作（見 [`idle_tracking`]）。
+const IDLE_WORK_BURST_MS: u128 = 10_000;
+/// 兩次輸出之間隔這麼久以內算同一段連續輸出。
+const IDLE_BURST_GAP_MS: u128 = 5_000;
+
+/// 這一輪閒置計時該怎麼走（[`idle_tracking`] 的結果）。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum IdleStep {
+    /// 有人真的在工作 → 「從什麼時候開始閒置」歸零。
+    Reset,
+    /// 有人正在輸出，但還短得像重畫 → 計時照走，這一輪先不插話。
+    Hold,
+    /// 整組安靜 → 計時照走，時間到了就可以問。
+    Quiet,
+}
+
+/// 分辨「真的在工作」和「閒置中偶爾重畫一下畫面」（2.0.9）。
+///
+/// 舊版只要任何一格被判成忙碌就把閒置計時歸零。但閒置的 CLI 也會自己輸出——Codex 背景
+/// 更新外掛目錄／模型清單時會重畫畫面，間隔比 30 分鐘短，計時就永遠湊不滿（2026-10-05
+/// 3kingdoms：OpenCode 被 API 錯誤中斷後整組停了一個多小時，提醒一次都沒出現）。
+///
+/// 現在只有兩種情況算工作：
+/// - 有人**送出了一行**（使用者按 Enter、投遞、遠端指令）；
+/// - 連續輸出滿 [`IDLE_WORK_BURST_MS`]（中間安靜不到 [`IDLE_BURST_GAP_MS`] 算同一段）。
+fn idle_tracking(team: &mut Team, now: u128, any_busy: bool, submitted: bool) -> IdleStep {
+    // 上一段已經安靜超過間隔＝結束了（下一次輸出是新的一段，不能和它加起來）
+    if team.busy_since_ms != 0 && now.saturating_sub(team.last_busy_ms) > IDLE_BURST_GAP_MS {
+        team.busy_since_ms = 0;
+    }
+    if any_busy {
+        if team.busy_since_ms == 0 {
+            team.busy_since_ms = now;
+        }
+        team.last_busy_ms = now;
+    }
+    let working = team.busy_since_ms != 0
+        && team.last_busy_ms.saturating_sub(team.busy_since_ms) >= IDLE_WORK_BURST_MS;
+    if submitted || working {
+        IdleStep::Reset
+    } else if any_busy {
+        IdleStep::Hold
+    } else {
+        IdleStep::Quiet
+    }
+}
+
 /// 整組閒置太久 → 請 Agent-x1 問大家狀況（舊版 `CheckTeamIdle`，使用者要求 2026-09-16）。
 ///
-/// 條件：≥2 格在跑、都不忙、沒有信在排隊、沒有待注入的角色、沒暫停，連續閒置
-/// `idle_check_minutes` 分鐘；而且格 1 自己也 [`agent_ready`]（使用者剛在那格打字就等下一輪）。
+/// 條件：≥2 格在跑、沒人在工作（[`idle_tracking`]）、沒有信在排隊、沒有待注入的角色、沒暫停，
+/// 連續閒置 `idle_check_minutes` 分鐘；而且格 1 自己也 [`agent_ready`]（使用者剛在那格打字就等下一輪）。
 /// 送出後重新計時；**不算進投遞則數**（這是 AwayTerminal 自己問的，不是 agent 之間的信）。
 fn check_team_idle(
     team: &mut Team,
@@ -617,6 +664,7 @@ fn check_team_idle(
 ) -> Option<(u32, String)> {
     if team.idle_check_minutes == 0 || team.paused {
         team.all_idle_since_ms = 0;
+        team.busy_since_ms = 0;
         return None;
     }
     let live: Vec<usize> = (0..team.slots.len())
@@ -627,20 +675,35 @@ fn check_team_idle(
         })
         .collect();
     let lead = live.iter().copied().find(|&i| team.slots[i].index == 1);
-    let all_idle = lead.is_some()
+    let nothing_pending = lead.is_some()
         && live.len() >= 2
         && live.iter().all(|&i| {
             let s = &team.slots[i];
-            let busy = s
-                .tab
-                .and_then(|id| tabs.agent_signals(id))
-                .map(|g| g.busy)
-                .unwrap_or(false);
-            !busy && s.queue.is_empty() && s.pending_first_message.is_none()
+            s.queue.is_empty() && s.pending_first_message.is_none()
         });
-    if !all_idle {
+    if !nothing_pending {
         team.all_idle_since_ms = 0;
+        team.busy_since_ms = 0;
         return None;
+    }
+    let since = team.all_idle_since_ms;
+    let mut any_busy = false;
+    let mut submitted = false;
+    for &i in &live {
+        let s = &team.slots[i];
+        let Some(g) = s.tab.and_then(|id| tabs.agent_signals(id)) else {
+            continue;
+        };
+        any_busy |= g.busy;
+        submitted |= since != 0 && (g.last_submit as u128 > since || s.last_delivered_ms > since);
+    }
+    match idle_tracking(team, now as u128, any_busy, submitted) {
+        IdleStep::Reset => {
+            team.all_idle_since_ms = 0;
+            return None;
+        }
+        IdleStep::Hold => return None,
+        IdleStep::Quiet => {}
     }
     if team.all_idle_since_ms == 0 {
         team.all_idle_since_ms = now as u128;
@@ -863,6 +926,34 @@ mod tests {
         assert!(!slot_alive(&s, live, 100_000), "CLI 結束了就不算在跑");
         s.launched_ms = 98_000;
         assert!(slot_alive(&s, live, 100_000), "剛啟動、session 還沒登記");
+    }
+
+    /// 閒置計時：閒置中偶爾重畫一下畫面不算工作，連續輸出或送出一行才算（2.0.9）。
+    #[test]
+    fn idle_timer_ignores_short_repaints() {
+        let mut t = Team::new("k", 1, "d");
+        // 重畫：忙 1.8 秒就停 → 這一輪不插話，但計時不歸零
+        assert_eq!(idle_tracking(&mut t, 100_000, true, false), IdleStep::Hold);
+        assert_eq!(idle_tracking(&mut t, 101_800, true, false), IdleStep::Hold);
+        assert_eq!(idle_tracking(&mut t, 102_400, false, false), IdleStep::Quiet);
+        // 隔了很久再重畫一次＝新的一段，不會和上一段加起來
+        assert_eq!(idle_tracking(&mut t, 1_900_000, true, false), IdleStep::Hold);
+        assert_eq!(idle_tracking(&mut t, 1_910_000, false, false), IdleStep::Quiet);
+
+        // 真的在工作：連續輸出滿 10 秒（中間停 3 秒算同一段）→ 歸零
+        let mut w = Team::new("k", 1, "d");
+        assert_eq!(idle_tracking(&mut w, 100_000, true, false), IdleStep::Hold);
+        assert_eq!(idle_tracking(&mut w, 104_000, true, false), IdleStep::Hold);
+        assert_eq!(idle_tracking(&mut w, 107_000, false, false), IdleStep::Quiet);
+        assert_eq!(idle_tracking(&mut w, 108_000, true, false), IdleStep::Hold);
+        assert_eq!(idle_tracking(&mut w, 110_000, true, false), IdleStep::Reset);
+        // 停下來之後，那一段結束前（5 秒內）仍算工作，之後才回到安靜
+        assert_eq!(idle_tracking(&mut w, 113_000, false, false), IdleStep::Reset);
+        assert_eq!(idle_tracking(&mut w, 116_000, false, false), IdleStep::Quiet);
+
+        // 有人送出了一行（Enter／投遞）＝一定算工作，就算畫面沒在動
+        let mut s = Team::new("k", 1, "d");
+        assert_eq!(idle_tracking(&mut s, 100_000, false, true), IdleStep::Reset);
     }
 
     /// 還沒啟動（`launched_ms == 0`）一定不能打。
