@@ -357,7 +357,8 @@ pub fn session_create(
                 return Err(t("model.invalid").to_string());
             }
             // 不是 AI CLI 的連線（WSL、使用者自己的工具）沒有 `--model` 這回事 → 不加
-            if crate::agent::adapters::backend_of(c).is_some() {
+            //（`ModelCli`＝代理團隊那四家＋ Antigravity CLI；2.0.6）
+            if crate::agent::models::ModelCli::of_conn(c).is_some() {
                 // 使用者自己在「參數」欄寫的 `--model` 先拿掉（重複給 Codex 會報錯）
                 c.args = crate::agent::models::strip_model_arg(&c.args);
                 model_extra = crate::agent::models::model_arg(want);

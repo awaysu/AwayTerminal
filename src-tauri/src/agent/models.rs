@@ -9,12 +9,17 @@
 //! | OpenCode | `opencode models`（一行一個 `供應商/模型`） | 權威 |
 //! | Claude Code | **沒有列清單的指令** → 內建別名（`--help` 寫的那幾個）＋從它的程式本體（`claude.exe`／`cli.js`）找出來的每個版本，`~/.claude.json` 補 `[1m]` 的寫法（2.0.3） | 不權威 |
 //! | Gemini CLI | 沒有列清單的指令 → 別名（auto／pro／flash／flash-lite）＋從它的程式本體找出來的每個版本（2.0.3）；找不到程式本體就只能自己輸入 | 不權威 |
+//! | Antigravity CLI | 沒有列清單的指令，而且它的清單在伺服器上（程式本體只看得到 `GetCascadeModelConfigs` 這種 RPC 名）→ **內建的靜態清單**（[`ANTIGRAVITY_MODELS`]，從 1.2.16 的程式本體字串整理的；2.0.6） | 不權威 |
 //!
 //! 「權威」＝清單是 CLI 自己回報的，所以「上次用的模型不在裡面」是真的不見了，要請使用者重選。
 //! 不權威的清單只是方便挑，使用者自己打的名稱不在裡面很正常，**不會**被當成不見了。
 //!
-//! 四家指定模型的參數剛好都是 `--model <名稱>`。使用者在自訂連線的「參數」欄自己寫了
-//! `--model`／`-m` 時，選了模型就把它拿掉再接上新的（Codex 重複給會直接報錯）。
+//! 五家指定模型的參數剛好都是 `--model <名稱>`（Antigravity 的 `-m` 也是 `--model` 的縮寫）。
+//! 使用者在自訂連線的「參數」欄自己寫了 `--model`／`-m` 時，選了模型就把它拿掉再接上新的
+//! （Codex 重複給會直接報錯）。
+//!
+//! Antigravity CLI 只做到這一層（使用者 2026-10-05 定的「第 1 層」：自訂連線＋選模型＋沙盒），
+//! **代理團隊不能選它**——所以它不是 [`adapters::Backend`]，這裡另外用 [`ModelCli`] 把五家包起來。
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -37,6 +42,84 @@ const MAX_MODEL_LEN: usize = 120;
 /// Claude Code 的模型別名（`claude --help`：「an alias for the latest model (e.g. 'fable',
 /// 'opus', or 'sonnet') or a model's full name」）。
 const CLAUDE_ALIASES: &[&str] = &["fable", "opus", "sonnet", "haiku"];
+
+/// Antigravity CLI 的模型（`(id, 顯示名)`）。
+///
+/// 它沒有列清單的指令，清單是伺服器給的（`AGY_LLM_GATEWAY_MODELS`／`GetCascadeModelConfigs`），
+/// 所以這份是**靜態的**：2026-10-05 從 agy 1.2.16 的 Windows 執行檔字串整理出來的（Go 的字串表
+/// 是黏在一起的，沒辦法像 Claude Code 那樣在執行時掃）。它會自己在背景更新，這份清單可能落後；
+/// 哪些你的帳號能用也要看它自己的 `/usage`。順序：Gemini 由新到舊，再來 Claude，最後開源模型。
+pub const ANTIGRAVITY_MODELS: &[(&str, &str)] = &[
+    ("gemini-3.8-flash", "Gemini 3.8 Flash"),
+    ("gemini-3.7-flash", "Gemini 3.7 Flash"),
+    ("gemini-3.6-flash", "Gemini 3.6 Flash"),
+    ("gemini-3.5-flash", "Gemini 3.5 Flash"),
+    ("gemini-3.1-pro", "Gemini 3.1 Pro"),
+    ("claude-opus-5-5", "Claude Opus 5.5"),
+    ("claude-opus-4-8", "Claude Opus 4.8"),
+    ("claude-opus-4-6", "Claude Opus 4.6"),
+    ("claude-sonnet-4-6", "Claude Sonnet 4.6"),
+    ("claude-sonnet-4-5", "Claude Sonnet 4.5"),
+    ("gpt-oss-120b", "GPT-OSS 120B"),
+];
+
+/// 模型清單認得的 CLI：代理團隊那四家（[`Backend`]），加上只做到「自訂連線＋選模型」的 Antigravity。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ModelCli {
+    Agent(Backend),
+    Antigravity,
+}
+
+impl ModelCli {
+    /// Antigravity 的 key（＝圖示 key、`last_models` 的 key）。
+    pub const ANTIGRAVITY_KEY: &'static str = "antigravity";
+
+    pub fn by_key(key: &str) -> Option<Self> {
+        if key.eq_ignore_ascii_case(Self::ANTIGRAVITY_KEY) {
+            return Some(Self::Antigravity);
+        }
+        Backend::by_key(key).map(Self::Agent)
+    }
+
+    pub fn key(self) -> &'static str {
+        match self {
+            Self::Agent(b) => b.key(),
+            Self::Antigravity => Self::ANTIGRAVITY_KEY,
+        }
+    }
+
+    pub fn display_name(self) -> &'static str {
+        match self {
+            Self::Agent(b) => b.display_name(),
+            Self::Antigravity => "Antigravity",
+        }
+    }
+
+    /// 這條自訂連線是哪一家（同 [`adapters::backend_of`] 的想法：圖示，或執行檔名）。
+    /// 都不是（WSL、ADB、使用者自己的工具）回 `None`。
+    pub fn of_conn(conn: &CustomConn) -> Option<Self> {
+        if let Some(b) = adapters::backend_of(conn) {
+            return Some(Self::Agent(b));
+        }
+        if conn.icon.eq_ignore_ascii_case(Self::ANTIGRAVITY_KEY)
+            || crate::sandbox::tool_kind(&conn.path) == crate::sandbox::ToolKind::Antigravity
+        {
+            return Some(Self::Antigravity);
+        }
+        None
+    }
+}
+
+/// Antigravity CLI 的內建清單（見 [`ANTIGRAVITY_MODELS`]）。
+pub fn antigravity_models() -> Vec<ModelInfo> {
+    ANTIGRAVITY_MODELS
+        .iter()
+        .map(|(id, label)| ModelInfo {
+            id: (*id).to_string(),
+            label: (*label).to_string(),
+        })
+        .collect()
+}
 
 /// 一個可選的模型。
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
@@ -370,12 +453,15 @@ fn scan_file(scan: &NameScan, path: &Path, counts: &mut HashMap<String, u32>) ->
     Ok(())
 }
 
+/// [`gemini_id_parts`] 拆出來的 `(主版號, 次版號, 等級, 是不是 preview)`。
+type GeminiParts = (u32, u32, u8, bool);
+
 /// Gemini 的模型名稱拆開：`gemini-<版本>-<pro|flash|flash-lite>[-preview]`。
 /// 回 `(主版號, 次版號, 等級, 是不是 preview)`；等級 0＝pro、1＝flash、2＝flash-lite。
 ///
 /// 只收**聊天用**的那幾種：`…-image`、`…-live-…`、`…-base`、`…-customtools`、`…-001`、
 /// embedding、computer-use 這些不是給 `--model` 選的，不收。
-fn gemini_id_parts(id: &str) -> Option<(u32, u32, u8, bool)> {
+fn gemini_id_parts(id: &str) -> Option<GeminiParts> {
     let rest = id.strip_prefix("gemini-")?;
     let (ver, tier) = rest.split_once('-')?;
     let num = |p: &str| -> Option<u32> {
@@ -405,7 +491,7 @@ const GEMINI_ALIASES: &[&str] = &["auto", "pro", "flash", "flash-lite"];
 ///（同一版裡 pro → flash → flash-lite，正式版排在 preview 前面）。
 /// 名稱本身就帶版本（`gemini-2.5-pro`），所以顯示的就是名稱。
 pub fn gemini_models(known: &HashMap<String, u32>) -> Vec<ModelInfo> {
-    let mut ids: Vec<(&String, (u32, u32, u8, bool))> = known
+    let mut ids: Vec<(&String, GeminiParts)> = known
         .iter()
         .filter(|(_, n)| **n >= MIN_MENTIONS)
         .filter_map(|(id, _)| gemini_id_parts(id).map(|p| (id, p)))
@@ -680,17 +766,26 @@ fn codex_cache_path() -> Option<PathBuf> {
 ///
 /// `refresh`＝使用者按了設定裡的「更新模型清單」：OpenCode 多帶 `--refresh`（重新向
 /// models.dev 抓它自己的模型快取，要連網，所以等久一點）。其餘三家本來每次都是當場問／當場掃。
-fn fetch(backend: Backend, conn: &CustomConn, refresh: bool) -> ModelList {
+fn fetch(cli: ModelCli, conn: &CustomConn, refresh: bool) -> ModelList {
     let exe = Path::new(&conn.path);
     let exe_name = exe
         .file_name()
         .map(|s| s.to_string_lossy().to_string())
         .unwrap_or_default();
     let mut list = ModelList {
-        backend: backend.key().to_string(),
-        backend_name: backend.display_name().to_string(),
+        backend: cli.key().to_string(),
+        backend_name: cli.display_name().to_string(),
         source: "none".to_string(),
         ..ModelList::default()
+    };
+    let backend = match cli {
+        ModelCli::Agent(b) => b,
+        ModelCli::Antigravity => {
+            // 清單在它的伺服器上，程式本體找不到 → 內建的靜態清單（`static`：提示列會講清楚）
+            list.models = antigravity_models();
+            list.source = "static".to_string();
+            return list;
+        }
     };
     match backend {
         Backend::Codex => match run(exe, &["debug", "models"], LIST_TIMEOUT).map(|t| parse_codex(&t)) {
@@ -770,8 +865,8 @@ fn cache() -> &'static Cache {
 }
 
 /// 這家 CLI 的模型清單（有快取；`refresh`＝不看快取）。`last` 每次都重新填。
-pub fn list_for(settings: &SettingsStore, backend: Backend, conn: &CustomConn, refresh: bool) -> ModelList {
-    let key = format!("{}|{}", backend.key(), conn.path.to_ascii_lowercase());
+pub fn list_for(settings: &SettingsStore, cli: ModelCli, conn: &CustomConn, refresh: bool) -> ModelList {
+    let key = format!("{}|{}", cli.key(), conn.path.to_ascii_lowercase());
     let cached = if refresh {
         None
     } else {
@@ -785,16 +880,16 @@ pub fn list_for(settings: &SettingsStore, backend: Backend, conn: &CustomConn, r
     let mut list = match cached {
         Some(l) => l,
         None => {
-            let l = fetch(backend, conn, refresh);
+            let l = fetch(cli, conn, refresh);
             println!(
                 "[AwayTerminal] 模型清單 {}：{} 個（來源={}{}）",
-                backend.display_name(),
+                cli.display_name(),
                 l.models.len(),
                 l.source,
                 if l.note.is_empty() { String::new() } else { format!("，{}", l.note) }
             );
             // 失敗的結果不快取：使用者修好（例如重新登入）之後下一次就要拿得到
-            if l.source != "none" || backend == Backend::GeminiCli {
+            if l.source != "none" || cli == ModelCli::Agent(Backend::GeminiCli) {
                 if let Ok(mut c) = cache().lock() {
                     c.insert(key, (Instant::now(), l.clone()));
                 }
@@ -805,7 +900,7 @@ pub fn list_for(settings: &SettingsStore, backend: Backend, conn: &CustomConn, r
     list.last = settings
         .get()
         .last_models
-        .get(backend.key())
+        .get(cli.key())
         .cloned()
         .unwrap_or_default();
     list
@@ -821,10 +916,11 @@ pub async fn cli_models(
     let settings = settings.inner().clone();
     let refresh = refresh.unwrap_or(false);
     tokio::task::spawn_blocking(move || {
-        let jobs: Vec<(Backend, CustomConn)> = backends
+        // 代理團隊的設定視窗只會問四家；Antigravity 不在團隊裡，這裡不認它（它的清單走 `conn_models`）
+        let jobs: Vec<(ModelCli, CustomConn)> = backends
             .iter()
             .filter_map(|k| Backend::by_key(k))
-            .filter_map(|b| adapters::resolve(&settings, b).map(|c| (b, c)))
+            .filter_map(|b| adapters::resolve(&settings, b).map(|c| (ModelCli::Agent(b), c)))
             .collect();
         std::thread::scope(|scope| {
             let handles: Vec<_> = jobs
@@ -853,8 +949,8 @@ pub async fn conn_models(
     let refresh = refresh.unwrap_or(false);
     tokio::task::spawn_blocking(move || {
         let conn = crate::custom::find(&settings, &name)?;
-        let backend = adapters::backend_of(&conn)?;
-        Some(list_for(&settings, backend, &conn, refresh))
+        let cli = ModelCli::of_conn(&conn)?;
+        Some(list_for(&settings, cli, &conn, refresh))
     })
     .await
     .map_err(|e| e.to_string())
@@ -863,7 +959,7 @@ pub async fn conn_models(
 /// 記住這家 CLI 這次選的模型（下次開的時候預選它）。空字串＝選了「預設」。
 #[tauri::command]
 pub fn model_remember(backend: String, model: String, settings: State<'_, Arc<SettingsStore>>) {
-    let Some(b) = Backend::by_key(&backend) else { return };
+    let Some(b) = ModelCli::by_key(&backend) else { return };
     let model = model.trim().to_string();
     if !model.is_empty() && !valid_model(&model) {
         return;
@@ -1138,7 +1234,7 @@ mod tests {
         //（`AT_CLAUDE` 沒給就只靠用過的紀錄）
         let conn = CustomConn { path: std::env::var("AT_CLAUDE").unwrap_or_default(), ..CustomConn::default() };
         let started = Instant::now();
-        let claude = fetch(Backend::ClaudeCode, &conn, false);
+        let claude = fetch(ModelCli::Agent(Backend::ClaudeCode), &conn, false);
         println!("ClaudeCode（{} ms）:", started.elapsed().as_millis());
         for m in &claude.models {
             println!("  {:<28} {}", m.label, m.id);
@@ -1156,7 +1252,7 @@ mod tests {
             let Ok(path) = std::env::var(var) else { continue };
             let conn = CustomConn { path, ..CustomConn::default() };
             let started = Instant::now();
-            let list = fetch(backend, &conn, false);
+            let list = fetch(ModelCli::Agent(backend), &conn, false);
             println!(
                 "{}: {} 個（來源={}，{}，{} ms）{:?}",
                 backend.display_name(),
@@ -1180,5 +1276,36 @@ mod tests {
             ["opencode/big-pickle", "anthropic/claude-sonnet-5-5"],
             "不是 供應商/模型 的行跳過、重複的只留一個"
         );
+    }
+
+    /// Antigravity CLI（2.0.6，只做到選模型）：圖示或執行檔名 `agy` 都認得；不是代理團隊的 Backend。
+    #[test]
+    fn antigravity_is_a_model_cli_but_not_a_team_backend() {
+        let conn = |path: &str, icon: &str| CustomConn {
+            name: "x".into(),
+            path: path.into(),
+            icon: icon.into(),
+            ..CustomConn::default()
+        };
+        assert_eq!(
+            ModelCli::of_conn(&conn("C:\\Users\\x\\AppData\\Local\\agy\\bin\\agy.exe", "run")),
+            Some(ModelCli::Antigravity)
+        );
+        assert_eq!(ModelCli::of_conn(&conn("D:\\tools\\mything.exe", "antigravity")), Some(ModelCli::Antigravity));
+        assert_eq!(ModelCli::of_conn(&conn("C:\\npm\\claude.cmd", "run")), Some(ModelCli::Agent(Backend::ClaudeCode)));
+        assert_eq!(ModelCli::of_conn(&conn("C:\\x\\strategy.exe", "run")), None);
+        assert_eq!(ModelCli::by_key("ANTIGRAVITY"), Some(ModelCli::Antigravity));
+        assert_eq!(ModelCli::by_key("codex"), Some(ModelCli::Agent(Backend::Codex)));
+        assert_eq!(Backend::by_key("antigravity"), None, "代理團隊不能選它（第 1 層）");
+        assert_eq!(ModelCli::Antigravity.key(), "antigravity");
+
+        // 靜態清單：id 都合法、不重複、Gemini 在前
+        let list = antigravity_models();
+        assert!(list.len() >= 5);
+        assert!(list.iter().all(|m| valid_model(&m.id)));
+        let mut ids: Vec<&str> = list.iter().map(|m| m.id.as_str()).collect();
+        ids.dedup();
+        assert_eq!(ids.len(), list.len());
+        assert!(ids[0].starts_with("gemini-"));
     }
 }

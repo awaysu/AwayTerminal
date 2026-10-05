@@ -33,6 +33,8 @@ export const CUSTOM_ICON_KEYS = [
   'opencode',
   'geminicli',
   'qwen',
+  // Antigravity CLI（2.0.6 新增；舊版沒有這個 key）
+  'antigravity',
   'python',
   'run',
   'none',

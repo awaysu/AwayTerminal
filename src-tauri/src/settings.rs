@@ -128,8 +128,9 @@ pub struct AppSettings {
     /// 「輸入文字」視窗的「送出後送 Enter」勾選（舊版 `ComposeSendEnter`，預設開）。
     pub compose_send_enter: bool,
 
-    /// 各家 AI CLI **上次選的模型**（key＝`claude-code`／`codex`／`opencode`／`geminicli`；
-    /// 空字串＝選了「預設」）。選模型的視窗用它當預選值（2.0.2 新增，見 `agent/models.rs`）。
+    /// 各家 AI CLI **上次選的模型**（key＝`claude-code`／`codex`／`opencode`／`geminicli`，
+    /// 2.0.6 起多 `antigravity`；空字串＝選了「預設」）。選模型的視窗用它當預選值
+    /// （2.0.2 新增，見 `agent/models.rs`）。
     pub last_models: std::collections::BTreeMap<String, String>,
     /// 設定視窗的「開啟時選模型」（2.0.3；**預設關**）。開著＝開 AI CLI 的自訂連線時跳
     /// 「選擇模型」、代理團隊設定視窗每一格有模型欄位；關著＝完全不問，照 CLI 自己的預設

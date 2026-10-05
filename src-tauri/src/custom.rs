@@ -7,7 +7,7 @@
 //! | 舊版 | 這裡 |
 //! |---|---|
 //! | `AppSettings.CustomConns` | `settings.custom_conns`（多一個 `sandbox` 欄位） |
-//! | `CustomConnDialog.KnownTools` | [`KNOWN_TOOLS`]，**順序照抄**（四個 AI CLI 在前、WSL 在 GeminiCLI 之後） |
+//! | `CustomConnDialog.KnownTools` | [`KNOWN_TOOLS`]，**順序照抄**（四個 AI CLI 在前、WSL 在 GeminiCLI 之後）；2.0.6 多了 Antigravity（在 QwenCode 之後） |
 //! | `CustomConnDialog.ResolveTool` | [`resolve_tool`]，找的目錄照抄 |
 //! | `AutoDetect_Click` | [`auto_detect`]：已存在（同名或**同路徑**）就跳過 |
 //! | `OpenCustom` 的 `closeBytes` | `CustomConn::close_bytes()` |
@@ -69,6 +69,17 @@ pub const KNOWN_TOOLS: &[KnownTool] = &[
         exe_names: &["qwen.exe", "qwen.cmd", "qwen"],
         args: "",
         icon: "qwen",
+        pick_dir: true,
+    },
+    // Antigravity CLI（Google，2026-05 推出；指令叫 `agy`，Go 單一執行檔，Windows 裝在
+    // %LOCALAPPDATA%\agy\bin，mac／Linux 在 ~/.local/bin）。2.0.6 只做到「自訂連線＋選模型＋沙盒」
+    // （使用者 2026-10-05 定的第 1 層），代理團隊還不能選它。參數留空（要跳過核准的人自己加
+    // --dangerously-skip-permissions）
+    KnownTool {
+        name: "Antigravity",
+        exe_names: &["agy.exe", "agy"],
+        args: "",
+        icon: "antigravity",
         pick_dir: true,
     },
     KnownTool {
@@ -138,6 +149,8 @@ fn extra_dirs() -> Vec<PathBuf> {
         let programs = Path::new(&local).join("Programs");
         dirs.push(programs.join("OpenAI").join("Codex").join("bin"));
         dirs.push(programs);
+        // Antigravity CLI 的安裝程式把 agy.exe 放這裡並加進使用者 PATH（同 Codex：比它早啟動的行程看不到）
+        dirs.push(Path::new(&local).join("agy").join("bin"));
     }
     dirs
 }

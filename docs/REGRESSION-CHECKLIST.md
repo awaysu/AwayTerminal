@@ -393,11 +393,12 @@ TEMP 路徑印出完整結果，Documents 路徑印完 `path = …` 就停住。
 | # | 怎麼測 | 預期結果 | 舊版出處 | Win | mac | Linux |
 |---|---|---|---|---|---|---|
 | P1 | 全新安裝（`settings.json` 沒有 `customConns`） | 清單是**空的**，「新分頁 ▾」只有 PowerShell／SSH／自訂指令…／自訂連線設定… | v1.0.18 起不自動建立任何自訂連線 | PASS | | |
-| P2 | 👤「新分頁 ▾」→「自訂連線設定…」→「自動偵測」 | 把這台機器上有裝的工具加進清單，順序＝ClaudeCode／Codex／OpenCode／GeminiCLI／QwenCode／WSL／Aider／ADB | `KnownTools` 的順序（使用者 2026-09-15 指定） | | | |
+| P2 | 👤「新分頁 ▾」→「自訂連線設定…」→「自動偵測」 | 把這台機器上有裝的工具加進清單，順序＝ClaudeCode／Codex／OpenCode／GeminiCLI／QwenCode／Antigravity／WSL／Aider／ADB | `KnownTools` 的順序（使用者 2026-09-15 指定） | | | |
 | P3 | 再按一次「自動偵測」 | 顯示「沒有找到新的工具」，**不會重複加入** | 同名或**同路徑**都算已存在 | PASS（單元測試） | | |
 | P4 | 看 ClaudeCode 那一條的參數 | `--dangerously-skip-permissions` | `KnownTools` | PASS | | |
 | P5 | 看 OpenCode 那一條的參數 | `--auto` | 舊版使用者要求 2026-09-15 | PASS | | |
-| P6 | 看 Codex／GeminiCLI／QwenCode 的參數 | **空的**（要跳過核准的人自己加） | `KnownTools` 的註解 | PASS | | |
+| P6 | 看 Codex／GeminiCLI／QwenCode／Antigravity 的參數 | **空的**（要跳過核准的人自己加） | `KnownTools` 的註解 | PASS | | |
+| P30 | 👤 裝了 Antigravity CLI（`irm https://antigravity.google/cli/install.ps1 \| iex`，裝在 `%LOCALAPPDATA%\agy\bin\agy.exe`）後按「自動偵測」 | 多一筆 **Antigravity**（圖示是 `>AG` 那個、勾「啟動前選擇資料夾」、參數空）。開它：有勾「開啟時選模型」就跳「選擇模型」，清單是內建的（Gemini 3.8／3.7／3.6／3.5 Flash、3.1 Pro、Claude Opus 5.5／4.8／4.6、Sonnet 4.6／4.5、GPT-OSS 120B），提示列說明清單是內建的可能過時；選了用 `--model <id>` 啟動。開沙盒＝多帶 `--sandbox`。**代理團隊的「代理人類型」沒有它**（第 1 層） | 新增（2.0.6，使用者要求第 1 層）；`custom::KNOWN_TOOLS`、`models::ModelCli`、`sandbox::ToolKind::Antigravity` | ⬜ | — | — |
 | P7 | 自動偵測加入的 `.cmd` 工具 | 「透過 PowerShell 執行」自動打勾（npm 裝的是 `.cmd`） | `AutoDetect_Click` 的 `viaPs` | PASS | | |
 | P8 | 👤 點清單裡一條 → 改參數 → 儲存 → 關掉程式再開 | 改動有留著 | — | | | |
 | P9 | 👤「新增」→ 填名稱與執行檔 → 儲存 | 出現在清單與「新分頁 ▾」；沙盒核取方塊**預設沒有打勾**（2026-10-02 起） | `CLAUDE.md`：沙盒預設關閉 | | | |

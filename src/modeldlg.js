@@ -49,6 +49,8 @@ export function modelHint(list) {
   if (!list) return '';
   if (list.source === 'cli' || list.source === 'cache') return fmt('model.hintCli', list.note);
   if (list.source === 'builtin') return T['model.hintBuiltin'];
+  // Antigravity CLI：AwayTerminal 內建的靜態清單（它的清單在伺服器上，找不到）
+  if (list.source === 'static') return T['model.hintStatic'];
   return list.note ? fmt('model.hintFailed', list.note) : T['model.hintNone'];
 }
 
@@ -109,11 +111,14 @@ export function rememberModel(backend, model) {
 
 /** 這條自訂連線看起來是 AI CLI 嗎（圖示或執行檔名；和後端 `adapters::backend_of` 同一個想法）。 */
 function looksLikeAiCli(conn) {
-  if (['claude-code', 'codex', 'opencode', 'geminicli'].includes(String(conn.icon || '').toLowerCase())) {
+  if (
+    ['claude-code', 'codex', 'opencode', 'geminicli', 'antigravity'].includes(String(conn.icon || '').toLowerCase())
+  ) {
     return true;
   }
   const exe = String(conn.path || '').split(/[\\/]/).pop().toLowerCase();
-  return /claude|codex|opencode|gemini/.test(exe);
+  // Antigravity CLI 的執行檔叫 agy（整個檔名相等，三個字母太短不能用「含」）
+  return /claude|codex|opencode|gemini|antigravity/.test(exe) || /^agy(\.exe)?$/.test(exe);
 }
 
 /**

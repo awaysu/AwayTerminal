@@ -160,7 +160,9 @@ fn node_available() -> bool {
 pub fn extra_args(tool_path: &str) -> &'static str {
     match tool_kind(tool_path) {
         ToolKind::Codex => " --sandbox workspace-write",
-        ToolKind::Gemini => " --sandbox",
+        // Antigravity CLI 的 `--sandbox`＝「Run in a sandbox with terminal restrictions enabled」
+        // （照它的 --help，2.0.6；同樣沒在本機跑過）
+        ToolKind::Gemini | ToolKind::Antigravity => " --sandbox",
         _ => "",
     }
 }
@@ -170,6 +172,8 @@ pub enum ToolKind {
     Claude,
     Codex,
     Gemini,
+    /// Antigravity CLI（執行檔叫 `agy`）。
+    Antigravity,
     Other,
 }
 
@@ -185,6 +189,9 @@ pub fn tool_kind(path: &str) -> ToolKind {
         ToolKind::Codex
     } else if stem.contains("gemini") {
         ToolKind::Gemini
+    } else if stem == "agy" || stem.contains("antigravity") {
+        // `agy` 要整個檔名相等：三個字母太短，`contains` 會把 strategy.exe 之類的也算進去
+        ToolKind::Antigravity
     } else {
         ToolKind::Other
     }
@@ -690,12 +697,16 @@ mod tests {
         assert_eq!(tool_kind("/usr/bin/codex"), ToolKind::Codex);
         assert_eq!(tool_kind("gemini.exe"), ToolKind::Gemini);
         assert_eq!(tool_kind("pwsh.exe"), ToolKind::Other);
+        assert_eq!(tool_kind("C:\\Users\\x\\AppData\\Local\\agy\\bin\\agy.exe"), ToolKind::Antigravity);
+        assert_eq!(tool_kind("/home/x/.local/bin/agy"), ToolKind::Antigravity);
+        assert_eq!(tool_kind("strategy.exe"), ToolKind::Other); // 不能用 contains("agy")
     }
 
     #[test]
     fn extra_args_match_claude_md() {
         assert_eq!(extra_args("codex.cmd"), " --sandbox workspace-write");
         assert_eq!(extra_args("gemini.cmd"), " --sandbox");
+        assert_eq!(extra_args("agy.exe"), " --sandbox");
         assert_eq!(extra_args("claude.cmd"), ""); // claude 走 hook，不是參數
         assert_eq!(extra_args("pwsh.exe"), "");
     }

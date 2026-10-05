@@ -608,6 +608,7 @@ export default {
   'model.prompt': 'Which model should "{0}" use?',
   'model.hintCli': 'The list comes from {0}. You can also type a model name.',
   'model.hintBuiltin': 'This tool has no command for listing models, so the list is read from the program itself: the first entries are aliases (always the newest version), followed by every version it knows, newest first (very old ones may no longer be available to your account). You can also type a name.',
+  'model.hintStatic': 'This tool keeps its model list on its server, which AwayTerminal cannot read; this list is built in (compiled from Antigravity CLI 1.2.16) and may be incomplete or out of date. Check its own /usage for what your account can use. You can also type a name.',
   'model.hintNone': 'This tool does not provide a model list. Type a model name (leave empty for the default).',
   'model.hintFailed': 'Could not read the model list ({0}). Type a model name (leave empty for the default).',
   'model.missing': 'The model "{1}" that {0} used last time is no longer in the list. Please choose again.',

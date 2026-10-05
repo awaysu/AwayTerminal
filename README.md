@@ -46,7 +46,7 @@
 | **Telnet（內建）**：選項協商、IAC 轉義、**NAWS**（舊版沒有）、`TTYPE` | ✅ |
 | **連接埠（序列埠）**：USB 友善名稱、鮑率／位元／同位／流控 | ✅ |
 | WSL、ADB（`adb devices` 選裝置） | ✅ |
-| 自訂連線（Claude Code、Codex CLI、Gemini CLI、OpenCode、QwenCode…含「自動偵測」） | ✅ |
+| 自訂連線（Claude Code、Codex CLI、Gemini CLI、OpenCode、QwenCode、Antigravity CLI…含「自動偵測」） | ✅ |
 
 ### 終端機與介面
 
