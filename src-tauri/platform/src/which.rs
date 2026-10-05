@@ -12,6 +12,7 @@
 //! | `/usr/local/bin` | Intel mac 的 Homebrew、Linux 手動安裝 |
 //! | `~/.npm-global/bin`、`~/.nvm/versions/node/*/bin` | npm 全域裝的 CLI（codex／gemini 之類） |
 //! | `~/.cargo/bin`、`~/go/bin` | 語言自己的 bin |
+//! | `~/.opencode/bin`、`~/.bun/bin` | OpenCode 官方安裝程式（`curl … \| bash`）、bun 全域裝的 CLI |
 //!
 //! # ⚠️ mac 的 GUI 程式拿不到使用者的 PATH
 //!
@@ -44,6 +45,10 @@ pub fn extra_dirs() -> Vec<PathBuf> {
         out.push(h.join(".cargo/bin"));
         out.push(h.join(".npm-global/bin"));
         out.push(h.join("go/bin"));
+        // 各工具自己的安裝程式放的地方：它們只把這個目錄寫進 `.zshrc`／`.bashrc`，
+        // 所以從 Finder／Dock 啟動、或比安裝早開的行程都看不到（2026-10-05 真機：自動偵測找不到 OpenCode）
+        out.push(h.join(".opencode/bin"));
+        out.push(h.join(".bun/bin"));
         // nvm：`~/.nvm/versions/node/<版本>/bin`，版本是變的 → 逐個列出來（新的在前）
         out.extend(nvm_bins(h));
     }
@@ -148,6 +153,18 @@ mod tests {
         }
         // 每個平台都至少有 /usr/local/bin
         assert!(s.iter().any(|x| x == "/usr/local/bin"));
+    }
+
+    /// 工具自己的安裝目錄也要在清單裡（OpenCode 的安裝程式只把它寫進 shell 的 rc 檔）。
+    #[test]
+    fn extra_dirs_include_tool_installer_dirs() {
+        if std::env::var_os("HOME").is_none() {
+            return;
+        }
+        let dirs = extra_dirs();
+        for want in [".opencode/bin", ".bun/bin"] {
+            assert!(dirs.iter().any(|p| p.ends_with(want)), "沒有 ~/{want}：{dirs:?}");
+        }
     }
 
     /// 含斜線的名字直接當路徑處理（不去 PATH 找）。

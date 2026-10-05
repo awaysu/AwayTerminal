@@ -141,6 +141,8 @@ fn extra_dirs() -> Vec<PathBuf> {
     let mut dirs = Vec::new();
     if let Some(home) = home_dir() {
         dirs.push(home.join(".local").join("bin"));
+        // OpenCode 官方安裝程式的位置（它只把這裡寫進 shell 的 rc 檔，比它早啟動的行程看不到）
+        dirs.push(home.join(".opencode").join("bin"));
     }
     if let Ok(appdata) = std::env::var("APPDATA") {
         dirs.push(Path::new(&appdata).join("npm"));
@@ -225,26 +227,17 @@ pub fn custom_detect(settings: State<'_, Arc<SettingsStore>>) -> Vec<String> {
     names
 }
 
-/// 「回到預設」（2.0.8，使用者要求）：**清掉整份自訂連線清單**，再跑一次自動偵測——
-/// 結果就是「這台機器上找得到的已知工具，全部用預設參數」。使用者自己加的、改過的都會不見
-/// （前端先確認過才會呼叫）。回傳重新加入的名稱（空的＝一個都沒找到，清單是空的）。
+/// 「回到預設」（2.0.8，使用者要求）：**清掉整份自訂連線清單**，清完就是空的。
+/// 使用者自己加的、改過的都會不見（前端先確認過才會呼叫）。回傳清掉幾條。
+///
+/// **不會**接著自動偵測（2026-10-05 使用者改的；2.0.8 原本會）：偵測到的工具馬上又加回來，
+/// 看起來就像「按了沒刪」。要加回來由使用者自己按「自動偵測」。
 #[tauri::command]
-pub fn custom_reset(settings: State<'_, Arc<SettingsStore>>) -> Vec<String> {
-    let cfg = settings.get();
-    let fresh = reset_list(cfg.sandbox_default);
-    let names: Vec<String> = fresh.iter().map(|c| c.name.clone()).collect();
-    let removed = cfg.custom_conns.len();
-    settings.update(|s| s.custom_conns = fresh);
-    println!(
-        "[AwayTerminal] 自訂連線回到預設：清掉 {removed} 條，重新加入 {}",
-        if names.is_empty() { "（沒有找到任何工具）".to_string() } else { names.join("、") }
-    );
-    names
-}
-
-/// 「回到預設」之後清單該長什麼樣：從空清單做一次自動偵測。
-pub fn reset_list(sandbox_global: bool) -> Vec<CustomConn> {
-    auto_detect(&[], sandbox_global)
+pub fn custom_reset(settings: State<'_, Arc<SettingsStore>>) -> usize {
+    let removed = settings.get().custom_conns.len();
+    settings.update(|s| s.custom_conns.clear());
+    println!("[AwayTerminal] 自訂連線回到預設：清掉 {removed} 條");
+    removed
 }
 
 /// 新增或更新一條自訂連線（依 `name` 比對；`original_name` 是改名時的舊名）。
