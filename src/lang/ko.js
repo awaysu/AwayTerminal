@@ -41,6 +41,7 @@ export default {
 
   // 連線種類（舊版 kind.*；後端也會送 kindLabel，這份是前端的後備）
   'kind.powershell': 'PowerShell',
+  'kind.terminal': 'Terminal',
   'kind.claude': 'Claude Code',
   'kind.custom': '사용자 지정 연결',
 
@@ -107,6 +108,7 @@ export default {
 
   // 選工作目錄（舊版 dlg.pickDir*）
   'dlg.pickDirPs': 'PowerShell 작업 폴더 선택 (여기서 “새 폴더”를 만들 수 있습니다)',
+  'dlg.pickDirTerm': 'Terminal 작업 폴더 선택 (여기서 “새 폴더”를 만들 수 있습니다)',
   'dlg.pickDirCustom': '작업 폴더 선택 (여기서 “새 폴더”를 만들 수 있습니다)',
 
   // 全選（舊版有這個字串但沒有呼叫端，TASK-006 當新功能補上）
@@ -757,6 +759,7 @@ export default {
   'tg.cmdSsh': 'SSH 열기（user@호스트:포트 가능）',
   'tg.cmdTelnet': 'Telnet 열기（호스트:포트 가능）',
   'tg.connShell': 'PowerShell（바탕 화면）',
+  'tg.connTerminal': 'Terminal（바탕 화면）',
   'tg.noConns': '사용할 수 있는 연결이 없습니다.',
   'tg.pickConn': '열 연결을 선택하세요（버튼을 누르거나 숫자로 답장）:',
   'tg.recentConns': '최근 연결（버튼을 누르거나 /history <번호> 로 열기）:',

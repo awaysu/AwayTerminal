@@ -23,6 +23,20 @@ const hooks = [];
  * 註冊一個「把介面文字重設一次」的函式。**註冊的當下就會呼叫一次**，
  * 所以模組 init 時只要 `onLangChange(applyTexts)`，不用再自己套一次。
  */
+/**
+ * 跑在 Windows 上嗎（看作業系統，不是 webview 引擎）。本機 shell 的標籤靠它：
+ * Windows 開的是 PowerShell；mac／Linux 開的是使用者的 `$SHELL`（`pty/shell.rs` 的 `local_shell`）→ 叫 Terminal。
+ */
+export function isWindowsOS() {
+  const ua = (typeof navigator !== 'undefined' && navigator.userAgent) || '';
+  return /Windows/i.test(ua);
+}
+
+/** 本機 shell 相關的字串：Windows 用 `psKey`、其他平台用 `termKey`。 */
+export function shellKey(psKey, termKey) {
+  return isWindowsOS() ? psKey : termKey;
+}
+
 export function onLangChange(fn) {
   hooks.push(fn);
   try {

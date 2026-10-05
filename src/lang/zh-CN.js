@@ -12,7 +12,7 @@ export default {
   // 工具列（舊版 tb.*）
   'tb.new': '新标签页',
   'tb.powershell': 'PowerShell',
-  'tb.terminal': 'Terminal',
+  'tb.terminal': '终端',
   'tb.split': '窗口分割',
   'tb.tabs': '窗口标签页',
   'tb.columns': '窗口分栏',
@@ -41,6 +41,7 @@ export default {
 
   // 連線種類（舊版 kind.*；後端也會送 kindLabel，這份是前端的後備）
   'kind.powershell': 'PowerShell',
+  'kind.terminal': '终端',
   'kind.claude': 'Claude Code',
   'kind.custom': '自定义连接',
 
@@ -107,6 +108,7 @@ export default {
 
   // 選工作目錄（舊版 dlg.pickDir*）
   'dlg.pickDirPs': '选择 PowerShell 工作目录（可在此点击“新建文件夹”）',
+  'dlg.pickDirTerm': '选择终端工作目录（可在此点击“新建文件夹”）',
   'dlg.pickDirCustom': '选择工作目录（可在此点击“新建文件夹”）',
 
   // 全選（舊版有這個字串但沒有呼叫端，TASK-006 當新功能補上）
@@ -757,6 +759,7 @@ export default {
   'tg.cmdSsh': '开 SSH（可带 user@主机:端口）',
   'tg.cmdTelnet': '开 Telnet（可带 主机:端口）',
   'tg.connShell': 'PowerShell（桌面）',
+  'tg.connTerminal': '终端（桌面）',
   'tg.noConns': '没有可用的连接。',
   'tg.pickConn': '选择要开启的连接（点按钮，或回数字）：',
   'tg.recentConns': '最近连接（点按钮或 /history <编号> 用该条开新连接）：',

@@ -41,6 +41,7 @@ export default {
 
   // 連線種類（舊版 kind.*；後端也會送 kindLabel，這份是前端的後備）
   'kind.powershell': 'PowerShell',
+  'kind.terminal': 'Terminal',
   'kind.claude': 'Claude Code',
   'kind.custom': 'Connexion personnalisée',
 
@@ -107,6 +108,7 @@ export default {
 
   // 選工作目錄（舊版 dlg.pickDir*）
   'dlg.pickDirPs': 'Choisissez le dossier de travail de PowerShell (vous pouvez créer un dossier ici)',
+  'dlg.pickDirTerm': 'Choisissez le dossier de travail de Terminal (vous pouvez créer un dossier ici)',
   'dlg.pickDirCustom': 'Choisissez le dossier de travail (vous pouvez créer un dossier ici)',
 
   // 全選（舊版有這個字串但沒有呼叫端，TASK-006 當新功能補上）
@@ -757,6 +759,7 @@ export default {
   'tg.cmdSsh': 'Ouvrir SSH (éventuellement user@hôte:port)',
   'tg.cmdTelnet': 'Ouvrir Telnet (éventuellement hôte:port)',
   'tg.connShell': 'PowerShell (Bureau)',
+  'tg.connTerminal': 'Terminal (Bureau)',
   'tg.noConns': 'Aucune connexion disponible.',
   'tg.pickConn': 'Choisissez la connexion à ouvrir (touchez un bouton ou répondez par le numéro) :',
   'tg.recentConns': 'Connexions récentes (touchez un bouton, ou /history <numéro> pour en ouvrir une) :',

@@ -434,11 +434,12 @@ fn run(app: &AppHandle, tab: Option<u32>) -> Result<Vec<String>, String> {
     bot.say(CHAT, "/new");
     let newlist = bot.wait(m7, 6, |c| c.method == "sendMessage" && c.body.contains("new:"));
     r.check("/new 列可開的連線並附按鈕", newlist.is_some(), "");
+    let shell_label = if cfg!(windows) { "PowerShell" } else { "Terminal" };
     r.check(
-        "/new 的清單含 PowerShell（桌面）",
+        &format!("/new 的清單含 {shell_label}（桌面）"),
         newlist
             .as_ref()
-            .map(|c| text_of(c).contains("PowerShell"))
+            .map(|c| text_of(c).contains(shell_label))
             .unwrap_or(false),
         "",
     );

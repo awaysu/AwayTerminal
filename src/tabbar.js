@@ -33,7 +33,7 @@ import {
   openChatRoom,
   openTeamFavorite,
 } from './agentdlg.js';
-import { onLangChange } from './i18n.js';
+import { onLangChange, shellKey } from './i18n.js';
 import { initFavs, addConnFavorite } from './favs.js';
 import { initModelDialog, pickConnModel, resolveSavedModel } from './modeldlg.js';
 
@@ -588,8 +588,7 @@ function workDirOf(tab) {
  * （`pty/shell.rs` 的 `local_shell`）→ 叫 Terminal。看的是作業系統，不是 webview 引擎。
  */
 function localShellLabel() {
-  const ua = (typeof navigator !== 'undefined' && navigator.userAgent) || '';
-  return /Windows/i.test(ua) ? T['tb.powershell'] : T['tb.terminal'];
+  return T[shellKey('tb.powershell', 'tb.terminal')];
 }
 
 /** 分頁右鍵「PowerShell 開啟」／「Terminal 開啟」：在同一個工作目錄另開一個一般的 shell 分頁。 */
@@ -1545,7 +1544,7 @@ async function newSession(kind) {
     // 剩下的只有本機 shell。「自訂指令…」那個入口 2.0.8 拿掉了（使用者要求）；
     // 後端的 `kind = "custom"` 還在，只給 `?cmd=` 這類 dev 入口與 `--verify` 用。
     if (kind !== 'shell') return;
-    const cwd = await invoke('pick_work_dir', { title: T['dlg.pickDirPs'] });
+    const cwd = await invoke('pick_work_dir', { title: T[shellKey('dlg.pickDirPs', 'dlg.pickDirTerm')] });
     if (!cwd) return; // 使用者取消（同舊版：PickWorkDir 回 null 就不開分頁）
     await createSession({ kind, cwd });
   } catch (err) {
@@ -1780,7 +1779,7 @@ function applyTexts() {
     el.btnPage.title = T['tip.page'];
     el.btnPanel.title = T['tip.tabPanel'];
     el.btnView.title = T['tip.viewCycle'];
-    setText(el.newMenu, '[data-kind="shell"]', T['tb.powershell']);
+    setText(el.newMenu, '[data-kind="shell"]', localShellLabel());
     setText(el.newMenu, '[data-kind="ssh"]', T['tb.ssh']);
     setText(el.newMenu, '[data-kind="com"]', T['tb.com'] + '…');
     setText(el.newMenu, '[data-kind="detect"]', T['conn.detect']);

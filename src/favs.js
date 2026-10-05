@@ -10,7 +10,7 @@ import { invoke } from '@tauri-apps/api/core';
 
 import { T, fmt } from './strings.js';
 import { iconImg, setToolLabel } from './icons.js';
-import { onLangChange } from './i18n.js';
+import { onLangChange, shellKey } from './i18n.js';
 import { log } from './bridge.js';
 
 const el = {};
@@ -83,7 +83,7 @@ function detailOf(f) {
     if (f.dir) parts.push(f.dir);
     return parts.join('\n');
   }
-  return f.dir || T['kind.powershell'];
+  return f.dir || T[shellKey('kind.powershell', 'kind.terminal')];
 }
 
 /** 這一筆是代理團隊或 AI 聊天室（記的是整組設定）。 */

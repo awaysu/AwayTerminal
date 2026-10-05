@@ -143,6 +143,21 @@ pub fn tab_colors(
 }
 
 // ------------------------------------------------------------------ 檔案
+//
+// ⚠️ 這一節的對話框**都不能用 `blocking_*`**：同步 command 跑在主執行緒，而 mac 的
+// `NSOpenPanel`／`NSSavePanel` 也要主執行緒 → `blocking_pick_folder()` 會等自己，整個 app 卡住
+//（2026-10-05 真機實測：工具列「PowerShell」選目錄時整個視窗沒反應）。Windows 上剛好沒事，
+// 所以到真機才發現。一律照 `compose.rs`／`migrate.rs`／`fontstore.rs` 的寫法：
+// `async` command ＋ callback 版對話框 ＋ `spawn_blocking` 等結果。
+
+/// 等 callback 版對話框的結果（`pick_folder`／`save_file`／`pick_file` 都是這個形狀）。
+async fn await_dialog<T: Send + 'static>(
+    rx: std::sync::mpsc::Receiver<Option<T>>,
+) -> Result<Option<T>, String> {
+    tokio::task::spawn_blocking(move || rx.recv().ok().flatten())
+        .await
+        .map_err(|e| tf("err.filePickFailed", &[&e.to_string()]))
+}
 
 /// 「複製全部存至檔案」的落地（舊版 `SaveBufferToFile`）。
 ///
@@ -150,7 +165,7 @@ pub fn tab_colors(
 /// 一致＝**UTF-8 with BOM**（.NET 的 `Encoding.UTF8` 靜態屬性會輸出 BOM）。
 /// 回傳實際存到哪裡；使用者取消回 `None`。
 #[tauri::command]
-pub fn save_text_to_file(
+pub async fn save_text_to_file(
     app: AppHandle,
     id: u32,
     text: String,
@@ -158,13 +173,16 @@ pub fn save_text_to_file(
 ) -> Result<Option<String>, String> {
     let title = tabs_state.title_of(id).unwrap_or_default();
     let name = logging::default_save_name(&title);
-    let picked = app
-        .dialog()
+    let (tx, rx) = std::sync::mpsc::channel();
+    app.dialog()
         .file()
         .set_file_name(&name)
         .add_filter("Text file", &["txt"])
         .add_filter("All files", &["*"])
-        .blocking_save_file();
+        .save_file(move |f| {
+            let _ = tx.send(f);
+        });
+    let picked = await_dialog(rx).await?;
     let Some(path) = picked.and_then(to_path) else {
         return Ok(None);
     };
@@ -181,20 +199,26 @@ pub fn save_text_to_file(
 /// 會讓 `Directory.Exists` 卡住好幾秒 → 對話框遲遲不出現）。這裡同樣不在主執行緒上檢查存在性：
 /// 直接把路徑交給對話框，開不開得起來由系統決定。
 #[tauri::command]
-pub fn pick_work_dir(
+pub async fn pick_work_dir(
     app: AppHandle,
     title: String,
     settings: State<'_, Arc<SettingsStore>>,
-) -> Option<String> {
+) -> Result<Option<String>, String> {
     let last = settings.get().last_dir;
     let mut builder = app.dialog().file().set_title(&title);
     if !last.trim().is_empty() {
         builder = builder.set_directory(&last);
     }
-    let path = builder.blocking_pick_folder().and_then(to_path)?;
+    let (tx, rx) = std::sync::mpsc::channel();
+    builder.pick_folder(move |f| {
+        let _ = tx.send(f);
+    });
+    let Some(path) = await_dialog(rx).await?.and_then(to_path) else {
+        return Ok(None);
+    };
     let dir = path.to_string_lossy().to_string();
     settings.update(|s| s.last_dir = dir.clone());
-    Some(dir)
+    Ok(Some(dir))
 }
 
 /// 網址選單的「用瀏覽器開啟」（舊版 `OpenUrlExternal`）。
@@ -258,7 +282,7 @@ pub fn log_defaults(
 
 /// 讓使用者挑 log 檔位置（舊版 `LogDialog` 的「瀏覽…」）。
 #[tauri::command]
-pub fn log_pick_path(app: AppHandle, current: String) -> Option<String> {
+pub async fn log_pick_path(app: AppHandle, current: String) -> Result<Option<String>, String> {
     let p = std::path::Path::new(&current);
     let mut builder = app
         .dialog()
@@ -273,10 +297,14 @@ pub fn log_pick_path(app: AppHandle, current: String) -> Option<String> {
             builder = builder.set_directory(dir);
         }
     }
-    builder
-        .blocking_save_file()
+    let (tx, rx) = std::sync::mpsc::channel();
+    builder.save_file(move |f| {
+        let _ = tx.send(f);
+    });
+    Ok(await_dialog(rx)
+        .await?
         .and_then(to_path)
-        .map(|x| x.to_string_lossy().to_string())
+        .map(|x| x.to_string_lossy().to_string()))
 }
 
 /// 開始記錄（舊版 `LogAction` 的成功分支）。也把路徑／選項存回設定，同舊版 `LogDialog.Ok_Click`。

@@ -1184,7 +1184,9 @@ fn conn_list(app: &AppHandle) -> Vec<(String, OpenSpec)> {
 
     let mut ps = OpenSpec::of("shell");
     ps.cwd = desk.clone();
-    out.push((crate::i18n::t("tg.connShell"), ps));
+    // 本機 shell 的名字看作業系統：Windows 是 PowerShell，mac／Linux 是使用者的 `$SHELL` → 叫 Terminal
+    let shell_label = if cfg!(windows) { "tg.connShell" } else { "tg.connTerminal" };
+    out.push((crate::i18n::t(shell_label), ps));
 
     // 我的最愛（v2 的「主機紀錄」）
     for f in &s.favorites {

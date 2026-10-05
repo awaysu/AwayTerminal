@@ -41,6 +41,7 @@ export default {
 
   // 連線種類（舊版 kind.*；後端也會送 kindLabel，這份是前端的後備）
   'kind.powershell': 'PowerShell',
+  'kind.terminal': 'Terminal',
   'kind.claude': 'Claude Code',
   'kind.custom': 'Eigene Verbindung',
 
@@ -107,6 +108,7 @@ export default {
 
   // 選工作目錄（舊版 dlg.pickDir*）
   'dlg.pickDirPs': 'Arbeitsordner für PowerShell wählen (hier kann ein neuer Ordner erstellt werden)',
+  'dlg.pickDirTerm': 'Arbeitsordner für Terminal wählen (hier kann ein neuer Ordner erstellt werden)',
   'dlg.pickDirCustom': 'Arbeitsordner wählen (hier kann ein neuer Ordner erstellt werden)',
 
   // 全選（舊版有這個字串但沒有呼叫端，TASK-006 當新功能補上）
@@ -757,6 +759,7 @@ export default {
   'tg.cmdSsh': 'SSH öffnen (optional benutzer@host:port)',
   'tg.cmdTelnet': 'Telnet öffnen (optional host:port)',
   'tg.connShell': 'PowerShell (Desktop)',
+  'tg.connTerminal': 'Terminal (Desktop)',
   'tg.noConns': 'Es sind keine Verbindungen verfügbar.',
   'tg.pickConn': 'Wähle die Verbindung, die geöffnet werden soll (Knopf antippen oder mit der Zahl antworten):',
   'tg.recentConns': 'Letzte Verbindungen (Knopf antippen oder /history <Nummer> zum Öffnen):',

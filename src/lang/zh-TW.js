@@ -10,7 +10,7 @@ export default {
   // 工具列（舊版 tb.*）
   'tb.new': '新分頁',
   'tb.powershell': 'PowerShell',
-  'tb.terminal': 'Terminal',
+  'tb.terminal': '終端機',
   'tb.split': '視窗分割',
   'tb.tabs': '視窗分頁',
   'tb.columns': '視窗分欄',
@@ -39,6 +39,7 @@ export default {
 
   // 連線種類（舊版 kind.*；後端也會送 kindLabel，這份是前端的後備）
   'kind.powershell': 'PowerShell',
+  'kind.terminal': '終端機',
   'kind.claude': 'Claude Code',
   'kind.custom': '自訂連線',
 
@@ -105,6 +106,7 @@ export default {
 
   // 選工作目錄（舊版 dlg.pickDir*）
   'dlg.pickDirPs': '選擇 PowerShell 工作目錄（可在此按「建立新資料夾」）',
+  'dlg.pickDirTerm': '選擇終端機工作目錄（可在此按「建立新資料夾」）',
   'dlg.pickDirCustom': '選擇工作目錄（可在此按「建立新資料夾」）',
 
   // 全選（舊版有這個字串但沒有呼叫端，TASK-006 當新功能補上）
@@ -774,6 +776,7 @@ export default {
   'tg.cmdSsh': '開 SSH（可帶 user@主機:埠）',
   'tg.cmdTelnet': '開 Telnet（可帶 主機:埠）',
   'tg.connShell': 'PowerShell（桌面）',
+  'tg.connTerminal': '終端機（桌面）',
   'tg.noConns': '沒有可用的連線。',
   'tg.pickConn': '選擇要開啟的連線（點按鈕，或回覆數字）：',
   'tg.recentConns': '最近連線（點按鈕或 /history <編號> 用該筆開新連線）：',
