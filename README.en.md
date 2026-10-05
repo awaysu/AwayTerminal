@@ -101,8 +101,8 @@ behaviour will produce different results.
 
 ## Download
 
-See [Releases](https://github.com/awaysu/AwayTerminal2/releases). For Windows there is an
-NSIS installer (`.exe`, the main one) and MSI packages for deployment (`en-US` and `zh-TW`).
+Download from <https://www.awaysu.cc/software/awayterminal>.
+For Windows there is an installer (`.exe`) and a portable version (`.zip`).
 
 ⚠️ The binaries are **not code-signed yet**, so Windows SmartScreen will warn
 ([docs/RELEASE.md](docs/RELEASE.md) explains why and what the plan is).

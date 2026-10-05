@@ -89,8 +89,8 @@ log 記錄（去 ANSI、時間戳、append）、我的最愛、恢復分頁（**
 
 ## 下載
 
-見 [Releases](https://github.com/awaysu/AwayTerminal2/releases)。
-Windows 有 NSIS 安裝檔（`.exe`，主要）與 MSI（企業派送用，`en-US` 與 `zh-TW`）。
+請到 <https://www.awaysu.cc/software/awayterminal> 下載。
+Windows 有安裝檔（`.exe`）與免安裝版（`.zip`）。
 
 ⚠️ 目前**還沒有程式碼簽章**，Windows 的 SmartScreen 會出現警告
 （[docs/RELEASE.md](docs/RELEASE.md) 說明原因與計畫）。
