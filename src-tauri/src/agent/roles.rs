@@ -1003,9 +1003,12 @@ mod tests {
         let team = team_of(1, "C:\\Projects\\Example");
         let me = &team.slots[1];
         let got = runtime_context(&team, me);
-        // fixture 是 LF，比對前把換行統一；fixture 來自只有 Windows 的舊版，
-        // 「one Windows desktop」那一句在別的平台會換成 `desktop_name()`
-        let expected = expected.replace("one Windows desktop", &format!("one {} desktop", desktop_name()));
+        // fixture 是 LF，比對前把換行統一
+        // 唯一照平台換字的地方是「one Windows desktop」（見 `desktop_name`）
+        let expected = expected.replace(
+            "one Windows desktop",
+            &format!("one {} desktop", desktop_name()),
+        );
         assert_eq!(
             got.replace("\r\n", "\n"),
             expected.replace("\r\n", "\n"),

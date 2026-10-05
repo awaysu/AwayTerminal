@@ -697,8 +697,8 @@ mod tests {
         assert_eq!(tool_kind("/usr/bin/codex"), ToolKind::Codex);
         assert_eq!(tool_kind("gemini.exe"), ToolKind::Gemini);
         assert_eq!(tool_kind("pwsh.exe"), ToolKind::Other);
-        // Windows 路徑（反斜線）只有 Windows 的 `Path` 會切；Unix 上整串是一個檔名（`agy` 要整個 stem 相等）
         if cfg!(windows) {
+            // 反斜線只在 Windows 是路徑分隔字元
             assert_eq!(tool_kind("C:\\Users\\x\\AppData\\Local\\agy\\bin\\agy.exe"), ToolKind::Antigravity);
         }
         assert_eq!(tool_kind("/home/x/.local/bin/agy"), ToolKind::Antigravity);

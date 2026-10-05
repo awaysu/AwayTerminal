@@ -454,11 +454,12 @@ fn run(app: &AppHandle, tab: Option<u32>) -> Result<Vec<String>, String> {
         "",
     );
 
-    // 10) 編號超出範圍要回「1~n」，不可以真的去開東西
+    // 10) 編號超出範圍要回 `tg.rangeIs`，不可以真的去開東西。
+    // 認 `/goto`（八種語言的 `tg.rangeIs` 都有）——`~` 只有中日韓的版本有，英文介面會誤判 FAIL
     let opens_before = bot.count("sendMessage");
     let m9 = bot.mark();
     bot.say(CHAT, "/new 999");
-    let ranged = bot.wait(m9, 6, |c| c.method == "sendMessage" && text_of(c).contains('~'));
+    let ranged = bot.wait(m9, 6, |c| c.method == "sendMessage" && text_of(c).contains("/goto"));
     r.check(
         "/new 編號超出範圍只回提示（不開分頁）",
         ranged.is_some() && bot.count("sendMessage") > opens_before,

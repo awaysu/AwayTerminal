@@ -1,7 +1,7 @@
 # 發佈流程（Windows／macOS）
 
 階段 5。第 1～6 節是 Windows；**macOS 在第 7 節**（2026-10-05 第一次實際跑過，2.0.8）。
-Linux 等使用者提供機器之後再補（`CLAUDE.md` 的平台順序）。
+Linux（只發 .deb ＋ .rpm）的打包與上傳目前記在 `CLAUDE.md` 的「慣例」，還沒有獨立一節。
 
 **這份文件裡沒有任何金鑰。** 程式碼簽章憑證與 updater 的私鑰都由使用者自己保管，
 `repo` 裡一個都不會有。
@@ -353,7 +353,7 @@ latest.json                               有開自動更新時才有（檔名�
 | 程式碼簽章憑證（沿用舊版那張，如果有） | `certificateThumbprint` 或 `signCommand` | SmartScreen 會擋，而且信譽從零開始 |
 | updater 金鑰對（使用者自己產生、自己保管） | `pubkey` ＋ build 時的環境變數 | 沒有自動更新（現在就是這個狀態） |
 | macOS 機器 ＋ Apple Developer ID（年費已付） | 簽章 ＋ notarization ＋ .dmg | ✅ 已有（2026-10-05，見第 7 節） |
-| Linux 機器（Ubuntu 22.04／24.04） | AppImage ＋ .deb | Linux 版做不了 |
+| Linux 機器（Ubuntu 22.04／24.04） | .deb ＋ .rpm（不發 AppImage，見 `CLAUDE.md`「慣例」） | Linux 版做不了 |
 
 ---
 
