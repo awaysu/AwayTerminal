@@ -94,7 +94,7 @@ AwayTerminal（https://github.com/awaysu/AwayTerminal ，C# WPF + WebView2 + xte
 - 舊版的 Win10 conhost / WebView2 特有的雷在 mac/Linux 不會出現，但 Unix PTY 下 Claude Code 的輸入時序、alt-screen 行為要重新驗證。
 - 授權：本專案 MIT；PuTTY（MIT）、TeraTerm（BSD-3）、microsoft/terminal（MIT）、xterm.js（MIT）都相容，引用的部分要寫進 THIRD-PARTY-NOTICES。**`russh` 是 Apache-2.0（不是 MIT）**，連帶 `ring`（Apache-2.0 AND ISC）、`pageant`：可以進 MIT 專案，但散布時要附授權全文與上游 NOTICE → 階段 5 安裝檔要附 THIRD-PARTY-NOTICES（2026-09-26 TASK-006 查證）。**`serialport-rs` 是 MPL-2.0**（檔案層級 copyleft；未修改地連結即可，散布要附授權全文；2026-09-27 TASK-011 查證）。
 - **Linux 發佈只上傳 `.deb` 和 `.rpm`，不發 AppImage**（2026-10-05 使用者決定；AppImage 91 MB、deb/rpm 各約 15 MB）。
-  - 打包：`npx tauri build --bundles deb,rpm`（`tauri.conf.json` 的 `targets` 是 `"all"`，不帶 `--bundles` 會連 AppImage 一起做，還要另外下載 linuxdeploy）。產出在 `src-tauri/target/release/bundle/{deb,rpm}/`。
+  - 打包：`npx tauri build` 就好——`src-tauri/tauri.linux.conf.json` 把 Linux 的 `bundle.targets` 限定成 `["deb", "rpm"]`（Tauri 只在 Linux 上合併這個檔；主檔 `tauri.conf.json` 的 `"all"` 留給 Windows／mac，**不要改主檔**）。產出在 `src-tauri/target/release/bundle/{deb,rpm}/`。
   - 上傳 awaysu.cc：`api.php?action=upload`，`platform=linux`，deb、rpm 各呼叫一次（同平台＋同副檔名會自動取代舊檔）。網站 Linux 平台接受 appimage／deb／rpm／tar.gz（deb、rpm 是網站 1.3.2／1.3.3 加的）。
   - 密碼只從環境變數讀（例如 `AWAYSU_API_PASSWORD`），**絕不寫進 repo 或 commit**。
 - 對使用者一律用繁體中文。
