@@ -180,6 +180,7 @@ pub fn run() {
             ssh::algos::algo_catalog,
             custom::custom_list,
             custom::custom_detect,
+            custom::custom_reset,
             custom::custom_save,
             custom::custom_delete,
             custom::conn_set_sandbox,

@@ -13,7 +13,6 @@ export default {
   'tb.new': 'Neuer Tab',
   'tb.powershell': 'PowerShell',
   'tb.terminal': 'Terminal',
-  'tb.customCmd': 'Eigener Befehl…',
   'tb.split': 'Teilen',
   'tb.tabs': 'Tabs',
   'tb.columns': 'Spalten',
@@ -32,8 +31,6 @@ export default {
   // 對話框（舊版 dlg.* / msg.*）
   'dlg.renameTitle': 'Umbenennen',
   'dlg.renamePrompt': 'Tab-Name:',
-  'dlg.customTitle': 'Eigener Befehl',
-  'dlg.customPrompt': 'Auszuführender Befehl (z. B. claude, codex, wsl):',
   'msg.closeTabTitle': 'Tab schließen',
   // {0} = 分頁名稱
   'msg.closeTabConfirm': '„{0}“ schließen?',
@@ -263,6 +260,10 @@ export default {
   'conn.deleted': 'Gelöscht.',
   'conn.detectNone': 'Keine neuen Werkzeuge gefunden (vielleicht stehen sie schon in der Liste oder sind nicht installiert).',
   'conn.detectDone': 'Hinzugefügt:',
+  'conn.resetTip': 'Leert die gesamte Liste der eigenen Verbindungen und erkennt erneut automatisch (gefundene Werkzeuge kommen mit Standardargumenten zurück)',
+  'conn.resetAsk': '„Zurücksetzen“ löscht alle {0} eigenen Verbindungen (auch selbst hinzugefügte oder geänderte), erkennt dann erneut automatisch und fügt die auf diesem Computer gefundenen Werkzeuge mit ihren Standardargumenten wieder hinzu.\n\nFavoriten, die eine gelöschte Verbindung verwenden, lassen sich danach nicht mehr öffnen. Fortfahren?',
+  'conn.resetDone': 'Zurückgesetzt: {0}',
+  'conn.resetNone': 'Die Liste ist jetzt leer; auf diesem Computer wurde kein bekanntes Werkzeug gefunden.',
   'conn.sandboxOn': 'Sandbox',
   'conn.sandboxOff': 'Ohne Sandbox',
   'conn.hiddenTag': 'Ausgeblendet',

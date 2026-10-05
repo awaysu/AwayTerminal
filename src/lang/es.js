@@ -13,7 +13,6 @@ export default {
   'tb.new': 'Nueva pestaña',
   'tb.powershell': 'PowerShell',
   'tb.terminal': 'Terminal',
-  'tb.customCmd': 'Comando personalizado…',
   'tb.split': 'Dividir',
   'tb.tabs': 'Pestañas',
   'tb.columns': 'Columnas',
@@ -32,8 +31,6 @@ export default {
   // 對話框（舊版 dlg.* / msg.*）
   'dlg.renameTitle': 'Cambiar nombre',
   'dlg.renamePrompt': 'Nombre de la pestaña:',
-  'dlg.customTitle': 'Comando personalizado',
-  'dlg.customPrompt': 'Comando que ejecutar (p. ej.: claude, codex, wsl):',
   'msg.closeTabTitle': 'Cerrar pestaña',
   // {0} = 分頁名稱
   'msg.closeTabConfirm': '¿Cerrar «{0}»?',
@@ -263,6 +260,10 @@ export default {
   'conn.deleted': 'Eliminado.',
   'conn.detectNone': 'No se han encontrado herramientas nuevas (puede que ya estén en la lista o que no estén instaladas).',
   'conn.detectDone': 'Añadido:',
+  'conn.resetTip': 'Vacía toda la lista de conexiones personalizadas y vuelve a detectar (las herramientas encontradas se añaden con sus argumentos predeterminados)',
+  'conn.resetAsk': '«Restablecer» elimina las {0} conexiones personalizadas actuales (incluidas las que añadiste o modificaste), vuelve a detectar automáticamente y añade de nuevo las herramientas encontradas en este equipo con sus argumentos predeterminados.\n\nLos favoritos que usen una conexión eliminada dejarán de abrirse. ¿Continuar?',
+  'conn.resetDone': 'Restablecido: {0}',
+  'conn.resetNone': 'La lista está vacía; no se encontró ninguna herramienta conocida en este equipo.',
   'conn.sandboxOn': 'Aislado',
   'conn.sandboxOff': 'Sin aislamiento',
   'conn.hiddenTag': 'Oculta',

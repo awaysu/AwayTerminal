@@ -778,6 +778,19 @@ body.col-resizing { cursor: col-resize; user-select: none; }
 .st-pagebar > select {
   min-width: 180px;
 }
+/* 兩頁疊在同一格（2.0.8）：容器的大小＝比較大的那一頁（一般設定），切頁時視窗不會忽大忽小。
+   沒選到的那一頁只是看不見，仍然佔位；visibility: hidden 的東西也不會被 Tab 到 */
+.st-pages {
+  display: grid;
+}
+.st-pages > .sd-cols {
+  grid-area: 1 / 1;
+  min-width: 0;
+}
+.st-pages > .sd-cols.st-off {
+  visibility: hidden;
+  pointer-events: none;
+}
 .sd-cols {
   display: grid;
   grid-template-columns: 1fr 1fr;

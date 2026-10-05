@@ -1542,16 +1542,12 @@ async function newSession(kind) {
       return;
     }
 
-    const title = kind === 'shell' ? T['dlg.pickDirPs'] : T['dlg.pickDirCustom'];
-    let command = null;
-    if (kind === 'custom') {
-      const cmd = await askText(T['dlg.customTitle'], T['dlg.customPrompt'], '');
-      if (cmd === null || !cmd.trim()) return;
-      command = cmd.trim();
-    }
-    const cwd = await invoke('pick_work_dir', { title });
+    // 剩下的只有本機 shell。「自訂指令…」那個入口 2.0.8 拿掉了（使用者要求）；
+    // 後端的 `kind = "custom"` 還在，只給 `?cmd=` 這類 dev 入口與 `--verify` 用。
+    if (kind !== 'shell') return;
+    const cwd = await invoke('pick_work_dir', { title: T['dlg.pickDirPs'] });
     if (!cwd) return; // 使用者取消（同舊版：PickWorkDir 回 null 就不開分頁）
-    await createSession({ kind, command, cwd });
+    await createSession({ kind, cwd });
   } catch (err) {
     log(`[tabbar] ${T['msg.connectFail']}：${err}`);
     await showInfo(T['msg.connectFail'], String(err));
@@ -1789,7 +1785,6 @@ function applyTexts() {
     setText(el.newMenu, '[data-kind="com"]', T['tb.com'] + '…');
     setText(el.newMenu, '[data-kind="detect"]', T['conn.detect']);
     setText(el.newMenu, '[data-kind="multiagent"]', T['ma.title'] + '\u2026');
-    setText(el.newMenu, '[data-kind="custom"]', T['tb.customCmd']);
     setText(el.tabMenu, '[data-act="rename"]', T['menu.rename']);
     setText(el.tabMenu, '[data-act="log"]', T['menu.log']);
     setText(el.tabMenu, '[data-act="macro"]', T['menu.macro']);

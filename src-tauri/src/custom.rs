@@ -225,6 +225,28 @@ pub fn custom_detect(settings: State<'_, Arc<SettingsStore>>) -> Vec<String> {
     names
 }
 
+/// 「回到預設」（2.0.8，使用者要求）：**清掉整份自訂連線清單**，再跑一次自動偵測——
+/// 結果就是「這台機器上找得到的已知工具，全部用預設參數」。使用者自己加的、改過的都會不見
+/// （前端先確認過才會呼叫）。回傳重新加入的名稱（空的＝一個都沒找到，清單是空的）。
+#[tauri::command]
+pub fn custom_reset(settings: State<'_, Arc<SettingsStore>>) -> Vec<String> {
+    let cfg = settings.get();
+    let fresh = reset_list(cfg.sandbox_default);
+    let names: Vec<String> = fresh.iter().map(|c| c.name.clone()).collect();
+    let removed = cfg.custom_conns.len();
+    settings.update(|s| s.custom_conns = fresh);
+    println!(
+        "[AwayTerminal] 自訂連線回到預設：清掉 {removed} 條，重新加入 {}",
+        if names.is_empty() { "（沒有找到任何工具）".to_string() } else { names.join("、") }
+    );
+    names
+}
+
+/// 「回到預設」之後清單該長什麼樣：從空清單做一次自動偵測。
+pub fn reset_list(sandbox_global: bool) -> Vec<CustomConn> {
+    auto_detect(&[], sandbox_global)
+}
+
 /// 新增或更新一條自訂連線（依 `name` 比對；`original_name` 是改名時的舊名）。
 #[tauri::command]
 pub fn custom_save(

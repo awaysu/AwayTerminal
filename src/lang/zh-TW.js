@@ -11,7 +11,6 @@ export default {
   'tb.new': '新分頁',
   'tb.powershell': 'PowerShell',
   'tb.terminal': 'Terminal',
-  'tb.customCmd': '自訂指令…',
   'tb.split': '視窗分割',
   'tb.tabs': '視窗分頁',
   'tb.columns': '視窗分欄',
@@ -30,8 +29,6 @@ export default {
   // 對話框（舊版 dlg.* / msg.*）
   'dlg.renameTitle': '更改名稱',
   'dlg.renamePrompt': '分頁名稱：',
-  'dlg.customTitle': '自訂指令',
-  'dlg.customPrompt': '要執行的指令（例：claude、codex、wsl）：',
   'msg.closeTabTitle': '關閉分頁',
   // {0} = 分頁名稱
   'msg.closeTabConfirm': '確定要關閉「{0}」？',
@@ -269,6 +266,10 @@ export default {
   'conn.deleted': '已刪除。',
   'conn.detectNone': '沒有找到新的工具（可能都已經在清單裡，或都沒安裝）。',
   'conn.detectDone': '已加入：',
+  'conn.resetTip': '清掉整份自訂連線清單，再自動偵測一次（找得到的工具用預設參數加回來）',
+  'conn.resetAsk': '「回到預設」會刪除目前全部 {0} 條自訂連線（包含你自己新增或改過的），再自動偵測一次，把這台電腦上找得到的工具用預設參數加回來。\n\n用到被刪除連線的「我的最愛」會開不了。要繼續嗎？',
+  'conn.resetDone': '已回到預設：{0}',
+  'conn.resetNone': '清單已清空；這台電腦沒有找到任何已知的工具。',
   'conn.sandboxOn': '沙盒',
   'conn.sandboxOff': '無沙盒',
   'conn.hiddenTag': '隱藏',
@@ -296,7 +297,7 @@ export default {
   'sb.cleared': '沙盒已移除（分支保留）。',
   'sb.noSandbox': '這個分頁沒有沙盒。',
   // ---- 設定視窗（TASK-015 A；舊版 Dialogs/SettingsDialog + Loc 的 settings.* / font.*）----
-  'tb.settings': '其他設定',
+  'tb.settings': '設定',
   'tb.remote': '遠端設定',
   'tip.settings': '字型、顏色、語言與其他設定',
   'tip.remote': '遠端控制設定 (Telegram)',

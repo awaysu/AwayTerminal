@@ -8,7 +8,7 @@
 
 import { invoke } from '@tauri-apps/api/core';
 
-import { T } from './strings.js';
+import { T, fmt } from './strings.js';
 import { CUSTOM_ICON_KEYS, iconImg } from './icons.js';
 import { onLangChange } from './i18n.js';
 import { log } from './bridge.js';
@@ -29,6 +29,8 @@ function $(id) {
 /** 把介面文字重設一次（切語言時會被叫；註冊在 `i18n.js`）。 */
 function applyTexts() {
   $('conns-title').textContent = T['conn.title'];
+  el.reset.textContent = T['common.reset'];
+  el.reset.title = T['conn.resetTip'];
   el.detect.textContent = T['conn.detect'];
   el.new.textContent = T['conn.new'];
   el.close.textContent = T['dlg.close'];
@@ -169,6 +171,7 @@ export function initConns(onChangedCb) {
   el.browse = $('cf-browse');
   el.icons = $('cf-icons');
   renderIcons(); // 一開始就畫出來（挑選器不隨清單變，只有「選中哪一個」會變）
+  el.reset = $('conns-reset');
   el.detect = $('conns-detect');
   el.new = $('conns-new');
   el.close = $('conns-close');
@@ -235,6 +238,23 @@ export function initConns(onChangedCb) {
       await reload();
       renderList();
       note(added.length === 0 ? T['conn.detectNone'] : `${T['conn.detectDone']}${added.join('、')}`);
+    } catch (err) {
+      note(String(err));
+    }
+  });
+
+  // 回到預設（2.0.8，使用者要求）：清掉整份清單，再自動偵測一次——找得到的已知工具用預設參數
+  // 加回來。會刪掉使用者自己加的／改過的，所以一定先問。
+  el.reset.addEventListener('click', async () => {
+    try {
+      const { askYesNo } = await import('./tabbar.js');
+      if (!(await askYesNo(T['conn.title'], fmt('conn.resetAsk', conns.length)))) return;
+      const added = await invoke('custom_reset');
+      await reload();
+      editingName = conns.length > 0 ? conns[0].name : null;
+      loadForm(conns[0] || {});
+      renderList();
+      note(added.length === 0 ? T['conn.resetNone'] : fmt('conn.resetDone', added.join('、')));
     } catch (err) {
       note(String(err));
     }

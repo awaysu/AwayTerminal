@@ -22,7 +22,7 @@
 |---|---|
 | 設定檔欄位 | `remote_enabled`、`telegram_bot_token`、`telegram_chat_id`、`remote_notify` |
 | token 存法 | **明文存在 `settings.json`**——照舊版（`AppSettings.TelegramBotToken` 也是明文）。沿用才能直接匯入舊版設定 |
-| 設定視窗 | **工具列「遠端設定」→ 獨立視窗**（`src/remotedlg.js`，照舊版 `Dialogs/RemoteDialog`）。TASK-027 之前曾併進「其他設定」的一個區塊，使用者因此以為這個功能沒做 → TASK-029 搬回獨立視窗，設定視窗那一塊同時拿掉（兩個地方改同一組欄位會互相蓋） |
+| 設定視窗 | **工具列「遠端設定」→ 獨立視窗**（`src/remotedlg.js`，照舊版 `Dialogs/RemoteDialog`）。TASK-027 之前曾併進「設定」（當時叫「其他設定」）的一個區塊，使用者因此以為這個功能沒做 → TASK-029 搬回獨立視窗，設定視窗那一塊同時拿掉（兩個地方改同一組欄位會互相蓋） |
 | 未勾「啟用遠端控制」 | Token／Chat ID／「取得 chat id」／推播全部鎖住並變淡（舊版 `UpdateEnabledUI` 的 `Opacity 0.45`） |
 | 取得 chat id | `telegram_get_chat_id`（`api::latest_chat_id`＝`getUpdates?timeout=0` 取**最近一則訊息**的 chat id，同舊版 `TryGetLatestChatId`）。欄位留空＝用已存的 token；沒有訊息回 `remote.noUpdates`。⚠️ 遠端正在跑的時候按它，這次查詢會和輪詢那條連線搶同一批 update（Telegram 對同一個 token 只給一條 getUpdates），舊版也是這樣 |
 | 「遠端已由另一個視窗使用中」 | **沒有搬**。舊版用具名 Mutex 擋同機多開；v2 有單一執行個體（`tauri-plugin-single-instance`），**第二個 v2 根本起不來**，所以那個提示在 v2 沒有觸發條件。唯一還會撞到的是「舊版 v1.2.8 和 v2 同時開著又用同一個 token」——要偵測就得去看 v1 的 `Local\AwayTerminal.TelegramRemote` 這個具名 Mutex（只有 Windows 有），先不做 |

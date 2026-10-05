@@ -77,7 +77,7 @@
       <button id="btn-view" type="button" class="tool-btn"><img class="tool-ico" src="icon/arrange.png" alt="" draggable="false" /><span class="tool-label">視窗分割</span></button>
       <span class="tool-sep"></span>
       <button id="btn-remote" type="button" class="tool-btn"><img class="tool-ico" src="icon/remote-settings.png" alt="" draggable="false" /><span class="tool-label">遠端設定</span></button>
-      <button id="btn-settings" type="button" class="tool-btn"><img class="tool-ico" src="icon/settings.png" alt="" draggable="false" /><span class="tool-label">其他設定</span></button>
+      <button id="btn-settings" type="button" class="tool-btn"><img class="tool-ico" src="icon/settings.png" alt="" draggable="false" /><span class="tool-label">設定</span></button>
       <span class="tool-sep"></span>
       <button id="btn-about" type="button" class="tool-btn"><img class="tool-ico" src="icon/about.png" alt="" draggable="false" /><span class="tool-label">關於</span></button>
       <span class="tool-spacer"></span>
@@ -164,7 +164,9 @@
     <div class="menu-item with-icon" data-kind="com"><img class="menu-ico" src="icon/com.png" alt="" draggable="false" /><span class="menu-label">連接埠…</span></div>
     <div class="menu-sep"></div>
     <div id="new-conns"></div>
-    <div class="menu-item with-icon" data-kind="custom"><img class="menu-ico" src="icon/run.png" alt="" draggable="false" /><span class="menu-label">自訂指令…</span></div>
+    <!-- 自動偵測（2.0.7 新增、2.0.8 搬到這裡）：和「自訂連線設定…」裡的那顆按鈕同一件事。
+         原本這個位置的「自訂指令…」2.0.8 拿掉了（使用者要求） -->
+    <div class="menu-item with-icon" data-kind="detect"><img class="menu-ico" src="icon/new-connecting.png" alt="" draggable="false" /><span class="menu-label">自動偵測</span></div>
     <div class="menu-sep"></div>
     <!-- 這台電腦一家 AI CLI 都找不到時，這兩項是灰的不能選（2.0.7，使用者要求；tabbar.js 依
          `agent_backends_any` 切換 .disabled） -->
@@ -172,8 +174,6 @@
     <div class="menu-item with-icon" data-kind="chatroom"><img class="menu-ico" src="icon/chatroom.png" alt="" draggable="false" /><span class="menu-label">AI聊天室…</span></div>
     <div class="menu-sep"></div>
     <div class="menu-item with-icon" data-kind="manage"><img class="menu-ico" src="icon/settings.png" alt="" draggable="false" /><span class="menu-label">自訂連線設定…</span></div>
-    <!-- 自動偵測（2.0.7）：和「自訂連線設定…」裡的那顆按鈕同一件事，不必先開設定視窗 -->
-    <div class="menu-item with-icon" data-kind="detect"><img class="menu-ico" src="icon/new-connecting.png" alt="" draggable="false" /><span class="menu-label">自動偵測</span></div>
   </div>
 
   <!-- 我的最愛下拉（舊版 Favorites_Click：各筆最愛 → 分隔線 → 加到我的最愛 → 設定…） -->
@@ -270,6 +270,8 @@
       </div>
       <div id="conns-note"></div>
       <div class="modal-buttons">
+        <!-- 回到預設（2.0.8，使用者要求）：清掉整份清單再自動偵測一次（先確認） -->
+        <button id="conns-reset" type="button">回到預設</button>
         <button id="conns-detect" type="button">自動偵測</button>
         <button id="conns-new" type="button">新增</button>
         <button id="conns-close" type="button">關閉</button>
@@ -597,6 +599,10 @@
         </select>
       </div>
 
+      <!-- 兩頁疊在同一格（2.0.8，使用者要求「不要讓視窗忽大忽小」）：`.st-pages` 是一格的 grid，
+           兩頁都放在那一格，所以視窗大小永遠是比較大的那一頁（一般設定）；沒選到的那一頁只是
+           看不見（`.st-off`＝visibility: hidden），不是 display: none。 -->
+      <div class="st-pages">
       <!-- 第 1 頁：語言和字體 -->
       <div class="sd-cols" data-page="lang">
         <div class="sd-col">
@@ -654,7 +660,7 @@
 
       <!-- 第 2 頁：一般設定。左欄＝Claude 輸入／渲染器／檔案總管／AI 模型，
            右欄＝其他／沙盒／匯入舊版（高度大致相等） -->
-      <div class="sd-cols" data-page="general" hidden>
+      <div class="sd-cols st-off" data-page="general">
         <div class="sd-col">
       <fieldset>
         <legend id="st-l-ime"></legend>
@@ -738,6 +744,7 @@
         </div>
       </fieldset>
         </div>
+      </div>
       </div>
 
       <div id="st-note" class="sd-hint"></div>

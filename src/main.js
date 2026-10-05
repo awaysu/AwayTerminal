@@ -348,7 +348,7 @@ async function verifyToolbarButtons() {
     ['btn-page', 'page-menu', '翻頁 ▾'],
     ['btn-compose', 'composedlg', '輸入文字'],
     ['btn-remote', 'remotedlg', '遠端設定'],
-    ['btn-settings', 'setdlg', '其他設定'],
+    ['btn-settings', 'setdlg', '設定'],
     ['btn-about', 'aboutdlg', '關於'],
     ['btn-clear', 'modal', '清除畫面（確認框）'],
   ];
@@ -639,7 +639,7 @@ async function verifyDialogs() {
     ],
     ['composedlg', '輸入文字', () => clickSel('#btn-compose')],
     ['remotedlg', '遠端設定', () => clickSel('#btn-remote')],
-    ['setdlg', '其他設定', () => clickSel('#btn-settings')],
+    ['setdlg', '設定', () => clickSel('#btn-settings')],
     ['aboutdlg', '關於', () => clickSel('#btn-about')],
     ['modal', '確認框（清除畫面）', () => clickSel('#btn-clear')],
     // 以下沒有能直接按的入口（前面卡著原生檔案／資料夾對話框，或要真的連線）

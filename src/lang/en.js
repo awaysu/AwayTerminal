@@ -11,7 +11,6 @@ export default {
   'tb.new': 'New tab',
   'tb.powershell': 'PowerShell',
   'tb.terminal': 'Terminal',
-  'tb.customCmd': 'Custom command…',
   'tb.split': 'Split',
   'tb.tabs': 'Tabs',
   'tb.columns': 'Columns',
@@ -30,8 +29,6 @@ export default {
   // 對話框（舊版 dlg.* / msg.*）
   'dlg.renameTitle': 'Rename',
   'dlg.renamePrompt': 'Tab name:',
-  'dlg.customTitle': 'Custom command',
-  'dlg.customPrompt': 'Command to run (e.g. claude, codex, wsl):',
   'msg.closeTabTitle': 'Close Tab',
   // {0} = 分頁名稱
   'msg.closeTabConfirm': 'Close "{0}"?',
@@ -270,6 +267,10 @@ export default {
   'conn.deleted': 'Deleted.',
   'conn.detectNone': 'No new tools found (they may already be in the list, or none are installed).',
   'conn.detectDone': 'Added:',
+  'conn.resetTip': 'Clear the whole custom-connection list, then auto-detect again (tools that are found come back with default arguments)',
+  'conn.resetAsk': '“Reset to defaults” deletes all {0} custom connections (including ones you added or edited), then auto-detects again and re-adds the tools found on this computer with their default arguments.\n\nFavorites that use a deleted connection will no longer open. Continue?',
+  'conn.resetDone': 'Reset to defaults: {0}',
+  'conn.resetNone': 'The list is now empty; no known tool was found on this computer.',
   'conn.sandboxOn': 'Sandbox',
   'conn.sandboxOff': 'No sandbox',
   'conn.hiddenTag': 'Hidden',

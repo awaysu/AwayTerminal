@@ -345,10 +345,15 @@ function syncModelsButton() {
   el.modelsHour.disabled = !on || !el.modelsAuto.checked;
 }
 
-/** 設定分成兩頁（2.0.7）：`lang`＝語言和字體、`general`＝一般設定。 */
+/**
+ * 設定分成兩頁（2.0.7）：`lang`＝語言和字體、`general`＝一般設定。
+ *
+ * 兩頁疊在同一格（`.st-pages`），沒選到的那一頁用 `.st-off`（visibility: hidden）藏起來而不是
+ * display: none——這樣視窗的長寬永遠是比較大的那一頁，切頁時不會忽大忽小（2.0.8，使用者要求）。
+ */
 function showPage(page) {
   for (const node of el.root.querySelectorAll('.sd-cols[data-page]')) {
-    node.hidden = node.dataset.page !== page;
+    node.classList.toggle('st-off', node.dataset.page !== page);
   }
   el.page.value = page;
 }

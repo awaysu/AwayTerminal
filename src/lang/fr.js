@@ -13,7 +13,6 @@ export default {
   'tb.new': 'Nouvel onglet',
   'tb.powershell': 'PowerShell',
   'tb.terminal': 'Terminal',
-  'tb.customCmd': 'Commande personnalisée…',
   'tb.split': 'Diviser',
   'tb.tabs': 'Onglets',
   'tb.columns': 'Colonnes',
@@ -32,8 +31,6 @@ export default {
   // 對話框（舊版 dlg.* / msg.*）
   'dlg.renameTitle': 'Renommer',
   'dlg.renamePrompt': 'Nom de l’onglet :',
-  'dlg.customTitle': 'Commande personnalisée',
-  'dlg.customPrompt': 'Commande à exécuter (par ex. claude, codex, wsl) :',
   'msg.closeTabTitle': 'Fermer l’onglet',
   // {0} = 分頁名稱
   'msg.closeTabConfirm': 'Fermer « {0} » ?',
@@ -263,6 +260,10 @@ export default {
   'conn.deleted': 'Supprimé.',
   'conn.detectNone': 'Aucun nouvel outil trouvé (ils sont peut-être déjà dans la liste, ou ne sont pas installés).',
   'conn.detectDone': 'Ajouté :',
+  'conn.resetTip': 'Vide toute la liste des connexions personnalisées puis relance la détection (les outils trouvés reviennent avec leurs arguments par défaut)',
+  'conn.resetAsk': '« Réinitialiser » supprime les {0} connexions personnalisées actuelles (y compris celles que vous avez ajoutées ou modifiées), relance la détection automatique et rajoute les outils trouvés sur cet ordinateur avec leurs arguments par défaut.\n\nLes favoris qui utilisent une connexion supprimée ne s’ouvriront plus. Continuer ?',
+  'conn.resetDone': 'Réinitialisé : {0}',
+  'conn.resetNone': 'La liste est vide ; aucun outil connu n’a été trouvé sur cet ordinateur.',
   'conn.sandboxOn': 'Bac à sable',
   'conn.sandboxOff': 'Sans bac à sable',
   'conn.hiddenTag': 'Masquée',

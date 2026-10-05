@@ -13,7 +13,6 @@ export default {
   'tb.new': '新标签页',
   'tb.powershell': 'PowerShell',
   'tb.terminal': 'Terminal',
-  'tb.customCmd': '自定义命令…',
   'tb.split': '窗口分割',
   'tb.tabs': '窗口标签页',
   'tb.columns': '窗口分栏',
@@ -32,8 +31,6 @@ export default {
   // 對話框（舊版 dlg.* / msg.*）
   'dlg.renameTitle': '重命名',
   'dlg.renamePrompt': '标签页名称：',
-  'dlg.customTitle': '自定义命令',
-  'dlg.customPrompt': '要运行的命令（例：claude、codex、wsl）：',
   'msg.closeTabTitle': '关闭标签页',
   // {0} = 分頁名稱
   'msg.closeTabConfirm': '确定要关闭“{0}”？',
@@ -263,6 +260,10 @@ export default {
   'conn.deleted': '已删除。',
   'conn.detectNone': '没有找到新的工具（可能都已在列表里，或都没安装）。',
   'conn.detectDone': '已添加：',
+  'conn.resetTip': '清空整份自定义连接列表，再自动检测一次（找得到的工具用默认参数加回来）',
+  'conn.resetAsk': '“恢复默认”会删除目前全部 {0} 条自定义连接（包括你自己新增或改过的），再自动检测一次，把这台电脑上找得到的工具用默认参数加回来。\n\n用到被删除连接的“收藏”会打不开。要继续吗？',
+  'conn.resetDone': '已恢复默认：{0}',
+  'conn.resetNone': '列表已清空；这台电脑没有找到任何已知的工具。',
   'conn.sandboxOn': '沙箱',
   'conn.sandboxOff': '无沙箱',
   'conn.hiddenTag': '隐藏',
@@ -290,7 +291,7 @@ export default {
   'sb.cleared': '沙箱已移除（分支保留）。',
   'sb.noSandbox': '这个标签页没有沙箱。',
   // ---- 設定視窗（TASK-015 A；舊版 Dialogs/SettingsDialog + Loc 的 settings.* / font.*）----
-  'tb.settings': '其他设置',
+  'tb.settings': '设置',
   'tb.remote': '远程设置',
   'tip.settings': '字体、颜色、语言与其他设置',
   'tip.remote': '远程控制设置 (Telegram)',

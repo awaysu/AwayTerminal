@@ -13,7 +13,6 @@ export default {
   'tb.new': '새 탭',
   'tb.powershell': 'PowerShell',
   'tb.terminal': 'Terminal',
-  'tb.customCmd': '사용자 지정 명령…',
   'tb.split': '창 분할',
   'tb.tabs': '창 탭',
   'tb.columns': '창 단 나누기',
@@ -32,8 +31,6 @@ export default {
   // 對話框（舊版 dlg.* / msg.*）
   'dlg.renameTitle': '이름 바꾸기',
   'dlg.renamePrompt': '탭 이름:',
-  'dlg.customTitle': '사용자 지정 명령',
-  'dlg.customPrompt': '실행할 명령 (예: claude, codex, wsl):',
   'msg.closeTabTitle': '탭 닫기',
   // {0} = 分頁名稱
   'msg.closeTabConfirm': '“{0}”을(를) 닫을까요?',
@@ -263,6 +260,10 @@ export default {
   'conn.deleted': '삭제했습니다.',
   'conn.detectNone': '새 도구를 찾지 못했습니다 (이미 목록에 있거나 설치되지 않았습니다).',
   'conn.detectDone': '추가했습니다:',
+  'conn.resetTip': '사용자 지정 연결 목록을 모두 지운 뒤 다시 자동 감지합니다(찾은 도구는 기본 인수로 추가됩니다)',
+  'conn.resetAsk': '“기본값으로 되돌리기”를 하면 현재 사용자 지정 연결 {0}개(직접 추가하거나 수정한 것 포함)를 모두 삭제하고, 다시 자동 감지하여 이 컴퓨터에서 찾은 도구를 기본 인수로 다시 추가합니다.\n\n삭제된 연결을 사용하는 “즐겨찾기”는 열리지 않게 됩니다. 계속할까요?',
+  'conn.resetDone': '기본값으로 되돌렸습니다: {0}',
+  'conn.resetNone': '목록을 비웠습니다. 이 컴퓨터에서 알려진 도구를 찾지 못했습니다.',
   'conn.sandboxOn': '샌드박스',
   'conn.sandboxOff': '샌드박스 없음',
   'conn.hiddenTag': '숨김',

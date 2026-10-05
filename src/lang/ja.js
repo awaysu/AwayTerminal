@@ -13,7 +13,6 @@ export default {
   'tb.new': '新しいタブ',
   'tb.powershell': 'PowerShell',
   'tb.terminal': 'Terminal',
-  'tb.customCmd': 'カスタムコマンド…',
   'tb.split': '分割表示',
   'tb.tabs': 'タブ表示',
   'tb.columns': '段組み表示',
@@ -32,8 +31,6 @@ export default {
   // 對話框（舊版 dlg.* / msg.*）
   'dlg.renameTitle': '名前の変更',
   'dlg.renamePrompt': 'タブ名：',
-  'dlg.customTitle': 'カスタムコマンド',
-  'dlg.customPrompt': '実行するコマンド（例：claude、codex、wsl）：',
   'msg.closeTabTitle': 'タブを閉じる',
   // {0} = 分頁名稱
   'msg.closeTabConfirm': '「{0}」を閉じますか？',
@@ -263,6 +260,10 @@ export default {
   'conn.deleted': '削除しました。',
   'conn.detectNone': '新しいツールは見つかりませんでした（すでに一覧にあるか、インストールされていません）。',
   'conn.detectDone': '追加しました：',
+  'conn.resetTip': 'カスタム接続の一覧をすべて消してから、もう一度自動検出します（見つかったツールは既定の引数で追加されます）',
+  'conn.resetAsk': '「既定に戻す」を行うと、現在のカスタム接続 {0} 件（自分で追加・変更したものを含む）をすべて削除し、もう一度自動検出して、このパソコンで見つかったツールを既定の引数で追加し直します。\n\n削除された接続を使う「お気に入り」は開けなくなります。続けますか？',
+  'conn.resetDone': '既定に戻しました：{0}',
+  'conn.resetNone': '一覧を空にしました。このパソコンには既知のツールが見つかりません。',
   'conn.sandboxOn': 'サンドボックス',
   'conn.sandboxOff': 'サンドボックスなし',
   'conn.hiddenTag': '非表示',
