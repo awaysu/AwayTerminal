@@ -697,7 +697,10 @@ mod tests {
         assert_eq!(tool_kind("/usr/bin/codex"), ToolKind::Codex);
         assert_eq!(tool_kind("gemini.exe"), ToolKind::Gemini);
         assert_eq!(tool_kind("pwsh.exe"), ToolKind::Other);
-        assert_eq!(tool_kind("C:\\Users\\x\\AppData\\Local\\agy\\bin\\agy.exe"), ToolKind::Antigravity);
+        if cfg!(windows) {
+            // 反斜線只在 Windows 是路徑分隔字元
+            assert_eq!(tool_kind("C:\\Users\\x\\AppData\\Local\\agy\\bin\\agy.exe"), ToolKind::Antigravity);
+        }
         assert_eq!(tool_kind("/home/x/.local/bin/agy"), ToolKind::Antigravity);
         assert_eq!(tool_kind("strategy.exe"), ToolKind::Other); // 不能用 contains("agy")
     }

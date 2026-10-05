@@ -7,6 +7,8 @@
 //! 2. cmd：`cmd /c "echo x"` → exit code 0 偵測得到。
 //! 3. resize：開一條互動 PowerShell，resize 後問 `$Host.UI.RawUI.WindowSize` 看有沒有跟上。
 //!
+//! Unix 上三項都改用 `/bin/sh`（`sh -c`、`stty size`）——PowerShell／cmd 在那邊不是預設。
+//!
 //! 離開時 exit code 0＝全過、1＝有項目失敗。
 
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -102,10 +104,20 @@ fn run(f: fn() -> Result<String, String>) -> i32 {
 
 /// 1. PowerShell 一次性指令：輸出含 AWAY_OK、exit code 7、5 秒內結束。
 fn test_powershell_exit_code() -> Result<String, String> {
-    let sh = shell::powershell().ok_or("找不到 PowerShell")?;
-    let cmdline = shell::quote_command(
-        &sh.exe,
-        &["-NoLogo", "-NoProfile", "-Command", "echo AWAY_OK; exit 7"],
+    #[cfg(windows)]
+    let (name, cmdline) = {
+        let sh = shell::powershell().ok_or("找不到 PowerShell")?;
+        let cmdline = shell::quote_command(
+            &sh.exe,
+            &["-NoLogo", "-NoProfile", "-Command", "echo AWAY_OK; exit 7"],
+        );
+        (sh.name, cmdline)
+    };
+    // Unix：PowerShell 不是預設（有裝 `pwsh` 才提供），改用 `/bin/sh` 測同一件事
+    #[cfg(not(windows))]
+    let (name, cmdline) = (
+        "sh".to_string(),
+        shell::quote_command(std::path::Path::new("/bin/sh"), &["-c", "echo AWAY_OK; exit 7"]),
     );
 
     let c = Collected::new();
@@ -149,14 +161,19 @@ fn test_powershell_exit_code() -> Result<String, String> {
     }
     Ok(format!(
         "powershell ({}) 輸出含 AWAY_OK、exit code 7、{:?} 結束",
-        sh.name, elapsed
+        name, elapsed
     ))
 }
 
 /// 2. cmd 的結束偵測（exit code 0）。
 fn test_cmd_exit_detection() -> Result<String, String> {
-    let cmd = shell::cmd().ok_or("找不到 cmd.exe")?;
-    let cmdline = format!("\"{}\" /c \"echo x\"", cmd.display());
+    #[cfg(windows)]
+    let cmdline = {
+        let cmd = shell::cmd().ok_or("找不到 cmd.exe")?;
+        format!("\"{}\" /c \"echo x\"", cmd.display())
+    };
+    #[cfg(not(windows))]
+    let cmdline = shell::quote_command(std::path::Path::new("/bin/sh"), &["-c", "echo x"]);
 
     let c = Collected::new();
     let (on_out, on_exit) = c.callbacks();
@@ -194,8 +211,25 @@ fn test_cmd_exit_detection() -> Result<String, String> {
 
 /// 3. resize：互動 PowerShell 下 resize 後 `$Host.UI.RawUI.WindowSize` 要跟上。
 fn test_resize() -> Result<String, String> {
-    let sh = shell::powershell().ok_or("找不到 PowerShell")?;
-    let cmdline = shell::quote_command(&sh.exe, &["-NoLogo", "-NoProfile"]);
+    #[cfg(windows)]
+    let (cmdline, prompt, ask, want) = {
+        let sh = shell::powershell().ok_or("找不到 PowerShell")?;
+        (
+            shell::quote_command(&sh.exe, &["-NoLogo", "-NoProfile"]),
+            "PS ",
+            &b"$w=$Host.UI.RawUI.WindowSize; \"AWAY_SIZE=$($w.Width)x$($w.Height)\"\r"[..],
+            "AWAY_SIZE=120x40",
+        )
+    };
+    // Unix：互動 `sh`，用 `stty size`（印「列 欄」）確認 TIOCSWINSZ 有跟上。
+    // 提示字元先改成固定字串，才不受使用者 PS1 影響
+    #[cfg(not(windows))]
+    let (cmdline, prompt, ask, want) = (
+        shell::quote_command(std::path::Path::new("/bin/sh"), &["-i"]),
+        "$ ",
+        &b"echo AWAY_SIZE=$(stty size | tr ' ' x)\r"[..],
+        "AWAY_SIZE=40x120",
+    );
 
     let c = Collected::new();
     let (on_out, on_exit) = c.callbacks();
@@ -215,7 +249,7 @@ fn test_resize() -> Result<String, String> {
     .map_err(|e| format!("resize: spawn 失敗 {e}"))?;
 
     // 等提示字元出現
-    if !wait_for(&c, "PS ", Duration::from_secs(15)) {
+    if !wait_for(&c, prompt, Duration::from_secs(15)) {
         session.close();
         return Err("resize: 15 秒內沒有看到 PowerShell 提示字元".to_string());
     }
@@ -224,19 +258,19 @@ fn test_resize() -> Result<String, String> {
     std::thread::sleep(Duration::from_millis(300));
 
     // 印成單行好比對：WIDTH=120
-    session.write(b"$w=$Host.UI.RawUI.WindowSize; \"AWAY_SIZE=$($w.Width)x$($w.Height)\"\r");
+    session.write(ask);
 
-    let ok = wait_for(&c, "AWAY_SIZE=120x40", Duration::from_secs(10));
+    let ok = wait_for(&c, want, Duration::from_secs(10));
     let text = c.text();
     session.close();
 
     if !ok {
         let tail: String = text.chars().rev().take(400).collect::<Vec<_>>().into_iter().rev().collect();
         return Err(format!(
-            "resize: 沒有看到 AWAY_SIZE=120x40（畫面尾端：{tail:?}）"
+            "resize: 沒有看到 {want}（畫面尾端：{tail:?}）"
         ));
     }
-    Ok("resize(120,40) → $Host.UI.RawUI.WindowSize = 120x40".to_string())
+    Ok(format!("resize(120,40) → {want}"))
 }
 
 fn wait_for(c: &Collected, needle: &str, timeout: Duration) -> bool {

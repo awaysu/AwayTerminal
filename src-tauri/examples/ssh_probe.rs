@@ -293,6 +293,7 @@ fn main() {
             key_path: Some(path.to_string_lossy().to_string()),
             key_passphrase: passphrase.map(|s| s.to_string()),
             use_agent: false,
+            password: None,
         };
         let c = Client::connect(
             port,

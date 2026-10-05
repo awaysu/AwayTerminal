@@ -17,7 +17,9 @@
 //! `identifier` 是 `com.awaysu.awayterminal`，但那是 bundle id，不是工作列身分；
 //! 1.x 若曾用過同名，分組還是會撞）。
 
-use tauri::{Manager, WebviewWindow};
+#[cfg(windows)]
+use tauri::Manager;
+use tauri::WebviewWindow;
 
 /// 這一版的工作列身分。**不要和 1.x 相同**（見模組說明）。
 pub const APP_USER_MODEL_ID: &str = "com.awaysu.awayterminal2";

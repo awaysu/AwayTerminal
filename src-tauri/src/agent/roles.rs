@@ -1004,6 +1004,11 @@ mod tests {
         let me = &team.slots[1];
         let got = runtime_context(&team, me);
         // fixture 是 LF，比對前把換行統一
+        // 唯一照平台換字的地方是「one Windows desktop」（見 `desktop_name`）
+        let expected = expected.replace(
+            "one Windows desktop",
+            &format!("one {} desktop", desktop_name()),
+        );
         assert_eq!(
             got.replace("\r\n", "\n"),
             expected.replace("\r\n", "\n"),

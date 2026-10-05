@@ -1357,10 +1357,13 @@ mod tests {
             icon: icon.into(),
             ..CustomConn::default()
         };
-        assert_eq!(
-            ModelCli::of_conn(&conn("C:\\Users\\x\\AppData\\Local\\agy\\bin\\agy.exe", "run")),
-            Some(ModelCli::Antigravity)
-        );
+        // 反斜線只在 Windows 是路徑分隔字元
+        let agy = if cfg!(windows) {
+            "C:\\Users\\x\\AppData\\Local\\agy\\bin\\agy.exe"
+        } else {
+            "/home/x/.local/bin/agy"
+        };
+        assert_eq!(ModelCli::of_conn(&conn(agy, "run")), Some(ModelCli::Antigravity));
         assert_eq!(ModelCli::of_conn(&conn("D:\\tools\\mything.exe", "antigravity")), Some(ModelCli::Antigravity));
         assert_eq!(ModelCli::of_conn(&conn("C:\\npm\\claude.cmd", "run")), Some(ModelCli::Agent(Backend::ClaudeCode)));
         assert_eq!(ModelCli::of_conn(&conn("C:\\x\\strategy.exe", "run")), None);

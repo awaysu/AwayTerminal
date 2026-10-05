@@ -254,6 +254,7 @@ pub fn which(name: &str) -> Option<PathBuf> {
 /// **只有 Windows 有這種東西**；Unix 那邊 `which` 走 `awayterm_platform::which`。
 /// 測試在 Windows 以外的平台也要跑得到（規則是純字串比對），所以留著不加 `cfg`，
 /// 只在 `which` 的呼叫點分平台。
+#[cfg_attr(not(windows), allow(dead_code))]
 fn is_store_alias(p: &Path) -> bool {
     p.components().any(|c| {
         c.as_os_str()
@@ -264,12 +265,16 @@ fn is_store_alias(p: &Path) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{is_claude_exe, is_store_alias, split_first_token};
+    use super::{is_claude_exe, split_first_token};
+    #[cfg(windows)]
+    use super::is_store_alias;
     use std::path::Path;
 
     /// Store 的 app execution alias 要認得出來（那種行程進不了 Job Object，
     /// 見 `which` 的註解與 `examples/job_probe.rs`）。
+    /// Windows 才有 Store 別名，而且測試路徑用反斜線（Unix 上不是分隔字元）。
     #[test]
+    #[cfg(windows)]
     fn spots_store_aliases() {
         assert!(is_store_alias(Path::new(
             "C:\\Users\\x\\AppData\\Local\\Microsoft\\WindowsApps\\pwsh.exe"

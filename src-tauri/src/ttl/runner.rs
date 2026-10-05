@@ -663,6 +663,9 @@ fn spawn_for_tab(
         flags |= if hide { CREATE_NO_WINDOW } else { CREATE_NEW_CONSOLE };
         cmd.creation_flags(flags);
     }
+    // 沒有主控台視窗這回事：子行程本來就不開視窗，`hide` 只對 Windows 有意義
+    #[cfg(not(windows))]
+    let _ = hide;
 
     let mut child = match cmd.spawn() {
         Ok(c) => c,

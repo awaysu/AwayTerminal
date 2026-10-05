@@ -78,6 +78,10 @@ pub fn backend_name() -> String {
     }
     #[cfg(not(windows))]
     {
-        crate::i18n::t("err.unixPtyShort").to_string()
+        if cfg!(target_os = "macos") {
+            "openpty (macOS)".to_string()
+        } else {
+            "openpty (Linux)".to_string()
+        }
     }
 }
