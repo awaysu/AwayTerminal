@@ -96,8 +96,10 @@ pub struct Progress {
 }
 
 /// 正在下載的那些（id → 取消旗標）。同一個 id 不會同時跑兩份。
-fn running() -> &'static Mutex<Vec<(String, Arc<AtomicBool>)>> {
-    static R: OnceLock<Mutex<Vec<(String, Arc<AtomicBool>)>>> = OnceLock::new();
+type Running = Mutex<Vec<(String, Arc<AtomicBool>)>>;
+
+fn running() -> &'static Running {
+    static R: OnceLock<Running> = OnceLock::new();
     R.get_or_init(|| Mutex::new(Vec::new()))
 }
 use std::sync::OnceLock;
@@ -132,10 +134,10 @@ pub fn font_faces() -> Vec<FaceFile> {
                     continue;
                 }
                 let Ok(data) = std::fs::read(&path) else { continue };
-                // 使用者的檔案檔名不可信 → 家族名一律讀 `name` 表
-                for (family, _) in fonts::families_in(&data) {
+                // 使用者的檔案檔名不可信 → 家族名一律讀 `name` 表；
+                // 一個檔只登記第一個家族（`.ttc` 之後再說）
+                if let Some((family, _)) = fonts::families_in(&data).into_iter().next() {
                     out.push(FaceFile::new(family, &path, false));
-                    break; // 一個檔只登記第一個家族（`.ttc` 之後再說）
                 }
             }
         }

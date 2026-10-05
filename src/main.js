@@ -178,7 +178,7 @@ async function verifyToolbar(id) {
   // 驗證刻意不用預設的「我的文件」：這台機器的防毒會擋住剛建置的 exe 寫進去
   // （見 Logger::open_with_timeout）。驗證要的是「格式對不對」，寫 TEMP 就好。
   const tmp = await invoke('temp_dir');
-  const logPath = `${tmp}\\awayterm-verify.log`;
+  const logPath = tempPath(tmp, 'awayterm-verify.log');
   try {
     const real = await invoke('log_start', {
       id,
@@ -2161,7 +2161,7 @@ async function verifyMacro() {
   const lines = ['[verify] TTL 巨集（app 端路徑）'];
   try {
     const tmp = await invoke('temp_dir');
-    const path = `${tmp}\\awayterm-verify.ttl`;
+    const path = tempPath(tmp, 'awayterm-verify.ttl');
     // 巨集內容：送一行、等它回來、再設一個旗標檔用的變數
     const src = [
       "timeout = 10",
@@ -2288,6 +2288,9 @@ async function verifyRestore() {
 
     const info = await createSession({ kind: 'shell', restore: idx, title: '__verify_restore' });
     restoredId = info.id;
+    // 新 shell 的提示字元：Windows 是 `PS …>`；mac／Linux 是使用者的 `$SHELL`
+    //（zsh 預設結尾 `%`、bash／sh 是 `$`、root 是 `#`）
+    const isPrompt = (l) => l.includes('PS ') || /[%$#]\s*$/.test(l);
     // 等舊畫面倒回來 + 新 shell 的提示字元出現
     let tail = [];
     const sepOf = (rows) => rows.findIndex((l) => l.includes('以上為上次關閉前的紀錄'));
@@ -2298,11 +2301,11 @@ async function verifyRestore() {
       // 只要 `tail.some(PS )` 就 break 的話，新 shell 的提示字元還沒畫出來就跑掉了
       // → 下一行的 iPrompt 拿到 -1、順序檢查假失敗（實測 3 輪有 2 輪中）。
       const s = sepOf(tail);
-      if (tail.some((l) => l.includes(MARK)) && s >= 0 && tail.some((l, k) => k > s && l.includes('PS '))) break;
+      if (tail.some((l) => l.includes(MARK)) && s >= 0 && tail.some((l, k) => k > s && isPrompt(l))) break;
     }
     const iMark = tail.findIndex((l) => l.includes(MARK));
     const iSep = sepOf(tail);
-    const iPrompt = tail.findIndex((l, k) => k > iSep && l.includes('PS '));
+    const iPrompt = tail.findIndex((l, k) => k > iSep && isPrompt(l));
     lines.push(`[verify] 舊畫面有倒回來（記號在第 ${iMark} 行）：${iMark >= 0}`);
     lines.push(`[verify] 分隔行有出現（第 ${iSep} 行）：${iSep >= 0}`);
     lines.push(
@@ -2468,6 +2471,11 @@ async function verifyAdb() {
   log(lines.join('\n'));
 }
 
+/** `%TEMP%` 底下的檔案路徑：Windows 用反斜線、mac／Linux 用斜線（`temp_dir` 回的是各平台原樣）。 */
+function tempPath(tmp, name) {
+  return `${tmp}${tmp.startsWith('/') ? '/' : '\\'}${name}`;
+}
+
 /**
  * 檔案總管右鍵選單驗證（TASK-016 C）：寫入 → 讀回 → 刪除。
  *
@@ -2476,6 +2484,13 @@ async function verifyAdb() {
  */
 async function verifyShellMenu() {
   const lines = ['[verify] 檔案總管右鍵選單（只碰 HKCU，而且用測試專用的 key）'];
+  // 登錄檔只有 Windows 有（`shell_menu_state` 這個 command 在別的平台不存在）；
+  // mac 是 Finder Quick Action、Linux 是 Nautilus 腳本，都是使用者自己裝（docs/PLATFORM-UNIX.md）
+  if (!/Windows/i.test((typeof navigator !== 'undefined' && navigator.userAgent) || '')) {
+    lines.push('[verify] 非 Windows → 跳過（這個平台沒有登錄檔右鍵選單）');
+    log(lines.join('\n'));
+    return;
+  }
   let real = null;
   try {
     // 使用者真的那個 key：**只讀**，不動它（裡面可能是舊版 v1.2.8 登錄的）
@@ -2520,7 +2535,7 @@ async function verifyMigrate() {
   const lines = ['[verify] 匯入舊版設定'];
   const before = await invoke('settings_get');
   const tmp = await invoke('temp_dir');
-  const file = `${tmp}\\awayterm-verify-old-settings.json`;
+  const file = tempPath(tmp, 'awayterm-verify-old-settings.json');
   const old = {
     FontFamily: 'Consolas',
     FontSize: 19,

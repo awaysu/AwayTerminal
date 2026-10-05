@@ -1357,10 +1357,14 @@ mod tests {
             icon: icon.into(),
             ..CustomConn::default()
         };
-        assert_eq!(
-            ModelCli::of_conn(&conn("C:\\Users\\x\\AppData\\Local\\agy\\bin\\agy.exe", "run")),
-            Some(ModelCli::Antigravity)
-        );
+        // Windows 路徑（反斜線）只有 Windows 的 `Path` 會切；Unix 上整串是一個檔名（`agy` 要整個 stem 相等）
+        if cfg!(windows) {
+            assert_eq!(
+                ModelCli::of_conn(&conn("C:\\Users\\x\\AppData\\Local\\agy\\bin\\agy.exe", "run")),
+                Some(ModelCli::Antigravity)
+            );
+        }
+        assert_eq!(ModelCli::of_conn(&conn("/home/x/.local/bin/agy", "run")), Some(ModelCli::Antigravity));
         assert_eq!(ModelCli::of_conn(&conn("D:\\tools\\mything.exe", "antigravity")), Some(ModelCli::Antigravity));
         assert_eq!(ModelCli::of_conn(&conn("C:\\npm\\claude.cmd", "run")), Some(ModelCli::Agent(Backend::ClaudeCode)));
         assert_eq!(ModelCli::of_conn(&conn("C:\\x\\strategy.exe", "run")), None);

@@ -937,7 +937,8 @@ pub fn agent_team_ready(
     if let Some(id) = row {
         crate::host::emit_host(&app, format!("s{id}"));
     }
-    println!("[AwayTerminal] 代理團隊 {key}：{any} 個 agent 就緒，開始監看 {work_dir}\\.ai\\bus");
+    let sep = std::path::MAIN_SEPARATOR;
+    println!("[AwayTerminal] 代理團隊 {key}：{any} 個 agent 就緒，開始監看 {work_dir}{sep}.ai{sep}bus");
     Ok(any as u32)
 }
 

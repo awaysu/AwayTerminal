@@ -628,6 +628,8 @@ fn spawn_for_tab(
     };
     #[cfg(not(windows))]
     let mut cmd = {
+        // Unix 沒有「主控台視窗」這回事（stdio 都接 null），`hide` 只有 Windows 用得到
+        let _ = hide;
         let mut c = Command::new("sh");
         c.arg("-c").arg(cmdline);
         // 自己一個行程群組 ＝ Unix 這邊的 Job Object（`platform/src/pgroup.rs`）：

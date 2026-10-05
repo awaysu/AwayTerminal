@@ -395,7 +395,7 @@ static TABLE: &[(&str, &str, &str)] = &[
                              "InitializeProcThreadAttributeList reported a size of 0"),
     ("err.unixPtyTodo",      "此平台的 PTY 後端尚未實作（Windows ConPTY 已完成，forkpty 待後續任務）",
                              "The PTY backend for this platform is not implemented yet (Windows ConPTY is done; forkpty is a later task)"),
-    ("err.unixPtyShort",     "unix pty (尚未實作)", "unix pty (not implemented yet)"),
+    ("err.unixPtyShort",     "unix pty (openpty)", "unix pty (openpty)"),
 
     // ---------------- TTL 巨集（ttl/*.rs）----------------
     ("err.macroRunning",     "這個分頁已經在跑巨集了", "This tab is already running a macro"),

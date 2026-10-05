@@ -537,7 +537,8 @@ pub fn session_create(
     let tab_title = match title.map(|t| t.trim().to_string()).filter(|t| !t.is_empty()) {
         Some(t) => t,
         None => match tab_kind {
-            TabKind::PowerShell => tabs_state.next_name("PowerShell"),
+            // Windows 的 `sh.title` 是 `PowerShell`（同舊版）；mac／Linux 是 `$SHELL` 的檔名（`zsh`／`bash`）
+            TabKind::PowerShell => tabs_state.next_name(&sh.title),
             TabKind::Claude => {
                 tabs_state.dir_tab_name(work_dir.as_deref().unwrap_or(""), &sh.title)
             }
@@ -792,7 +793,6 @@ pub fn macro_connect(
 ///
 /// 兩種後端共用這條路（退避重連、提示訊息、我的最愛、恢復分頁都在
 /// [`crate::reconnect`]），差別只有 `ConnParams` 裡面是哪一個變體。
-#[allow(clippy::too_many_arguments)]
 #[allow(clippy::too_many_arguments)]
 fn create_remote(
     app: AppHandle,

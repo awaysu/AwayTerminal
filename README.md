@@ -10,7 +10,7 @@
 | | 舊版 1.2.8 | 這一版 |
 |---|---|---|
 | 技術 | .NET 9 ＋ WPF ＋ WebView2 | **Rust（Tauri 2）** ＋ xterm.js |
-| 平台 | 只有 Windows | Windows（**完成**）、macOS／Linux（**程式寫好了，等機器實測**） |
+| 平台 | 只有 Windows | Windows（**完成**）、macOS（**真機自動測試全過，手動項目待驗**）、Linux（**程式寫好了，等機器實測**） |
 | 終端機繪製 | DOM | **WebGL**（載不起來自動退回 DOM） |
 | 需要 .NET 執行環境 | 是 | **不需要** |
 | 安裝檔 | 含 .NET ＋ WebView2 安裝程式 | 約 5.8 MB（含 WebView2 bootstrapper） |
@@ -27,7 +27,7 @@
 | 平台 | 狀態 |
 |---|---|
 | **Windows 10／11 x64** | 功能完成，自動與手動測試都跑過 |
-| **macOS** | 平台程式碼寫好並通過 `cargo check`／`clippy`（`aarch64`／`x86_64`），**還沒在真機跑過** |
+| **macOS** | **Apple Silicon 真機（macOS 26.6）跑過第一批**：`cargo build` 零錯誤、`cargo test` 全過、5 支 probe 全過、`npm run verify` 25 段全過（2026-10-05）。IME／序列埠／沙盒收程序等手動項目待驗，見 [docs/PLATFORM-UNIX.md](docs/PLATFORM-UNIX.md) 第 7 節 |
 | **Linux** | 同上（`x86_64-unknown-linux-gnu`），**還沒在真機跑過** |
 
 還沒做：程式碼簽章、自動更新（設定骨架在、公鑰留空 ＝ 功能停用）、mac／Linux 的實測與發佈。

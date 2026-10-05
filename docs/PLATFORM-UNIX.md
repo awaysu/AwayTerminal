@@ -2,8 +2,8 @@
 
 TASK-022 的產出。目的是**等機器到手時，剩下的工作是「測試與修 bug」，不是「從空殼開始寫」**。
 
-> ⚠️ **這份文件裡標「已寫」的每一項，都只被編譯器看過，沒有在真的 mac／Linux 上跑過。**
-> 開發機是 Windows。
+> ⚠️ **這份文件裡標「已寫」的每一項，寫的時候都只被編譯器看過。** 開發機是 Windows。
+> **macOS 已在真機跑過第一批自動測試（2026-10-05，見第 7 節）**；Linux 還沒有。
 
 ---
 
@@ -224,3 +224,58 @@ sudo apt install -y libwebkit2gtk-4.1-dev build-essential curl wget file \
 |---|---|
 | macOS | universal binary（arm64 ＋ x64）、`codesign` ＋ notarization、`.dmg`。`docs/RELEASE.md` 的 Windows 流程可以照抄結構 |
 | Linux | AppImage ＋ `.deb`（不用簽章）。AppImage 要確認 `WEBKIT_DISABLE_*` 有進 AppRun |
+
+---
+
+## 7. macOS 真機第一批（2026-10-05）
+
+機器：Mac mini（Apple Silicon，arm64）、macOS 26.6.2、Xcode 已裝、Homebrew。
+工具鏈：`brew install rustup node` → rustc 1.99.0、node 26.10.0。
+
+### A. 編譯
+
+**第 0 節預期的「主 crate unix 接線會有編譯錯誤」沒有發生**：第一次 `cargo build` 零錯誤、3 個警告。
+要修的全是 `cargo clippy --all-targets -- -D warnings` 這一關（發佈檢查要過）：
+
+| 檔案 | 問題 | 修法 |
+|---|---|---|
+| `winicon.rs` | `Manager` 只有 Windows 用到 | import 加 `#[cfg(windows)]` |
+| `ttl/runner.rs` | `hide` 在 Unix 沒用到（沒有主控台視窗可以藏） | unix 分支 `let _ = hide;` |
+| `pty/shell.rs` | `is_store_alias` 在 Unix 只有測試用 | `#[cfg_attr(not(windows), allow(dead_code))]` |
+| `commands.rs` | `#[allow(clippy::too_many_arguments)]` 寫了兩次 | 刪一個 |
+| `fontstore.rs`／`migrate.rs` | clippy 1.99 的新 lint（複雜型別、只跑一次的 `for`、`Default` 後再指定欄位） | 照建議改，與平台無關 |
+| `examples/job_probe.rs` | `#![cfg(windows)]` → Unix 沒有 `main` | 包進 `#[cfg(windows)] mod win`，Unix 給一個說明用的 `main` |
+| `examples/ssh_probe.rs` | 2.0.7 加 `SshAuth.password` 時漏改 | 補 `password: None`（Windows 也會壞） |
+| `examples/pty_probe.rs` | 只有 PowerShell／cmd 的測試 | 加 Unix 那組（`$SHELL -c`、`/bin/sh -c`、`stty size`） |
+
+單元測試有 5 個是 Windows 路徑字串（`C:\…\x.exe`）在 Unix 的 `Path` 不會按反斜線切、
+以及執行期脈絡的「one Windows desktop」vs fixture；都改測試不改邏輯（`cfg!(windows)` 守住那幾行）。
+
+### B～D. 結果
+
+| 項目 | 結果 |
+|---|---|
+| `cargo test -p awayterm-platform` | 34 passed |
+| `cargo test --lib` | 469 passed、1 ignored |
+| `cargo clippy --all-targets -- -D warnings` | 乾淨 |
+| `pty_probe` | 3/3：`zsh -c` exit code 7、`sh -c` exit 0、resize → `stty size` = 40 120 |
+| `ssh_probe`／`telnet_probe`／`com_probe`／`ttl_probe`／`log_probe` | 20／20／13／30 PASS、log 格式正確 |
+| `npm run verify` | 25 段全過、沒人接住的例外 0、`console.error` 0 |
+| M1 啟動 | `webview 引擎＝webkit（wkwebview）`、`renderer = WebGL`、backend `openpty (macOS)` |
+| M4 shell 分頁 | `$SHELL`＝zsh、提示字元正常、分頁名 `zsh(1)` |
+| M8 | 未測（verify 不碰剪貼簿快捷鍵） |
+
+### verify 在 mac 上修的幾處（`src/main.js`、`scripts/dev-verify.mjs`）
+
+- 恢復分頁等「新提示字元」原本只認 `PS `；現在也認 zsh／bash 的 `%`／`$`／`#` 結尾。
+- 檔案總管右鍵選單那段在非 Windows 直接 SKIP（`shell_menu_state` 不存在）。
+- `%TEMP%` 底下的檔案路徑原本寫死反斜線（mac 上會變成一個叫 `\awayterm-…` 的檔）。
+- `dev-verify.mjs`：Unix 用 SIGKILL 收整組之後子行程 code 是 `null`，原本一律 exit 1；
+  現在看到收尾行就依它的 PASS／FAIL 決定。收組前先用 `pgrep -g` 把成員記成「我的」，
+  `cleanTemp` 才不會把 app 建的驗證資料夾當成別人的留著。
+
+### 還沒驗（要人在機器前面）
+
+M2／M3（IME 錄影、注音＋Enter）、M5（從 Dock 啟動後 `which` 找不找得到 Homebrew 的東西）、
+M6／M9（關分頁、沙盒分頁的子行程是否收乾淨）、M7（USB 轉序列埠）、M8（Cmd+C／Cmd+V）。
+`pwsh` 這台沒裝，沙盒那段 verify 跳過。

@@ -619,8 +619,10 @@ mod tests {
         assert!(!wsl.sandbox, "WSL 預設不開沙盒");
 
         // 使用者先把「新增的自訂連線預設開啟沙盒」打開再匯入 → agent 開、WSL 仍然關
-        let mut on = AppSettings::default();
-        on.sandbox_default = true;
+        let mut on = AppSettings {
+            sandbox_default: true,
+            ..AppSettings::default()
+        };
         apply(&old_json(), &mut on);
         let claude = on.custom_conns.iter().find(|c| c.name == "ClaudeCode").unwrap();
         assert!(claude.sandbox, "全域預設開著時 agent 要開沙盒");

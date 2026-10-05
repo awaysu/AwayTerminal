@@ -239,7 +239,10 @@ mod tests {
     /// `IsAdbExe`：看檔名、不分大小寫、有沒有 `.exe` 都算。
     #[test]
     fn spots_adb_exe() {
-        assert!(is_adb_exe("C:\\sdk\\platform-tools\\adb.exe"));
+        // Windows 路徑（反斜線）只有 Windows 的 `Path` 會切；Unix 上整串是一個檔名
+        if cfg!(windows) {
+            assert!(is_adb_exe("C:\\sdk\\platform-tools\\adb.exe"));
+        }
         assert!(is_adb_exe("adb"));
         assert!(is_adb_exe("/usr/bin/ADB"));
         assert!(!is_adb_exe("C:\\tools\\adbx.exe"));

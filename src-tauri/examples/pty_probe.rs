@@ -2,10 +2,16 @@
 //!
 //! 跑法：`cargo run --example pty_probe`
 //!
-//! 測三件事：
-//! 1. PowerShell：`echo AWAY_OK; exit 7` → 輸出含 AWAY_OK、exit code 7、5 秒內結束。
-//! 2. cmd：`cmd /c "echo x"` → exit code 0 偵測得到。
-//! 3. resize：開一條互動 PowerShell，resize 後問 `$Host.UI.RawUI.WindowSize` 看有沒有跟上。
+//! 測三件事（Windows／Unix 各一組實作，項目對應）：
+//!
+//! | # | Windows | macOS／Linux |
+//! |---|---|---|
+//! | 1 | PowerShell：`echo AWAY_OK; exit 7` → 輸出含 AWAY_OK、exit code 7、5 秒內結束 | `$SHELL -c` 同一句 |
+//! | 2 | cmd：`cmd /c "echo x"` → exit code 0 偵測得到 | `/bin/sh -c "echo x"` |
+//! | 3 | resize：互動 PowerShell，resize 後問 `$Host.UI.RawUI.WindowSize` | 互動 `$SHELL`，resize 後問 `stty size` |
+//!
+//! Unix 那組走 `openpty` ＋ fork（`platform/src/pty.rs`），這支 probe 是它在真機上的第一道驗證
+//! （docs/PLATFORM-UNIX.md 第 2 節 B）。
 //!
 //! 離開時 exit code 0＝全過、1＝有項目失敗。
 
@@ -101,6 +107,7 @@ fn run(f: fn() -> Result<String, String>) -> i32 {
 }
 
 /// 1. PowerShell 一次性指令：輸出含 AWAY_OK、exit code 7、5 秒內結束。
+#[cfg(windows)]
 fn test_powershell_exit_code() -> Result<String, String> {
     let sh = shell::powershell().ok_or("找不到 PowerShell")?;
     let cmdline = shell::quote_command(
@@ -154,6 +161,7 @@ fn test_powershell_exit_code() -> Result<String, String> {
 }
 
 /// 2. cmd 的結束偵測（exit code 0）。
+#[cfg(windows)]
 fn test_cmd_exit_detection() -> Result<String, String> {
     let cmd = shell::cmd().ok_or("找不到 cmd.exe")?;
     let cmdline = format!("\"{}\" /c \"echo x\"", cmd.display());
@@ -193,6 +201,7 @@ fn test_cmd_exit_detection() -> Result<String, String> {
 }
 
 /// 3. resize：互動 PowerShell 下 resize 後 `$Host.UI.RawUI.WindowSize` 要跟上。
+#[cfg(windows)]
 fn test_resize() -> Result<String, String> {
     let sh = shell::powershell().ok_or("找不到 PowerShell")?;
     let cmdline = shell::quote_command(&sh.exe, &["-NoLogo", "-NoProfile"]);
@@ -237,6 +246,134 @@ fn test_resize() -> Result<String, String> {
         ));
     }
     Ok("resize(120,40) → $Host.UI.RawUI.WindowSize = 120x40".to_string())
+}
+
+// ---------------------------------------------------------------------------
+// macOS／Linux：同樣三項，用 `$SHELL`／`/bin/sh`
+// ---------------------------------------------------------------------------
+
+#[cfg(not(windows))]
+fn spawn_unix(cmdline: String, graceful: Vec<u8>) -> Result<(Collected, Arc<dyn awayterminal_lib::session::TerminalSession>), String> {
+    let c = Collected::new();
+    let (on_out, on_exit) = c.callbacks();
+    let session = pty::spawn(
+        SpawnOptions {
+            command_line: cmdline,
+            cols: 80,
+            rows: 24,
+            cwd: None,
+            graceful_exit_bytes: graceful,
+            env: Vec::new(),
+            kill_on_close: false,
+        },
+        on_out,
+        on_exit,
+    )
+    .map_err(|e| format!("spawn 失敗 {e}"))?;
+    Ok((c, session))
+}
+
+/// 1. `$SHELL -c 'echo AWAY_OK; exit 7'`：輸出含 AWAY_OK、exit code 7、5 秒內結束。
+#[cfg(not(windows))]
+fn test_powershell_exit_code() -> Result<String, String> {
+    let sh = shell::local_shell().ok_or("找不到本機 shell（$SHELL）")?;
+    let cmdline = shell::quote_command(&sh.exe, &["-c", "echo AWAY_OK; exit 7"]);
+    let (c, session) = spawn_unix(cmdline, Vec::new()).map_err(|e| format!("shell exit code: {e}"))?;
+
+    let started = Instant::now();
+    let exited = c.wait_exit(Duration::from_secs(5));
+    let elapsed = started.elapsed();
+    let text = c.text();
+    let code = c.exit_code();
+    session.close();
+
+    if !exited {
+        return Err(format!(
+            "shell exit code: 5 秒內沒有收到結束事件（輸出 {} bytes）",
+            text.len()
+        ));
+    }
+    if !text.contains("AWAY_OK") {
+        return Err(format!(
+            "shell exit code: 輸出沒有 AWAY_OK（實際 {:?}）",
+            text.chars().take(200).collect::<String>()
+        ));
+    }
+    if code != Some(7) {
+        return Err(format!("shell exit code: 期望 7、實際 {code:?}"));
+    }
+    Ok(format!(
+        "{} ({}) 輸出含 AWAY_OK、exit code 7、{:?} 結束",
+        sh.name,
+        sh.exe.display(),
+        elapsed
+    ))
+}
+
+/// 2. `/bin/sh -c "echo x"` 的結束偵測（exit code 0）。
+#[cfg(not(windows))]
+fn test_cmd_exit_detection() -> Result<String, String> {
+    let cmdline = shell::quote_command(std::path::Path::new("/bin/sh"), &["-c", "echo x"]);
+    let (c, session) = spawn_unix(cmdline, Vec::new()).map_err(|e| format!("sh exit: {e}"))?;
+
+    let exited = c.wait_exit(Duration::from_secs(5));
+    let text = c.text();
+    let code = c.exit_code();
+    session.close();
+
+    if !exited {
+        return Err("sh exit: 5 秒內沒有收到結束事件".to_string());
+    }
+    if code != Some(0) {
+        return Err(format!("sh exit: 期望 exit code 0、實際 {code:?}"));
+    }
+    if !text.contains('x') {
+        return Err("sh exit: 輸出沒有 x".to_string());
+    }
+    Ok(format!("sh -c \"echo x\" → exit code 0（輸出 {} bytes）", text.len()))
+}
+
+/// 3. resize：互動 `$SHELL` 下 resize 後 `stty size` 要回 `40 120`。
+#[cfg(not(windows))]
+fn test_resize() -> Result<String, String> {
+    let sh = shell::local_shell().ok_or("找不到本機 shell（$SHELL）")?;
+    let (c, session) = spawn_unix(sh.command_line.clone(), SpawnOptions::default_graceful_exit_bytes())
+        .map_err(|e| format!("resize: {e}"))?;
+
+    // 提示字元長相不固定（使用者的 zshrc），所以只等「有任何輸出」
+    if !wait_for_any_output(&c, Duration::from_secs(15)) {
+        session.close();
+        return Err("resize: 15 秒內 shell 沒有任何輸出".to_string());
+    }
+
+    session.resize(120, 40);
+    std::thread::sleep(Duration::from_millis(300));
+
+    // 打進去的那一行會被 echo，但 echo 裡是 `$(…)` 不是展開後的值，所以不會誤判
+    session.write(b"echo AWAY_SIZE=$(stty size | awk '{print $2 \"x\" $1}')\r");
+
+    let ok = wait_for(&c, "AWAY_SIZE=120x40", Duration::from_secs(10));
+    let text = c.text();
+    session.write(b"exit\r");
+    session.close();
+
+    if !ok {
+        let tail: String = text.chars().rev().take(400).collect::<Vec<_>>().into_iter().rev().collect();
+        return Err(format!("resize: 沒有看到 AWAY_SIZE=120x40（畫面尾端：{tail:?}）"));
+    }
+    Ok(format!("{}：resize(120,40) → stty size = 40 120", sh.name))
+}
+
+#[cfg(not(windows))]
+fn wait_for_any_output(c: &Collected, timeout: Duration) -> bool {
+    let deadline = Instant::now() + timeout;
+    while Instant::now() < deadline {
+        if !c.out.lock().unwrap().is_empty() {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    false
 }
 
 fn wait_for(c: &Collected, needle: &str, timeout: Duration) -> bool {

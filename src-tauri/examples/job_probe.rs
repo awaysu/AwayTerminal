@@ -20,7 +20,20 @@
 //!
 //! ⚠️ 只查自己這次開出來的 PID，不按名稱砍任何東西。
 
-#![cfg(windows)]
+// Job Object 只有 Windows 有；Unix 的對應是行程群組（`platform/src/pgroup.rs`），
+// 由 `sandbox_probe`／分頁關閉流程驗。這裡留一個 main 讓 `cargo clippy --all-targets` 在 Unix 也編得過。
+#[cfg(not(windows))]
+pub fn main() {
+    println!("job_probe 只有 Windows（Job Object）。Unix 的對應是行程群組，見 platform/src/pgroup.rs。");
+}
+
+#[cfg(windows)]
+fn main() {
+    win::main();
+}
+
+#[cfg(windows)]
+mod win {
 
 use std::io::Write;
 use std::os::windows::io::AsRawHandle;
@@ -158,4 +171,5 @@ fn resume(pid: u32) {
         }
         windows_sys::Win32::Foundation::CloseHandle(snap);
     }
+}
 }

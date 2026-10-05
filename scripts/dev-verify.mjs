@@ -216,6 +216,15 @@ function killTree(pid) {
   if (!pid) return;
   if (!isWindows) {
     if (exitedAt) return; // 同上：結束後 process group 的號碼也可能被重用
+    // 整組的成員先記成「我的」：cleanTemp 看的是資料夾名字尾端的建立者 PID（app 的 PID），
+    // 被 SIGKILL 的行程在 npm 那層的 exit 事件來時可能還是殭屍（`kill(pid, 0)` 仍算活著）
+    try {
+      for (const p of execFileSync('pgrep', ['-g', String(pid)], { encoding: 'utf8' }).split(/\s+/)) {
+        if (p) ourPids.set(Number(p), 0);
+      }
+    } catch {
+      // pgrep 沒有命中（整組已經不在）就沒事
+    }
     try {
       // 子行程是 process group leader（detached），負號＝整組
       process.kill(-pid, 'SIGKILL');
@@ -386,11 +395,12 @@ const BOOT_FAIL = [
   'The "beforeDevCommand" terminated with a non-zero status code',
 ];
 let done = false;
+let doneOk = false; // 收尾那一行是 PASS（整段沒有例外）
 let bootFailed = false;
 let tail = '';
 const watch = (buf) => {
-  if (done) return;
   tail = (tail + buf).slice(-4000);
+  if (done) return;
   const hit = BOOT_FAIL.find((m) => tail.includes(m));
   if (hit && !bootFailed) {
     bootFailed = true;
@@ -406,6 +416,7 @@ const watch = (buf) => {
   done = true;
   // 收尾那一行之後還有幾行輸出（log 是非同步送出的），等一下再收
   setTimeout(() => {
+    doneOk = /收尾：整段沒人接住的例外[^\n]*：PASS/.test(tail);
     console.log('[dev-verify] 驗證跑完了，收掉整棵行程樹');
     clearTimeout(timer);
     killTree(child.pid);
@@ -464,5 +475,7 @@ child.on('exit', (code) => {
     for (const r of others) console.log(`[dev-verify]     PID ${r.pid}　啟動 ${r.started}　${r.path}`);
     console.log('[dev-verify]     確定要收的話自己下：taskkill /PID <pid> /T /F');
   }
-  process.exit(timedOut ? 124 : bootFailed ? 1 : (code ?? 1));
+  // 是我們自己把樹收掉的（Windows taskkill／Unix SIGKILL 整組），子行程的 code 沒有意義：
+  // 看到收尾行就依它的 PASS／FAIL 決定
+  process.exit(timedOut ? 124 : bootFailed ? 1 : done ? (doneOk ? 0 : 1) : (code ?? 1));
 });
