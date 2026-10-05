@@ -352,4 +352,4 @@ latest.json                               有開自動更新時才有（檔名�
 | 程式碼簽章憑證（沿用舊版那張，如果有） | `certificateThumbprint` 或 `signCommand` | SmartScreen 會擋，而且信譽從零開始 |
 | updater 金鑰對（使用者自己產生、自己保管） | `pubkey` ＋ build 時的環境變數 | 沒有自動更新（現在就是這個狀態） |
 | macOS 機器 ＋ Apple Developer ID（年費已付） | 簽章 ＋ notarization ＋ .dmg | mac 版做不了 |
-| Linux 機器（Ubuntu 22.04／24.04） | AppImage ＋ .deb | Linux 版做不了 |
+| Linux 機器（Ubuntu 22.04／24.04） | .deb ＋ .rpm（不發 AppImage，見 `CLAUDE.md`「慣例」） | Linux 版做不了 |
