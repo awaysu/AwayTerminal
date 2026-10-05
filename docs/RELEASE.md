@@ -1,6 +1,7 @@
-# 發佈流程（Windows）
+# 發佈流程（Windows／macOS）
 
-階段 5。mac／Linux 等使用者提供機器之後再補（`CLAUDE.md` 的平台順序）。
+階段 5。第 1～6 節是 Windows；**macOS 在第 7 節**（2026-10-05 第一次實際跑過，2.0.8）。
+Linux 等使用者提供機器之後再補（`CLAUDE.md` 的平台順序）。
 
 **這份文件裡沒有任何金鑰。** 程式碼簽章憑證與 updater 的私鑰都由使用者自己保管，
 `repo` 裡一個都不會有。
@@ -351,5 +352,124 @@ latest.json                               有開自動更新時才有（檔名�
 |---|---|---|
 | 程式碼簽章憑證（沿用舊版那張，如果有） | `certificateThumbprint` 或 `signCommand` | SmartScreen 會擋，而且信譽從零開始 |
 | updater 金鑰對（使用者自己產生、自己保管） | `pubkey` ＋ build 時的環境變數 | 沒有自動更新（現在就是這個狀態） |
-| macOS 機器 ＋ Apple Developer ID（年費已付） | 簽章 ＋ notarization ＋ .dmg | mac 版做不了 |
+| macOS 機器 ＋ Apple Developer ID（年費已付） | 簽章 ＋ notarization ＋ .dmg | ✅ 已有（2026-10-05，見第 7 節） |
 | Linux 機器（Ubuntu 22.04／24.04） | AppImage ＋ .deb | Linux 版做不了 |
+
+---
+
+## 7. macOS
+
+2026-10-05 在真機（Apple Silicon、macOS 26.6）跑過一次，產出 `AwayTerminal-2.0.8-macOS.dmg`
+並上架到 `awaysu.cc`。**這一節裡沒有任何密碼**：簽章憑證在登入鑰匙圈，公證帳密在
+鑰匙圈的 profile，網站密碼在使用者自己的檔案裡。
+
+### 7.1 一次性的前置
+
+| 要什麼 | 怎麼確認／怎麼做 |
+|---|---|
+| Developer ID 憑證在**登入**鑰匙圈 | `security find-identity -v -p codesigning` 要看到 `Developer ID Application: Chih-Wei Su (BNH8YS88T9)` |
+| 公證帳密的 profile | `xcrun notarytool store-credentials AwayTerminalNotary --apple-id <Apple ID> --team-id BNH8YS88T9`（互動式問 App 專用密碼，在 appleid.apple.com 產生）。確認：`xcrun notarytool history --keychain-profile AwayTerminalNotary` |
+| Intel 的編譯目標（universal 要） | `rustup target add x86_64-apple-darwin` |
+
+⚠️ 這台機器上另外兩個鑰匙圈（`awpr-signing`、`ios-signing`）是**鎖著的**，
+`security`／`notarytool` 一碰到它們就會停在螢幕上的解鎖對話框、指令不會回來。
+profile 一律存在登入鑰匙圈、指令不要加 `--keychain` 指過去。
+
+### 7.2 建置（universal、已簽章）
+
+```sh
+export APPLE_SIGNING_IDENTITY="Developer ID Application: Chih-Wei Su (BNH8YS88T9)"
+npm run tauri build -- --target universal-apple-darwin --bundles app
+```
+
+產出 `src-tauri/target/universal-apple-darwin/release/bundle/macos/AwayTerminal.app`
+（arm64 ＋ x86_64，hardened runtime，帶時間戳）。
+
+- 簽章身分用**環境變數**給，不寫進設定檔——沒有憑證的機器才 build 得起來。
+- `src-tauri/tauri.macos.conf.json` 把 `resources/conpty/*` 設成 `null`：
+  那是 Windows 的 ConPTY（`OpenConsole.exe`／`conpty.dll`），mac 版不帶。
+- 只做 `app`、**不讓 Tauri 做 dmg**：Tauri 的公證只吃 `APPLE_ID`＋`APPLE_PASSWORD`
+  或 API key 的環境變數，不吃鑰匙圈 profile；而且它做的 dmg 裡面是**還沒 staple** 的 app。
+  build 最後那行 `skipping app notarization` 是預期的。
+
+確認：
+
+```sh
+APP=src-tauri/target/universal-apple-darwin/release/bundle/macos/AwayTerminal.app
+lipo -archs $APP/Contents/MacOS/AwayTerminal          # x86_64 arm64
+codesign --verify --deep --strict --verbose=2 $APP     # valid on disk
+ls $APP/Contents/Resources                             # 有 fonts／THIRD-PARTY-NOTICES.md，沒有 conpty
+$APP/Contents/MacOS/AwayTerminal --verify 1            # 0 FAIL（跑完視窗不會自己關，依 PID 收）
+```
+
+### 7.3 公證 → staple → DMG → DMG 也公證
+
+順序不能換：**先公證並 staple `.app`，再把它包進 DMG**，使用者把 app 拖出來之後
+離線也驗得過。
+
+```sh
+B=src-tauri/target/universal-apple-darwin/release/bundle
+ID="Developer ID Application: Chih-Wei Su (BNH8YS88T9)"
+V=2.0.8
+
+# 1) .app：用 ditto 壓（不要用 zip 指令，會掉 metadata）→ 公證 → staple
+ditto -c -k --keepParent $B/macos/AwayTerminal.app $B/AwayTerminal-notarize.zip
+xcrun notarytool submit $B/AwayTerminal-notarize.zip --keychain-profile AwayTerminalNotary --wait
+xcrun stapler staple $B/macos/AwayTerminal.app
+
+# 2) DMG：app ＋「應用程式」捷徑
+STG=$(mktemp -d)
+ditto $B/macos/AwayTerminal.app "$STG/AwayTerminal.app"
+ln -s /Applications "$STG/Applications"
+hdiutil create -volname AwayTerminal -srcfolder "$STG" -ov -format UDZO $B/AwayTerminal-$V-macOS.dmg
+
+# 3) DMG：簽 → 公證 → staple
+codesign --force --timestamp --sign "$ID" $B/AwayTerminal-$V-macOS.dmg
+xcrun notarytool submit $B/AwayTerminal-$V-macOS.dmg --keychain-profile AwayTerminalNotary --wait
+xcrun stapler staple $B/AwayTerminal-$V-macOS.dmg
+```
+
+兩次 `submit` 都要回 `status: Accepted`（2026-10-05 各等一兩分鐘）。被退件時：
+`xcrun notarytool log <submission-id> --keychain-profile AwayTerminalNotary`。
+
+### 7.4 驗收（模擬使用者下載）
+
+本機做出來的檔案沒有 quarantine 標記，Gatekeeper 不會完整檢查，要自己補上：
+
+```sh
+cp $B/AwayTerminal-$V-macOS.dmg /tmp/dl-test.dmg
+xattr -w com.apple.quarantine "0083;$(printf '%08x' $(date +%s));Safari;$(uuidgen)" /tmp/dl-test.dmg
+spctl -a -vvv -t install /tmp/dl-test.dmg      # accepted / source=Notarized Developer ID
+```
+
+掛載之後對裡面的 app 再做一次 `spctl --assess --type execute --verbose=4`，
+同樣要是 `Notarized Developer ID`。
+
+### 7.5 上架到 awaysu.cc
+
+SHA-256 **全部簽完、公證完才算**（簽章與 staple 都會改檔案內容）。
+
+```sh
+SHA=$(shasum -a 256 $B/AwayTerminal-$V-macOS.dmg | cut -d' ' -f1)
+curl -H "X-Api-Password: $AWAYSU_API_PASSWORD" \
+  -F app=awayterminal -F version=$V -F platform=macos -F sha256=$SHA \
+  -F "file=@$B/AwayTerminal-$V-macOS.dmg" \
+  "https://www.awaysu.cc/software/api.php?action=upload"
+```
+
+- `platform=macos` ＋ 副檔名 `dmg` 的既有項目會被取代（舊檔自動保留為「舊版本」）；沒有就新增。
+- `changelog` 欄位：同一版在網站上已經有紀錄時會被跳過，所以 Windows 先發過的版本不用再帶。
+- 上傳完從 `download.url` 抓回來比對一次 SHA-256，並確認
+  `api.php?action=check_update&app=awayterminal&platform=macos` 列得到它
+  （mac 版的「檢查更新」問的就是這一條，`update.rs`）。
+
+### 7.6 還沒做的
+
+| 項目 | 現況 |
+|---|---|
+| 一支腳本跑完 7.2～7.5 | 沒有，2026-10-05 是手動逐步跑的 |
+| `scripts/release.mjs` | 只認 Windows 的資產（nsis／msi），不知道 dmg |
+| GitHub Release 放 dmg、`latest.json` 的 `darwin-*` | 沒有（updater 本來就還沒開，見第 4 節） |
+| `Info.plist` 的用途說明字串（`NS…UsageDescription`） | 沒加。終端機裡的程式要用麥克風／Apple Events 之類的權限時可能需要，等真的遇到再補 |
+| DMG 的背景圖與圖示排版 | 用 `hdiutil` 的預設樣子 |
+
