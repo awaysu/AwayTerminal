@@ -10,7 +10,7 @@
 //! | Claude Code | **沒有列清單的指令** → 內建別名（`--help` 寫的那幾個）＋從它的程式本體（`claude.exe`／`cli.js`）找出來的每個版本，`~/.claude.json` 補 `[1m]` 的寫法（2.0.3） | 不權威 |
 //! | Gemini CLI | 沒有列清單的指令 → 別名（auto／pro／flash／flash-lite）＋從它的程式本體找出來的每個版本（2.0.3）；找不到程式本體就只能自己輸入 | 不權威 |
 //! | Antigravity CLI | 沒有列清單的指令，而且它的清單在伺服器上（程式本體只看得到 `GetCascadeModelConfigs` 這種 RPC 名）→ **內建的靜態清單**（[`ANTIGRAVITY_MODELS`]，從 1.2.16 的程式本體字串整理的；2.0.6） | 不權威 |
-//! | Grok CLI（xAI Grok Build） | `grok models`（列出這個帳號能用的模型；2.0.10）。**輸出格式還沒在本機看過**（寫的時候這台沒裝），所以 [`parse_grok`] 寬鬆地取每行第一個像模型名稱的字 | 不權威（格式沒驗過，不拿它判斷「上次的模型不見了」） |
+//! | Grok CLI（xAI Grok Build） | `grok models`（列出這個帳號能用的模型；2.0.10）。輸出是說明文字＋`  * grok-4.7 (default)` 這種清單（2.0.12 在 grok 1.0.46 實機確認），[`parse_grok`] 取每行第一個像模型名稱的字 | 權威（2.0.12 起） |
 //!
 //! 「權威」＝清單是 CLI 自己回報的，所以「上次用的模型不在裡面」是真的不見了，要請使用者重選。
 //! 不權威的清單只是方便挑，使用者自己打的名稱不在裡面很正常，**不會**被當成不見了。
@@ -283,8 +283,18 @@ pub fn parse_opencode(text: &str) -> Vec<ModelInfo> {
 
 /// `grok models` 的輸出：每行取第一個像模型名稱的字（小寫英數加 `.-_/:`，而且含數字或 `-`）。
 ///
-/// ⚠️ 寫的時候這台沒裝 Grok CLI，**輸出格式沒看過**（文件只說「List available models」）。
-/// 所以收得寬鬆：表頭（`MODEL`、`Available models:`）、說明文字、空行都會因為大寫／冒號／
+/// grok 1.0.46 的實際輸出（2026-10-06，免費帳號）：
+///
+/// ```text
+/// You are logged in with grok.com.
+///
+/// Default model: grok-4.7
+///
+/// Available models:
+///   * grok-4.7 (default)
+/// ```
+///
+/// 收得寬鬆（2.0.10 寫的時候還沒看過格式，之後版本也可能改）：表頭（`MODEL`、`Available models:`）、說明文字、空行都會因為大寫／冒號／
 /// 沒有數字被跳過；行首的 `*`／`-`／`•`／`>`（標「目前預設」的記號）先去掉；
 /// 後面接的 `(default)`、描述欄不管。
 pub fn parse_grok(text: &str) -> Vec<ModelInfo> {
@@ -832,12 +842,13 @@ fn fetch(cli: ModelCli, conn: &CustomConn, refresh: bool) -> ModelList {
             return list;
         }
         ModelCli::Grok => {
-            // `grok models`＝這個帳號能用的模型。格式沒在本機驗過 → 不權威（見 `parse_grok`）；
-            // 拿不到就沒有清單，使用者自己輸入
+            // `grok models`＝這個帳號能用的模型（2.0.12 實機確認過格式 → 權威：上次的模型不在
+            // 裡面就是真的不能用了）；拿不到就沒有清單，使用者自己輸入
             match run(exe, &["models"], LIST_TIMEOUT).map(|t| parse_grok(&t)) {
                 Ok(models) if !models.is_empty() => {
                     list.models = models;
                     list.source = "cli".to_string();
+                    list.authoritative = true;
                     list.note = format!("{exe_name} models");
                 }
                 Ok(_) => list.note = "empty list".to_string(),
@@ -1478,5 +1489,10 @@ mod tests {
             ["grok-build"]
         );
         assert!(ids("Error: not logged in\n").is_empty());
+        // grok 1.0.46 的真實輸出（2026-10-06）
+        assert_eq!(
+            ids("You are logged in with grok.com.\n\nDefault model: grok-4.7\n\nAvailable models:\n  * grok-4.7 (default)\n"),
+            ["grok-4.7"]
+        );
     }
 }
