@@ -234,10 +234,14 @@ export function initConns(onChangedCb) {
 
   el.detect.addEventListener('click', async () => {
     try {
-      const added = await invoke('custom_detect');
+      const report = await invoke('custom_detect');
       await reload();
       renderList();
+      const added = report.filter((r) => r.status === 'added').map((r) => r.name);
       note(added.length === 0 ? T['conn.detectNone'] : `${T['conn.detectDone']}${added.join('、')}`);
+      // 偵測完跳視窗列出全部結果（2.0.13，使用者要求）
+      const { showInfo } = await import('./tabbar.js');
+      await showInfo(T['conn.detect'], detectReportText(report));
     } catch (err) {
       note(String(err));
     }
@@ -267,4 +271,36 @@ export function initConns(onChangedCb) {
   });
 
   return reload();
+}
+
+/**
+ * 自動偵測結果的視窗文字（2.0.13，使用者要求「偵測完跳一個視窗說找到什麼」）。
+ * `report`＝`custom_detect` 回的每個已知工具一項（`added`／`existing`／`missing`）。
+ *
+ *   新加入（1）：
+ *     Grok — C:\Users\x\.grok\bin\grok.exe
+ *
+ *   已經在清單裡（2）：
+ *     ClaudeCode、Codex
+ *
+ *   這台電腦沒有找到（6）：
+ *     OpenCode、GeminiCLI、…
+ */
+export function detectReportText(report) {
+  const of = (st) => report.filter((r) => r.status === st);
+  const added = of('added');
+  const existing = of('existing');
+  const missing = of('missing');
+  const out = [];
+  out.push(added.length === 0 ? T['conn.detectNone'] : fmt('conn.detectAdded', added.length));
+  for (const r of added) out.push(`  ${r.name} — ${r.path}`);
+  if (existing.length > 0) {
+    out.push('', fmt('conn.detectExisting', existing.length));
+    out.push(`  ${existing.map((r) => r.name).join('、')}`);
+  }
+  if (missing.length > 0) {
+    out.push('', fmt('conn.detectMissing', missing.length));
+    out.push(`  ${missing.map((r) => r.name).join('、')}`);
+  }
+  return out.join('\n');
 }

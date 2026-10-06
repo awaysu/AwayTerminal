@@ -17,7 +17,7 @@ import { listen } from '@tauri-apps/api/event';
 import { T, fmt, elapsedText } from './strings.js';
 import { iconImg, kindIcon, setToolLabel } from './icons.js';
 import { createSession, log } from './bridge.js';
-import { initConns, openManager, currentConns, reload as reloadConns } from './conns.js';
+import { initConns, openManager, currentConns, reload as reloadConns, detectReportText } from './conns.js';
 import { initConnDialog, openConnDialog } from './sshdlg.js';
 import { initComDialog, openComDialog } from './comdlg.js';
 import { initMacro, runMacroForTab } from './macro.js';
@@ -1443,13 +1443,14 @@ function installMenus() {
 
 /**
  * 「新分頁 ▾ → 自動偵測」（2.0.7）：和「自訂連線設定…」裡那顆按鈕同一件事，
- * 把這台機器上找得到的 AI CLI／WSL／ADB 加進自訂連線，結果用 toast 講。
+ * 把這台機器上找得到的 AI CLI／WSL／ADB 加進自訂連線。結果跳視窗列出來
+ *（2.0.13 起；之前是 toast，使用者要看清楚找到了什麼）。
  */
 async function detectConns() {
   try {
-    const added = await invoke('custom_detect');
+    const report = await invoke('custom_detect');
     await reloadConns();
-    toast(added.length === 0 ? T['conn.detectNone'] : `${T['conn.detectDone']}${added.join('、')}`);
+    await showInfo(T['conn.detect'], detectReportText(report));
   } catch (e) {
     log(`[tabbar] 自動偵測失敗：${e}`);
     await showInfo(T['conn.detect'], String(e));

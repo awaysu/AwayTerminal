@@ -177,20 +177,44 @@ fn home_dir() -> Option<PathBuf> {
         .map(PathBuf::from)
 }
 
+/// 自動偵測的結果裡的一項（每個已知工具一項；2.0.13 起偵測完跳視窗列出來，使用者要求）。
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DetectItem {
+    pub name: String,
+    /// `added`（這次新加入）／`existing`（清單裡已經有）／`missing`（這台電腦找不到）。
+    pub status: &'static str,
+    /// 找到的（或清單裡那一條的）執行檔路徑；`missing` 是空的。
+    pub path: String,
+}
+
 /// 自動偵測：把找到、而且清單裡還沒有的工具加進去。回傳這次加了哪些名稱。
 ///
 /// 「已存在」的判斷照舊版：**同名**或**同路徑**都算（後者是為了 1.1.10 以前叫
 /// 「Gemini」的舊項目，避免重複加入）。
 pub fn auto_detect(existing: &[CustomConn], sandbox_global: bool) -> Vec<CustomConn> {
+    detect_report(existing, sandbox_global).0
+}
+
+/// [`auto_detect`] ＋每個已知工具的結果（順序＝[`KNOWN_TOOLS`]）。
+pub fn detect_report(existing: &[CustomConn], sandbox_global: bool) -> (Vec<CustomConn>, Vec<DetectItem>) {
     let mut added = Vec::new();
+    let mut report = Vec::new();
+    let item = |name: &str, status, path: &str| DetectItem {
+        name: name.to_string(),
+        status,
+        path: path.to_string(),
+    };
     for tool in KNOWN_TOOLS {
-        if existing
+        if let Some(c) = existing
             .iter()
-            .any(|c| c.name.eq_ignore_ascii_case(tool.name))
+            .find(|c| c.name.eq_ignore_ascii_case(tool.name))
         {
+            report.push(item(tool.name, "existing", &c.path));
             continue;
         }
         let Some(path) = resolve_tool(tool.exe_names) else {
+            report.push(item(tool.name, "missing", ""));
             continue;
         };
         let path_str = path.to_string_lossy().to_string();
@@ -199,8 +223,10 @@ pub fn auto_detect(existing: &[CustomConn], sandbox_global: bool) -> Vec<CustomC
             .chain(added.iter())
             .any(|c: &CustomConn| c.path.eq_ignore_ascii_case(&path_str))
         {
+            report.push(item(tool.name, "existing", &path_str));
             continue;
         }
+        report.push(item(tool.name, "added", &path_str));
         // `.cmd` / `.bat` 要透過 shell 跑（舊版同款判斷）
         let lower = path_str.to_ascii_lowercase();
         let via_ps = lower.ends_with(".cmd") || lower.ends_with(".bat");
@@ -215,7 +241,7 @@ pub fn auto_detect(existing: &[CustomConn], sandbox_global: bool) -> Vec<CustomC
             ..CustomConn::default()
         });
     }
-    added
+    (added, report)
 }
 
 // ------------------------------------------------------------------ commands
@@ -226,18 +252,17 @@ pub fn custom_list(settings: State<'_, Arc<SettingsStore>>) -> Vec<CustomConn> {
     settings.get().custom_conns
 }
 
-/// 執行一次自動偵測並存檔。回傳這次新增的名稱（空的＝什麼都沒找到）。
+/// 執行一次自動偵測並存檔。回傳每個已知工具的結果（前端跳視窗列出「新加入／已經有／沒找到」）。
 #[tauri::command]
-pub fn custom_detect(settings: State<'_, Arc<SettingsStore>>) -> Vec<String> {
+pub fn custom_detect(settings: State<'_, Arc<SettingsStore>>) -> Vec<DetectItem> {
     let cfg = settings.get();
-    let added = auto_detect(&cfg.custom_conns, cfg.sandbox_default);
-    if added.is_empty() {
-        return Vec::new();
+    let (added, report) = detect_report(&cfg.custom_conns, cfg.sandbox_default);
+    if !added.is_empty() {
+        let names: Vec<String> = added.iter().map(|c| c.name.clone()).collect();
+        settings.update(|s| s.custom_conns.extend(added));
+        println!("[AwayTerminal] 自動偵測加入：{}", names.join("、"));
     }
-    let names: Vec<String> = added.iter().map(|c| c.name.clone()).collect();
-    settings.update(|s| s.custom_conns.extend(added));
-    println!("[AwayTerminal] 自動偵測加入：{}", names.join("、"));
-    names
+    report
 }
 
 /// 「回到預設」（2.0.8，使用者要求）：**清掉整份自訂連線清單**，清完就是空的。
@@ -398,6 +423,25 @@ mod tests {
                 "同一支執行檔不該被加第二次"
             );
         }
+    }
+
+    /// 偵測結果（2.0.13）：每個已知工具剛好一項、順序照 KNOWN_TOOLS；「新加入」的和真的加進去的一致。
+    #[test]
+    fn detect_report_lists_every_known_tool() {
+        let existing = vec![CustomConn {
+            name: "ClaudeCode".into(),
+            path: "C:\\whatever\\claude.cmd".into(),
+            ..CustomConn::default()
+        }];
+        let (added, report) = detect_report(&existing, false);
+        let names: Vec<&str> = report.iter().map(|r| r.name.as_str()).collect();
+        let known: Vec<&str> = KNOWN_TOOLS.iter().map(|t| t.name).collect();
+        assert_eq!(names, known);
+        assert_eq!(report[0].status, "existing");
+        assert_eq!(report[0].path, "C:\\whatever\\claude.cmd");
+        let added_names: Vec<&str> = report.iter().filter(|r| r.status == "added").map(|r| r.name.as_str()).collect();
+        assert_eq!(added_names, added.iter().map(|c| c.name.as_str()).collect::<Vec<_>>());
+        assert!(report.iter().filter(|r| r.status == "missing").all(|r| r.path.is_empty()));
     }
 
     #[test]
