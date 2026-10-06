@@ -793,4 +793,10 @@ export default {
   'err.connNameTaken': 'Ya existe una conexión personalizada llamada "{0}"; elige otro nombre',
   'err.settingsReadOnly': 'No se pudo leer el archivo de configuración al iniciar; para no sobrescribirlo, no se guardará ningún cambio en esta sesión: {0}\nCorrige o mueve el archivo y reinicia.',
   'font.tooLarge': 'La descarga supera los {0} MB y no parece una fuente; se canceló',
+  'quota.tip5h': 'Ventana de 5 horas: {0}% usado, se reinicia {1}',
+  'quota.tip7d': 'Ventana de 7 días: {0}% usado, se reinicia {1}',
+  'quota.resetDone': 'ya reiniciada',
+  'quota.updatedNow': 'actualizado ahora mismo',
+  'quota.updatedAgo': 'actualizado hace {0} min',
+  'quota.claudeNote': 'Solo las sesiones de Claude Code abiertas desde AwayTerminal actualizan esto',
 };

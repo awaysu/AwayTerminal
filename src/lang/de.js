@@ -793,4 +793,10 @@ export default {
   'err.connNameTaken': 'Es gibt bereits eine benutzerdefinierte Verbindung namens „{0}“; bitte wähle einen anderen Namen',
   'err.settingsReadOnly': 'Die Einstellungsdatei konnte beim Start nicht gelesen werden; damit sie nicht überschrieben wird, werden in dieser Sitzung keine Änderungen gespeichert: {0}\nDatei reparieren oder verschieben und neu starten.',
   'font.tooLarge': 'Der Download ist größer als {0} MB und sieht nicht nach einer Schrift aus; abgebrochen',
+  'quota.tip5h': '5-Stunden-Fenster: {0} % verbraucht, Reset {1}',
+  'quota.tip7d': '7-Tage-Fenster: {0} % verbraucht, Reset {1}',
+  'quota.resetDone': 'bereits zurückgesetzt',
+  'quota.updatedNow': 'gerade aktualisiert',
+  'quota.updatedAgo': 'vor {0} Min. aktualisiert',
+  'quota.claudeNote': 'Nur aus AwayTerminal gestartete Claude-Code-Sitzungen aktualisieren dies',
 };

@@ -99,6 +99,19 @@ html, body { height: 100%; margin: 0; background: #1e1e1e; overflow: hidden; }
 #toolbar::-webkit-scrollbar { height: 6px; }
 #toolbar::-webkit-scrollbar-thumb { background: #4a4a50; border-radius: 3px; }
 .tool-spacer { flex: 1 1 auto; min-width: 8px; }
+/* 右上角的 AI CLI 額度（2.0.11）：一家一行、等寬字，靠右、垂直置中；不可以被擠成兩行。
+   視窗窄的時候**它自己縮**（右邊截成 …），不可以把工具列撐出橫向捲軸（使用者要求）。 */
+#quota {
+  flex: 0 1 auto; min-width: 0; overflow: hidden;
+  display: flex; flex-direction: column; justify-content: center;
+  gap: 2px; padding: 0 6px; color: #c8c8c8; cursor: default;
+  font: 11px/1.25 "Cascadia Mono", Consolas, "Microsoft JhengHei", monospace;
+  white-space: nowrap;
+}
+#quota .quota-row { overflow: hidden; text-overflow: ellipsis; }
+#quota[hidden] { display: none; }
+#quota .quota-hot { color: #ff6b6b; font-weight: bold; }
+#quota .quota-stale { opacity: 0.5; }
 /* 圖上字下，數字全部照舊版 `ToolBtn` 樣式（MainWindow.xaml 第 16～49 行）：
    Width 72、Padding 4,4、CornerRadius 4、Background #3A3A3D、hover #50505A、
    Foreground #E0E0E0、FontSize 11、Image 26×26 且下邊距 3、停用時字色 #666。

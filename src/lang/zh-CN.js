@@ -793,4 +793,10 @@ export default {
   'err.connNameTaken': '已经有一条叫“{0}”的自定义连接，请换一个名称',
   'err.settingsReadOnly': '这次启动时设置文件读不进来，为了不覆盖它，这次的更改都不会保存：{0}\n请修好或移走这个文件后重新启动。',
   'font.tooLarge': '下载的文件超过 {0} MB，不像是字体，已中止',
+  'quota.tip5h': '5 小时区间：已用 {0}%，{1} 重置',
+  'quota.tip7d': '7 天区间：已用 {0}%，{1} 重置',
+  'quota.resetDone': '已重置',
+  'quota.updatedNow': '刚刚更新',
+  'quota.updatedAgo': '{0} 分钟前更新',
+  'quota.claudeNote': '只有从 AwayTerminal 打开的 Claude Code 会更新这里',
 };

@@ -91,6 +91,9 @@ P0 共 129 條（含下面的 IME 一節 12 條）、約 125 分鐘。
 | D15 | **和舊版並排看工具列** | 每顆按鈕都是**圖上字下**：圖 26×26、字 11px、按鈕寬 72（繁中／簡中的字都短於 72，所以整排和舊版一樣寬）、圓角 4、底 #3A3A3D、滑鼠移上去 #50505A。圖就是舊版那一組 PNG（`new-connecting`／`favorite`／`compose`／`copy`／`paste`／`copy-all`／`clear`／`page-scroll`／`arrange`／`settings`／`about`） |
 | D18 | 按「新分頁 ▾」／「我的最愛 ▾」 | 每一項都是**圖左字右**（圖 26×26、右邊距 10）：PowerShell／SSH／連接埠／代理團隊／AI聊天室／自訂連線各自的圖／自訂連線設定…（齒輪） |
 | D19 | 自訂連線設定 → 看「圖示」那一列 | 舊版 `IconKeys` 那 14 個圖（powershell／ssh-telnet／adb／wsl／git／docker／claude-code／codex／opencode／geminicli／qwen／python／run／none），點一個會框起來，存檔後「新分頁 ▾」與分頁列都換成那個圖 |
+| D35 | 用過 Codex 之後看工具列最右邊（▲ 左邊） | 一行 `Codex:5h 22%\|7d 38%\|reset 3h46m`，數字和 Codex 的 `/status` 一致；滑鼠停上去有兩個區間的重置時間與「x 分鐘前更新」 |
+| D36 | 從 AwayTerminal 開 Claude Code，問一句話 | 多一行 `Claude:5h 41%\|7d 12%\|reset 1h26m`，數字和它的 `/usage` 一致；Claude Code 底下的狀態列和原本一模一樣；`~/.claude/settings.json` 沒被改 |
+| D37 | 已用 ≥ 80%／30 分鐘沒更新／兩家都沒資料 | 紅色粗體／那一行變淡／整塊不顯示 |
 | E1 | 用滑鼠選一段文字，按「複製」 | 文字進剪貼簿，出現「複製成功」提示 |
 | E2 | 什麼都不選就按「複製」 | 提示「沒有選取文字」 |
 | E3 | 在**接管滑鼠的程式**裡（例如 claude 全螢幕模式）不選就按「複製」 | 提示改成「沒有選取文字（此程式接管了滑鼠：按住 Shift 再拖曳選取）」 |

@@ -20,6 +20,7 @@ pub mod migrate;
 pub mod output;
 pub mod prefs;
 pub mod pty;
+pub mod quota;
 pub mod reconnect;
 pub mod restore;
 pub mod sandbox;
@@ -193,6 +194,7 @@ pub fn run() {
             favorites::fav_move,
             com::com_ports,
             com::com_remember,
+            quota::quota_get,
             ttl::runner::macro_run,
             ttl::runner::macro_stop,
             ttl::runner::macro_answer,

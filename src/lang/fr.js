@@ -793,4 +793,10 @@ export default {
   'err.connNameTaken': 'Une connexion personnalisée nommée « {0} » existe déjà ; choisissez un autre nom',
   'err.settingsReadOnly': 'Le fichier de paramètres n’a pas pu être lu au démarrage ; pour ne pas l’écraser, aucune modification ne sera enregistrée pendant cette session : {0}\nCorrigez ou déplacez le fichier, puis redémarrez.',
   'font.tooLarge': 'Le téléchargement dépasse {0} Mo et ne ressemble pas à une police ; interrompu',
+  'quota.tip5h': 'Fenêtre de 5 heures : {0} % utilisés, réinitialisation {1}',
+  'quota.tip7d': 'Fenêtre de 7 jours : {0} % utilisés, réinitialisation {1}',
+  'quota.resetDone': 'déjà réinitialisée',
+  'quota.updatedNow': 'mis à jour à l’instant',
+  'quota.updatedAgo': 'mis à jour il y a {0} min',
+  'quota.claudeNote': 'Seules les sessions Claude Code ouvertes depuis AwayTerminal mettent ceci à jour',
 };

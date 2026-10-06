@@ -810,4 +810,10 @@ export default {
   'err.connNameTaken': '已經有一條叫「{0}」的自訂連線，請換一個名稱',
   'err.settingsReadOnly': '這次啟動時設定檔讀不進來，為了不蓋掉它，這次的變更都不會存檔：{0}\n請修好或移走這個檔案後重新啟動。',
   'font.tooLarge': '下載的檔案超過 {0} MB，不像是字型，已中止',
+  'quota.tip5h': '5 小時區間：已用 {0}%，{1} 重置',
+  'quota.tip7d': '7 天區間：已用 {0}%，{1} 重置',
+  'quota.resetDone': '已重置',
+  'quota.updatedNow': '剛剛更新',
+  'quota.updatedAgo': '{0} 分鐘前更新',
+  'quota.claudeNote': '只有從 AwayTerminal 開的 Claude Code 會更新這裡',
 };

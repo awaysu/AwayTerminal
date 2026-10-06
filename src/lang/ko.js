@@ -793,4 +793,10 @@ export default {
   'err.connNameTaken': '"{0}"라는 이름의 사용자 지정 연결이 이미 있습니다. 다른 이름을 사용하세요',
   'err.settingsReadOnly': '시작할 때 설정 파일을 읽지 못해, 덮어쓰지 않도록 이번 변경 사항은 저장되지 않습니다: {0}\n파일을 고치거나 옮긴 뒤 다시 시작하세요.',
   'font.tooLarge': '다운로드가 {0} MB를 넘어 글꼴이 아닌 것 같아 중단했습니다',
+  'quota.tip5h': '5시간 구간: {0}% 사용, {1} 초기화',
+  'quota.tip7d': '7일 구간: {0}% 사용, {1} 초기화',
+  'quota.resetDone': '이미 초기화됨',
+  'quota.updatedNow': '방금 업데이트됨',
+  'quota.updatedAgo': '{0}분 전 업데이트',
+  'quota.claudeNote': 'AwayTerminal에서 연 Claude Code만 여기를 업데이트합니다',
 };

@@ -24,6 +24,7 @@ import { loadAdapter as loadImeAdapter, engineInfo } from './ime/detect.js';
 import { initTabBar, currentTabState, askYesNo, showInfo, showUrlMenu, toast } from './tabbar.js';
 import { T, fmt } from './strings.js';
 import { CUSTOM_ICON_KEYS } from './icons.js';
+import { initQuota } from './quota.js';
 import { applyLang, getLang, pushToBackend } from './i18n.js';
 import { matchLang, setLang, LANGS } from './strings.js';
 
@@ -2677,6 +2678,8 @@ async function openDirTab(dir) {
   // 分頁列也要先掛好 `tab-state` 的 listener：第一條 session 是 terminal.js 送出
   // `ready` 之後才建的，那一刻就會 emit 第一筆狀態，晚掛就漏掉第一列。
   await initTabBar();
+  // 右上角的 AI CLI 額度（自己定時更新，不必等）
+  initQuota();
   // webview 引擎（IME adapter 選哪一邊靠它；真機第一天要先確認這行印對了）
   try {
     const info = engineInfo();

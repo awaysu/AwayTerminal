@@ -5,6 +5,23 @@
 
 ---
 
+## 2.0.11（2026-10-06）
+
+- **工具列右上角顯示 AI CLI 的額度**（一家一行，沒有資料的那家不顯示）：
+  ```
+  Claude:5h 41%|7d 12%|reset 1h26m
+  Codex:5h 22%|7d 38%|reset 3h46m
+  ```
+  - reset＝5 小時區間的倒數；滑鼠停上去看兩個區間的重置時間與多久以前更新。
+    已用 80% 以上標紅，30 分鐘以上沒更新的那一行變淡。
+  - **Codex**：讀它自己的 session 紀錄（`~/.codex/sessions`），不動 Codex。
+  - **Claude Code**：從 AwayTerminal 開的 Claude Code 會多帶 `--settings`，把狀態列指令換成
+    AwayTerminal 自己——記下額度後，再把同一份資料交給你原本的狀態列指令，所以 Claude Code 的
+    狀態列看起來不變，`~/.claude/settings.json` 也不會被改。別的終端機開的 Claude Code 不會更新這裡。
+  - 數字是 CLI 最近一次回報的：CLI 沒在用的時候不會變。
+
+---
+
 ## 2.0.10（2026-10-06）
 
 - **支援 Grok CLI**（xAI 的 Grok Build，指令 `grok`；第 1 層，同 2.0.6 的 Antigravity）：

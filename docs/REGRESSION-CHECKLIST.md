@@ -156,6 +156,9 @@
 | D17 | 切成德文／法文／日文（`Bildschirm löschen`、`Effacer l’écran`、`テキストとして貼り付け`） | 放不下 72 的按鈕會**變寬**（不是截字、也不是換行），工具列放不下時可以橫向捲；圖示照樣置中、整排高度一致 | 刻意與舊版不同（見下方表；舊版固定 72、長字會溢出蓋到隔壁） | | | |
 | D18 | 👤 按「新分頁 ▾」／「我的最愛 ▾」 | 每一項都是**圖左字右**（圖 26×26、右邊距 10）：PowerShell／SSH／連接埠／代理團隊／AI聊天室／自訂連線各自的圖／自訂連線設定…（齒輪） | `MakeNewItemRaw`、`New_Click`、`Favorites_Click` | | | |
 | D19 | 👤 自訂連線設定 → 看「圖示」那一列 | 舊版 `IconKeys` 那 14 個圖（powershell／ssh-telnet／adb／wsl／git／docker／claude-code／codex／opencode／geminicli／qwen／python／run／none），點一個會框起來，存檔後「新分頁 ▾」與分頁列都換成那個圖 | `CustomConnDialog.IconKeys`／`DefaultIcon = run` | | | |
+| D35 | 👤 用過 Codex 之後看工具列最右邊（▲ 左邊） | 一行 `Codex:5h 22%\|7d 38%\|reset 3h46m`，數字和 Codex 自己的 `/status` 一致（資料是它 `~/.codex/sessions` 紀錄檔裡最近一筆）；reset＝5 小時區間的倒數，每 15 秒更新；滑鼠停上去顯示兩個區間各自的重置時間（`10/09 18:00` 格式，不隨語言變）與「x 分鐘前更新」。這台沒用過 Codex＝沒有這一行 | 新增（2.0.11，使用者要求）；`quota::codex_quota` | ⬜ | — | — |
+| D36 | 👤 從 AwayTerminal 開 Claude Code（自訂連線或代理團隊的格），問一句話 | 多一行 `Claude:5h 41%\|7d 12%\|reset 1h26m`，數字和它自己 `/usage` 一致；**Claude Code 底下的狀態列和原本一模一樣**（使用者自己的 `statusLine` 指令照跑，沒設就是空的）；`~/.claude/settings.json` 與專案的 `.claude/` **沒有被改**。從別的終端機開的 Claude Code 不會更新這一行（tooltip 有說明）。自訂連線的參數自己寫了 `--settings` ＝不接（不會有 Claude 這一行） | 新增（2.0.11）；`quota::claude_launch`、`AwayTerminal --claude-statusline` | ⬜ | — | — |
+| D37 | 👤 已用 ≥ 80% 的那一格；30 分鐘以上沒更新的那一行；兩家都沒資料 | 那一格紅色粗體；那一行變淡；整塊不顯示（工具列和以前一樣） | 新增（2.0.11） | ⬜ | — | — |
 
 ## E. 複製 / 存檔
 

@@ -490,7 +490,20 @@ pub fn session_create(
     }
 
     // ---- 自訂連線的命令列（要等沙盒決定完 extra_args 才組得出來）----
+    // Claude Code：狀態列換成 AwayTerminal 自己，順便記下額度（右上角的顯示；`quota.rs`）
+    let mut quota_env: Vec<(String, String)> = Vec::new();
     if let Some(c) = &conn_def {
+        let mut quota_extra = String::new();
+        if shell::is_claude_exe(std::path::Path::new(&c.path)) {
+            if let Some((extra, env)) = crate::quota::claude_launch(
+                &settings.dir(),
+                &c.args,
+                work_dir.as_deref().map(std::path::Path::new),
+            ) {
+                quota_extra = extra;
+                quota_env = env;
+            }
+        }
         // 代理團隊的附加參數是 adapter 決定的（`--append-system-prompt-file` 之類），
         // 已經把沙盒的 `--sandbox` 接在後面了
         let extra = match &agent_slot {
@@ -505,6 +518,7 @@ pub fn session_create(
         // 自訂連線選的模型（代理團隊的格已經含在 `extra` 裡，這裡是空的）
         args.push_str(&model_extra);
         args.push_str(extra);
+        args.push_str(&quota_extra);
         sh.command_line = if c.via_powershell {
             // 舊版是「先開互動 PowerShell，尺寸就緒後再把指令打進去」（避免以 80 欄啟動）。
             // 我們的 PTY 一開始就是前端回報的真實尺寸，所以直接用 -NoExit -EncodedCommand 起——
@@ -628,7 +642,10 @@ pub fn session_create(
             env: sandbox
                 .as_ref()
                 .map(|s| s.env.clone())
-                .unwrap_or_default(),
+                .unwrap_or_default()
+                .into_iter()
+                .chain(quota_env)
+                .collect(),
             // 沙盒第 2 層：整棵行程樹進 kill-on-close 的 Job Object
             kill_on_close: sandbox.is_some(),
         },

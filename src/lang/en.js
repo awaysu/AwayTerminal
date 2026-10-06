@@ -812,4 +812,10 @@ export default {
   'err.connNameTaken': 'A custom connection named "{0}" already exists; please choose another name',
   'err.settingsReadOnly': 'The settings file could not be read at startup, so to avoid overwriting it no changes will be saved this session: {0}\nFix or move the file away, then restart.',
   'font.tooLarge': 'The download is larger than {0} MB and does not look like a font; aborted',
+  'quota.tip5h': '5-hour window: {0}% used, resets {1}',
+  'quota.tip7d': '7-day window: {0}% used, resets {1}',
+  'quota.resetDone': 'already reset',
+  'quota.updatedNow': 'updated just now',
+  'quota.updatedAgo': 'updated {0} min ago',
+  'quota.claudeNote': 'Only Claude Code sessions opened from AwayTerminal update this',
 };

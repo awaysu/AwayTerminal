@@ -793,4 +793,10 @@ export default {
   'err.connNameTaken': '「{0}」という名前のカスタム接続はすでにあります。別の名前にしてください',
   'err.settingsReadOnly': '起動時に設定ファイルを読み込めなかったため、上書きしないよう今回の変更は保存されません：{0}\nファイルを修正するか移動してから再起動してください。',
   'font.tooLarge': 'ダウンロードが {0} MB を超えており、フォントではないようなので中止しました',
+  'quota.tip5h': '5 時間枠：{0}% 使用、{1} にリセット',
+  'quota.tip7d': '7 日間枠：{0}% 使用、{1} にリセット',
+  'quota.resetDone': 'リセット済み',
+  'quota.updatedNow': 'たった今更新',
+  'quota.updatedAgo': '{0} 分前に更新',
+  'quota.claudeNote': 'AwayTerminal から開いた Claude Code だけがここを更新します',
 };
