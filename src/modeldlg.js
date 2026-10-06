@@ -112,13 +112,14 @@ export function rememberModel(backend, model) {
 /** 這條自訂連線看起來是 AI CLI 嗎（圖示或執行檔名；和後端 `adapters::backend_of` 同一個想法）。 */
 function looksLikeAiCli(conn) {
   if (
-    ['claude-code', 'codex', 'opencode', 'geminicli', 'antigravity'].includes(String(conn.icon || '').toLowerCase())
+    ['claude-code', 'codex', 'opencode', 'geminicli', 'antigravity', 'grok'].includes(String(conn.icon || '').toLowerCase())
   ) {
     return true;
   }
   const exe = String(conn.path || '').split(/[\\/]/).pop().toLowerCase();
   // Antigravity CLI 的執行檔叫 agy（整個檔名相等，三個字母太短不能用「含」）
-  return /claude|codex|opencode|gemini|antigravity/.test(exe) || /^agy(\.exe)?$/.test(exe);
+  // Grok CLI 的執行檔叫 grok（同樣整個檔名相等）
+  return /claude|codex|opencode|gemini|antigravity/.test(exe) || /^(agy|grok)(\.exe)?$/.test(exe);
 }
 
 /**

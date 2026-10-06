@@ -10,16 +10,18 @@
 //! | Claude Code | **沒有列清單的指令** → 內建別名（`--help` 寫的那幾個）＋從它的程式本體（`claude.exe`／`cli.js`）找出來的每個版本，`~/.claude.json` 補 `[1m]` 的寫法（2.0.3） | 不權威 |
 //! | Gemini CLI | 沒有列清單的指令 → 別名（auto／pro／flash／flash-lite）＋從它的程式本體找出來的每個版本（2.0.3）；找不到程式本體就只能自己輸入 | 不權威 |
 //! | Antigravity CLI | 沒有列清單的指令，而且它的清單在伺服器上（程式本體只看得到 `GetCascadeModelConfigs` 這種 RPC 名）→ **內建的靜態清單**（[`ANTIGRAVITY_MODELS`]，從 1.2.16 的程式本體字串整理的；2.0.6） | 不權威 |
+//! | Grok CLI（xAI Grok Build） | `grok models`（列出這個帳號能用的模型；2.0.10）。**輸出格式還沒在本機看過**（寫的時候這台沒裝），所以 [`parse_grok`] 寬鬆地取每行第一個像模型名稱的字 | 不權威（格式沒驗過，不拿它判斷「上次的模型不見了」） |
 //!
 //! 「權威」＝清單是 CLI 自己回報的，所以「上次用的模型不在裡面」是真的不見了，要請使用者重選。
 //! 不權威的清單只是方便挑，使用者自己打的名稱不在裡面很正常，**不會**被當成不見了。
 //!
-//! 五家指定模型的參數剛好都是 `--model <名稱>`（Antigravity 的 `-m` 也是 `--model` 的縮寫）。
+//! 六家指定模型的參數剛好都是 `--model <名稱>`（Antigravity、Grok 的 `-m` 也是 `--model` 的縮寫）。
 //! 使用者在自訂連線的「參數」欄自己寫了 `--model`／`-m` 時，選了模型就把它拿掉再接上新的
 //! （Codex 重複給會直接報錯）。
 //!
 //! Antigravity CLI 只做到這一層（使用者 2026-10-05 定的「第 1 層」：自訂連線＋選模型＋沙盒），
 //! **代理團隊不能選它**——所以它不是 [`adapters::Backend`]，這裡另外用 [`ModelCli`] 把五家包起來。
+//! Grok CLI（2.0.10）同樣只做到第 1 層，也是 [`ModelCli`] 另外的一家。
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -63,20 +65,28 @@ pub const ANTIGRAVITY_MODELS: &[(&str, &str)] = &[
     ("gpt-oss-120b", "GPT-OSS 120B"),
 ];
 
-/// 模型清單認得的 CLI：代理團隊那四家（[`Backend`]），加上只做到「自訂連線＋選模型」的 Antigravity。
+/// 模型清單認得的 CLI：代理團隊那四家（[`Backend`]），加上只做到「自訂連線＋選模型」的
+/// Antigravity 與 Grok。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ModelCli {
     Agent(Backend),
     Antigravity,
+    /// xAI 的 Grok CLI（Grok Build，指令叫 `grok`；2.0.10）。
+    Grok,
 }
 
 impl ModelCli {
     /// Antigravity 的 key（＝圖示 key、`last_models` 的 key）。
     pub const ANTIGRAVITY_KEY: &'static str = "antigravity";
+    /// Grok CLI 的 key（同上）。
+    pub const GROK_KEY: &'static str = "grok";
 
     pub fn by_key(key: &str) -> Option<Self> {
         if key.eq_ignore_ascii_case(Self::ANTIGRAVITY_KEY) {
             return Some(Self::Antigravity);
+        }
+        if key.eq_ignore_ascii_case(Self::GROK_KEY) {
+            return Some(Self::Grok);
         }
         Backend::by_key(key).map(Self::Agent)
     }
@@ -85,6 +95,7 @@ impl ModelCli {
         match self {
             Self::Agent(b) => b.key(),
             Self::Antigravity => Self::ANTIGRAVITY_KEY,
+            Self::Grok => Self::GROK_KEY,
         }
     }
 
@@ -92,6 +103,7 @@ impl ModelCli {
         match self {
             Self::Agent(b) => b.display_name(),
             Self::Antigravity => "Antigravity",
+            Self::Grok => "Grok",
         }
     }
 
@@ -105,6 +117,11 @@ impl ModelCli {
             || crate::sandbox::tool_kind(&conn.path) == crate::sandbox::ToolKind::Antigravity
         {
             return Some(Self::Antigravity);
+        }
+        if conn.icon.eq_ignore_ascii_case(Self::GROK_KEY)
+            || crate::sandbox::tool_kind(&conn.path) == crate::sandbox::ToolKind::Grok
+        {
+            return Some(Self::Grok);
         }
         None
     }
@@ -254,6 +271,34 @@ pub fn parse_opencode(text: &str) -> Vec<ModelInfo> {
     for line in text.lines() {
         let id = line.trim();
         if !id.contains('/') || !valid_model(id) || out.iter().any(|m| m.id == id) {
+            continue;
+        }
+        out.push(ModelInfo {
+            id: id.to_string(),
+            label: id.to_string(),
+        });
+    }
+    out
+}
+
+/// `grok models` 的輸出：每行取第一個像模型名稱的字（小寫英數加 `.-_/:`，而且含數字或 `-`）。
+///
+/// ⚠️ 寫的時候這台沒裝 Grok CLI，**輸出格式沒看過**（文件只說「List available models」）。
+/// 所以收得寬鬆：表頭（`MODEL`、`Available models:`）、說明文字、空行都會因為大寫／冒號／
+/// 沒有數字被跳過；行首的 `*`／`-`／`•`／`>`（標「目前預設」的記號）先去掉；
+/// 後面接的 `(default)`、描述欄不管。
+pub fn parse_grok(text: &str) -> Vec<ModelInfo> {
+    let mut out: Vec<ModelInfo> = Vec::new();
+    for line in text.lines() {
+        let line = line.trim().trim_start_matches(['*', '-', '•', '>']).trim_start();
+        let Some(id) = line.split_whitespace().next() else { continue };
+        let id = id.trim_end_matches(',');
+        let looks_like_id = id.chars().next().is_some_and(|c| c.is_ascii_alphanumeric())
+            && !id.ends_with(':')
+            && !id.chars().any(|c| c.is_ascii_uppercase())
+            && id.chars().any(|c| c.is_ascii_digit() || c == '-')
+            && !id.chars().all(|c| c.is_ascii_digit());
+        if !looks_like_id || !valid_model(id) || out.iter().any(|m| m.id == id) {
             continue;
         }
         out.push(ModelInfo {
@@ -784,6 +829,20 @@ fn fetch(cli: ModelCli, conn: &CustomConn, refresh: bool) -> ModelList {
             // 清單在它的伺服器上，程式本體找不到 → 內建的靜態清單（`static`：提示列會講清楚）
             list.models = antigravity_models();
             list.source = "static".to_string();
+            return list;
+        }
+        ModelCli::Grok => {
+            // `grok models`＝這個帳號能用的模型。格式沒在本機驗過 → 不權威（見 `parse_grok`）；
+            // 拿不到就沒有清單，使用者自己輸入
+            match run(exe, &["models"], LIST_TIMEOUT).map(|t| parse_grok(&t)) {
+                Ok(models) if !models.is_empty() => {
+                    list.models = models;
+                    list.source = "cli".to_string();
+                    list.note = format!("{exe_name} models");
+                }
+                Ok(_) => list.note = "empty list".to_string(),
+                Err(e) => list.note = e,
+            }
             return list;
         }
     };
@@ -1380,5 +1439,44 @@ mod tests {
         ids.dedup();
         assert_eq!(ids.len(), list.len());
         assert!(ids[0].starts_with("gemini-"));
+    }
+
+    /// Grok CLI（2.0.10，同 Antigravity 只做到第 1 層）：圖示或執行檔名 `grok` 都認得；不是代理團隊的 Backend。
+    #[test]
+    fn grok_is_a_model_cli_but_not_a_team_backend() {
+        let conn = |path: &str, icon: &str| CustomConn {
+            name: "x".into(),
+            path: path.into(),
+            icon: icon.into(),
+            ..CustomConn::default()
+        };
+        assert_eq!(
+            ModelCli::of_conn(&conn("C:\\Users\\x\\.grok\\bin\\grok.exe", "run")),
+            Some(ModelCli::Grok)
+        );
+        assert_eq!(ModelCli::of_conn(&conn("D:\\tools\\mything.exe", "grok")), Some(ModelCli::Grok));
+        assert_eq!(ModelCli::of_conn(&conn("C:\\x\\grokker.exe", "run")), None);
+        assert_eq!(ModelCli::by_key("Grok"), Some(ModelCli::Grok));
+        assert_eq!(Backend::by_key("grok"), None, "代理團隊不能選它（第 1 層）");
+        assert_eq!(ModelCli::Grok.key(), "grok");
+    }
+
+    /// `grok models` 的輸出格式沒在本機看過 → 幾種常見的樣子都要拿得到名稱、表頭與說明要跳過。
+    #[test]
+    fn parse_grok_is_lenient() {
+        let ids = |t: &str| parse_grok(t).into_iter().map(|m| m.id).collect::<Vec<_>>();
+        // 一行一個
+        assert_eq!(ids("grok-4.7\ngrok-4.6\n"), ["grok-4.7", "grok-4.6"]);
+        // 表格：表頭大寫、後面有描述欄、預設那行有 `*` 記號
+        assert_eq!(
+            ids("MODEL            DESCRIPTION\n* grok-4.7 (default)  Latest\n  grok-composer-2.5-fast  Fast\n"),
+            ["grok-4.7", "grok-composer-2.5-fast"]
+        );
+        // 說明文字、空行、重複
+        assert_eq!(
+            ids("Available models:\n\n- grok-build\n- grok-build\nUse --model to pick one.\n"),
+            ["grok-build"]
+        );
+        assert!(ids("Error: not logged in\n").is_empty());
     }
 }

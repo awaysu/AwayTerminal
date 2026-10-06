@@ -257,6 +257,28 @@ pub fn com_ports() -> ComCatalog {
     }
 }
 
+/// 連接埠對話框按「開啟」時把六個欄位存回設定（舊版 `ComDialog` 按確定就寫 `AppSettings.Com*`），
+/// 下次開對話框才會是「上次用的值」。
+///
+/// ⚠️ 2.0.10 以前漏了這一步：對話框永遠帶入從 1.x 匯入的值（例：`RequestToSendXOnXOff` 降成
+/// `RequestToSend`），使用者每次都要手動改回 None 才開得起來。
+/// 自動重連（`autoReconnect`）是 SSH／Telnet 共用的設定，這裡不動。
+#[tauri::command]
+pub fn com_remember(params: ComParams, settings: tauri::State<'_, Arc<crate::settings::SettingsStore>>) {
+    let port = params.port.trim();
+    if port.is_empty() {
+        return;
+    }
+    settings.update(|s| {
+        s.com_port = port.to_string();
+        s.com_baud = params.baud;
+        s.com_data_bits = params.data_bits;
+        s.com_parity = params.parity.clone();
+        s.com_stop_bits = params.stop_bits.clone();
+        s.com_flow = params.flow.clone();
+    });
+}
+
 /// `com_ports` 的回覆。
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]

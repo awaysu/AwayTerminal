@@ -192,6 +192,7 @@ pub fn run() {
             favorites::fav_rename,
             favorites::fav_move,
             com::com_ports,
+            com::com_remember,
             ttl::runner::macro_run,
             ttl::runner::macro_stop,
             ttl::runner::macro_answer,

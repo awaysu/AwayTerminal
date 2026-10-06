@@ -361,7 +361,7 @@ TEMP 路徑印出完整結果，Documents 路徑印完 `path = …` 就停住。
 | CM1 | `cargo run --example com_probe` | **13 PASS / 0 FAIL** | — | PASS | | |
 | CM2 | `--verify` 的連接埠那一步 | 列得出埠與四組選項；開不存在的埠**回錯誤且不留死分頁** | 舊版 `StartTab` 的 catch → `RemoveTabSilently` ＋錯誤視窗 | PASS | | |
 | CM3 | 👤「新分頁 ▾ → 連接埠…」 | 跳**獨立**的對話框（不是 SSH/Telnet 那個「類型」下拉），欄位順序 Port / Baud / Data / Parity / Stop / Flow ＋斷線自動重連 ＋「回到預設」 | `Dialogs/ComDialog.xaml` | | | |
-| CM4 | 👤 對話框開起來的值 | 是**上次用的**（`settings.json` 的 `comPort`…） | `AppSettings.Com*` | | | |
+| CM4 | 👤 對話框開起來的值 | 是**上次用的**（`settings.json` 的 `comPort`…）：改了 Flow control（或任何欄位）按「開啟」，下次再開對話框就是剛剛的值——**開不起來也一樣記住**（同舊版按確定就存）；按「加到我的最愛」或取消不會改 | `AppSettings.Com*`；`com_remember`（2.0.10 補上，之前完全沒存回去） | ⬜ 2.0.10 改過 | | |
 | CM5 | 👤 按「回到預設」 | COM5 / 115200 / 8 / None / 1 / None；**自動重連的勾選不動** | `Reset_Click` | | | |
 | CM24 | 👤 欄位裡已經填著 115200 時，按 Baud rate 右邊的下拉箭頭 | **八個速率全部列出來**（9600／19200／38400／57600／115200／230400／460800／921600），不是只剩 115200 一個；選一個＝填進欄位。也可以**自己打**清單以外的值（例 250000）。Port 同理：列出所有偵測到的埠，不被目前填的字篩掉；上下鍵可以在清單裡移動 | `ComboBox IsEditable="True"`；2026-10-02 使用者回報只有一個選擇（`<datalist>` 會被輸入框的字篩掉，同 TASK-032 的字型下拉） | | | |
 | CM6 | 👤 埠下拉 | 列出實際存在的埠；**一定含設定裡那個**（就算現在沒插）；旁邊看得到 USB 描述 | `GetPortNames()` ＋加值 | | | |
@@ -394,12 +394,13 @@ TEMP 路徑印出完整結果，Documents 路徑印完 `path = …` 就停住。
 | # | 怎麼測 | 預期結果 | 舊版出處 | Win | mac | Linux |
 |---|---|---|---|---|---|---|
 | P1 | 全新安裝（`settings.json` 沒有 `customConns`） | 清單是**空的**，「新分頁 ▾」只有 PowerShell／SSH…／連接埠…／自動偵測／代理團隊…／AI聊天室…（沒有 AI CLI 時這兩項是灰的）／自訂連線設定… | v1.0.18 起不自動建立任何自訂連線 | PASS | | |
-| P2 | 👤「新分頁 ▾」→「自訂連線設定…」→「自動偵測」 | 把這台機器上有裝的工具加進清單，順序＝ClaudeCode／Codex／OpenCode／GeminiCLI／QwenCode／Antigravity／WSL／Aider／ADB | `KnownTools` 的順序（使用者 2026-09-15 指定） | | | |
+| P2 | 👤「新分頁 ▾」→「自訂連線設定…」→「自動偵測」 | 把這台機器上有裝的工具加進清單，順序＝ClaudeCode／Codex／OpenCode／GeminiCLI／QwenCode／Antigravity／Grok／WSL／Aider／ADB | `KnownTools` 的順序（使用者 2026-09-15 指定） | | | |
 | P3 | 再按一次「自動偵測」 | 顯示「沒有找到新的工具」，**不會重複加入** | 同名或**同路徑**都算已存在 | PASS（單元測試） | | |
 | P4 | 看 ClaudeCode 那一條的參數 | `--dangerously-skip-permissions` | `KnownTools` | PASS | | |
 | P5 | 看 OpenCode 那一條的參數 | `--auto` | 舊版使用者要求 2026-09-15 | PASS | | |
-| P6 | 看 Codex／GeminiCLI／QwenCode／Antigravity 的參數 | **空的**（要跳過核准的人自己加） | `KnownTools` 的註解 | PASS | | |
+| P6 | 看 Codex／GeminiCLI／QwenCode／Antigravity／Grok 的參數 | **空的**（要跳過核准的人自己加） | `KnownTools` 的註解 | PASS | | |
 | P30 | 👤 裝了 Antigravity CLI（`irm https://antigravity.google/cli/install.ps1 \| iex`，裝在 `%LOCALAPPDATA%\agy\bin\agy.exe`）後按「自動偵測」 | 多一筆 **Antigravity**（圖示是 `>AG` 那個、勾「啟動前選擇資料夾」、參數空）。開它：有勾「開啟時可選模型」就跳「選擇模型」，清單是內建的（Gemini 3.8／3.7／3.6／3.5 Flash、3.1 Pro、Claude Opus 5.5／4.8／4.6、Sonnet 4.6／4.5、GPT-OSS 120B），提示列說明清單是內建的可能過時；選了用 `--model <id>` 啟動。開沙盒＝多帶 `--sandbox`。**代理團隊的「代理人類型」沒有它**（第 1 層） | 新增（2.0.6，使用者要求第 1 層）；`custom::KNOWN_TOOLS`、`models::ModelCli`、`sandbox::ToolKind::Antigravity` | ⬜ | — | — |
+| P34 | 👤 裝了 Grok CLI（`irm https://x.ai/cli/install.ps1 \| iex`，裝在 `%USERPROFILE%\.grok\bin\grok.exe`；要 SuperGrok 或 X Premium+ 訂閱）後按「自動偵測」 | 多一筆 **Grok**（圖示是 `>GK` 那個、勾「啟動前選擇資料夾」、參數空）。開它：有勾「開啟時可選模型」就跳「選擇模型」，清單來自 `grok models`（提示列寫「清單來自 grok models」；**輸出格式寫程式時沒看過，要確認清單裡是模型名稱、沒有表頭或說明文字混進來**）；選了用 `--model <id>` 啟動。開沙盒＝多帶 `--sandbox workspace`（確認它真的只能寫工作目錄）。**代理團隊的「代理人類型」沒有它**（第 1 層） | 新增（2.0.10，使用者要求）；`custom::KNOWN_TOOLS`、`models::parse_grok`、`sandbox::ToolKind::Grok` | ⬜ | — | — |
 | P31 | 👤 「新分頁 ▾」的自訂連線那一區 | 自訂連線清單下面（原本「自訂指令…」的位置）是**「自動偵測」**：點了直接做和設定視窗裡那顆按鈕一樣的事，toast 顯示「已加入：…」或「沒有找到新的工具」，清單立刻更新。**「自訂指令…」與「快速連線（host[:port]）…」都已經拿掉**（SSH… 下面直接是連接埠…） | 新增（2.0.7；2.0.8 搬位置並拿掉自訂指令，使用者要求） | ⬜ | — | — |
 | P33 | 👤 「自訂連線設定…」視窗左下角的**「回到預設」**（在「自動偵測」左邊） | 先問「會刪除目前全部 N 條自訂連線…要繼續嗎？」；按否＝什麼都不動。按是＝整份清單清掉、**清完是空的**（不會接著自動偵測；自己新增或改過的都不見）；下面那一行顯示「清單已清空。按『自動偵測』…」，「新分頁 ▾」的自訂連線同步消失。之後按「自動偵測」＝這台電腦找得到的已知工具用**預設參數**加回來（例 ClaudeCode 的 `--dangerously-skip-permissions`） | 新增（2.0.8，使用者要求）；`custom_reset` | ⬜ | — | — |
 | P32 | 👤 這台電腦一家 AI CLI（ClaudeCode／Codex／OpenCode／GeminiCLI）都找不到時打開「新分頁 ▾」 | 「代理團隊…」「AI聊天室…」是**灰的**，點了沒反應，滑鼠停上去的提示是「這台電腦沒有找到可用的代理人類型…」；裝了（或自動偵測／自訂連線設定加了）之後再打開選單就能選 | 新增（2.0.7，使用者要求）；`agent_backends_any` | ⬜ | — | — |

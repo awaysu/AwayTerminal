@@ -50,7 +50,7 @@ See [docs/PLATFORM-UNIX.md](docs/PLATFORM-UNIX.md) and [CHANGELOG.md](CHANGELOG.
 | **Built-in Telnet**: option negotiation, IAC escaping, **NAWS** (the old version never sent it), `TTYPE` | ✅ |
 | **Serial ports**: friendly USB names, baud/bits/parity/flow control | ✅ |
 | WSL, ADB (device picker via `adb devices`) | ✅ |
-| Custom connections (Claude Code, Codex CLI, Gemini CLI, OpenCode, QwenCode, Antigravity CLI… with auto-detection) | ✅ |
+| Custom connections (Claude Code, Codex CLI, Gemini CLI, OpenCode, QwenCode, Antigravity CLI, Grok CLI… with auto-detection) | ✅ |
 
 ### Terminal and UI
 

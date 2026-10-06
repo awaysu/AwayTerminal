@@ -1528,6 +1528,8 @@ async function newSession(kind) {
         await addConnFavorite('com', r.params);
         return;
       }
+      // 舊版按「開啟」就把這次的值存成下次的預設（開不開得起來都存）
+      await invoke('com_remember', { params: r.params }).catch((e) => log(`[com] 記住設定失敗：${e}`));
       await createSession({ kind: 'com', com: r.params });
       return;
     }

@@ -7,7 +7,7 @@
 //! | 舊版 | 這裡 |
 //! |---|---|
 //! | `AppSettings.CustomConns` | `settings.custom_conns`（多一個 `sandbox` 欄位） |
-//! | `CustomConnDialog.KnownTools` | [`KNOWN_TOOLS`]，**順序照抄**（四個 AI CLI 在前、WSL 在 GeminiCLI 之後）；2.0.6 多了 Antigravity（在 QwenCode 之後） |
+//! | `CustomConnDialog.KnownTools` | [`KNOWN_TOOLS`]，**順序照抄**（四個 AI CLI 在前、WSL 在 GeminiCLI 之後）；2.0.6 多了 Antigravity（在 QwenCode 之後）、2.0.10 多了 Grok（在 Antigravity 之後） |
 //! | `CustomConnDialog.ResolveTool` | [`resolve_tool`]，找的目錄照抄 |
 //! | `AutoDetect_Click` | [`auto_detect`]：已存在（同名或**同路徑**）就跳過 |
 //! | `OpenCustom` 的 `closeBytes` | `CustomConn::close_bytes()` |
@@ -82,6 +82,17 @@ pub const KNOWN_TOOLS: &[KnownTool] = &[
         icon: "antigravity",
         pick_dir: true,
     },
+    // Grok CLI（xAI 的 Grok Build，2026-05 推出、08-07 出 1.0；指令叫 `grok`；
+    // 官方安裝程式放在 ~/.grok/bin（Windows 是 %USERPROFILE%\.grok\bin）並加進使用者 PATH）。
+    // 2.0.10 只做到第 1 層（自訂連線＋選模型＋沙盒），代理團隊還不能選它。參數留空
+    // （要跳過核准的人自己加 --yolo）
+    KnownTool {
+        name: "Grok",
+        exe_names: &["grok.exe", "grok"],
+        args: "",
+        icon: "grok",
+        pick_dir: true,
+    },
     KnownTool {
         name: "WSL",
         exe_names: &["wsl.exe"],
@@ -143,6 +154,8 @@ fn extra_dirs() -> Vec<PathBuf> {
         dirs.push(home.join(".local").join("bin"));
         // OpenCode 官方安裝程式的位置（它只把這裡寫進 shell 的 rc 檔，比它早啟動的行程看不到）
         dirs.push(home.join(".opencode").join("bin"));
+        // Grok CLI 官方安裝程式的位置（PATH 是事後才加的，比它早啟動的行程看不到）
+        dirs.push(home.join(".grok").join("bin"));
     }
     if let Ok(appdata) = std::env::var("APPDATA") {
         dirs.push(Path::new(&appdata).join("npm"));

@@ -163,6 +163,9 @@ pub fn extra_args(tool_path: &str) -> &'static str {
         // Antigravity CLI 的 `--sandbox`＝「Run in a sandbox with terminal restrictions enabled」
         // （照它的 --help，2.0.6；同樣沒在本機跑過）
         ToolKind::Gemini | ToolKind::Antigravity => " --sandbox",
+        // Grok CLI 的 `--sandbox <PROFILE>`：`workspace`＝只能寫目前目錄、`~/.grok/` 與暫存
+        //（docs.x.ai/build/features/sandbox，2.0.10；同 Codex 的 workspace-write。沒在本機跑過）
+        ToolKind::Grok => " --sandbox workspace",
         _ => "",
     }
 }
@@ -174,6 +177,8 @@ pub enum ToolKind {
     Gemini,
     /// Antigravity CLI（執行檔叫 `agy`）。
     Antigravity,
+    /// Grok CLI（xAI Grok Build，執行檔叫 `grok`）。
+    Grok,
     Other,
 }
 
@@ -192,6 +197,9 @@ pub fn tool_kind(path: &str) -> ToolKind {
     } else if stem == "agy" || stem.contains("antigravity") {
         // `agy` 要整個檔名相等：三個字母太短，`contains` 會把 strategy.exe 之類的也算進去
         ToolKind::Antigravity
+    } else if stem == "grok" {
+        // 整個檔名相等（同 agy）：別把名字裡剛好有 grok 的工具算進來
+        ToolKind::Grok
     } else {
         ToolKind::Other
     }
@@ -703,6 +711,9 @@ mod tests {
         }
         assert_eq!(tool_kind("/home/x/.local/bin/agy"), ToolKind::Antigravity);
         assert_eq!(tool_kind("strategy.exe"), ToolKind::Other); // 不能用 contains("agy")
+        assert_eq!(tool_kind("C:\\Users\\x\\.grok\\bin\\grok.exe"), ToolKind::Grok);
+        assert_eq!(tool_kind("/home/x/.grok/bin/grok"), ToolKind::Grok);
+        assert_eq!(tool_kind("grokker.exe"), ToolKind::Other);
     }
 
     #[test]
@@ -710,6 +721,7 @@ mod tests {
         assert_eq!(extra_args("codex.cmd"), " --sandbox workspace-write");
         assert_eq!(extra_args("gemini.cmd"), " --sandbox");
         assert_eq!(extra_args("agy.exe"), " --sandbox");
+        assert_eq!(extra_args("grok.exe"), " --sandbox workspace");
         assert_eq!(extra_args("claude.cmd"), ""); // claude 走 hook，不是參數
         assert_eq!(extra_args("pwsh.exe"), "");
     }

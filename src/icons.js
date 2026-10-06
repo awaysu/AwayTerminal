@@ -35,6 +35,8 @@ export const CUSTOM_ICON_KEYS = [
   'qwen',
   // Antigravity CLI（2.0.6 新增；舊版沒有這個 key）
   'antigravity',
+  // Grok CLI（2.0.10 新增）
+  'grok',
   'python',
   'run',
   'none',
