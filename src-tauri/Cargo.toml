@@ -6,7 +6,7 @@ members = ["platform"]
 
 [package]
 name = "awayterminal"
-version = "2.0.13"
+version = "2.0.14"
 description = "AwayTerminal 2 — cross-platform terminal"
 authors = ["awaysu"]
 edition = "2021"

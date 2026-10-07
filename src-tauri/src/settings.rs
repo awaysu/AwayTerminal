@@ -127,6 +127,9 @@ pub struct AppSettings {
 
     /// 「輸入文字」視窗的「送出後送 Enter」勾選（舊版 `ComposeSendEnter`，預設開）。
     pub compose_send_enter: bool,
+    /// 「輸入文字」上次載入的文字檔（完整路徑；2.0.14 新增，使用者要求）。下次按「載入檔案」
+    /// 時檔案對話框就開在那個資料夾、預選那個檔名。空＝還沒載入過。
+    pub compose_last_file: String,
 
     /// 各家 AI CLI **上次選的模型**（key＝`claude-code`／`codex`／`opencode`／`geminicli`，
     /// 2.0.6 起多 `antigravity`、2.0.10 起多 `grok`；空字串＝選了「預設」）。選模型的視窗用它當預選值
@@ -284,6 +287,7 @@ impl Default for AppSettings {
             remote_notify: false,
             sandbox_default: false,
             compose_send_enter: true,
+            compose_last_file: String::new(),
             last_models: std::collections::BTreeMap::new(),
             ask_model_on_open: false,
             model_auto_refresh: false,

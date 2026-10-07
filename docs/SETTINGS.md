@@ -49,7 +49,7 @@ PM 在 TASK-015 A2 要求「`settings.json` 已有的欄位全部要能從這裡
 |---|---|
 | `window`（大小位置）、`viewMode`、`tabPanelVisible`／`tabPanelWidth`、`palette` | 使用者用滑鼠操作就會存，不必有欄位 |
 | `favorites`、`customConns`、`savedTabs` | 各自有自己的對話框（我的最愛／自訂連線／恢復分頁） |
-| `comPort`／`comBaud`…、`lastDir`、`composeSendEnter` | 「上次用的值」——由對應的對話框自己記 |
+| `comPort`／`comBaud`…、`lastDir`、`composeSendEnter`、`composeLastFile`（2.0.14） | 「上次用的值」——由對應的對話框自己記 |
 | `sshWeakAccepted` 的內容 | 見上（只給清除） |
 
 ### 1.4 顏色驗證

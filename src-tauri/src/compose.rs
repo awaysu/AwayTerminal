@@ -14,6 +14,7 @@
 //! | 「送出後送 Enter」：**貼完 200ms 再直接對 session 送 `\r`**（不可以併進貼上內容） | `SendSnippet` | 同 |
 //! | 固定送到當初那個分頁（期間切分頁也不會送錯） | 同上 | 同（`id` 是參數） |
 //! | 勾選狀態記在設定 | `AppSettings.ComposeSendEnter` | `settings.compose_send_enter` |
+//! | （舊版沒有）記住上次載入的檔案，下次選檔從那裡開 | — | `settings.compose_last_file`（2.0.14，使用者要求） |
 
 use crate::i18n::{t, tf};
 use std::sync::Arc;
@@ -79,12 +80,25 @@ pub fn normalize_newlines(text: &str) -> String {
 ///
 /// 篩選器照舊版（`txt;md;log;json;csv;xml;yaml;yml` + 所有檔案）。
 /// 超過 2MB 回 `Err`（舊版跳「檔案太大（上限 {0} MB），未載入。」）。
+///
+/// 2.0.14：對話框開在**上次載入的那個檔案**的資料夾、預選它的檔名；載入成功就記下這次的路徑。
+/// 上次的資料夾已經不在了（搬走、隨身碟拔掉）就照系統預設開。
 #[tauri::command]
-pub async fn compose_load_file(app: AppHandle) -> Result<Option<LoadedText>, String> {
+pub async fn compose_load_file(
+    app: AppHandle,
+    settings: State<'_, Arc<SettingsStore>>,
+) -> Result<Option<LoadedText>, String> {
     use tauri_plugin_dialog::DialogExt;
     let (tx, rx) = std::sync::mpsc::channel();
-    app.dialog()
-        .file()
+    let mut dialog = app.dialog().file();
+    let last = std::path::PathBuf::from(settings.get().compose_last_file);
+    if let Some(dir) = last.parent().filter(|d| !d.as_os_str().is_empty() && d.is_dir()) {
+        dialog = dialog.set_directory(dir);
+        if let Some(name) = last.file_name() {
+            dialog = dialog.set_file_name(name.to_string_lossy());
+        }
+    }
+    dialog
         .set_title(t("dlg.loadTextFile"))
         .add_filter(
             t("dlg.textFiles"),
@@ -107,6 +121,8 @@ pub async fn compose_load_file(app: AppHandle) -> Result<Option<LoadedText>, Str
     }
     let bytes = std::fs::read(&p).map_err(|e| tf("err.readFileFailed", &[&e.to_string()]))?;
     let (text, encoding) = decode_text(&bytes);
+    // 讀成功才記（太大、讀不到的檔不記，下次還是從上一個好的地方開）
+    settings.update(|s| s.compose_last_file = path.clone());
     println!(
         "[AwayTerminal] 輸入文字：載入 {path}（{} bytes，{encoding}）",
         bytes.len()
