@@ -5,6 +5,14 @@
 
 ---
 
+## 2.1.1（2026-10-08）
+
+- **修正 Windows 上分頁列不能拖曳排序**（分割／分欄模式拖 pane 標題重排也是）：Tauri 在 Windows
+  預設會接手視窗裡的拖放（為了收檔案總管拖進來的檔案），網頁自己的拖曳事件收不到。
+  主視窗改成 `dragDropEnabled: false`；程式沒有用到 Tauri 的檔案拖放。
+
+---
+
 ## 2.1.0（2026-10-08）
 
 - **原始碼搬回 `github.com/awaysu/AwayTerminal`**：2.x 成為那個 repo 的 main，1.x 的原始碼保留在
