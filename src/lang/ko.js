@@ -193,6 +193,11 @@ export default {
 
   // ---- TTL 巨集（TASK-013；舊版 Loc 的 menu.macro／msg.stopMacroAsk／dlg.macroTitle）----
   'menu.macro': '매크로 실행…',
+  'menu.copyPath': '경로 복사',
+  'menu.copyPathDone': '경로를 복사했습니다: {0}',
+  'menu.openExplorer': '파일 탐색기에서 열기',
+  'menu.openFinder': 'Finder에서 열기',
+  'menu.openFileManager': '파일 관리자에서 열기',
   'menu.shellHere': '{0} 열기',
   'menu.shellHereTip': '이 탭의 작업 폴더에서 {0} 탭을 하나 더 엽니다',
   'menu.restart': '다시 시작',
@@ -302,6 +307,13 @@ export default {
   'settings.title': '설정',
   // machine-translation notice (under the language picker, and on the About page)
   'settings.langNote': '번체 중국어와 영어를 제외한 언어는 기계 번역입니다. 수정 제안을 환영합니다.',
+  'settings.navLook': '모양',
+  'settings.navInput': '입력 및 표시',
+  'settings.navConn': '연결',
+  'settings.navLog': '로그',
+  'settings.navAi': 'AI 도구',
+  'settings.navSystem': '시스템',
+  'settings.groupRestore': '탭 복원',
   'settings.groupLang': '언어',
   'settings.groupFont': '글꼴과 배경색',
   'font.family': '글꼴',
@@ -350,7 +362,6 @@ export default {
   'settings.todo': '(이 항목은 아직 이식되지 않았습니다)',
 
   // ---- 新版多的設定（舊版只能手改 settings.json）----
-  'settings.groupMore': '기타',
   'settings.restoreLines': '탭 복원 시 유지할 줄 수',
   'settings.restoreLinesHint': '0＝화면 기록을 유지하지 않음',
   'settings.exitRestore': '프로그램을 닫을 때 “탭 복원”을 기본으로 선택',
@@ -550,8 +561,6 @@ export default {
   'settings.modelsFail': '새로 고침 실패: {0}',
   'settings.modelsAuto': '자동 새로 고침',
   'settings.modelsAutoNote': '매일 선택한 시각에 각 AI CLI에 모델 목록을 다시 물어봅니다(AwayTerminal이 실행 중이어야 합니다).',
-  'settings.pageLang': '언어 및 글꼴',
-  'settings.pageGeneral': '일반',
   'migrate.button': '이전 버전 설정 가져오기…',
   'migrate.pick': '이전 버전의 settings.json 선택',
   'migrate.title': '이전 버전 설정 가져오기',

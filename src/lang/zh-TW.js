@@ -198,6 +198,11 @@ export default {
 
   // ---- TTL 巨集（TASK-013；舊版 Loc 的 menu.macro／msg.stopMacroAsk／dlg.macroTitle）----
   'menu.macro': '執行巨集…',
+  'menu.copyPath': '複製路徑',
+  'menu.copyPathDone': '已複製路徑：{0}',
+  'menu.openExplorer': '檔案總管開啟',
+  'menu.openFinder': 'Finder 開啟',
+  'menu.openFileManager': '檔案管理員開啟',
   'menu.shellHere': '{0} 開啟',
   'menu.shellHereTip': '在這個分頁的工作目錄另開一個 {0} 分頁',
   'menu.restart': '重新啟動',
@@ -308,6 +313,13 @@ export default {
   'settings.title': '設定',
   // 機器翻譯的說明（設定視窗的語言下拉底下，以及關於頁各一行）
   'settings.langNote': '除了「繁體中文」與 English 之外都是機器翻譯，歡迎修正。',
+  'settings.navLook': '外觀',
+  'settings.navInput': '輸入與顯示',
+  'settings.navConn': '連線',
+  'settings.navLog': '記錄',
+  'settings.navAi': 'AI 工具',
+  'settings.navSystem': '系統',
+  'settings.groupRestore': '恢復分頁',
   'settings.groupLang': '語言',
   'settings.groupFont': '字體背景顏色',
   'font.family': '字型',
@@ -366,7 +378,6 @@ export default {
   'settings.todo': '（這項還沒搬過來）',
 
   // ---- 新版多的設定（舊版只能手改 settings.json）----
-  'settings.groupMore': '其他',
   'settings.restoreLines': '恢復分頁保留的行數',
   'settings.restoreLinesHint': '0＝不保留畫面紀錄',
   'settings.exitRestore': '關閉程式時預設勾「恢復分頁」',
@@ -567,8 +578,6 @@ export default {
   'settings.modelsFail': '更新失敗：{0}',
   'settings.modelsAuto': '自動更新',
   'settings.modelsAutoNote': '每天在選的整點自動重新向每一家 AI CLI 問一次模型清單（AwayTerminal 要開著）。',
-  'settings.pageLang': '語言和字體',
-  'settings.pageGeneral': '一般設定',
   'migrate.button': '匯入舊版設定…',
   'migrate.pick': '選舊版的 settings.json',
   'migrate.title': '匯入舊版設定',

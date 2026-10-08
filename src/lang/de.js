@@ -193,6 +193,11 @@ export default {
 
   // ---- TTL 巨集（TASK-013；舊版 Loc 的 menu.macro／msg.stopMacroAsk／dlg.macroTitle）----
   'menu.macro': 'Makro ausführen…',
+  'menu.copyPath': 'Pfad kopieren',
+  'menu.copyPathDone': 'Pfad kopiert: {0}',
+  'menu.openExplorer': 'Im Datei-Explorer öffnen',
+  'menu.openFinder': 'Im Finder öffnen',
+  'menu.openFileManager': 'Im Dateimanager öffnen',
   'menu.shellHere': '{0} öffnen',
   'menu.shellHereTip': 'Öffnet einen weiteren {0}-Tab im Arbeitsordner dieses Tabs',
   'menu.restart': 'Neu starten',
@@ -302,6 +307,13 @@ export default {
   'settings.title': 'Einstellungen',
   // machine-translation notice (under the language picker, and on the About page)
   'settings.langNote': 'Alle Sprachen außer traditionellem Chinesisch und Englisch sind maschinell übersetzt; Korrekturen sind willkommen.',
+  'settings.navLook': 'Darstellung',
+  'settings.navInput': 'Eingabe & Anzeige',
+  'settings.navConn': 'Verbindungen',
+  'settings.navLog': 'Protokolle',
+  'settings.navAi': 'KI-Werkzeuge',
+  'settings.navSystem': 'System',
+  'settings.groupRestore': 'Tabs wiederherstellen',
   'settings.groupLang': 'Sprache',
   'settings.groupFont': 'Schriftart und Farben',
   'font.family': 'Schriftart',
@@ -350,7 +362,6 @@ export default {
   'settings.todo': '(noch nicht übernommen)',
 
   // ---- 新版多的設定（舊版只能手改 settings.json）----
-  'settings.groupMore': 'Sonstiges',
   'settings.restoreLines': 'Beim Wiederherstellen gespeicherte Zeilen',
   'settings.restoreLinesHint': '0 = Bildschirmverlauf nicht speichern',
   'settings.exitRestore': 'Beim Beenden „Tabs wiederherstellen“ vorauswählen',
@@ -550,8 +561,6 @@ export default {
   'settings.modelsFail': 'Aktualisierung fehlgeschlagen: {0}',
   'settings.modelsAuto': 'Automatisch aktualisieren',
   'settings.modelsAutoNote': 'Fragt jeden Tag zur gewählten Stunde jede KI-CLI erneut nach ihren Modellen (AwayTerminal muss laufen).',
-  'settings.pageLang': 'Sprache & Schriften',
-  'settings.pageGeneral': 'Allgemein',
   'migrate.button': 'Einstellungen aus v1 importieren…',
   'migrate.pick': 'Die alte settings.json auswählen',
   'migrate.title': 'Einstellungen aus v1 importieren',

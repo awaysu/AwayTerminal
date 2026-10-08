@@ -127,8 +127,8 @@ pub struct AppSettings {
 
     /// 「輸入文字」視窗的「送出後送 Enter」勾選（舊版 `ComposeSendEnter`，預設開）。
     pub compose_send_enter: bool,
-    /// 「輸入文字」上次載入的文字檔（完整路徑；2.0.14 新增，使用者要求）。下次按「載入檔案」
-    /// 時檔案對話框就開在那個資料夾、預選那個檔名。空＝還沒載入過。
+    /// 「輸入文字」上次載入（2.0.14）或儲存（2.0.15）的文字檔（完整路徑；使用者要求）。
+    /// 下次按「載入檔案」或「儲存」時檔案對話框就開在那個資料夾、預選那個檔名。空＝還沒用過。
     pub compose_last_file: String,
 
     /// 各家 AI CLI **上次選的模型**（key＝`claude-code`／`codex`／`opencode`／`geminicli`，

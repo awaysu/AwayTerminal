@@ -323,9 +323,9 @@ export async function openSettings() {
   el.fontNote.textContent = '';
   fill(opened);
   updateFontButtons();
-  // 每次開都從第一頁（語言和字體）開始；這次視窗裡切過的頁面不記到下一次。
+  // 每次開都從第一類（外觀）開始；這次視窗裡切過的分類不記到下一次。
   // 焦點照舊放在字型下拉（ST23：鍵盤可操作）
-  showPage('lang');
+  showPage('look');
   el.root.hidden = false;
   el.familySel.focus();
 }
@@ -345,17 +345,32 @@ function syncModelsButton() {
   el.modelsHour.disabled = !on || !el.modelsAuto.checked;
 }
 
+/** 左側分類 → 字串 key（2.0.15）。順序＝`index.html` 裡 `#st-nav` 的按鈕順序。 */
+const NAV_KEYS = {
+  look: 'settings.navLook',
+  system: 'settings.navSystem',
+  ai: 'settings.navAi',
+  input: 'settings.navInput',
+  conn: 'settings.navConn',
+  log: 'settings.navLog',
+};
+
 /**
- * 設定分成兩頁（2.0.7）：`lang`＝語言和字體、`general`＝一般設定。
+ * 切到某一類（2.0.15 起是左側分類清單；2.0.7～2.0.14 是「語言和字體／一般設定」兩頁的下拉）。
  *
- * 兩頁疊在同一格（`.st-pages`），沒選到的那一頁用 `.st-off`（visibility: hidden）藏起來而不是
- * display: none——這樣視窗的長寬永遠是比較大的那一頁，切頁時不會忽大忽小（2.0.8，使用者要求）。
+ * 各頁疊在同一格（`.st-pages`），沒選到的用 `.st-off`（visibility: hidden）藏起來而不是
+ * display: none——這樣視窗的長寬永遠是最大的那一頁，切頁時不會忽大忽小（2.0.8，使用者要求）。
  */
 function showPage(page) {
-  for (const node of el.root.querySelectorAll('.sd-cols[data-page]')) {
+  for (const node of el.root.querySelectorAll('.st-page[data-page]')) {
     node.classList.toggle('st-off', node.dataset.page !== page);
   }
-  el.page.value = page;
+  for (const b of el.navButtons) {
+    const on = b.dataset.page === page;
+    b.setAttribute('aria-selected', on ? 'true' : 'false');
+    // 只有選到的那一項在 Tab 順序裡（分類之間用上下鍵移動）
+    b.tabIndex = on ? 0 : -1;
+  }
 }
 
 async function save(e) {
@@ -442,7 +457,9 @@ function applyTexts() {
   el.lIme.textContent = T['settings.groupIme'];
   el.lImeQuiet.textContent = T['settings.imeQuiet'];
   el.imeHelp.textContent = T['settings.imeQuietHelpLink'];
-  el.lMore.textContent = T['settings.groupMore'];
+  el.lConn.textContent = T['settings.navConn'];
+  el.lRestore.textContent = T['settings.groupRestore'];
+  el.lLog.textContent = T['settings.navLog'];
   el.lRestoreLines.textContent = T['settings.restoreLines'];
   el.restoreLinesHint.textContent = T['settings.restoreLinesHint'];
   el.lKeepAlive.textContent = T['settings.keepAlive'];
@@ -467,9 +484,9 @@ function applyTexts() {
   el.lModelsAuto.textContent = T['settings.modelsAuto'];
   el.lModelsAuto.parentElement.title = T['settings.modelsAutoNote'];
   el.modelsHour.title = T['settings.modelsAutoNote'];
-  // 設定的兩頁（下拉）
-  for (const o of el.page.options) {
-    o.textContent = T[o.value === 'lang' ? 'settings.pageLang' : 'settings.pageGeneral'];
+  // 左側分類清單（2.0.15）
+  for (const b of el.navButtons) {
+    b.textContent = T[NAV_KEYS[b.dataset.page]] || b.dataset.page;
   }
   el.lShell.textContent = T['settings.groupShell'];
   el.lShellMenu.textContent = T['settings.shellMenu'];
@@ -522,7 +539,9 @@ export function initSettings(injected) {
   el.lImeQuiet = $('st-l-imequiet');
   el.imeQuiet = $('st-imequiet');
   el.imeHelp = $('st-imehelp');
-  el.lMore = $('st-l-more');
+  el.lConn = $('st-l-conn');
+  el.lRestore = $('st-l-restore');
+  el.lLog = $('st-l-log');
   el.lRestoreLines = $('st-l-restorelines');
   el.restoreLines = $('st-restorelines');
   el.restoreLinesHint = $('st-restorelines-hint');
@@ -563,7 +582,8 @@ export function initSettings(injected) {
     o.textContent = `${String(h).padStart(2, '0')}:00`;
     el.modelsHour.appendChild(o);
   }
-  el.page = $('st-page');
+  el.nav = $('st-nav');
+  el.navButtons = [...el.nav.querySelectorAll('button[data-page]')];
   el.lShell = $('st-l-shell');
   el.lShellMenu = $('st-l-shellmenu');
   // ⚠️ 這一行從 TASK-016 就漏掉了（TASK-028 才發現）：`fill()` 第一件事就是
@@ -668,8 +688,26 @@ export function initSettings(injected) {
   // 「開啟時可選模型」沒勾＝用不到模型清單 → 手動／自動更新跟著不能按
   el.askModel.addEventListener('change', syncModelsButton);
   el.modelsAuto.addEventListener('change', syncModelsButton);
-  // 設定的兩頁：切換只是顯示／隱藏，兩頁的欄位都會一起存
-  el.page.addEventListener('change', () => showPage(el.page.value));
+  // 左側分類清單：切換只是顯示／隱藏，每一頁的欄位都會一起存。
+  // 鍵盤：上下鍵（窄視窗時是左右鍵）在分類之間移動並直接切過去，Home／End 到頭尾
+  el.nav.addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-page]');
+    if (b) showPage(b.dataset.page);
+  });
+  el.nav.addEventListener('keydown', (e) => {
+    const list = el.navButtons;
+    const i = list.indexOf(document.activeElement);
+    if (i < 0) return;
+    let next = -1;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowRight') next = (i + 1) % list.length;
+    else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') next = (i - 1 + list.length) % list.length;
+    else if (e.key === 'Home') next = 0;
+    else if (e.key === 'End') next = list.length - 1;
+    if (next < 0) return;
+    e.preventDefault();
+    showPage(list[next].dataset.page);
+    list[next].focus();
+  });
 
   // 手動更新模型清單（2.0.3）：不等 10 分鐘的快取，立刻重新向這台電腦上每一家 AI CLI 問一次
   //（和每天的「自動更新」做的是同一件事：後端 `refresh_all`）

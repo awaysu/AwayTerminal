@@ -117,7 +117,11 @@
     <!-- 在這個分頁的工作目錄另開一個 PowerShell／終端機分頁（2.0.3 新增）。只有自訂連線開的分頁
          （Claude Code、Codex… 與代理團隊的格）才顯示：AI agent 在跑的時候想自己下指令看一下。
          文字是「PowerShell 開啟」（Windows）或「Terminal 開啟」（mac／Linux），由 tabbar.js 填 -->
+    <!-- 複製路徑／檔案總管開啟（2.0.15，使用者要求）：夾在「PowerShell 開啟」的上下，顯示條件和它一樣。
+         「檔案總管開啟」在 mac 叫「Finder 開啟」、Linux 叫「檔案管理員開啟」（tabbar.js 填） -->
+    <div class="menu-item" data-act="copy-path">複製路徑</div>
     <div class="menu-item" data-act="shell-here">PowerShell 開啟</div>
+    <div class="menu-item" data-act="open-folder">檔案總管開啟</div>
     <!-- 沙盒模式（新功能）：勾勾（在文字後面）顯示的是**連線設定**的值，改了下次啟動生效 -->
     <div class="menu-item" data-act="sandbox">沙盒模式</div>
     <div class="menu-item" data-act="sandbox-clear">清除沙盒…</div>
@@ -590,24 +594,27 @@
     <form id="setdlg-box">
       <div id="setdlg-title"></div>
 
-      <!-- 設定分成兩頁（2.0.7，使用者指定）：下拉選「語言和字體」（語言／字體背景顏色）或
-           「一般設定」（其餘全部），每一頁各自兩欄。
-           兩欄（TASK-030）：使用者的螢幕是 1536×864 邏輯像素，單欄八個區塊要捲才看得完。
-           視窗窄於 980px 時 `.sd-cols` 退回單欄（見 style.css 的 @media）。 -->
-      <div class="st-pagebar">
-        <select id="st-page">
-          <option value="lang"></option>
-          <option value="general"></option>
-        </select>
-      </div>
+      <!-- 左側分類清單（2.0.15，使用者選的；取代 2.0.7 的「語言和字體／一般設定」兩頁下拉）。
+           六類，每一類只放一兩組，所以單欄就放得下、不用捲。
+           原本「其他」那一組（恢復分頁行數、保持連線、log 資料夾、四個勾選）拆到「連線」與「記錄」；
+           「清除已接受的弱演算法」是 SSH 的，從沙盒那組搬到「連線」。 -->
+      <div class="st-layout">
+      <nav id="st-nav" class="st-nav" role="tablist">
+        <!-- 順序是使用者指定的（2.0.15）：外觀、系統、AI 工具、輸入與顯示、連線、記錄 -->
+        <button type="button" role="tab" data-page="look"></button>
+        <button type="button" role="tab" data-page="system"></button>
+        <button type="button" role="tab" data-page="ai"></button>
+        <button type="button" role="tab" data-page="input"></button>
+        <button type="button" role="tab" data-page="conn"></button>
+        <button type="button" role="tab" data-page="log"></button>
+      </nav>
 
-      <!-- 兩頁疊在同一格（2.0.8，使用者要求「不要讓視窗忽大忽小」）：`.st-pages` 是一格的 grid，
-           兩頁都放在那一格，所以視窗大小永遠是比較大的那一頁（一般設定）；沒選到的那一頁只是
-           看不見（`.st-off`＝visibility: hidden），不是 display: none。 -->
+      <!-- 六頁疊在同一格（2.0.8 起的做法，使用者要求「不要讓視窗忽大忽小」）：`.st-pages` 是一格的 grid，
+           每一頁都放在那一格，所以視窗大小永遠是最大的那一頁；沒選到的頁只是看不見
+           （`.st-off`＝visibility: hidden），不是 display: none。 -->
       <div class="st-pages">
-      <!-- 第 1 頁：語言和字體 -->
-      <div class="sd-cols" data-page="lang">
-        <div class="sd-col">
+      <!-- 外觀 -->
+      <div class="st-page" data-page="look" role="tabpanel">
       <fieldset>
         <legend id="st-l-lang"></legend>
         <!-- 八種語言（選項由 strings.js 的 LANGS 產生，各自用自己的語言寫） -->
@@ -617,8 +624,6 @@
         </div>
         <div id="st-lang-note" class="sd-hint"></div>
       </fieldset>
-        </div>
-        <div class="sd-col">
       <fieldset>
         <legend id="st-l-font"></legend>
         <div class="st-grid">
@@ -657,13 +662,10 @@
             <input id="st-bg-pick" type="color" /></span>
         </div>
       </fieldset>
-        </div>
       </div>
 
-      <!-- 第 2 頁：一般設定。左欄＝Claude 輸入／渲染器／檔案總管／AI 模型，
-           右欄＝其他／沙盒／匯入舊版（高度大致相等） -->
-      <div class="sd-cols st-off" data-page="general">
-        <div class="sd-col">
+      <!-- 輸入與顯示 -->
+      <div class="st-page st-off" data-page="input" role="tabpanel">
       <fieldset>
         <legend id="st-l-ime"></legend>
         <div class="st-grid">
@@ -687,11 +689,49 @@
         </div>
         <div id="st-render-note" class="sd-hint"></div>
       </fieldset>
+      </div>
+
+      <!-- 連線 -->
+      <div class="st-page st-off" data-page="conn" role="tabpanel">
       <fieldset>
-        <legend id="st-l-shell"></legend>
-        <label class="sd-check"><input id="st-shellmenu" type="checkbox" /><span id="st-l-shellmenu"></span></label>
-        <div id="st-shell-note" class="sd-hint"></div>
+        <legend id="st-l-conn"></legend>
+        <div class="st-grid">
+          <label id="st-l-keepalive" for="st-keepalive"></label>
+          <span class="sd-row"><input id="st-keepalive" type="number" min="0" max="1440" step="1" /></span>
+        </div>
+        <label class="sd-check"><input id="st-autoreconnect" type="checkbox" /><span id="st-l-autoreconnect"></span></label>
+        <div class="sd-row st-weak">
+          <button id="st-weak-clear" type="button"></button>
+          <span id="st-weak-count" class="sd-hint"></span>
+        </div>
       </fieldset>
+      <fieldset>
+        <legend id="st-l-restore"></legend>
+        <div class="st-grid">
+          <label id="st-l-restorelines" for="st-restorelines"></label>
+          <span class="sd-row"><input id="st-restorelines" type="number" min="0" max="100000" step="100" />
+            <span id="st-restorelines-hint" class="sd-hint"></span></span>
+        </div>
+        <label class="sd-check"><input id="st-exitrestore" type="checkbox" /><span id="st-l-exitrestore"></span></label>
+      </fieldset>
+      </div>
+
+      <!-- 記錄 log -->
+      <div class="st-page st-off" data-page="log" role="tabpanel">
+      <fieldset>
+        <legend id="st-l-log"></legend>
+        <div class="st-grid">
+          <label id="st-l-logdir" for="st-logdir"></label>
+          <span class="sd-row"><input id="st-logdir" autocomplete="off" spellcheck="false" />
+            <button id="st-logdir-pick" type="button"></button></span>
+        </div>
+        <label class="sd-check"><input id="st-logts" type="checkbox" /><span id="st-l-logts"></span></label>
+        <label class="sd-check"><input id="st-logappend" type="checkbox" /><span id="st-l-logappend"></span></label>
+      </fieldset>
+      </div>
+
+      <!-- AI 工具 -->
+      <div class="st-page st-off" data-page="ai" role="tabpanel">
       <!-- AI 模型（2.0.3；2.0.7 改名與加自動更新）：
            「開啟時可選模型」沒勾＝完全不問模型，底下的手動／自動更新都按不了。
            「手動更新」＝立刻重新向每一家 AI CLI 問一次（OpenCode 會順便更新它自己的模型快取）；
@@ -708,35 +748,19 @@
           <select id="st-models-hour"></select>
         </div>
       </fieldset>
-        </div>
-        <div class="sd-col">
-      <fieldset>
-        <legend id="st-l-more"></legend>
-        <div class="st-grid">
-          <label id="st-l-restorelines" for="st-restorelines"></label>
-          <span class="sd-row"><input id="st-restorelines" type="number" min="0" max="100000" step="100" />
-            <span id="st-restorelines-hint" class="sd-hint"></span></span>
-
-          <label id="st-l-keepalive" for="st-keepalive"></label>
-          <span class="sd-row"><input id="st-keepalive" type="number" min="0" max="1440" step="1" /></span>
-
-          <label id="st-l-logdir" for="st-logdir"></label>
-          <span class="sd-row"><input id="st-logdir" autocomplete="off" spellcheck="false" />
-            <button id="st-logdir-pick" type="button"></button></span>
-        </div>
-        <label class="sd-check"><input id="st-exitrestore" type="checkbox" /><span id="st-l-exitrestore"></span></label>
-        <label class="sd-check"><input id="st-autoreconnect" type="checkbox" /><span id="st-l-autoreconnect"></span></label>
-        <label class="sd-check"><input id="st-logts" type="checkbox" /><span id="st-l-logts"></span></label>
-        <label class="sd-check"><input id="st-logappend" type="checkbox" /><span id="st-l-logappend"></span></label>
-      </fieldset>
       <fieldset>
         <legend id="st-l-sandbox"></legend>
         <label class="sd-check"><input id="st-sandboxdefault" type="checkbox" /><span id="st-l-sandboxdefault"></span></label>
         <div id="st-sandbox-note" class="sd-hint"></div>
-        <div class="sd-row st-weak">
-          <button id="st-weak-clear" type="button"></button>
-          <span id="st-weak-count" class="sd-hint"></span>
-        </div>
+      </fieldset>
+      </div>
+
+      <!-- 系統 -->
+      <div class="st-page st-off" data-page="system" role="tabpanel">
+      <fieldset>
+        <legend id="st-l-shell"></legend>
+        <label class="sd-check"><input id="st-shellmenu" type="checkbox" /><span id="st-l-shellmenu"></span></label>
+        <div id="st-shell-note" class="sd-hint"></div>
       </fieldset>
       <fieldset>
         <legend id="st-l-migrate"></legend>
@@ -745,7 +769,7 @@
           <span id="st-migrate-note" class="sd-hint"></span>
         </div>
       </fieldset>
-        </div>
+      </div>
       </div>
       </div>
 

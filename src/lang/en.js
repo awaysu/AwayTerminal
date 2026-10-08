@@ -200,6 +200,11 @@ export default {
 
   // ---- TTL 巨集（TASK-013；舊版 Loc 的 menu.macro／msg.stopMacroAsk／dlg.macroTitle）----
   'menu.macro': 'Run macro…',
+  'menu.copyPath': 'Copy path',
+  'menu.copyPathDone': 'Path copied: {0}',
+  'menu.openExplorer': 'Open in File Explorer',
+  'menu.openFinder': 'Open in Finder',
+  'menu.openFileManager': 'Open in file manager',
   'menu.shellHere': 'Open {0}',
   'menu.shellHereTip': 'Open a new {0} tab in this tab’s working folder',
   'menu.restart': 'Restart',
@@ -309,6 +314,13 @@ export default {
   'settings.title': 'Settings',
   // machine-translation notice (under the language picker, and on the About page)
   'settings.langNote': 'Every language other than Traditional Chinese and English is machine-translated; corrections are welcome.',
+  'settings.navLook': 'Appearance',
+  'settings.navInput': 'Input & display',
+  'settings.navConn': 'Connections',
+  'settings.navLog': 'Logging',
+  'settings.navAi': 'AI tools',
+  'settings.navSystem': 'System',
+  'settings.groupRestore': 'Restore tabs',
   'settings.groupLang': 'Language',
   'settings.groupFont': 'Font & colors',
   'font.family': 'Font',
@@ -369,7 +381,6 @@ export default {
   'settings.todo': '(not ported yet)',
 
   // ---- 新版多的設定（舊版只能手改 settings.json）----
-  'settings.groupMore': 'Other',
   'settings.restoreLines': 'Scrollback lines kept for tab restore',
   'settings.restoreLinesHint': '0 = do not keep the screen record',
   'settings.exitRestore': 'Tick "restore tabs" by default when quitting',
@@ -569,8 +580,6 @@ export default {
   'settings.modelsFail': 'Refresh failed: {0}',
   'settings.modelsAuto': 'Auto refresh',
   'settings.modelsAutoNote': 'Every day at the chosen hour, ask every AI CLI again which models it has (AwayTerminal must be running).',
-  'settings.pageLang': 'Language & fonts',
-  'settings.pageGeneral': 'General',
   'migrate.button': 'Import settings from v1…',
   'migrate.pick': 'Choose the old settings.json',
   'migrate.title': 'Import settings from v1',

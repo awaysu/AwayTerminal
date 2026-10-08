@@ -32,6 +32,18 @@ export function isWindowsOS() {
   return /Windows/i.test(ua);
 }
 
+/** 跑在 macOS 上嗎（同 `isWindowsOS` 看 user agent；WKWebView 的 UA 有 `Macintosh`）。 */
+export function isMacOS() {
+  const ua = (typeof navigator !== 'undefined' && navigator.userAgent) || '';
+  return /Macintosh|Mac OS X/i.test(ua);
+}
+
+/** 檔案管理程式的名字：Windows＝檔案總管、mac＝Finder、Linux＝檔案管理員。 */
+export function fileManagerKey(winKey, macKey, linuxKey) {
+  if (isWindowsOS()) return winKey;
+  return isMacOS() ? macKey : linuxKey;
+}
+
 /** 本機 shell 相關的字串：Windows 用 `psKey`、其他平台用 `termKey`。 */
 export function shellKey(psKey, termKey) {
   return isWindowsOS() ? psKey : termKey;

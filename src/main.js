@@ -734,11 +734,11 @@ async function verifyDialogs() {
  * 而不是寫死的數字。
  */
 async function verifySettingsLayout() {
-  const lines = ['[verify] 設定視窗排版（兩頁、各兩欄）'];
+  const lines = ['[verify] 設定視窗排版（左側六類）'];
   const before = getLang();
   const box = document.getElementById('setdlg-box');
   const dlg = document.getElementById('setdlg');
-  const pageSel = document.getElementById('st-page');
+  const navButtons = [...document.querySelectorAll('#st-nav button[data-page]')];
   let bad = 0;
   try {
     for (const { code } of LANGS) {
@@ -747,27 +747,27 @@ async function verifySettingsLayout() {
       document.getElementById('btn-settings').click();
       for (let i = 0; i < 20 && dlg.hidden; i++) await wait(100);
       await wait(150);
-      // 2.0.7 起設定分成「語言和字體」「一般設定」兩頁：兩頁都要量
-      for (const page of ['lang', 'general']) {
-        pageSel.value = page;
-        pageSel.dispatchEvent(new Event('change', { bubbles: true }));
+      // 2.0.15 起設定是左側六類：每一類都要量（各頁疊在同一格，量到的都是最大那一頁的高）
+      for (const btn of navButtons) {
+        const page = btn.dataset.page;
+        btn.click();
         await wait(60);
         const avail = Math.round(window.innerHeight * 0.92); // #setdlg-box 的 max-height
         const need = box.scrollHeight;
         const shown = box.clientHeight;
         const fits = need <= shown + 1; // 捲軸算 1px 的誤差
         if (!fits) bad++;
-        const cols = [...document.querySelectorAll(`#setdlg-box .sd-cols[data-page="${page}"] .sd-col`)].map((c) =>
-          Math.round(c.getBoundingClientRect().height)
+        const pageH = Math.round(
+          document.querySelector(`#setdlg-box .st-page[data-page="${page}"]`).getBoundingClientRect().height
         );
         lines.push(
           `[verify]   ${code.padEnd(6)} ${page.padEnd(7)} 內容高 ${need}px　顯示高 ${shown}px　` +
-            `視窗 ${window.innerHeight}px（可用 ${avail}px）　左右欄 ${cols.join('/')}px　` +
+            `視窗 ${window.innerHeight}px（可用 ${avail}px）　這一類 ${pageH}px　` +
             `${fits ? '不用捲' : '**要捲**'}`
         );
         // 最高的那一種語言把每一組的高度也印出來，才知道要動哪一組
         if (code === 'ja') {
-          for (const fs of document.querySelectorAll(`#setdlg-box .sd-cols[data-page="${page}"] fieldset`)) {
+          for (const fs of document.querySelectorAll(`#setdlg-box .st-page[data-page="${page}"] fieldset`)) {
             const legend = fs.querySelector('legend');
             lines.push(
               `[verify]     ${(legend ? legend.id : '?').padEnd(14)} ` +
@@ -781,7 +781,7 @@ async function verifySettingsLayout() {
       }
       await wait(150);
     }
-    lines.push(`[verify] 八種語言、兩頁都不用捲：${bad === 0}（要捲的有 ${bad} 個）`);
+    lines.push(`[verify] 八種語言、六類都不用捲：${bad === 0}（要捲的有 ${bad} 個）`);
     lines.push(
       '[verify] ※ 這是 --verify 的預設視窗大小；使用者的螢幕是 1536x864 邏輯像素，' +
         '最大化時可用高度更大 → 更放得下'

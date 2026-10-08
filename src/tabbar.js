@@ -33,7 +33,7 @@ import {
   openChatRoom,
   openTeamFavorite,
 } from './agentdlg.js';
-import { onLangChange, shellKey } from './i18n.js';
+import { onLangChange, shellKey, fileManagerKey } from './i18n.js';
 import { initFavs, addConnFavorite } from './favs.js';
 import { initModelDialog, pickConnModel, resolveSavedModel } from './modeldlg.js';
 
@@ -604,6 +604,27 @@ async function openShellHere(id) {
   }
 }
 
+/** 分頁右鍵「複製路徑」（2.0.15）：把這個分頁的工作目錄（沙盒＝沙盒的工作區）放進剪貼簿。 */
+async function copyWorkDir(id) {
+  const tab = state.tabs.find((t) => t.id === id);
+  const dir = tab ? workDirOf(tab) : '';
+  if (!dir) return;
+  if (await writeClipboard(dir)) toast(fmt('menu.copyPathDone', dir));
+}
+
+/** 分頁右鍵「檔案總管開啟」／「Finder 開啟」／「檔案管理員開啟」（2.0.15）：用系統的檔案管理程式開工作目錄。 */
+async function openWorkDir(id) {
+  const tab = state.tabs.find((t) => t.id === id);
+  const dir = tab ? workDirOf(tab) : '';
+  if (!dir) return;
+  try {
+    await invoke('open_dir', { path: dir });
+  } catch (e) {
+    log(`[tabbar] 開啟資料夾失敗：${e}`);
+    await showInfo(T[fileManagerKey('menu.openExplorer', 'menu.openFinder', 'menu.openFileManager')], String(e));
+  }
+}
+
 /** 這個分頁有辦法「用同樣的東西重開」嗎（自訂連線、PowerShell、SSH／Telnet／連接埠、ADB）。 */
 function canRestart(tab) {
   return !!tab.connName || ['powershell', 'ssh', 'telnet', 'com', 'adb'].includes(tab.kind);
@@ -927,6 +948,9 @@ function installStripEvents() {
     if (team && !isChat) renderDeliveryMenu(team);
     // 「PowerShell 開啟」／「Terminal 開啟」：AI agent 的分頁（自訂連線、代理團隊的格）而且知道工作目錄才顯示
     el.menuShellHere.hidden = !(tab && tab.connName && workDirOf(tab));
+    // 「複製路徑」「檔案總管開啟」夾在它上下，顯示條件一樣（2.0.15）
+    el.menuCopyPath.hidden = el.menuShellHere.hidden;
+    el.menuOpenFolder.hidden = el.menuShellHere.hidden;
     // 「重新啟動」：知道怎麼重開的分頁才顯示；代理團隊整組不在這裡重開
     el.menuRestart.hidden = !(tab && !team && canRestart(tab));
     // 沙盒那兩項只對「自訂連線開的分頁」有意義（PowerShell／SSH 分頁沒有連線設定）
@@ -1287,6 +1311,8 @@ function installMenus() {
     else if (item.dataset.act === 'log') logAction(id);
     else if (item.dataset.act === 'macro') runMacroForTab(id, state);
     else if (item.dataset.act === 'shell-here') openShellHere(id);
+    else if (item.dataset.act === 'copy-path') copyWorkDir(id);
+    else if (item.dataset.act === 'open-folder') openWorkDir(id);
     else if (item.dataset.act === 'restart') restartTab(id);
     else if (item.dataset.act === 'sandbox') toggleSandbox(id);
     else if (item.dataset.act === 'sandbox-clear') clearSandbox(id);
@@ -1791,6 +1817,12 @@ function applyTexts() {
     setText(el.tabMenu, '[data-act="log"]', T['menu.log']);
     setText(el.tabMenu, '[data-act="macro"]', T['menu.macro']);
     setText(el.tabMenu, '[data-act="shell-here"]', fmt('menu.shellHere', localShellLabel()));
+    setText(el.tabMenu, '[data-act="copy-path"]', T['menu.copyPath']);
+    setText(
+      el.tabMenu,
+      '[data-act="open-folder"]',
+      T[fileManagerKey('menu.openExplorer', 'menu.openFinder', 'menu.openFileManager')]
+    );
     // 選單上的字很短，「開在哪裡」放在 tooltip
     const shellHere = el.tabMenu.querySelector('[data-act="shell-here"]');
     if (shellHere) shellHere.title = fmt('menu.shellHereTip', localShellLabel());
@@ -1876,6 +1908,8 @@ export async function initTabBar() {
   el.newConns = $('new-conns');
   el.favsMenu = $('favs-menu');
   el.menuShellHere = el.tabMenu.querySelector('[data-act="shell-here"]');
+  el.menuCopyPath = el.tabMenu.querySelector('[data-act="copy-path"]');
+  el.menuOpenFolder = el.tabMenu.querySelector('[data-act="open-folder"]');
   el.menuRestart = el.tabMenu.querySelector('[data-act="restart"]');
   el.menuSandbox = el.tabMenu.querySelector('[data-act="sandbox"]');
   el.menuSandboxClear = el.tabMenu.querySelector('[data-act="sandbox-clear"]');

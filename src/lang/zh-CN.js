@@ -193,6 +193,11 @@ export default {
 
   // ---- TTL 巨集（TASK-013；舊版 Loc 的 menu.macro／msg.stopMacroAsk／dlg.macroTitle）----
   'menu.macro': '运行宏…',
+  'menu.copyPath': '复制路径',
+  'menu.copyPathDone': '已复制路径：{0}',
+  'menu.openExplorer': '在文件资源管理器中打开',
+  'menu.openFinder': '在访达中打开',
+  'menu.openFileManager': '在文件管理器中打开',
   'menu.shellHere': '{0} 打开',
   'menu.shellHereTip': '在这个标签页的工作目录另开一个 {0} 标签页',
   'menu.restart': '重新启动',
@@ -302,6 +307,13 @@ export default {
   'settings.title': '设置',
   // machine-translation notice (under the language picker, and on the About page)
   'settings.langNote': '除“繁體中文”与 English 之外都是机器翻译，欢迎修正。',
+  'settings.navLook': '外观',
+  'settings.navInput': '输入与显示',
+  'settings.navConn': '连接',
+  'settings.navLog': '日志',
+  'settings.navAi': 'AI 工具',
+  'settings.navSystem': '系统',
+  'settings.groupRestore': '恢复标签页',
   'settings.groupLang': '语言',
   'settings.groupFont': '字体与背景颜色',
   'font.family': '字体',
@@ -350,7 +362,6 @@ export default {
   'settings.todo': '（这项还没移植）',
 
   // ---- 新版多的設定（舊版只能手改 settings.json）----
-  'settings.groupMore': '其他',
   'settings.restoreLines': '恢复标签页保留的行数',
   'settings.restoreLinesHint': '0＝不保留屏幕内容',
   'settings.exitRestore': '关闭程序时默认勾选“恢复标签页”',
@@ -550,8 +561,6 @@ export default {
   'settings.modelsFail': '更新失败：{0}',
   'settings.modelsAuto': '自动更新',
   'settings.modelsAutoNote': '每天在选定的整点自动重新向每一个 AI CLI 询问一次模型列表（AwayTerminal 要开着）。',
-  'settings.pageLang': '语言和字体',
-  'settings.pageGeneral': '常规设置',
   'migrate.button': '导入旧版设置…',
   'migrate.pick': '选择旧版的 settings.json',
   'migrate.title': '导入旧版设置',

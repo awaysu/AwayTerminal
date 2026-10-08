@@ -193,6 +193,11 @@ export default {
 
   // ---- TTL 巨集（TASK-013；舊版 Loc 的 menu.macro／msg.stopMacroAsk／dlg.macroTitle）----
   'menu.macro': 'Exécuter une macro…',
+  'menu.copyPath': 'Copier le chemin',
+  'menu.copyPathDone': 'Chemin copié : {0}',
+  'menu.openExplorer': 'Ouvrir dans l’Explorateur de fichiers',
+  'menu.openFinder': 'Ouvrir dans le Finder',
+  'menu.openFileManager': 'Ouvrir dans le gestionnaire de fichiers',
   'menu.shellHere': 'Ouvrir {0}',
   'menu.shellHereTip': 'Ouvre un autre onglet {0} dans le dossier de travail de cet onglet',
   'menu.restart': 'Redémarrer',
@@ -302,6 +307,13 @@ export default {
   'settings.title': 'Paramètres',
   // machine-translation notice (under the language picker, and on the About page)
   'settings.langNote': 'Toutes les langues sauf le chinois traditionnel et l’anglais sont traduites automatiquement ; les corrections sont bienvenues.',
+  'settings.navLook': 'Apparence',
+  'settings.navInput': 'Saisie et affichage',
+  'settings.navConn': 'Connexions',
+  'settings.navLog': 'Journaux',
+  'settings.navAi': 'Outils IA',
+  'settings.navSystem': 'Système',
+  'settings.groupRestore': 'Restauration des onglets',
   'settings.groupLang': 'Langue',
   'settings.groupFont': 'Police et couleurs',
   'font.family': 'Police',
@@ -350,7 +362,6 @@ export default {
   'settings.todo': '(pas encore repris)',
 
   // ---- 新版多的設定（舊版只能手改 settings.json）----
-  'settings.groupMore': 'Autres',
   'settings.restoreLines': 'Lignes d’historique conservées pour la restauration',
   'settings.restoreLinesHint': '0 = ne pas conserver l’historique de l’écran',
   'settings.exitRestore': 'Cocher « restaurer les onglets » en quittant',
@@ -550,8 +561,6 @@ export default {
   'settings.modelsFail': 'Échec de l’actualisation : {0}',
   'settings.modelsAuto': 'Actualisation automatique',
   'settings.modelsAutoNote': 'Chaque jour, à l’heure choisie, redemande à chaque CLI d’IA quels modèles elle propose (AwayTerminal doit être ouvert).',
-  'settings.pageLang': 'Langue et polices',
-  'settings.pageGeneral': 'Général',
   'migrate.button': 'Importer les paramètres de la v1…',
   'migrate.pick': 'Choisir l’ancien settings.json',
   'migrate.title': 'Importer les paramètres de la v1',

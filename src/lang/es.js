@@ -193,6 +193,11 @@ export default {
 
   // ---- TTL 巨集（TASK-013；舊版 Loc 的 menu.macro／msg.stopMacroAsk／dlg.macroTitle）----
   'menu.macro': 'Ejecutar macro…',
+  'menu.copyPath': 'Copiar ruta',
+  'menu.copyPathDone': 'Ruta copiada: {0}',
+  'menu.openExplorer': 'Abrir en el Explorador de archivos',
+  'menu.openFinder': 'Abrir en Finder',
+  'menu.openFileManager': 'Abrir en el gestor de archivos',
   'menu.shellHere': 'Abrir {0}',
   'menu.shellHereTip': 'Abre otra pestaña de {0} en la carpeta de trabajo de esta pestaña',
   'menu.restart': 'Reiniciar',
@@ -302,6 +307,13 @@ export default {
   'settings.title': 'Configuración',
   // machine-translation notice (under the language picker, and on the About page)
   'settings.langNote': 'Todos los idiomas salvo el chino tradicional y el inglés están traducidos automáticamente; se agradecen las correcciones.',
+  'settings.navLook': 'Apariencia',
+  'settings.navInput': 'Entrada y pantalla',
+  'settings.navConn': 'Conexiones',
+  'settings.navLog': 'Registros',
+  'settings.navAi': 'Herramientas de IA',
+  'settings.navSystem': 'Sistema',
+  'settings.groupRestore': 'Restaurar pestañas',
   'settings.groupLang': 'Idioma',
   'settings.groupFont': 'Fuente y colores',
   'font.family': 'Fuente',
@@ -350,7 +362,6 @@ export default {
   'settings.todo': '(todavía no está implementado)',
 
   // ---- 新版多的設定（舊版只能手改 settings.json）----
-  'settings.groupMore': 'Otros',
   'settings.restoreLines': 'Líneas de historial que se guardan al restaurar',
   'settings.restoreLinesHint': '0 = no guardar el historial de pantalla',
   'settings.exitRestore': 'Marcar «restaurar pestañas» al salir',
@@ -550,8 +561,6 @@ export default {
   'settings.modelsFail': 'Error al actualizar: {0}',
   'settings.modelsAuto': 'Actualización automática',
   'settings.modelsAutoNote': 'Cada día, a la hora elegida, vuelve a preguntar a cada CLI de IA qué modelos tiene (AwayTerminal debe estar abierto).',
-  'settings.pageLang': 'Idioma y fuentes',
-  'settings.pageGeneral': 'General',
   'migrate.button': 'Importar la configuración de la v1…',
   'migrate.pick': 'Elige el settings.json antiguo',
   'migrate.title': 'Importar la configuración de la v1',

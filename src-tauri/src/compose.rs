@@ -15,6 +15,7 @@
 //! | 固定送到當初那個分頁（期間切分頁也不會送錯） | 同上 | 同（`id` 是參數） |
 //! | 勾選狀態記在設定 | `AppSettings.ComposeSendEnter` | `settings.compose_send_enter` |
 //! | （舊版沒有）記住上次載入的檔案，下次選檔從那裡開 | — | `settings.compose_last_file`（2.0.14，使用者要求） |
+//! | （舊版沒有）儲存的對話框也開在同一個地方，存完也記成「上次的檔案」 | — | 同上（2.0.15，使用者要求「儲存路徑要和載入的一樣」） |
 
 use crate::i18n::{t, tf};
 use std::sync::Arc;
@@ -90,14 +91,7 @@ pub async fn compose_load_file(
 ) -> Result<Option<LoadedText>, String> {
     use tauri_plugin_dialog::DialogExt;
     let (tx, rx) = std::sync::mpsc::channel();
-    let mut dialog = app.dialog().file();
-    let last = std::path::PathBuf::from(settings.get().compose_last_file);
-    if let Some(dir) = last.parent().filter(|d| !d.as_os_str().is_empty() && d.is_dir()) {
-        dialog = dialog.set_directory(dir);
-        if let Some(name) = last.file_name() {
-            dialog = dialog.set_file_name(name.to_string_lossy());
-        }
-    }
+    let dialog = at_last_file(app.dialog().file(), &settings, None);
     dialog
         .set_title(t("dlg.loadTextFile"))
         .add_filter(
@@ -134,15 +128,43 @@ pub async fn compose_load_file(
     }))
 }
 
+/// 檔案對話框開在「上次的檔案」（載入或儲存過的那一個）的資料夾、預選它的檔名。
+/// 還沒有上次的檔案、或那個資料夾已經不在了：照系統預設開，檔名用 `fallback_name`（有給的話）。
+fn at_last_file<R: tauri::Runtime>(
+    mut dialog: tauri_plugin_dialog::FileDialogBuilder<R>,
+    settings: &SettingsStore,
+    fallback_name: Option<&str>,
+) -> tauri_plugin_dialog::FileDialogBuilder<R> {
+    let last = std::path::PathBuf::from(settings.get().compose_last_file);
+    match last.parent().filter(|d| !d.as_os_str().is_empty() && d.is_dir()) {
+        Some(dir) => {
+            dialog = dialog.set_directory(dir);
+            if let Some(name) = last.file_name() {
+                dialog = dialog.set_file_name(name.to_string_lossy());
+            }
+        }
+        None => {
+            if let Some(name) = fallback_name {
+                dialog = dialog.set_file_name(name);
+            }
+        }
+    }
+    dialog
+}
+
 /// 「儲存」：跳存檔對話框 → 寫 UTF-8（**無 BOM**，同舊版 `new UTF8Encoding(false)`）。
+///
+/// 2.0.15：對話框和「載入」開在同一個地方（上次載入或儲存的那個檔案），存成功也記成上次的檔案。
 #[tauri::command]
-pub async fn compose_save_file(app: AppHandle, text: String) -> Result<Option<String>, String> {
+pub async fn compose_save_file(
+    app: AppHandle,
+    text: String,
+    settings: State<'_, Arc<SettingsStore>>,
+) -> Result<Option<String>, String> {
     use tauri_plugin_dialog::DialogExt;
     let (tx, rx) = std::sync::mpsc::channel();
-    app.dialog()
-        .file()
+    at_last_file(app.dialog().file(), &settings, Some("compose.txt"))
         .set_title(t("dlg.save"))
-        .set_file_name("compose.txt")
         .add_filter(t("dlg.textFiles"), &["txt"])
         .add_filter("Markdown", &["md"])
         .add_filter(t("dlg.allFiles"), &["*"])
@@ -155,6 +177,7 @@ pub async fn compose_save_file(app: AppHandle, text: String) -> Result<Option<St
     let Some(path) = picked else { return Ok(None) };
     let path = path.to_string();
     std::fs::write(&path, text.as_bytes()).map_err(|e| tf("err.saveFileFailed", &[&e.to_string()]))?;
+    settings.update(|s| s.compose_last_file = path.clone());
     println!("[AwayTerminal] 輸入文字：存成 {path}");
     Ok(Some(path))
 }

@@ -663,6 +663,18 @@ body.col-resizing { cursor: col-resize; user-select: none; }
 #composedlg[hidden] {
   display: none;
 }
+/* 字級統一 13px（2.0.15，使用者要求「送出後送 Enter 的字和其他一樣，不要有大有小」）：
+   這個視窗原本沒設字型，標題與勾選框吃到瀏覽器預設的 16px 襯線體，連結 12px、提示 11px。
+   表單元件不會自己繼承字型，所以也一起押回來。 */
+#composedlg {
+  font: 13px "Microsoft JhengHei", "微軟正黑體", sans-serif;
+}
+#composedlg button,
+#composedlg input,
+#composedlg .link-btn,
+#composedlg .sd-hint {
+  font: inherit;
+}
 #composedlg-box {
   width: 640px;
   max-width: 90vw;
@@ -777,39 +789,59 @@ body.col-resizing { cursor: col-resize; user-select: none; }
   padding: 16px;
   color: #E0E0E0;
 }
-/* 設定視窗是兩欄（TASK-030）：八個區塊單欄排在 864 高的螢幕上要捲才看得完。
-   舊版只有四個區塊、470px 單欄就夠——新版多了渲染器／沙盒／匯入舊版／檔案總管。 */
+/* 設定視窗（2.0.15）：左側分類清單＋右邊一頁。每一類只有一兩組，單欄就放得下。
+   寬度＝分類清單 150 ＋ 內容約 500（舊版單欄是 470）。 */
 #setdlg-box {
-  width: 920px;
-  /* 其他對話框是 88vh；設定視窗內容最多，用滿一點（螢幕只有 864 邏輯像素高） */
+  width: 680px;
+  /* 其他對話框是 88vh；設定視窗用滿一點（螢幕只有 864 邏輯像素高） */
   max-height: 92vh;
 }
-/* 設定分兩頁的下拉（2.0.7）：放在標題下面、內容上面 */
-.st-pagebar {
-  margin-bottom: 10px;
+.st-layout {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr);
+  gap: 0 14px;
+  align-items: stretch;
 }
-.st-pagebar > select {
-  min-width: 180px;
+/* 左側分類清單：像 Windows 設定／VS Code，選到的那一項左邊一條亮色、底色淡一點 */
+.st-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border-right: 1px solid #3F3F46;
+  padding-right: 8px;
 }
-/* 兩頁疊在同一格（2.0.8）：容器的大小＝比較大的那一頁（一般設定），切頁時視窗不會忽大忽小。
-   沒選到的那一頁只是看不見，仍然佔位；visibility: hidden 的東西也不會被 Tab 到 */
+.st-nav > button {
+  text-align: left;
+  background: transparent;
+  color: #C8C8C8;
+  border: 0;
+  border-left: 3px solid transparent;
+  border-radius: 3px;
+  padding: 7px 10px;
+  cursor: pointer;
+  white-space: normal;
+}
+.st-nav > button:hover { background: #3A3A3D; color: #E0E0E0; }
+.st-nav > button[aria-selected='true'] {
+  background: #37373D;
+  color: #FFFFFF;
+  border-left-color: #0E7ACC;
+  font-weight: bold;
+}
+.st-nav > button:focus-visible { outline: 1px solid #0E7ACC; outline-offset: -1px; }
+/* 六頁疊在同一格（2.0.8 起的做法）：容器的大小＝最大的那一頁，切頁時視窗不會忽大忽小。
+   沒選到的頁只是看不見，仍然佔位；visibility: hidden 的東西也不會被 Tab 到 */
 .st-pages {
   display: grid;
+  min-width: 0;
 }
-.st-pages > .sd-cols {
+.st-pages > .st-page {
   grid-area: 1 / 1;
   min-width: 0;
 }
-.st-pages > .sd-cols.st-off {
+.st-pages > .st-page.st-off {
   visibility: hidden;
   pointer-events: none;
-}
-.sd-cols {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0 14px;
-  /* TASK-030：兩欄要一樣高（底部齊平），不要一長一短 */
-  align-items: stretch;
 }
 /* 自動更新那一列：勾選框＋整點下拉同一行 */
 .st-models-auto > .sd-check {
@@ -818,23 +850,28 @@ body.col-resizing { cursor: col-resize; user-select: none; }
 .st-models-auto > select {
   width: auto;
 }
-.sd-col {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-}
-/* 每欄最後一個群組框拉伸填滿 → 左右欄的底邊對齊 */
-.sd-col > fieldset:last-child {
-  flex: 1 1 auto;
-}
-/* 視窗（或螢幕）不夠寬就退回單欄，內容照樣可以捲——不要爆版 */
-@media (max-width: 980px) {
+/* 視窗（或螢幕）太窄：分類清單改成上面一排可換行的按鈕，內容照樣可以捲——不要爆版 */
+@media (max-width: 720px) {
   #setdlg-box {
     width: 470px;
   }
-  .sd-cols {
+  .st-layout {
     grid-template-columns: 1fr;
   }
+  .st-nav {
+    flex-direction: row;
+    flex-wrap: wrap;
+    border-right: 0;
+    border-bottom: 1px solid #3F3F46;
+    padding: 0 0 6px;
+    margin-bottom: 8px;
+  }
+  .st-nav > button {
+    border-left: 0;
+    border-bottom: 3px solid transparent;
+    padding: 4px 8px;
+  }
+  .st-nav > button[aria-selected='true'] { border-bottom-color: #0E7ACC; }
 }
 #setdlg-title,
 #remotedlg-title {

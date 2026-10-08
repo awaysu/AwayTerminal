@@ -193,6 +193,11 @@ export default {
 
   // ---- TTL 巨集（TASK-013；舊版 Loc 的 menu.macro／msg.stopMacroAsk／dlg.macroTitle）----
   'menu.macro': 'マクロを実行…',
+  'menu.copyPath': 'パスをコピー',
+  'menu.copyPathDone': 'パスをコピーしました：{0}',
+  'menu.openExplorer': 'エクスプローラーで開く',
+  'menu.openFinder': 'Finder で開く',
+  'menu.openFileManager': 'ファイルマネージャーで開く',
   'menu.shellHere': '{0} を開く',
   'menu.shellHereTip': 'このタブの作業フォルダーで {0} タブをもう 1 つ開きます',
   'menu.restart': '再起動',
@@ -302,6 +307,13 @@ export default {
   'settings.title': '設定',
   // machine-translation notice (under the language picker, and on the About page)
   'settings.langNote': '繁体字中国語と英語以外は機械翻訳です。修正を歓迎します。',
+  'settings.navLook': '外観',
+  'settings.navInput': '入力と表示',
+  'settings.navConn': '接続',
+  'settings.navLog': 'ログ',
+  'settings.navAi': 'AI ツール',
+  'settings.navSystem': 'システム',
+  'settings.groupRestore': 'タブの復元',
   'settings.groupLang': '言語',
   'settings.groupFont': 'フォントと背景色',
   'font.family': 'フォント',
@@ -350,7 +362,6 @@ export default {
   'settings.todo': '（この項目は未移植です）',
 
   // ---- 新版多的設定（舊版只能手改 settings.json）----
-  'settings.groupMore': 'その他',
   'settings.restoreLines': 'タブ復元で保持する行数',
   'settings.restoreLinesHint': '0＝画面の履歴を保持しない',
   'settings.exitRestore': '終了時に「タブを復元」を既定でオンにする',
@@ -550,8 +561,6 @@ export default {
   'settings.modelsFail': '更新に失敗しました：{0}',
   'settings.modelsAuto': '自動更新',
   'settings.modelsAutoNote': '毎日、選んだ時刻に各 AI CLI へモデル一覧を問い合わせ直します（AwayTerminal を起動しておく必要があります）。',
-  'settings.pageLang': '言語とフォント',
-  'settings.pageGeneral': '一般',
   'migrate.button': '旧バージョンの設定を取り込む…',
   'migrate.pick': '旧バージョンの settings.json を選択',
   'migrate.title': '旧バージョンの設定を取り込む',
