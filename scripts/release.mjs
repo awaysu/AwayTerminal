@@ -24,7 +24,7 @@ const args = process.argv.slice(2);
 const doWrite = args.includes('--write') || args.includes('--publish');
 const doPublish = args.includes('--publish');
 
-const REPO = 'awaysu/AwayTerminal2';
+const REPO = 'awaysu/AwayTerminal';
 const OUT_DIR = join('src-tauri', 'target', 'release');
 const BUNDLE = join(OUT_DIR, 'bundle');
 

@@ -228,7 +228,7 @@ signtool verify /pa /v <檔案>
    "plugins": {
      "updater": {
        "pubkey": "<awayterminal2.key.pub 的內容，一整行>",
-       "endpoints": ["https://github.com/awaysu/AwayTerminal2/releases/latest/download/latest.json"],
+       "endpoints": ["https://github.com/awaysu/AwayTerminal/releases/latest/download/latest.json"],
        "windows": { "installMode": "passive" }
      }
    }
@@ -273,7 +273,7 @@ signtool verify /pa /v <檔案>
      "platforms": {
        "windows-x86_64": {
          "signature": "<.sig 檔的內容，一整行>",
-         "url": "https://github.com/awaysu/AwayTerminal2/releases/download/v2.0.1/AwayTerminal_2.0.1_x64-setup.exe"
+         "url": "https://github.com/awaysu/AwayTerminal/releases/download/v2.0.1/AwayTerminal_2.0.1_x64-setup.exe"
        }
      }
    }

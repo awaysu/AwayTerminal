@@ -4,7 +4,7 @@
 
 [English](README.en.md)　|　授權 MIT
 
-**這是 [AwayTerminal 1.x](https://github.com/awaysu/AwayTerminal)（C# WPF + WebView2，僅 Windows）
+**這是 [AwayTerminal 1.x](https://github.com/awaysu/AwayTerminal/tree/1.2.8)（C# WPF + WebView2，僅 Windows；原始碼在 `1.2.8` 分支）
 的跨平台重寫版。** 目標是「舊版所有功能都在、行為相容、跑得更快、而且能跨平台」。
 
 | | 舊版 1.2.8 | 這一版 |

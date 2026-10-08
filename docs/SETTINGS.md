@@ -167,7 +167,7 @@ node scripts/test-i18n.mjs
 |---|---|
 | 標題 AwayTerminal、版本、編譯時間 | 同（編譯時間＝**exe 的檔案寫入時間**，同舊版） |
 | 作者：名字**畫成圖片**（避免 email 被爬） | 同（canvas 畫，DOM 裡沒有可選取的 email 文字） |
-| 下載連結、Source Code 連結 | 同（Source Code 改成 `awaysu/AwayTerminal2`） |
+| 下載連結、Source Code 連結 | 同（Source Code＝`awaysu/AwayTerminal`；2.1.0 起 2.x 取代那個 repo 的 main，1.x 在 `1.2.8` 分支） |
 | 授權：MIT © 2026 Chih-Wei Su (Awaysu) | 同 |
 | 第三方元件：`xterm.js 6.0.0 (MIT)`、`.NET 9／WebView2` | xterm.js **實際版本**（見下）、Tauri、russh、serialport-rs |
 | — | **新增**：可展開的「完整第三方授權聲明」＝直接讀 `THIRD-PARTY-NOTICES.md`（不複製一份） |

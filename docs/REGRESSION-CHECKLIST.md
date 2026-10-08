@@ -653,7 +653,7 @@ TEMP 路徑印出完整結果，Documents 路徑印完 `path = …` 就停住。
 | AB4 | 👤 作者那一行 | email 是**圖片**（選不到、複製不到文字） | `RenderTextImage` | | | |
 | AB5 | 👤 第三方元件 | xterm.js 的版本是**實際**版本（不是寫死的；舊版寫 5.5.0 而實際 6.0.0） | `CLAUDE.md` 的雷 | PASS（`--verify`） | | |
 | AB6 | 👤 展開「完整第三方授權聲明」 | 顯示 `THIRD-PARTY-NOTICES.md` 的內容（**不是複製品**） | ⬜ 新增 | PASS（`--verify` 讀到 11397 字） | | |
-| AB7 | 👤 點「下載」「Source Code」 | 用系統瀏覽器開（`awaysu.cc` / `github.com/awaysu/AwayTerminal2`） | `MakeLink` | | | |
+| AB7 | 👤 點「下載」「Source Code」 | 用系統瀏覽器開（`awaysu.cc` / `github.com/awaysu/AwayTerminal`） | `MakeLink` | | | |
 | AB8 | 👤 按「檢查更新」（**有網路**） | 按鈕旁顯示「檢查中…」→「已是最新版本 (vX)」或跳「有新版本可用」 | `check.Click` | ⬜ 需網路 | | |
 | AB9 | 👤 按「檢查更新」（**拔網路**） | 只顯示一行「檢查失敗（請確認網路後再試）」，**不跳錯誤視窗** | 舊版刻意如此 | PASS（`--verify` 的離線路徑） | | |
 | AB10 | 👤 有新版時 | 跳視窗：目前／最新版本＋更新內容，按「前往下載頁」開軟體頁 | `ShowUpdateDialog` | | | |

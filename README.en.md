@@ -5,8 +5,8 @@ and a Telegram remote.
 
 [繁體中文](README.md)　|　MIT licence
 
-**This is a cross-platform rewrite of [AwayTerminal 1.x](https://github.com/awaysu/AwayTerminal)**
-(C# WPF + WebView2, Windows only). The goal is "every feature of the old version, the same
+**This is a cross-platform rewrite of [AwayTerminal 1.x](https://github.com/awaysu/AwayTerminal/tree/1.2.8)**
+(C# WPF + WebView2, Windows only; its source is on the `1.2.8` branch). The goal is "every feature of the old version, the same
 behaviour, faster, and cross-platform".
 
 | | 1.2.8 | This version |

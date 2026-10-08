@@ -14,7 +14,7 @@
 **請不要開公開的 issue。** 用 GitHub 的私下回報：
 
 > repo 頁面 → **Security** → **Report a vulnerability**
-> （<https://github.com/awaysu/AwayTerminal2/security/advisories/new>）
+> （<https://github.com/awaysu/AwayTerminal/security/advisories/new>）
 
 那條路只有維護者看得到，可以在修好之後才公開。沒辦法用 GitHub 的話，
 用 repo 上的作者信箱，主旨請寫 `AwayTerminal security`。
@@ -140,7 +140,7 @@ Security policy points at.
 
 **Please do not open a public issue.** Use GitHub's private reporting:
 repository → **Security** → **Report a vulnerability**
-(<https://github.com/awaysu/AwayTerminal2/security/advisories/new>). If you cannot use
+(<https://github.com/awaysu/AwayTerminal/security/advisories/new>). If you cannot use
 GitHub, email the author address on the repository with the subject
 `AwayTerminal security`.
 

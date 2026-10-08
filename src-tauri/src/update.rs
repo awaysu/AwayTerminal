@@ -273,7 +273,7 @@ pub fn about_info() -> AboutInfo {
         xterm_version: env!("XTERM_VERSION").to_string(),
         tauri_version: tauri::VERSION.to_string(),
         download_url: FALLBACK_PAGE.to_string(),
-        source_url: "https://github.com/awaysu/AwayTerminal2".to_string(),
+        source_url: "https://github.com/awaysu/AwayTerminal".to_string(),
         author_parts: [
             "Awaysu (awaysu".to_string(),
             "@".to_string(),

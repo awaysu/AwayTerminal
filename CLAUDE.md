@@ -122,4 +122,4 @@ AwayTerminal（https://github.com/awaysu/AwayTerminal ，C# WPF + WebView2 + xte
 12. 把舊版 CLAUDE.md 的踩雷紀錄整理成**可逐項勾選的手動回歸測試清單**，各平台逐項比對。
 
 ## 待決定
-- repo 形式：新開 `AwayTerminal2` repo，還是之後取代原本 `awaysu/AwayTerminal`（例如 v2 分支）。
+- ~~repo 形式~~ **已定案（2026-10-08，使用者決定）**：2.x 取代 `awaysu/AwayTerminal` 的 `main`（版號從 2.1.0 起）；1.x 原本的 main 保留成 `1.2.8` 分支。`awaysu/AwayTerminal2` 是 2.0.x 開發時的 repo，之後推送以 `awaysu/AwayTerminal` 為準。
