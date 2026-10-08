@@ -13,7 +13,7 @@
 //! **AppUserModelID 一定要和 1.x 不一樣**：兩版的 exe 都叫 `AwayTerminal.exe`，
 //! 沒有明確的 AUMID 時 Windows 會拿 exe 路徑去猜，開發版（`target\debug\`）、
 //! 安裝版與 1.x 有機會被歸成同一堆，圖示與跳躍清單就會互相蓋。
-//! 我們設 `com.awaysu.awayterminal2`（**結尾的 2 是刻意的**——`tauri.conf.json` 的
+//! 我們設 `com.awaysu.awayterminal2`（2.1.0 起 repo 改名回 AwayTerminal，這個 ID **不跟著改**：改了已釘選在工作列的圖示會失效。**結尾的 2 是刻意的**——`tauri.conf.json` 的
 //! `identifier` 是 `com.awaysu.awayterminal`，但那是 bundle id，不是工作列身分；
 //! 1.x 若曾用過同名，分組還是會撞）。
 

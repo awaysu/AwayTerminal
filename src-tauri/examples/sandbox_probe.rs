@@ -34,7 +34,7 @@ fn main() {
         }
     };
 
-    println!("== AwayTerminal2 sandbox_probe ==");
+    println!("== AwayTerminal sandbox_probe ==");
 
     // ------------------------------------------------ 1. 乾淨的測試 repo
     let dir = std::env::temp_dir().join(format!("awayterm-sandbox-probe-{}", std::process::id()));

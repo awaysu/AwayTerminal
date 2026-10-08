@@ -1,4 +1,4 @@
-// AwayTerminal2 bridge：把舊版 `terminal.js` 期待的 WebView2 介面接到 Tauri IPC。
+// AwayTerminal bridge：把舊版 `terminal.js` 期待的 WebView2 介面接到 Tauri IPC。
 //
 // 舊版 `terminal.js` 只認 `window.chrome.webview` 的兩個東西：
 //   ws.postMessage(字串)                      JS → host

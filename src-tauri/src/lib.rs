@@ -1,4 +1,4 @@
-// AwayTerminal2 — Rust 後端
+// AwayTerminal（2.x）— Rust 後端
 
 pub mod adb;
 pub mod agent;

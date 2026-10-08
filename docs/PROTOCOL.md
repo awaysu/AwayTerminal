@@ -117,7 +117,7 @@ TASK-019 的 AI 聊天室**沒有用到新的協定**：它和代理團隊共用
 {
   "tabs": [{
     "id": 1, "kind": "powershell", "kindLabel": "PowerShell",
-    "title": "AwayTerminal2", "cwdPath": "C:\\Users\\me\\AwayTerminal2", "flags": "",
+    "title": "AwayTerminal", "cwdPath": "C:\\Users\\me\\AwayTerminal", "flags": "",
     "busy": false, "startedAt": 1750000000000, "pid": 1234
   }],
   "activeId": 1,

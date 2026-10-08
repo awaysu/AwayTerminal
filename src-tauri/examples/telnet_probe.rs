@@ -212,7 +212,7 @@ fn main() {
         }
     };
 
-    println!("== AwayTerminal2 telnet_probe ==");
+    println!("== AwayTerminal telnet_probe ==");
 
     // ---------------------------------------------------------------- 1. 基本連線
     let server = Server::start(0);

@@ -102,7 +102,7 @@ pub async fn exec_verify(
 
     let child_temp = std::fs::read_to_string(&temp_out).unwrap_or_default().trim().to_string();
     let sandbox_root = tabs.sandbox_of(id).map(|s| s.root).unwrap_or_default();
-    // ⚠️ 兩邊都要正規化：沙盒 root 可能是「`C:/…/AwayTerminal2\.ai\sandbox\…`」這種
+    // ⚠️ 兩邊都要正規化：沙盒 root 可能是「`C:/…/AwayTerminal\.ai\sandbox\…`」這種
     // 混著兩種分隔符的字串（repo 路徑是 `/`、後面接的是 `\`），只 replace 一邊會假失敗。
     let norm = |s: &str| s.to_lowercase().replace('/', "\\");
     let temp_in_sandbox =

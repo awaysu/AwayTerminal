@@ -1,4 +1,4 @@
-// AwayTerminal2 前端進入點。
+// AwayTerminal（2.x）前端進入點。
 //
 // 這個檔案本身**不管終端機邏輯**——那是搬過來的 `terminal.js` 的工作（輸入佇列、IME 守衛、
 // 靜止閘門、去重、貼上路徑、分割/分欄 layout、Ctrl+F…）。main.js 只做三件事：

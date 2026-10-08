@@ -1101,7 +1101,7 @@ mod tests {
 
     #[test]
     fn takes_last_path_segment() {
-        assert_eq!(dir_name_of("C:\\Users\\me\\AwayTerminal2"), "AwayTerminal2");
+        assert_eq!(dir_name_of("C:\\Users\\me\\AwayTerminal"), "AwayTerminal");
         assert_eq!(dir_name_of("~/a/b/"), "b");
         assert_eq!(dir_name_of("C:\\"), "C:");
         assert_eq!(dir_name_of("/"), "/");

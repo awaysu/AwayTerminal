@@ -1,4 +1,4 @@
-# AwayTerminal2 開發環境設定
+# AwayTerminal（2.x）開發環境設定
 
 本文件記錄階段 1 技術驗證骨架的開發環境、建置方式與目錄結構。
 
@@ -88,7 +88,7 @@ node scripts/audit-pitfalls.mjs        # 它的第二節就在做這件事
 ## 目錄結構
 
 ```
-AwayTerminal2/
+AwayTerminal/
 ├─ CLAUDE.md               # 專案規格 / 規劃（勿隨意改）
 ├─ LICENSE                 # MIT
 ├─ THIRD-PARTY-NOTICES.md  # xterm.js、Windows Terminal(conpty.dll/OpenConsole)、Tauri…
@@ -214,7 +214,7 @@ awayDump(6)           // 把 xterm buffer 尾端印到後端 log，驗證輸出�
 
 - xterm.js 單一終端鋪滿視窗，`FitAddon` 隨視窗縮放（resize + ResizeObserver，30ms debounce）。
 - 渲染器：先試 `@xterm/addon-webgl`，失敗時 `console.warn` 並退回 DOM 渲染；
-  **實際使用的渲染器印在畫面第一行**（`[AwayTerminal2] renderer = WebGL` 或 `DOM`）。
+  **實際使用的渲染器印在畫面第一行**（`[AwayTerminal] renderer = WebGL` 或 `DOM`）。
   另外掛了 `onContextLoss`（休眠喚醒 / 驅動重置）→ 卸載 addon 自動退回 DOM。
 - `Unicode11Addon` + `unicode.activeVersion = '11'`：全形字寬度用 Unicode 11 規則，比 xterm 內建 v6 準。
 - 已載入但尚未接 UI 的 addon：`search`、`serialize`、`web-links`。

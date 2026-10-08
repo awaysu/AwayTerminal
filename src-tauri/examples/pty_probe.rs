@@ -78,7 +78,7 @@ fn main() {
     // 所以這個 probe 從有重導 stdout 的工具環境跑也還能印東西）
     awayterminal_lib::startup::prepare_process_environment();
 
-    println!("== AwayTerminal2 pty_probe ==");
+    println!("== AwayTerminal pty_probe ==");
     println!("ConPTY backend: {}", pty::backend_name());
 
     let mut failures = 0;

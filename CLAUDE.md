@@ -1,4 +1,4 @@
-# CLAUDE.md — AwayTerminal2
+# CLAUDE.md — AwayTerminal（2.x）
 
 AwayTerminal（https://github.com/awaysu/AwayTerminal ，C# WPF + WebView2 + xterm.js，僅 Windows）的**跨平台重寫版**。
 目前狀態（2026-09-26）：**規劃完成，尚未動工**。下一步＝階段 1 技術驗證。

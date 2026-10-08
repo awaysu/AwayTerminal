@@ -22,7 +22,7 @@ fn main() {
     let mut pass = 0usize;
     let mut fail = 0usize;
 
-    println!("== AwayTerminal2 ttl_probe ==");
+    println!("== AwayTerminal ttl_probe ==");
 
     // ------------------------------------------------- CRC／checksum／uptime
     match run("cksum.ttl") {

@@ -183,7 +183,7 @@ fn main() {
         }
     };
 
-    println!("== AwayTerminal2 com_probe ==");
+    println!("== AwayTerminal com_probe ==");
 
     // ---------------------------------------------------------------- 1. 開埠＝連上了
     let (link, mut device) = fake_port();

@@ -43,7 +43,7 @@ fn main() {
         }
     };
 
-    println!("== AwayTerminal2 ssh_probe ==");
+    println!("== AwayTerminal ssh_probe ==");
 
     // 測試伺服器要自己的 runtime（client 端的 runtime 在 ssh 模組裡）
     let rt = tokio::runtime::Builder::new_multi_thread()
