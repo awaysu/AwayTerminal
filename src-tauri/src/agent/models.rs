@@ -1461,10 +1461,13 @@ mod tests {
             icon: icon.into(),
             ..CustomConn::default()
         };
-        assert_eq!(
-            ModelCli::of_conn(&conn("C:\\Users\\x\\.grok\\bin\\grok.exe", "run")),
-            Some(ModelCli::Grok)
-        );
+        // 反斜線只在 Windows 是路徑分隔字元（同 antigravity 那條；2.1.0 在 Linux 真機跑測試才發現）
+        let grok = if cfg!(windows) {
+            "C:\\Users\\x\\.grok\\bin\\grok.exe"
+        } else {
+            "/home/x/.grok/bin/grok"
+        };
+        assert_eq!(ModelCli::of_conn(&conn(grok, "run")), Some(ModelCli::Grok));
         assert_eq!(ModelCli::of_conn(&conn("D:\\tools\\mything.exe", "grok")), Some(ModelCli::Grok));
         assert_eq!(ModelCli::of_conn(&conn("C:\\x\\grokker.exe", "run")), None);
         assert_eq!(ModelCli::by_key("Grok"), Some(ModelCli::Grok));

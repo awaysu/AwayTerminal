@@ -711,7 +711,10 @@ mod tests {
         }
         assert_eq!(tool_kind("/home/x/.local/bin/agy"), ToolKind::Antigravity);
         assert_eq!(tool_kind("strategy.exe"), ToolKind::Other); // 不能用 contains("agy")
-        assert_eq!(tool_kind("C:\\Users\\x\\.grok\\bin\\grok.exe"), ToolKind::Grok);
+        if cfg!(windows) {
+            // 反斜線只在 Windows 是路徑分隔字元（2.1.0 在 Linux 真機跑測試才發現）
+            assert_eq!(tool_kind("C:\\Users\\x\\.grok\\bin\\grok.exe"), ToolKind::Grok);
+        }
         assert_eq!(tool_kind("/home/x/.grok/bin/grok"), ToolKind::Grok);
         assert_eq!(tool_kind("grokker.exe"), ToolKind::Other);
     }
