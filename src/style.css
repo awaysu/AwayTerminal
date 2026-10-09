@@ -103,29 +103,29 @@ html, body { height: 100%; margin: 0; background: #1e1e1e; overflow: hidden; }
 #toolbar::-webkit-scrollbar-thumb { background: #4a4a50; border-radius: 3px; }
 .tool-spacer { flex: 1 1 auto; min-width: 8px; }
 /* 右上角的 AI CLI 額度（2.0.11）：一家一行、等寬字，靠右、垂直置中；不可以被擠成兩行。
-   視窗窄的時候**它自己縮**（右邊截成 …），不可以把工具列撐出橫向捲軸（使用者要求）。 */
+   **永遠完整顯示、不截成 …**（2.1.2 使用者要求；字也放大到 12px）。空間不夠時先縮的是左邊的
+   工具按鈕（72 → 剛好放得下字），盡量不撐出工具列的橫向捲軸。 */
 #quota {
-  flex: 0 1 auto; min-width: 0; overflow: hidden;
+  flex: 0 0 auto;
   display: flex; flex-direction: column; justify-content: center;
-  gap: 2px; padding: 0 6px; color: #c8c8c8; cursor: default;
-  font: 11px/1.25 "Cascadia Mono", Consolas, "Microsoft JhengHei", monospace;
+  gap: 2px; padding: 0 10px; color: #c8c8c8; cursor: default;
+  font: 12px/1.25 "Cascadia Mono", Consolas, "Microsoft JhengHei", monospace;
   white-space: nowrap;
 }
-#quota .quota-row { overflow: hidden; text-overflow: ellipsis; }
 #quota[hidden] { display: none; }
 #quota .quota-hot { color: #ff6b6b; font-weight: bold; }
 #quota .quota-stale { opacity: 0.5; }
 /* 圖上字下，數字全部照舊版 `ToolBtn` 樣式（MainWindow.xaml 第 16～49 行）：
    Width 72、Padding 4,4、CornerRadius 4、Background #3A3A3D、hover #50505A、
    Foreground #E0E0E0、FontSize 11、Image 26×26 且下邊距 3、停用時字色 #666。
-   `min-width` 而不是固定 72：中文／英文／日文／韓文的字都比 72 短，看起來和舊版一樣；
-   德文（Bildschirm löschen）與法文才會把按鈕撐寬，工具列照舊可橫向捲。
+   寬度是 `flex: 0 1 72px`：平常 72 和舊版一樣；視窗窄時縮到剛好放得下字（讓右上角額度完整顯示，2.1.2），
+   德文（Bildschirm löschen）與法文的長字照樣把按鈕撐寬，真的放不下工具列才橫向捲。
    舊版 WPF 是固定 72 不換行也不截字，長字會**溢出蓋到隔壁按鈕**——那個行為在網頁上
    只會更難看，所以這裡刻意不照抄（舊版只有中／英兩種語言，長字問題碰不到）。 */
 .tool-btn {
   background: #3a3a3d; color: #e0e0e0; border: 0; border-radius: 4px;
   padding: 4px; cursor: pointer; font-size: 11px; font-family: inherit;
-  flex: 0 0 auto; min-width: 72px; box-sizing: border-box;
+  flex: 0 1 72px; box-sizing: border-box;
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   white-space: nowrap;
 }
