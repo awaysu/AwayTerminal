@@ -174,6 +174,7 @@ pub fn run() {
             toolbar::macro_pick_file,
             toolbar::save_text_to_file_at,
             compose::compose_load_file,
+            compose::image_pick,
             compose::compose_save_file,
             compose::compose_send,
             compose::compose_verify_roundtrip,

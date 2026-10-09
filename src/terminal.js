@@ -32,6 +32,12 @@
   var dragId = null;
   var zoomed = null;        // 分割模式：點標題放大成整頁的 pane id
   var suppressClick = false; // 拖曳結束後抑制隨之而來的 click
+  var paneAsking = false, eatMenu = false;   // 同組換格的確認視窗開著／要吞掉的右鍵選單（2.1.2，見 makeTerm 的 mousedown）
+  // id 和作用中那格是同一個代理團隊／聊天室、但不是同一格
+  function sameGroupOther(id) {
+    var cur = active && terms[active], rec = terms[id];
+    return !!(cur && rec && active !== id && cur.group && cur.group === rec.group);
+  }
   var container = document.getElementById("terminals");
 
   var cfg = {
@@ -189,7 +195,27 @@
       return true;
     });
 
+    // 代理團隊／AI 聊天室：在同一組裡點另一格＝先問「要切換到 Agent-12 嗎？」才切（2.1.2 使用者指定；
+    // 常以為在對 Agent-11 下指令，焦點其實已經被點到別格）。capture 階段攔下，xterm 收不到這一下
+    // （不會開始選取、也不會把焦點搶走）；標題列不問（拖曳排序、點標題放大用），但也不切格。
     el.addEventListener("mousedown", function (e) {
+      if (!sameGroupOther(id) || header.contains(e.target) || typeof window.AwayAskPaneSwitch !== "function") return;
+      e.preventDefault(); e.stopPropagation();
+      if (e.button === 2) eatMenu = true;   // 右鍵：接著來的 contextmenu 也吞掉，不然選單會作用在原本那格
+      if (paneAsking) return;
+      paneAsking = true;
+      Promise.resolve(window.AwayAskPaneSwitch(terms[id].label || terms[id].title)).then(function (yes) {
+        paneAsking = false;
+        if (yes && terms[id]) setActivePane(id);
+        else if (active && terms[active]) terms[active].term.focus();
+      }, function () { paneAsking = false; });
+    }, true);
+    el.addEventListener("contextmenu", function (e) {
+      if (!eatMenu) return;
+      eatMenu = false; e.preventDefault(); e.stopPropagation();
+    }, true);
+    el.addEventListener("mousedown", function (e) {
+      if (header.contains(e.target) && sameGroupOther(id)) return;
       // 左鍵按下＝程式那邊的選取會重來（拖曳結束後它會再送一次 OSC 52）或被點掉 → 舊的 appSel 作廢；右鍵要留著給右鍵選單的「複製」
       if (e.button === 0 && terms[id]) terms[id].appSel = "";
       setActivePane(id);

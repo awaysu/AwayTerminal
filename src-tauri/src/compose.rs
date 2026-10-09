@@ -128,6 +128,41 @@ pub async fn compose_load_file(
     }))
 }
 
+/// 工具列「輸入圖片」（2.1.2，使用者要求）：跳圖片選擇 → 回完整路徑，前端把路徑貼進目前分頁
+///（不送 Enter）。Claude Code／Codex 這類 agent 收到圖片路徑會自己附成圖片，使用者接著打字說明。
+/// 對話框開在上次選的那張圖的資料夾；沒選（取消）回 `None`。
+#[tauri::command]
+pub async fn image_pick(
+    app: AppHandle,
+    settings: State<'_, Arc<SettingsStore>>,
+) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    let (tx, rx) = std::sync::mpsc::channel();
+    let mut dialog = app.dialog().file();
+    let last = std::path::PathBuf::from(settings.get().image_last_file);
+    if let Some(dir) = last.parent().filter(|d| !d.as_os_str().is_empty() && d.is_dir()) {
+        dialog = dialog.set_directory(dir);
+    }
+    dialog
+        .set_title(t("dlg.pickImage"))
+        .add_filter(
+            t("dlg.imageFiles"),
+            &["png", "jpg", "jpeg", "gif", "webp", "bmp"],
+        )
+        .add_filter(t("dlg.allFiles"), &["*"])
+        .pick_file(move |f| {
+            let _ = tx.send(f);
+        });
+    let picked = tokio::task::spawn_blocking(move || rx.recv().ok().flatten())
+        .await
+        .map_err(|e| tf("err.filePickFailed", &[&e.to_string()]))?;
+    let Some(path) = picked else { return Ok(None) };
+    let path = path.to_string();
+    settings.update(|s| s.image_last_file = path.clone());
+    println!("[AwayTerminal] 輸入圖片：{path}");
+    Ok(Some(path))
+}
+
 /// 檔案對話框開在「上次的檔案」（載入或儲存過的那一個）的資料夾、預選它的檔名。
 /// 還沒有上次的檔案、或那個資料夾已經不在了：照系統預設開，檔名用 `fallback_name`（有給的話）。
 fn at_last_file<R: tauri::Runtime>(

@@ -222,6 +222,8 @@ export default {
   // ---- 輸入文字（TASK-014；舊版 Loc 的 compose.*，文字逐字照抄）----
   'tb.compose': 'Compose',
   'tip.compose': 'Compose the text first, then send it to the current tab (type Chinese with your IME here; it is not sent key by key)',
+  'tb.image': 'Image',
+  'tip.image': 'Choose an image and paste its path into the current tab (no Enter, so you can keep typing; Claude Code and Codex attach it as an image)',
   'compose.title': 'Compose',
   'compose.placeholder': 'Type the text to send (multi-line OK; Ctrl+Enter sends)',
   'compose.send': 'Send',
@@ -457,6 +459,8 @@ export default {
   'dlg.save': 'Save',
   'dlg.textFiles': 'Text files',
   'dlg.allFiles': 'All files',
+  'dlg.pickImage': 'Choose an image',
+  'dlg.imageFiles': 'Images',
   'dlg.pickMacro': 'Choose a TTL macro',
   'dlg.teratermMacro': 'TeraTerm macro',
   'err.filePickFailed': 'The file dialog failed: {0}',
@@ -597,6 +601,8 @@ export default {
 
   // ---- 代理團隊（TASK-017；舊版 Loc.cs 的 ma.*。角色檔與 common.md 不翻譯——那是給 agent 讀的）----
   'ma.title': 'Multi-Agent',
+  'ma.switchTitle': 'Switch pane',
+  'ma.switchAsk': 'Switch to {0}?',
   'ma.menuDelivery': 'Delivery',
   'ma.menuPauseItem': 'Pause',
   'ma.menuStop': 'Stop tasks',

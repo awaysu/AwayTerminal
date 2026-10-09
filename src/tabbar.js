@@ -910,9 +910,9 @@ function installStripEvents() {
       else closeTab(id);
       return;
     }
-    // 代理團隊：切到最後點過的那一格（舊版 `FocusTargetOf`）
-    const target = team && team.lastFocused ? team.lastFocused : id;
-    invoke('tab_select', { id: target }).catch((err) => log(`[tabbar] 選取失敗：${err}`));
+    // 代理團隊：一律切到第 1 格（這一列本身＝Agent-x1）。以前回「最後點過的那一格」（舊版
+    // `FocusTargetOf`），使用者常以為在對 Agent-11 下指令、焦點其實在 Agent-12（2.1.2）
+    invoke('tab_select', { id }).catch((err) => log(`[tabbar] 選取失敗：${err}`));
   });
 
   el.strip.addEventListener('dblclick', (e) => {
@@ -1325,6 +1325,28 @@ function installMenus() {
   el.btnCompose.addEventListener('click', () => {
     hideMenus();
     openCompose(state);
+  });
+
+  // 「輸入圖片」（2.1.2）：選一張圖 → 把路徑貼進目前分頁，**不送 Enter**，讓使用者接著打字說明。
+  // 走純文字貼上同一條路（`v` 協定）：Claude 分頁是 bracketed paste，Claude Code 會把圖片路徑附成 [Image #n]。
+  // 路徑有空白就加雙引號；尾巴補一個空白，接著打的字不會黏在路徑上。
+  setToolLabel(el.btnImage, T['tb.image']);
+  el.btnImage.title = T['tip.image'];
+  el.btnImage.addEventListener('click', async () => {
+    hideMenus();
+    const id = activeId();
+    if (id === null) return;
+    let path = null;
+    try {
+      path = await invoke('image_pick');
+    } catch (e) {
+      log(`[tabbar] 選圖片失敗：${e}`);
+    }
+    if (path) {
+      const text = /\s/.test(path) ? `"${path}" ` : `${path} `;
+      await invoke('toolbar_paste', { id, text }).catch((e) => log(`[tabbar] 貼上圖片路徑失敗：${e}`));
+    }
+    focusTerminal();
   });
 
   el.btnNew.addEventListener('click', (e) => {
@@ -1879,6 +1901,10 @@ function applyTexts() {
     setToolLabel(el.btnCompose, T['tb.compose']);
     el.btnCompose.title = T['tip.compose'];
   }
+  if (el.btnImage) {
+    setToolLabel(el.btnImage, T['tb.image']);
+    el.btnImage.title = T['tip.image'];
+  }
   // 分頁列、三態按鈕、右鍵選單的動態部分都在 render() 裡（它也讀 T[...]）
   render();
 }
@@ -1886,8 +1912,11 @@ function applyTexts() {
 // ------------------------------------------------------------------ 啟動
 
 export async function initTabBar() {
+  // 代理團隊／聊天室在同一組裡點另一格時，terminal.js 先問這個才切（2.1.2）
+  window.AwayAskPaneSwitch = (label) => askYesNo(T['ma.switchTitle'], fmt('ma.switchAsk', label));
   el.btnNew = $('btn-new');
   el.btnCompose = $('btn-compose');
+  el.btnImage = $('btn-image');
   el.btnCopy = $('btn-copy');
   el.btnPaste = $('btn-paste');
   el.btnCopyAll = $('btn-copyall');

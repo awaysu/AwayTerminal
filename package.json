@@ -1,7 +1,7 @@
 {
   "name": "awayterminal",
   "private": true,
-  "version": "2.1.1",
+  "version": "2.1.2",
   "type": "module",
   "description": "AwayTerminal 2 — cross-platform terminal (Tauri 2 + xterm.js)",
   "scripts": {

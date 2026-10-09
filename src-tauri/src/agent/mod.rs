@@ -84,14 +84,14 @@ impl TeamManager {
         })
     }
 
-    /// 點分頁列那一列要切到哪個分頁：代理團隊＝最後點過的那一格（還在組裡的話）。
+    /// 點分頁列那一列、套用設定收尾時要切到哪個分頁：代理團隊／聊天室＝**一律回第 1 格**
+    ///（Agent-x1，代表列；2.1.2 使用者指定）。以前是回「最後點過的那一格」（舊版
+    /// `FocusTargetOf`），結果常常以為在對 Agent-11 下指令，焦點其實留在 Agent-12。
     pub fn focus_target(&self, tab: u32) -> u32 {
         let list = self.lock();
-        let Some(team) = list.iter().find(|t| t.slot_by_tab(tab).is_some()) else {
-            return tab;
-        };
-        team.last_focused
-            .filter(|id| team.slot_by_tab(*id).is_some())
+        list.iter()
+            .find(|t| t.slot_by_tab(tab).is_some())
+            .and_then(|t| t.row_tab())
             .unwrap_or(tab)
     }
 }
@@ -2201,11 +2201,11 @@ mod tests {
         assert!(m.is_strip_row(5), "格 1 是代表列");
         assert!(!m.is_strip_row(6), "其餘格不列在分頁列");
         assert!(m.is_strip_row(99), "不屬於任何團隊的分頁照常列");
-        // 點分頁列那一列 → 最後點過的那一格
+        // 點分頁列那一列 → 一律第 1 格（代表列），不管最後點過哪一格（2.1.2）
         assert_eq!(m.focus_target(5), 5);
         m.lock()[0].last_focused = Some(6);
-        assert_eq!(m.focus_target(5), 6);
-        // 那一格已經關掉了 → 回代表列自己
+        assert_eq!(m.focus_target(5), 5);
+        assert_eq!(m.focus_target(6), 5, "從組裡任一格問都回代表列");
         m.lock()[0].slots[1].tab = None;
         assert_eq!(m.focus_target(5), 5);
     }

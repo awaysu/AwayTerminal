@@ -843,7 +843,7 @@ TEMP 路徑印出完整結果，Documents 路徑印完 `path = …` 就停住。
 | MA34 | pane 狀態標籤 | `E{id}US{0..4}`：閒置／忙碌／有信待送／已結束／**忙碌且有信待送**；只在變了才送 | `PostAgentState` | PASS | — | — |
 | MA35 | `g` 協定 | `g{下方id}US{比例}US{上列id,…}US{標籤\|…}US{顏色,…}`；標籤＝`Agent-12 · Software Engineer · Codex`，顏色照格號 | `PostAgentGroup` | PASS | — | — |
 | MA36 | `G` 協定 | 拖分隔線 → 比例記進團隊（clamp 0.15～0.85），雙擊回 0.5 | `case 'G'` | PASS（`agent_ratio`） | — | — |
-| MA37 | 分頁列一組一列 | 只列代表列（最小格號、有分頁那格）；點它回到**最後點過的那一格** | `IsStripRow`／`FocusTargetOf` | PASS（單元測試） | — | — |
+| MA37 | 分頁列一組一列 | 只列代表列（最小格號、有分頁那格）；點它一律回到**第 1 格**（2.1.2 起；以前是最後點過的那一格） | `IsStripRow`／`focus_target` | PASS（單元測試） | — | — |
 | MA38 | 關閉整組 | 分頁列的 ✕ 與右鍵「關閉」都先確認「（N 個 agent 一起關閉）」，然後一起關 | `CloseAgentGroup` | PASS | — | — |
 | MA39 | 關掉其中一格 | 組裡還有別格 → 重排（`g` 重送）；最後一格 → 拆組 | `AfterAgentTabRemoved` | PASS | — | — |
 | MA40 | 沙盒（團隊） | **一個團隊一棵 worktree**，`.ai/bus/` 在裡面，護欄每家 CLI 寫一次 | `CLAUDE.md` | PASS | — | — |

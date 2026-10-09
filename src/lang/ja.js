@@ -215,6 +215,8 @@ export default {
   // ---- 輸入文字（TASK-014；舊版 Loc 的 compose.*，文字逐字照抄）----
   'tb.compose': 'テキスト入力',
   'tip.compose': '先にテキストを作成してから現在のタブへ送ります（日本語は IME でここに入力し、1 キーずつ送信されません）',
+  'tb.image': '画像入力',
+  'tip.image': '画像を選んでそのパスを現在のタブに貼り付けます（Enter は送らないので続けて入力できます。Claude Code・Codex は画像として添付します）',
   'compose.title': 'テキスト入力',
   'compose.placeholder': '送信するテキストを入力（複数行可、Ctrl+Enter で送信）',
   'compose.send': '送信',
@@ -438,6 +440,8 @@ export default {
   'dlg.save': '保存',
   'dlg.textFiles': 'テキストファイル',
   'dlg.allFiles': 'すべてのファイル',
+  'dlg.pickImage': '画像を選択',
+  'dlg.imageFiles': '画像',
   'dlg.pickMacro': 'TTL マクロを選択',
   'dlg.teratermMacro': 'TeraTerm マクロ',
   'err.filePickFailed': 'ファイル選択に失敗しました：{0}',
@@ -578,6 +582,8 @@ export default {
 
   // ---- 代理團隊（TASK-017；舊版 Loc.cs 的 ma.*。角色檔與 common.md 不翻譯——那是給 agent 讀的）----
   'ma.title': 'エージェントチーム',
+  'ma.switchTitle': 'フォーカスの切り替え',
+  'ma.switchAsk': '{0} に切り替えますか？',
   'ma.menuDelivery': '配信',
   'ma.menuPauseItem': '一時停止',
   'ma.menuStop': 'タスクを停止',

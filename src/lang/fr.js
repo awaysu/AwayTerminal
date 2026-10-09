@@ -215,6 +215,8 @@ export default {
   // ---- 輸入文字（TASK-014；舊版 Loc 的 compose.*，文字逐字照抄）----
   'tb.compose': 'Saisir du texte',
   'tip.compose': 'Rédigez le texte avant de l’envoyer à l’onglet actif (saisissez-le ici avec votre IME ; il n’est pas envoyé touche par touche)',
+  'tb.image': 'Image',
+  'tip.image': 'Choisir une image et coller son chemin dans l’onglet actif (sans Entrée, pour continuer à écrire ; Claude Code et Codex la joignent comme image)',
   'compose.title': 'Saisir du texte',
   'compose.placeholder': 'Saisissez le texte à envoyer (plusieurs lignes possibles ; Ctrl+Entrée envoie)',
   'compose.send': 'Envoyer',
@@ -438,6 +440,8 @@ export default {
   'dlg.save': 'Enregistrer',
   'dlg.textFiles': 'Fichiers texte',
   'dlg.allFiles': 'Tous les fichiers',
+  'dlg.pickImage': 'Choisir une image',
+  'dlg.imageFiles': 'Images',
   'dlg.pickMacro': 'Choisir une macro TTL',
   'dlg.teratermMacro': 'Macro TeraTerm',
   'err.filePickFailed': 'La boîte de dialogue de fichier a échoué : {0}',
@@ -578,6 +582,8 @@ export default {
 
   // ---- 代理團隊（TASK-017；舊版 Loc.cs 的 ma.*。角色檔與 common.md 不翻譯——那是給 agent 讀的）----
   'ma.title': 'Équipe d\'agents',
+  'ma.switchTitle': 'Changer de volet',
+  'ma.switchAsk': 'Passer à {0} ?',
   'ma.menuDelivery': 'Distribution',
   'ma.menuPauseItem': 'Pause',
   'ma.menuStop': 'Arrêter les tâches',

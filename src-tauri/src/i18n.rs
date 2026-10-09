@@ -230,6 +230,8 @@ static TABLE: &[(&str, &str, &str)] = &[
     ("dlg.save",           "儲存", "Save"),
     ("dlg.textFiles",      "文字檔", "Text files"),
     ("dlg.allFiles",       "所有檔案", "All files"),
+    ("dlg.pickImage",      "選擇圖片", "Choose an image"),
+    ("dlg.imageFiles",     "圖片", "Images"),
     ("migrate.warnParity",     "同位檢查 {0} 在新版不支援（serialport 只有 None／Odd／Even），已改成 None",
                                "Parity {0} is not supported in v2 (serialport has only None/Odd/Even); changed to None"),
     ("migrate.warnStopBits",   "停止位元 1.5 在新版不支援，已改成 1",

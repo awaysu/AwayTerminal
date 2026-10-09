@@ -215,6 +215,8 @@ export default {
   // ---- 輸入文字（TASK-014；舊版 Loc 的 compose.*，文字逐字照抄）----
   'tb.compose': 'Text verfassen',
   'tip.compose': 'Text erst hier verfassen und dann an den aktuellen Tab senden (mit dem IME hier tippen; es wird nicht Taste für Taste gesendet)',
+  'tb.image': 'Bild',
+  'tip.image': 'Ein Bild wählen und seinen Pfad in den aktuellen Tab einfügen (ohne Enter, damit du weiterschreiben kannst; Claude Code und Codex hängen es als Bild an)',
   'compose.title': 'Text verfassen',
   'compose.placeholder': 'Text zum Senden eingeben (mehrzeilig möglich, Strg+Enter sendet)',
   'compose.send': 'Senden',
@@ -438,6 +440,8 @@ export default {
   'dlg.save': 'Speichern',
   'dlg.textFiles': 'Textdateien',
   'dlg.allFiles': 'Alle Dateien',
+  'dlg.pickImage': 'Bild auswählen',
+  'dlg.imageFiles': 'Bilder',
   'dlg.pickMacro': 'TTL-Makro auswählen',
   'dlg.teratermMacro': 'TeraTerm-Makro',
   'err.filePickFailed': 'Der Dateidialog ist fehlgeschlagen: {0}',
@@ -578,6 +582,8 @@ export default {
 
   // ---- 代理團隊（TASK-017；舊版 Loc.cs 的 ma.*。角色檔與 common.md 不翻譯——那是給 agent 讀的）----
   'ma.title': 'Agenten-Team',
+  'ma.switchTitle': 'Bereich wechseln',
+  'ma.switchAsk': 'Zu {0} wechseln?',
   'ma.menuDelivery': 'Zustellung',
   'ma.menuPauseItem': 'Pause',
   'ma.menuStop': 'Aufgaben stoppen',

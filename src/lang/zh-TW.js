@@ -220,6 +220,8 @@ export default {
   // ---- 輸入文字（TASK-014；舊版 Loc 的 compose.*，文字逐字照抄）----
   'tb.compose': '輸入文字',
   'tip.compose': '先打好文字再送到目前分頁（中文用輸入法打在這裡，不會被逐鍵送出）',
+  'tb.image': '輸入圖片',
+  'tip.image': '選一張圖片，把它的路徑貼進目前分頁（不送 Enter，可以接著打字；Claude Code、Codex 會把它附成圖片）',
   'compose.title': '輸入文字',
   'compose.placeholder': '在此輸入要送出的文字（可多行，Ctrl+Enter 送出）',
   'compose.send': '送出',
@@ -455,6 +457,8 @@ export default {
   'dlg.save': '儲存',
   'dlg.textFiles': '文字檔',
   'dlg.allFiles': '所有檔案',
+  'dlg.pickImage': '選擇圖片',
+  'dlg.imageFiles': '圖片',
   'dlg.pickMacro': '選擇 TTL 巨集',
   'dlg.teratermMacro': 'TeraTerm 巨集',
   'err.filePickFailed': '檔案選擇失敗：{0}',
@@ -595,6 +599,8 @@ export default {
 
   // ---- 代理團隊（TASK-017；舊版 Loc.cs 的 ma.*。角色檔與 common.md 不翻譯——那是給 agent 讀的）----
   'ma.title': '代理團隊',
+  'ma.switchTitle': '切換焦點',
+  'ma.switchAsk': '要切換到 {0} 嗎？',
   'ma.menuDelivery': '投遞',
   'ma.menuPauseItem': '暫停',
   'ma.menuStop': '停止任務',

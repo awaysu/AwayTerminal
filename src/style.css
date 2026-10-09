@@ -22,7 +22,7 @@ html, body { height: 100%; margin: 0; background: #1e1e1e; overflow: hidden; }
 #terminals.split .term { position: relative; inset: auto; border: 1px solid #333; border-radius: 4px; overflow: hidden; }
 #terminals.split .pane-header { display: flex; }
 #terminals.split .term.active-pane { border-color: #FDFFB0; }
-#terminals.split .term.active-pane .pane-header { background: #45472e; color: #ffffff; }
+#terminals.split .term.active-pane .pane-header { background: #F8BBD0; color: #1e1e1e; font-weight: bold; }
 .term.drag-over { outline: 1px dashed #FDFFB0; outline-offset: -1px; }
 
 .pane-header .ph-title { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; }
@@ -37,7 +37,10 @@ html, body { height: 100%; margin: 0; background: #1e1e1e; overflow: hidden; }
                            border: 2px solid #333; border-radius: 3px; overflow: hidden; }
 #terminals .agents-top > .term { flex: 1 1 0px; }
 #terminals .agents .pane-header { display: flex; }
-#terminals .agents .term.active-pane .pane-header { background: #45472e; color: #ffffff; }
+#terminals .agents .term.active-pane .pane-header { background: #F8BBD0; color: #1e1e1e; font-weight: bold; }
+/* 作用中那格的標題改成淡粉紅底黑字（2.1.2，原本暗橄欖底 #45472e 不夠顯眼）；其他格的標題調暗，對比更清楚 */
+#terminals .agents .term:not(.active-pane) .pane-header, #terminals.split .term:not(.active-pane) .pane-header { color: #9a9a9a; }
+#terminals .term.active-pane .ph-pill { box-shadow: 0 0 0 1px #1e1e1e; }
 .ag-divider { flex: 0 0 5px; background: #2d2d30; cursor: row-resize; }
 .ag-divider:hover, .agents.dragging > .ag-divider { background: #5a5a40; }
 .agents.dragging { cursor: row-resize; user-select: none; }

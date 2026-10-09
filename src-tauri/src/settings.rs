@@ -130,6 +130,8 @@ pub struct AppSettings {
     /// 「輸入文字」上次載入（2.0.14）或儲存（2.0.15）的文字檔（完整路徑；使用者要求）。
     /// 下次按「載入檔案」或「儲存」時檔案對話框就開在那個資料夾、預選那個檔名。空＝還沒用過。
     pub compose_last_file: String,
+    /// 工具列「輸入圖片」上次選的圖片（完整路徑；2.1.2）。下次的檔案對話框開在那個資料夾。空＝還沒用過。
+    pub image_last_file: String,
 
     /// 各家 AI CLI **上次選的模型**（key＝`claude-code`／`codex`／`opencode`／`geminicli`，
     /// 2.0.6 起多 `antigravity`、2.0.10 起多 `grok`；空字串＝選了「預設」）。選模型的視窗用它當預選值
@@ -288,6 +290,7 @@ impl Default for AppSettings {
             sandbox_default: false,
             compose_send_enter: true,
             compose_last_file: String::new(),
+            image_last_file: String::new(),
             last_models: std::collections::BTreeMap::new(),
             ask_model_on_open: false,
             model_auto_refresh: false,

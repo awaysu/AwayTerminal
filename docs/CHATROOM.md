@@ -100,7 +100,7 @@ AwayTerminal 接進共用紀錄，再換下一位。
 **共用**（同一份程式，聊天室只是另一種 group kind）：
 
 - `Team`／`Slot`（`kind` 欄位決定是哪一種）、pane 排版與 `g`／`u`／`E`／`G` 四條協定
-- 分頁列一組一列、點那一列回到最後點過的那一格、關閉整組要確認
+- 分頁列一組一列、點那一列一律回到第 1 格（2.1.2 起）、關閉整組要確認
 - 沙盒（**一間聊天室一棵 worktree**）、Job Object、護欄
 - 啟動那條路（`session_create(kind="agent")`）、四家 CLI 的角色注入方式
 - `agent_ready`（6 個閘門）、`send_text_then_enter`（文字＋300ms 後 Enter）、Enter 補送

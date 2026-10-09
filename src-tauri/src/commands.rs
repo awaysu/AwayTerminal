@@ -556,6 +556,12 @@ pub fn session_create(
             TabKind::Claude => {
                 tabs_state.dir_tab_name(work_dir.as_deref().unwrap_or(""), &sh.title)
             }
+            // 其他自訂連線（Codex、Gemini CLI、OpenCode、Grok…）：使用者有選工作目錄就跟 Claude 一樣
+            // 用那個資料夾的名字（2.1.2 使用者要求；以前只有 Claude 這樣，其他都是 `Codex(1)`）。
+            // 用選的那個目錄（`cwd`），不是沙盒的 worktree；沒選就照舊用執行檔名編號。
+            TabKind::Custom if cwd.as_deref().is_some_and(|d| !d.trim().is_empty()) => {
+                tabs_state.dir_tab_name(cwd.as_deref().unwrap_or(""), &sh.title)
+            }
             _ => tabs_state.next_name(&sh.title),
         },
     };

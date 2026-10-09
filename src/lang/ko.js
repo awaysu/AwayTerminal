@@ -215,6 +215,8 @@ export default {
   // ---- 輸入文字（TASK-014；舊版 Loc 的 compose.*，文字逐字照抄）----
   'tb.compose': '텍스트 입력',
   'tip.compose': '텍스트를 먼저 작성한 뒤 현재 탭으로 보냅니다 (한글은 입력기로 여기에 입력하며, 키 하나씩 전송되지 않습니다)',
+  'tb.image': '이미지 입력',
+  'tip.image': '이미지를 골라 그 경로를 현재 탭에 붙여 넣습니다 (Enter는 보내지 않으므로 이어서 입력할 수 있습니다. Claude Code·Codex는 이미지로 첨부합니다)',
   'compose.title': '텍스트 입력',
   'compose.placeholder': '보낼 텍스트를 입력하세요 (여러 줄 가능, Ctrl+Enter로 전송)',
   'compose.send': '보내기',
@@ -438,6 +440,8 @@ export default {
   'dlg.save': '저장',
   'dlg.textFiles': '텍스트 파일',
   'dlg.allFiles': '모든 파일',
+  'dlg.pickImage': '이미지 선택',
+  'dlg.imageFiles': '이미지',
   'dlg.pickMacro': 'TTL 매크로 선택',
   'dlg.teratermMacro': 'TeraTerm 매크로',
   'err.filePickFailed': '파일 선택에 실패했습니다: {0}',
@@ -578,6 +582,8 @@ export default {
 
   // ---- 代理團隊（TASK-017；舊版 Loc.cs 的 ma.*。角色檔與 common.md 不翻譯——那是給 agent 讀的）----
   'ma.title': '에이전트 팀',
+  'ma.switchTitle': '포커스 전환',
+  'ma.switchAsk': '{0}(으)로 전환할까요?',
   'ma.menuDelivery': '전달',
   'ma.menuPauseItem': '일시 중지',
   'ma.menuStop': '작업 중지',
