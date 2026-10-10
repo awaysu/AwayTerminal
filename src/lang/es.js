@@ -633,7 +633,7 @@ export default {
   'ma.backendMissing': 'No se encontró {0}, por lo que {1} no se inició.\nInstálalo o define su ruta en Nueva conexión \u2192 Personalizado\u2026.',
   'ma.roleComposeFailed': 'No se pudo componer el archivo de rol de {0}: {1}',
   'ma.stopPrompt': 'Para por ahora y registra el estado actual.',
-  'ma.idleCheckPrompt': '[AwayTerminal] Todo el equipo está inactivo. Pregunta a cada agente si sigue con alguna tarea y dónde está bloqueado, y luego reasigna o infórmame según haga falta.',
+  'ma.idleCheckPrompt': '[AwayTerminal] Todo el equipo está inactivo. Pregunta a cada agente si sigue con alguna tarea y dónde está bloqueado, y luego reasigna o infórmame según haga falta. Si todo está terminado y no queda nada pendiente, escribe [TEAM-DONE] solo en la última línea de tu respuesta.',
   'ma.deliverOne': '[AwayTerminal] Mensaje #{0} de {1} ({2}, {3}): lee {4}, trátalo según tu rol y responde luego a {1}.',
   'ma.deliverMany': '[AwayTerminal] Tienes {0} mensajes nuevos: lee {1} en orden, trata cada uno según tu rol y responde a su remitente.',
   'ma.deliverInfo': '[AwayTerminal] Aviso #{0}: lee {1} (aviso del sistema de AwayTerminal; no hace falta responder).',

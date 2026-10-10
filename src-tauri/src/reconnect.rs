@@ -249,10 +249,12 @@ fn pipeline(app: &AppHandle, id: u32, parts: &tabs::SessionParts) -> (OnOutput, 
     let on_output = {
         let pump = parts.pump.clone();
         let last_output = parts.last_output.clone();
+        let tail = parts.tail.clone();
         let logger = parts.logger.clone();
         let tap = parts.tap.clone();
         Arc::new(move |bytes: &[u8]| {
             last_output.store(tabs::now_ms(), Ordering::Relaxed);
+            tail.push(bytes);
             // TTL 巨集的 `wait` 要看得到輸出（現在一定是空槽，見 src/tap.rs）
             tap.output(bytes);
             // log 先寫再餵畫面：舊版 OnSessionOutput 也是這個順序

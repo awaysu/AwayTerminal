@@ -633,7 +633,7 @@ export default {
   'ma.backendMissing': '找不到 {0}，{1} 没有启动。\n请先安装，或到“新连接 → 自定义…”设置路径。',
   'ma.roleComposeFailed': '{0} 的角色文件组合失败：{1}',
   'ma.stopPrompt': '先停一下然后记录目前状态',
-  'ma.idleCheckPrompt': '[AwayTerminal] 团队目前全部空闲。请逐一问每个 agent 现在是否还有任务在进行、卡在哪里，需要的话重新指派或汇报给我。',
+  'ma.idleCheckPrompt': '[AwayTerminal] 团队目前全部空闲。请逐一问每个 agent 现在是否还有任务在进行、卡在哪里，需要的话重新指派或汇报给我。如果全部都完成、没有待办，请在回复的最后单独一行打印 [TEAM-DONE]。',
   'ma.deliverOne': '[AwayTerminal] 消息 #{0} from {1} ({2}, {3})：请读 {4}，按你的角色处理，完成后回信给 {1}。',
   'ma.deliverMany': '[AwayTerminal] 你有 {0} 条新消息：请依序读 {1}，各自按你的角色处理并回信给发件人。',
   'ma.deliverInfo': '[AwayTerminal] 通知 #{0}：请读 {1}（AwayTerminal 的系统通知，不需要回信）。',

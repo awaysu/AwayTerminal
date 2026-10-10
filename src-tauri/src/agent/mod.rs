@@ -1158,6 +1158,7 @@ struct ApplySnapshot {
     paused_by_limit: bool,
     idle_check_minutes: u32,
     all_idle_since_ms: u128,
+    idle_check_sent_ms: u128,
     rounds: u32,
 }
 
@@ -1170,6 +1171,7 @@ impl ApplySnapshot {
             paused_by_limit: t.paused_by_limit,
             idle_check_minutes: t.idle_check_minutes,
             all_idle_since_ms: t.all_idle_since_ms,
+            idle_check_sent_ms: t.idle_check_sent_ms,
             rounds: t.rounds,
         }
     }
@@ -1181,6 +1183,7 @@ impl ApplySnapshot {
         t.paused_by_limit = self.paused_by_limit;
         t.idle_check_minutes = self.idle_check_minutes;
         t.all_idle_since_ms = self.all_idle_since_ms;
+        t.idle_check_sent_ms = self.idle_check_sent_ms;
         t.rounds = self.rounds;
     }
 }
@@ -1270,6 +1273,7 @@ pub fn agent_team_apply(
     if !t.is_chat() && setup.idle_check_minutes != t.idle_check_minutes {
         t.idle_check_minutes = setup.idle_check_minutes;
         t.all_idle_since_ms = 0;
+        t.idle_check_sent_ms = 0;
         println!(
             "[AwayTerminal] 代理團隊 {}：閒置檢查={}",
             t.number,

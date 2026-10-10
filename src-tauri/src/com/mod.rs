@@ -421,7 +421,7 @@ fn set_split_timeouts(port: &serialport::COMPort, _writer: &mut serialport::COMP
         write_total_timeout_constant: WRITE_TIMEOUT.as_millis() as u32,
     };
     // SAFETY：handle 由 `port` 持有、在這個呼叫期間有效；`t` 是正確配置的 COMMTIMEOUTS。
-    let ok = unsafe { SetCommTimeouts(port.as_raw_handle() as *mut std::ffi::c_void, &t) };
+    let ok = unsafe { SetCommTimeouts(port.as_raw_handle(), &t) };
     if ok == 0 {
         println!(
             "[AwayTerminal] SetCommTimeouts 失敗（讀寫逾時沿用 {}ms）：{}",

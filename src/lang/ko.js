@@ -633,7 +633,7 @@ export default {
   'ma.backendMissing': '{0} 을 찾을 수 없어 {1} 을 시작하지 못했습니다.\n먼저 설치하거나 "새 연결 → 사용자 지정…"에서 경로를 설정하세요.',
   'ma.roleComposeFailed': '{0} 의 역할 파일을 만들지 못했습니다: {1}',
   'ma.stopPrompt': '지금은 멈추고 현재 상태를 기록해 주세요.',
-  'ma.idleCheckPrompt': '[AwayTerminal] 팀 전체가 유휴 상태입니다. 각 에이전트에게 아직 진행 중인 작업이 있는지, 어디서 막혔는지 차례로 물어보고 필요하면 다시 배정하거나 저에게 보고해 주세요.',
+  'ma.idleCheckPrompt': '[AwayTerminal] 팀 전체가 유휴 상태입니다. 각 에이전트에게 아직 진행 중인 작업이 있는지, 어디서 막혔는지 차례로 물어보고 필요하면 다시 배정하거나 저에게 보고해 주세요.모두 완료되었고 대기 중인 작업이 없다면 답변의 마지막 줄에 [TEAM-DONE] 만 출력하세요.',
   'ma.deliverOne': '[AwayTerminal] 메시지 #{0} from {1} ({2}, {3}): {4} 을 읽고 역할에 따라 처리한 뒤 {1} 에게 답장하세요.',
   'ma.deliverMany': '[AwayTerminal] 새 메시지가 {0} 개 있습니다: {1} 을 순서대로 읽고 각각 역할에 따라 처리한 뒤 보낸 사람에게 답장하세요.',
   'ma.deliverInfo': '[AwayTerminal] 알림 #{0}: {1} 을 읽어 주세요(AwayTerminal 의 시스템 알림이며 답장은 필요 없습니다).',

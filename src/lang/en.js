@@ -652,7 +652,7 @@ export default {
   'ma.backendMissing': '{0} was not found, so {1} was not started.\nInstall it, or set its path in New \u2192 Custom\u2026.',
   'ma.roleComposeFailed': 'Could not compose the role file for {0}: {1}',
   'ma.stopPrompt': 'Stop for now and record the current state.',
-  'ma.idleCheckPrompt': '[AwayTerminal] The whole team is idle. Ask each agent whether it still has a task running and where it is stuck, then reassign or report back as needed.',
+  'ma.idleCheckPrompt': '[AwayTerminal] The whole team is idle. Ask each agent whether it still has a task running and where it is stuck, then reassign or report back as needed. If everything is finished and nothing is pending, print [TEAM-DONE] alone on the last line of your reply.',
   'ma.deliverOne': '[AwayTerminal] Message #{0} from {1} ({2}, {3}): read {4}, handle it according to your role, then reply to {1}.',
   'ma.deliverMany': '[AwayTerminal] You have {0} new messages: read {1} in order, handle each according to your role and reply to its sender.',
   'ma.deliverInfo': '[AwayTerminal] Notice #{0}: read {1} (a system notice from AwayTerminal; no reply needed).',

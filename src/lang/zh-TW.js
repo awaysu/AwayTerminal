@@ -650,7 +650,7 @@ export default {
   'ma.backendMissing': '找不到 {0}，{1} 沒有啟動。\n請先安裝，或到「新連接 → 自訂…」設定路徑。',
   'ma.roleComposeFailed': '{0} 的角色檔組合失敗：{1}',
   'ma.stopPrompt': '先停一下然後記錄目前狀態',
-  'ma.idleCheckPrompt': '[AwayTerminal] 團隊目前全部閒置。請逐一問每個 agent 現在是否還有任務在進行、卡在哪裡，需要的話重新指派或回報給我。',
+  'ma.idleCheckPrompt': '[AwayTerminal] 團隊目前全部閒置。請逐一問每個 agent 現在是否還有任務在進行、卡在哪裡，需要的話重新指派或回報給我。如果全部都完成、沒有待辦，請在回覆的最後單獨一行印出 [TEAM-DONE]。',
   'ma.deliverOne': '[AwayTerminal] 訊息 #{0} from {1} ({2}, {3})：請讀 {4}，依你的角色處理，完成後回信給 {1}。',
   'ma.deliverMany': '[AwayTerminal] 你有 {0} 則新訊息：請依序讀 {1}，各自依你的角色處理並回信給寄件人。',
   'ma.deliverInfo': '[AwayTerminal] 通知 #{0}：請讀 {1}（AwayTerminal 的系統通知，不需要回信）。',

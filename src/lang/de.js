@@ -633,7 +633,7 @@ export default {
   'ma.backendMissing': '{0} wurde nicht gefunden, daher wurde {1} nicht gestartet.\nInstalliere es oder setze den Pfad unter Neue Verbindung \u2192 Benutzerdefiniert\u2026.',
   'ma.roleComposeFailed': 'Die Rollendatei für {0} konnte nicht erstellt werden: {1}',
   'ma.stopPrompt': 'Hör für jetzt auf und halte den aktuellen Stand fest.',
-  'ma.idleCheckPrompt': '[AwayTerminal] Das ganze Team ist im Leerlauf. Frage jeden Agenten, ob noch eine Aufgabe läuft und wo er hängt, und weise dann neu zu oder melde es mir.',
+  'ma.idleCheckPrompt': '[AwayTerminal] Das ganze Team ist im Leerlauf. Frage jeden Agenten, ob noch eine Aufgabe läuft und wo er hängt, und weise dann neu zu oder melde es mir. Wenn alles erledigt ist und nichts mehr aussteht, gib [TEAM-DONE] allein in der letzten Zeile deiner Antwort aus.',
   'ma.deliverOne': '[AwayTerminal] Nachricht #{0} von {1} ({2}, {3}): Lies {4}, bearbeite sie gemäß deiner Rolle und antworte danach {1}.',
   'ma.deliverMany': '[AwayTerminal] Du hast {0} neue Nachrichten: Lies {1} der Reihe nach, bearbeite jede gemäß deiner Rolle und antworte dem Absender.',
   'ma.deliverInfo': '[AwayTerminal] Hinweis #{0}: Lies {1} (eine Systemmeldung von AwayTerminal; keine Antwort nötig).',

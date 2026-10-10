@@ -590,6 +590,7 @@ pub fn session_create(
     // 狀態燈要知道「最後一次有輸出是什麼時候」。這條路一個 chunk 走一次，
     // 所以用 AtomicU64 直接寫，不去搶分頁清單的鎖（見 tabs.rs 的註解）。
     let last_output = Arc::new(std::sync::atomic::AtomicU64::new(tabs::now_ms()));
+    let tail = tabs::OutputTail::default();
 
     // log 記錄的槽：spawn 當下先建好空的，使用者按「記錄 log…」時才填進 Logger
     // （輸出 callback 是在這裡就固定下來的，沒有槽就沒辦法事後掛上）。
@@ -602,10 +603,12 @@ pub fn session_create(
     let on_output = {
         let pump = pump.clone();
         let last_output = last_output.clone();
+        let tail = tail.clone();
         let logger = logger.clone();
         let tap = tap.clone();
         Arc::new(move |bytes: &[u8]| {
             last_output.store(tabs::now_ms(), Ordering::Relaxed);
+            tail.push(bytes);
             tap.output(bytes);
             // log 先寫再餵畫面：舊版 OnSessionOutput 也是這個順序
             // 先把 Logger 複製出來、放掉槽的鎖再寫檔：磁碟慢／防毒卡住時不可以握著槽的鎖
@@ -695,6 +698,7 @@ pub fn session_create(
         last_output,
         last_input: Arc::new(std::sync::atomic::AtomicU64::new(0)),
         last_submit: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+        tail,
         busy: false,
         logger,
         fg: None,
@@ -869,6 +873,7 @@ fn create_remote(
         last_output,
         last_input: Arc::new(std::sync::atomic::AtomicU64::new(0)),
         last_submit: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+        tail: Default::default(),
         busy: false,
         logger,
         fg: None,

@@ -47,7 +47,7 @@ mod win {
     const CREATE_SUSPENDED: u32 = 0x0000_0004;
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
-    fn main() {
+    pub fn main() {
         // `--pwsh`＝故意用 Store 別名（預期逃走，只印不當失敗）
         let store_alias = std::env::args().any(|a| a == "--pwsh");
         let shell = if store_alias { "pwsh" } else { "powershell" };

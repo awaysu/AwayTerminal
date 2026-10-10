@@ -98,6 +98,8 @@ pub struct Tab {
     /// 最後一次**送出**（輸入裡含 CR／或我們自己補的 Enter）的時間（epoch ms）。
     /// 同舊版 `LastSubmitUtc`。
     pub last_submit: Arc<AtomicU64>,
+    /// 最近輸出的尾巴（閒置檢查找完成標記用）。
+    pub tail: OutputTail,
     /// 狀態燈：忙碌（紅）／閒置（綠）。由 `status.rs` 的輪詢更新。
     pub busy: bool,
     /// 這個分頁的 log 記錄器（`None`＝沒在記錄）。
@@ -147,11 +149,57 @@ pub struct Tab {
     pub backend: String,
 }
 
+/// 最近輸出的尾巴（每格最多 [`OutputTail::CAP`] bytes）。代理團隊的閒置檢查用它看
+/// Agent-x1 有沒有印出「全部完成」的標記（`deliver::TEAM_DONE_MARKER`）。
+///
+/// 和 `last_output` 一樣在 PTY 讀取執行緒上更新，所以自己帶鎖、不去搶分頁清單的鎖。
+#[derive(Clone, Default)]
+pub struct OutputTail(Arc<Mutex<TailBuf>>);
+
+#[derive(Default)]
+struct TailBuf {
+    buf: std::collections::VecDeque<u8>,
+    /// 從開格到現在總共收了幾個 bytes（單調遞增；「上次提問之後」用它定位）。
+    total: u64,
+}
+
+impl OutputTail {
+    pub const CAP: usize = 8 * 1024;
+
+    pub fn push(&self, bytes: &[u8]) {
+        let Ok(mut t) = self.0.lock() else { return };
+        t.total += bytes.len() as u64;
+        let keep = bytes.len().min(Self::CAP);
+        let bytes = &bytes[bytes.len() - keep..];
+        let overflow = (t.buf.len() + keep).saturating_sub(Self::CAP);
+        t.buf.drain(..overflow);
+        t.buf.extend(bytes);
+    }
+
+    /// 目前的總位元組數（當作「從現在起」的書籤）。
+    pub fn position(&self) -> u64 {
+        self.0.lock().map(|t| t.total).unwrap_or(0)
+    }
+
+    /// `since` 這個書籤之後收到的輸出裡有沒有 `needle`（書籤已經滾出緩衝就只看留下的部分）。
+    pub fn contains_since(&self, since: u64, needle: &str) -> bool {
+        let Ok(t) = self.0.lock() else { return false };
+        let start = t.buf.len().saturating_sub(t.total.saturating_sub(since) as usize);
+        let (a, b) = t.buf.as_slices();
+        let mut all = Vec::with_capacity(a.len() + b.len());
+        all.extend_from_slice(a);
+        all.extend_from_slice(b);
+        let n = needle.as_bytes();
+        !n.is_empty() && all[start..].windows(n.len()).any(|w| w == n)
+    }
+}
+
 /// 重連要沿用的既有管線（見 `TabManager::session_parts_of`）。
 pub struct SessionParts {
     pub pump: Arc<crate::output::OutputPump>,
     pub logger: Arc<Mutex<Option<Arc<crate::logging::Logger>>>>,
     pub last_output: Arc<AtomicU64>,
+    pub tail: OutputTail,
     /// TTL 巨集的攔截槽（現在一定是空的，見 `src/tap.rs`）。
     pub tap: crate::tap::TapSlot,
     pub cols: u16,
@@ -509,6 +557,12 @@ impl TabManager {
         })
     }
 
+    /// 這格最近輸出的尾巴（閒置檢查用）。分頁不在了＝`None`。
+    pub fn output_tail(&self, id: u32) -> Option<OutputTail> {
+        let inner = self.lock();
+        Some(inner.tabs.get(&id)?.tail.clone())
+    }
+
     /// 記一次使用者輸入（`i` 協定）。含 CR 就同時算一次「送出」。
     pub fn mark_input(&self, id: u32, submitted: bool) {
         let inner = self.lock();
@@ -542,6 +596,7 @@ impl TabManager {
             pump: t.out.clone()?,
             logger: t.logger.clone(),
             last_output: t.last_output.clone(),
+            tail: t.tail.clone(),
             tap: t.tap.clone(),
             cols: t.cols,
             rows: t.rows,
@@ -948,7 +1003,28 @@ fn looks_like_drive(s: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{dir_name_of, parse_cwd, Tab, TabKind, TabManager};
+    use super::{dir_name_of, parse_cwd, OutputTail, Tab, TabKind, TabManager};
+
+    #[test]
+    fn output_tail_marker_only_after_bookmark() {
+        let t = OutputTail::default();
+        t.push(b"old [TEAM-DONE] reply
+");
+        let pos = t.position();
+        assert!(t.contains_since(0, "[TEAM-DONE]"));
+        assert!(!t.contains_since(pos, "[TEAM-DONE]"), "書籤之後還沒有新標記");
+        t.push(b"all finished
+[TEAM-DONE]
+");
+        assert!(t.contains_since(pos, "[TEAM-DONE]"));
+        // 緩衝只留最後 CAP bytes；塞滿之後舊的滾掉、新的還找得到
+        t.push(&vec![b'x'; OutputTail::CAP * 2]);
+        assert!(!t.contains_since(0, "[TEAM-DONE]"));
+        let pos2 = t.position();
+        t.push(b"[TEAM-DONE]");
+        assert!(t.contains_since(pos2, "[TEAM-DONE]"));
+        assert!(!t.contains_since(0, "finished"));
+    }
 
     fn tab(id: u32) -> Tab {
         Tab {
@@ -963,6 +1039,7 @@ mod tests {
             last_output: Default::default(),
             last_input: Default::default(),
             last_submit: Default::default(),
+            tail: Default::default(),
             busy: false,
             logger: Default::default(),
             fg: None,

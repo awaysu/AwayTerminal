@@ -332,7 +332,7 @@ fn numbered_dirs_desc(dir: &Path) -> Vec<PathBuf> {
         .filter(|e| e.path().is_dir())
         .filter_map(|e| Some((e.file_name().to_str()?.parse().ok()?, e.path())))
         .collect();
-    v.sort_by(|a, b| b.0.cmp(&a.0));
+    v.sort_by_key(|&(n, _)| std::cmp::Reverse(n));
     v.into_iter().map(|(_, p)| p).collect()
 }
 

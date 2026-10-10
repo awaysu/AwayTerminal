@@ -225,6 +225,12 @@ pub struct Team {
     pub idle_check_minutes: u32,
     /// 整組從什麼時候開始全部閒置（epoch ms；0＝現在不是全閒置）。
     pub all_idle_since_ms: u128,
+    /// 上一次閒置提問送出的時間（epoch ms；0＝還沒問過／已有新動靜可以再問）。
+    /// 問過一次之後，沒有新動靜（使用者打字、投遞、遠端指令）就不再重複問，
+    /// 免得工作都做完了還每隔幾十分鐘戳一次 Agent-x1（使用者回報 2026-10-10）。
+    pub idle_check_sent_ms: u128,
+    /// 上次閒置提問送出時 Agent-x1 的輸出書籤（`OutputTail::position`）：只在這之後找完成標記。
+    pub idle_check_tail_pos: u64,
     /// 這一段連續輸出從什麼時候開始（epoch ms；0＝現在沒有）。閒置檢查用它分辨
     /// 「真的在工作」和「閒置中偶爾重畫一下畫面」，見 `deliver::check_team_idle`。
     pub busy_since_ms: u128,
@@ -290,6 +296,8 @@ impl Team {
             max_messages: DEFAULT_MAX_MESSAGES,
             idle_check_minutes: DEFAULT_IDLE_CHECK_MINUTES,
             all_idle_since_ms: 0,
+            idle_check_sent_ms: 0,
+            idle_check_tail_pos: 0,
             busy_since_ms: 0,
             last_busy_ms: 0,
             delivery_seq: 0,

@@ -608,6 +608,11 @@ fn tick(app: &AppHandle) {
 const IDLE_WORK_BURST_MS: u128 = 10_000;
 /// 兩次輸出之間隔這麼久以內算同一段連續輸出。
 const IDLE_BURST_GAP_MS: u128 = 5_000;
+/// 閒置提問送出後，這段時間內的送出／投遞視為我們自己注入的提問，不算新動靜。
+const IDLE_CHECK_REARM_MS: u128 = 5_000;
+/// Agent-x1 回答閒置提問時，「全部完成、沒有待辦」就印這一行（固定 ASCII，各語言提問都用同一個，
+/// 比對不受語言影響）。看到它就不再重複問，直到有新動靜。
+pub const TEAM_DONE_MARKER: &str = "[TEAM-DONE]";
 
 /// 這一輪閒置計時該怎麼走（[`idle_tracking`] 的結果）。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -656,6 +661,11 @@ fn idle_tracking(team: &mut Team, now: u128, any_busy: bool, submitted: bool) ->
 /// 條件：≥2 格在跑、沒人在工作（[`idle_tracking`]）、沒有信在排隊、沒有待注入的角色、沒暫停，
 /// 連續閒置 `idle_check_minutes` 分鐘；而且格 1 自己也 [`agent_ready`]（使用者剛在那格打字就等下一輪）。
 /// 送出後重新計時；**不算進投遞則數**（這是 AwayTerminal 自己問的，不是 agent 之間的信）。
+///
+/// **做完就不再問**：提問裡請 Agent-x1 在「全部完成、沒有待辦」時印 [`TEAM_DONE_MARKER`]；
+/// 下次時間到先看它上次回答有沒有這個標記，有就跳過，直到有新動靜（使用者打字、agent 之間投遞、
+/// 遠端指令）才重新開始問。否則 Agent-x1 回「沒變化」之後每隔 N 分鐘又被問一次，
+/// 無限循環（使用者回報 2026-10-10）。
 fn check_team_idle(
     team: &mut Team,
     now: u64,
@@ -665,6 +675,7 @@ fn check_team_idle(
     if team.idle_check_minutes == 0 || team.paused {
         team.all_idle_since_ms = 0;
         team.busy_since_ms = 0;
+        team.idle_check_sent_ms = 0;
         return None;
     }
     let live: Vec<usize> = (0..team.slots.len())
@@ -687,8 +698,12 @@ fn check_team_idle(
         return None;
     }
     let since = team.all_idle_since_ms;
+    // 問過之後有沒有新動靜？我們自己注入的提問（打字＋300ms 後的 Enter）不算，所以留一點餘裕。
+    let asked = team.idle_check_sent_ms;
+    let rearm_after = asked.saturating_add(IDLE_CHECK_REARM_MS);
     let mut any_busy = false;
     let mut submitted = false;
+    let mut activity_after_ask = false;
     for &i in &live {
         let s = &team.slots[i];
         let Some(g) = s.tab.and_then(|id| tabs.agent_signals(id)) else {
@@ -696,6 +711,13 @@ fn check_team_idle(
         };
         any_busy |= g.busy;
         submitted |= since != 0 && (g.last_submit as u128 > since || s.last_delivered_ms > since);
+        activity_after_ask |= asked != 0
+            && (g.last_input as u128 > asked
+                || g.last_submit as u128 > rearm_after
+                || s.last_delivered_ms > rearm_after);
+    }
+    if activity_after_ask {
+        team.idle_check_sent_ms = 0;
     }
     match idle_tracking(team, now as u128, any_busy, submitted) {
         IdleStep::Reset => {
@@ -715,6 +737,14 @@ fn check_team_idle(
     }
     let i = lead?;
     let id = team.slots[i].tab?;
+    if team.idle_check_sent_ms != 0
+        && tabs
+            .output_tail(id)
+            .is_some_and(|t| t.contains_since(team.idle_check_tail_pos, TEAM_DONE_MARKER))
+    {
+        // 上次問過，Agent-x1 回了「全部完成」的標記，之後也沒有新動靜：不要再戳。
+        return None;
+    }
     let sig = tabs.agent_signals(id)?;
     let s = &mut team.slots[i];
     if !agent_ready(&Signals {
@@ -731,6 +761,8 @@ fn check_team_idle(
     mark_typed(s, now);
     let who = s.agent_id();
     team.all_idle_since_ms = now as u128;
+    team.idle_check_sent_ms = now as u128;
+    team.idle_check_tail_pos = tabs.output_tail(id).map(|t| t.position()).unwrap_or(0);
     println!(
         "[AwayTerminal] 代理團隊 {}：閒置 {} 分鐘 → 請 {who} 問大家狀況",
         team.number, team.idle_check_minutes
