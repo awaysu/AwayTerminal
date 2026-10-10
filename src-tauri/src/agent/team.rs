@@ -231,6 +231,8 @@ pub struct Team {
     pub idle_check_sent_ms: u128,
     /// 上次閒置提問送出時 Agent-x1 的輸出書籤（`OutputTail::position`）：只在這之後找完成標記。
     pub idle_check_tail_pos: u64,
+    /// 這一輪「等決策」的 Telegram 通知已經推過了（只推一次；有新動靜才重置）。
+    pub idle_wait_notified: bool,
     /// 這一段連續輸出從什麼時候開始（epoch ms；0＝現在沒有）。閒置檢查用它分辨
     /// 「真的在工作」和「閒置中偶爾重畫一下畫面」，見 `deliver::check_team_idle`。
     pub busy_since_ms: u128,
@@ -298,6 +300,7 @@ impl Team {
             all_idle_since_ms: 0,
             idle_check_sent_ms: 0,
             idle_check_tail_pos: 0,
+            idle_wait_notified: false,
             busy_since_ms: 0,
             last_busy_ms: 0,
             delivery_seq: 0,

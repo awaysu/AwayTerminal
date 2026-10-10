@@ -143,6 +143,21 @@ pub fn is_running() -> bool {
     lock().is_some()
 }
 
+/// 推一則純文字到手機（代理團隊「等決策」用）。遠端沒開＝回 `false`、什麼都不送。
+/// 在背景執行緒送，呼叫端（代理團隊的 tick）不會被網路卡住。
+pub fn notify(text: &str) -> bool {
+    let (api, chat_id) = {
+        let g = lock();
+        match g.as_ref() {
+            Some(r) => (r.api.clone(), r.chat_id),
+            None => return false,
+        }
+    };
+    let text = text.to_string();
+    std::thread::spawn(move || send(&api, chat_id, &text));
+    true
+}
+
 /// 遠端目前的狀態（設定視窗與 `--verify` 用；**不含 token**）。
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]

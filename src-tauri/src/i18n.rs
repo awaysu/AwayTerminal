@@ -433,8 +433,8 @@ static TABLE: &[(&str, &str, &str)] = &[
     // 新版才有的（舊版組角色檔失敗只記 log；我們讓建團隊直接失敗，否則 agent 會拿到空角色）
     ("ma.roleComposeFailed", "{0} 的角色檔組合失敗：{1}", "Could not compose the role file for {0}: {1}"),
     ("ma.idleCheckPrompt",
-     "[AwayTerminal] 團隊目前全部閒置。請逐一問每個 agent 現在是否還有任務在進行、卡在哪裡，需要的話重新指派或回報給我。如果全部都完成、沒有待辦，請在回覆的最後單獨一行印出 [TEAM-DONE]。",
-     "[AwayTerminal] The whole team is idle. Ask each agent whether it still has a task running and where it is stuck, then reassign or report back as needed. If everything is finished and nothing is pending, print [TEAM-DONE] alone on the last line of your reply."),
+     "[AwayTerminal] 團隊目前全部閒置。請逐一問每個 agent 現在是否還有任務在進行、卡在哪裡，需要的話重新指派或回報給我。回覆的最後請單獨一行印出狀態標記：全部都完成、沒有待辦印 [TEAM-DONE]；只剩在等我回覆或決定印 [WAIT-DECISION]。",
+     "[AwayTerminal] The whole team is idle. Ask each agent whether it still has a task running and where it is stuck, then reassign or report back as needed. End your reply with a status marker alone on the last line: [TEAM-DONE] if everything is finished and nothing is pending, or [WAIT-DECISION] if the only thing left is waiting for my reply or decision."),
     // 投遞時打進收件人終端機的那一行：{0}＝序號、{1}＝寄件人、{2}＝task、{3}＝type、{4}＝信件路徑
     ("ma.deliverOne",
      "[AwayTerminal] 訊息 #{0} from {1} ({2}, {3})：請讀 {4}，依你的角色處理，完成後回信給 {1}。",
@@ -588,6 +588,10 @@ static TABLE: &[(&str, &str, &str)] = &[
     ("tg.doneOther",
      "🟢 {0} 閒置（完成）",
      "🟢 {0} is idle (finished)"),
+    // 代理團隊的 Agent-x1 回閒置提問時印了 [WAIT-DECISION]（deliver.rs），只推一次
+    ("tg.teamWait",
+     "🟡 {0} 在等你的決定（用 /goto 進去看、直接回覆）",
+     "🟡 {0} is waiting for your decision (use /goto to open it and reply)"),
     ("tg.idleWarn",
      "⏳ 已閒置 9 分鐘，再 1 分鐘沒動作將自動離開分頁檢視（分頁不會被關閉）。",
      "⏳ Idle for 9 minutes — one more minute without activity and the tab view is left automatically (the tab is not closed)."),

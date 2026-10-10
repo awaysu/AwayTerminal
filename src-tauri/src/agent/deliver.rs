@@ -613,6 +613,9 @@ const IDLE_CHECK_REARM_MS: u128 = 5_000;
 /// Agent-x1 回答閒置提問時，「全部完成、沒有待辦」就印這一行（固定 ASCII，各語言提問都用同一個，
 /// 比對不受語言影響）。看到它就不再重複問，直到有新動靜。
 pub const TEAM_DONE_MARKER: &str = "[TEAM-DONE]";
+/// 「只剩在等使用者決定」就印這一行：Telegram 遠端有開就推**一次**通知到手機，然後不再問；
+/// 遠端沒開就直接不再問（使用者指定 2026-10-11）。
+pub const TEAM_WAIT_MARKER: &str = "[WAIT-DECISION]";
 
 /// 這一輪閒置計時該怎麼走（[`idle_tracking`] 的結果）。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -662,10 +665,11 @@ fn idle_tracking(team: &mut Team, now: u128, any_busy: bool, submitted: bool) ->
 /// 連續閒置 `idle_check_minutes` 分鐘；而且格 1 自己也 [`agent_ready`]（使用者剛在那格打字就等下一輪）。
 /// 送出後重新計時；**不算進投遞則數**（這是 AwayTerminal 自己問的，不是 agent 之間的信）。
 ///
-/// **做完就不再問**：提問裡請 Agent-x1 在「全部完成、沒有待辦」時印 [`TEAM_DONE_MARKER`]；
-/// 下次時間到先看它上次回答有沒有這個標記，有就跳過，直到有新動靜（使用者打字、agent 之間投遞、
-/// 遠端指令）才重新開始問。否則 Agent-x1 回「沒變化」之後每隔 N 分鐘又被問一次，
-/// 無限循環（使用者回報 2026-10-10）。
+/// **做完／等決策就不再問**：提問裡請 Agent-x1 在「全部完成、沒有待辦」時印 [`TEAM_DONE_MARKER`]、
+/// 「只剩在等使用者決定」時印 [`TEAM_WAIT_MARKER`]。下次時間到先看它上次的回答：
+/// 有 DONE 就跳過；有 WAIT 就（遠端有開的話）推一次 Telegram 通知，然後也跳過。
+/// 直到有新動靜（使用者打字、agent 之間投遞、遠端指令）才重新開始問。
+/// 否則 Agent-x1 回「沒變化」之後每隔 N 分鐘又被問一次，無限循環（使用者回報 2026-10-10）。
 fn check_team_idle(
     team: &mut Team,
     now: u64,
@@ -676,6 +680,7 @@ fn check_team_idle(
         team.all_idle_since_ms = 0;
         team.busy_since_ms = 0;
         team.idle_check_sent_ms = 0;
+        team.idle_wait_notified = false;
         return None;
     }
     let live: Vec<usize> = (0..team.slots.len())
@@ -718,6 +723,7 @@ fn check_team_idle(
     }
     if activity_after_ask {
         team.idle_check_sent_ms = 0;
+        team.idle_wait_notified = false;
     }
     match idle_tracking(team, now as u128, any_busy, submitted) {
         IdleStep::Reset => {
@@ -737,13 +743,28 @@ fn check_team_idle(
     }
     let i = lead?;
     let id = team.slots[i].tab?;
-    if team.idle_check_sent_ms != 0
-        && tabs
-            .output_tail(id)
-            .is_some_and(|t| t.contains_since(team.idle_check_tail_pos, TEAM_DONE_MARKER))
-    {
-        // 上次問過，Agent-x1 回了「全部完成」的標記，之後也沒有新動靜：不要再戳。
-        return None;
+    if team.idle_check_sent_ms != 0 {
+        let tail = tabs.output_tail(id)?;
+        let since = team.idle_check_tail_pos;
+        if tail.contains_since(since, TEAM_DONE_MARKER) {
+            // 上次問過，Agent-x1 回了「全部完成」的標記，之後也沒有新動靜：不要再戳。
+            return None;
+        }
+        if tail.contains_since(since, TEAM_WAIT_MARKER) {
+            // 在等使用者決定：遠端有開就推一次到手機；之後不再戳（沒開也不戳）。
+            if !team.idle_wait_notified {
+                team.idle_wait_notified = true;
+                let who = team.slots[i].agent_id();
+                let title = format!("{}（{} {who}）", team.title, crate::i18n::t("ma.title"));
+                let sent = crate::telegram::remote::notify(&crate::i18n::tf("tg.teamWait", &[&title]));
+                println!(
+                    "[AwayTerminal] 代理團隊 {}：{who} 在等使用者決定 → Telegram {}",
+                    team.number,
+                    if sent { "已推播一次" } else { "遠端沒開，不推播" }
+                );
+            }
+            return None;
+        }
     }
     let sig = tabs.agent_signals(id)?;
     let s = &mut team.slots[i];

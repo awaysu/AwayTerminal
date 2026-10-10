@@ -1274,6 +1274,7 @@ pub fn agent_team_apply(
         t.idle_check_minutes = setup.idle_check_minutes;
         t.all_idle_since_ms = 0;
         t.idle_check_sent_ms = 0;
+        t.idle_wait_notified = false;
         println!(
             "[AwayTerminal] 代理團隊 {}：閒置檢查={}",
             t.number,
