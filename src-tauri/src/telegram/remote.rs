@@ -96,12 +96,7 @@ impl State {
 ///
 /// BUG H7：以前遠端狀態不清——附著中的分頁從電腦上關掉後，`/last` 要等 2.5 秒才回
 /// 「沒有輸出」而不是「分頁已關閉」；每個分頁的基準畫面（最多 400 行）永遠不釋放。
-/// 遠端沒在跑也要清逐分頁推播設定（那張表不跟著遠端的啟停）。
 pub fn tab_closed(id: u32) {
-    tab_notify_map()
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .remove(&id);
     let state = lock().as_ref().map(|r| r.state.clone());
     if let Some(state) = state {
         state.lock().unwrap_or_else(|e| e.into_inner()).forget_tab(id);
@@ -1046,9 +1041,6 @@ pub fn on_tab_idle(app: &AppHandle, tab: u32, title: &str) {
         let st = state.lock().unwrap_or_else(|e| e.into_inner());
         (st.current, st.follow, st.notify)
     };
-    if tab_notify(tab) == Some(false) {
-        return;
-    }
     if current == Some(tab) && follow {
         // 附著分頁完成了一件真工作＝算「活動」，重置閒置計時：在電腦上持續工作時手機會一直
         // 收到，不會因為「手機本身 10 分鐘沒動作」就被自動離開（舊版使用者實測回報）。
@@ -1064,8 +1056,8 @@ pub fn on_tab_idle(app: &AppHandle, tab: u32, title: &str) {
         });
         return;
     }
-    // 逐分頁旗標優先於全域的 /notify（v2 多的）
-    if tab_notify(tab).unwrap_or(notify) {
+    // 其他分頁：只看「遠端設定」的全域開關（/notify）。2.1.3 拿掉了逐分頁的「推播到 Telegram」
+    if notify {
         let msg = crate::i18n::tf("tg.doneOther", &[title]);
         std::thread::spawn(move || send(&api, chat_id, &msg));
     }
@@ -1428,30 +1420,6 @@ fn do_history(
         }
         None => send(api, chat_id, &crate::i18n::t("tg.openFailed")),
     }
-}
-
-/// 逐分頁「推播到 Telegram」（v2 多的；`None`＝跟著全域設定）。
-///
-/// 放在遠端這一層而不是 `Tab` 上：它只有推播要用，而且**不持久化**
-/// （分頁 id 跨重啟沒有意義，同逐分頁配色）。
-fn tab_notify_map() -> &'static Mutex<std::collections::HashMap<u32, bool>> {
-    static M: OnceLock<Mutex<std::collections::HashMap<u32, bool>>> = OnceLock::new();
-    M.get_or_init(|| Mutex::new(std::collections::HashMap::new()))
-}
-
-pub fn set_tab_notify(tab: u32, on: bool) {
-    tab_notify_map()
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .insert(tab, on);
-}
-
-pub fn tab_notify(tab: u32) -> Option<bool> {
-    tab_notify_map()
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .get(&tab)
-        .copied()
 }
 
 fn trunc(s: &str, n: usize) -> String {

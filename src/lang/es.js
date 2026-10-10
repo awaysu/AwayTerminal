@@ -753,7 +753,6 @@ export default {
   'tg.off': 'desactivado',
 
   // 遠端設定（Telegram）：舊版 `Dialogs/RemoteDialog` 的字串（TASK-029 搬回獨立視窗）
-  // 分頁右鍵的「推播到 Telegram」在下面（只在前端用）
   'remote.title': 'Control remoto (Telegram)',
   'remote.enable': 'Activar el control remoto',
   'remote.token': 'Token del bot',
@@ -768,8 +767,6 @@ export default {
   'remote.tokenNone': '(sin configurar)',
   'remote.running': 'El control remoto está en marcha.',
   'remote.stopped': 'El control remoto no está en marcha.',
-  'menu.tgNotify': 'Enviar a Telegram',
-  'menu.tgNotifySet': 'Enviar a Telegram: {0}',
 
   // TASK-021：/new /ssh /telnet /history
   'tg.cmdNew': 'Abrir una conexión nueva (una por tipo, responde con un número)',

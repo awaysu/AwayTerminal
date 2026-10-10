@@ -129,18 +129,3 @@ pub fn telegram_opened(id: Option<u32>) {
     remote::opened(id);
 }
 
-/// 逐分頁「推播到 Telegram」（分頁右鍵選單）。
-///
-/// **舊版沒有這個**：舊版只有全域的 `/notify`（未附著的分頁完成要不要通知）。
-/// 這是 v2 多的——`None`＝跟著全域設定，`Some(false)`＝這個分頁永遠不推。
-/// 只留在記憶體、不進 settings.json（同逐分頁配色：分頁 id 跨重啟沒有意義）。
-#[tauri::command]
-pub fn telegram_tab_notify(id: u32, on: bool) {
-    remote::set_tab_notify(id, on);
-}
-
-/// 分頁右鍵選單要打勾嗎。
-#[tauri::command]
-pub fn telegram_tab_state(id: u32, settings: State<'_, Arc<SettingsStore>>) -> bool {
-    remote::tab_notify(id).unwrap_or_else(|| settings.get().remote_notify)
-}

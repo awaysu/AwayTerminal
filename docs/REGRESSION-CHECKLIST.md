@@ -967,7 +967,7 @@ TEMP 路徑印出完整結果，Documents 路徑印完 `path = …` 就停住。
 | TG25 | 👤 `/shot` | 圖看得懂、中文與框線對齊（**單色**，見下面的差異表） | `SendPhotoAsync` | ⬜ | — | — |
 | TG26 | 👤 附著後放 10 分鐘 | 9 分鐘一則警告、10 分鐘靜默離開，分頁沒被關 | `CheckIdleAsync` | ⬜ | — | — |
 | TG27 | 👤 在電腦上持續用那個分頁 | 手機一直收得到完成推播（不會因為手機沒動作被自動離開） | `OnTabIdle` 重置閒置計時 | ⬜ | — | — |
-| TG28 | 👤 分頁右鍵「推播到 Telegram」 | 取消勾選之後那個分頁不再推（**v2 新增**；遠端沒開時整項隱藏） | 新增 | ⬜ | — | — |
+| TG28 | 👤 分頁右鍵 | **沒有**「推播到 Telegram」這一項（2.1.3 拿掉；推不推只看遠端設定的全域開關） | 2.1.3 | ⬜ | — | — |
 | TG29 | 👤 八語 | 切每一種語言，`/help` 與所有回覆都跟著換（舊版這些是寫死的繁中） | 新增 | ⬜ | — | — |
 | TG30 | 👤 代理團隊那一列 | 分頁清單顯示「組名（代理團隊 Agent-11）」，只有代表列會推播 | `RemoteTitle`／`RemoteVisible` | ⬜ | — | — |
 | TG31 | probe：`/new` | 列可開的連線＋按鈕，清單含「PowerShell（桌面）」 | `ListConnections` | PASS | — | — |
@@ -1126,7 +1126,6 @@ TEMP 路徑印出完整結果，Documents 路徑印完 `path = …` 就停住。
 | SSH 的 `login as:` 時機 | **連線前**就問（帳號要放進 `ssh.exe` 命令列） | **連上交握後**才問 | PuTTY 的順序，也是內建 SSH 的自然順序。使用者看到的差別：前面多一行灰字「連線到 host:port …」，主機金鑰對話框會在 `login as:` 之前 |
 | Telegram 截圖 | WPF 把 pane 整塊 render 成點陣圖（**每個字有顏色**） | 前端把畫面文字畫進一張**新的** `<canvas>`（**單色**：前景／背景） | 抓 xterm 自己的 canvas 要打開 WebGL 的 `preserveDrawingBuffer`，每一格都多留一份 buffer、拖慢渲染——而渲染速度正是這一版的重點。平台截圖（`PrintWindow` 之類）需要視窗在前景，團隊規則不准碰前景視窗 → 介面留在 `shot::platform`，階段 5 再評估 |
 | Telegram 的介面語言 | 訊息**寫死繁體中文**（沒走 `Loc.T`） | 八語（`tg.*` 共 49 條） | v2 的八語規則對所有使用者看得到的字都成立 |
-| Telegram 逐分頁推播 | 沒有（只有全域的 `/notify`） | 分頁右鍵「推播到 Telegram」可單獨關掉 | **新增功能**；只留在記憶體、不進 `settings.json`（分頁 id 跨重啟沒有意義，同逐分頁配色） |
 | Telegram 超長訊息 | 直接送（>4096 會被 Telegram 退掉） | 自動切段連送（`split_message`） | 舊版的漏洞，不是刻意行為 |
 | Telegram `/new`／`/history` 列出來的東西 | `LastHost` 的 SSH／Telnet ＋ `AppSettings.History`（最多 10 筆） | **我的最愛** | v2 沒有 `LastHost`／`History`——TASK-009 就決定用我的最愛取代主機歷史（`docs/MIGRATION.md` 的跳過表）。指令本身、提示文字、`/history` 不吃純數字都照舊版 |
 | SSH 主機金鑰存放 | （舊版沒有，`ssh.exe` 用 `~/.ssh/known_hosts`） | `{app config dir}/known_hosts`，**不碰** `~/.ssh/known_hosts` | 程式不該偷偷寫 OpenSSH 的檔。代價：用 `ssh` 連過的主機這裡仍會問一次 |

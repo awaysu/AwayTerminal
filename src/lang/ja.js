@@ -753,7 +753,6 @@ export default {
   'tg.off': 'オフ',
 
   // 遠端設定（Telegram）：舊版 `Dialogs/RemoteDialog` 的字串（TASK-029 搬回獨立視窗）
-  // 分頁右鍵的「推播到 Telegram」在下面（只在前端用）
   'remote.title': 'リモート設定 (Telegram)',
   'remote.enable': 'リモート操作を有効にする',
   'remote.token': 'Bot トークン',
@@ -768,8 +767,6 @@ export default {
   'remote.tokenNone': '（未設定）',
   'remote.running': 'リモートは動作中です。',
   'remote.stopped': 'リモートは動作していません。',
-  'menu.tgNotify': 'Telegram に通知する',
-  'menu.tgNotifySet': 'Telegram への通知：{0}',
 
   // TASK-021：/new /ssh /telnet /history
   'tg.cmdNew': '新しい接続を開く（種類ごとに 1 つ、数字で選択）',

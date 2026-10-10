@@ -564,16 +564,6 @@ async function logAction(id) {
  * `CLAUDE.md` 明寫「改變在**下次啟動**該分頁時生效，需提示」，所以這裡改完設定之後
  * 一定要問使用者要不要現在重開分頁。重開＝關掉（走既有的優雅結束流程）再用同設定開一個。
  */
-/** 分頁右鍵「推播到 Telegram」：只留在記憶體、立刻生效（不必重開分頁）。 */
-async function toggleTgNotify(id) {
-  try {
-    const on = await invoke('telegram_tab_state', { id });
-    await invoke('telegram_tab_notify', { id, on: !on });
-    toast(fmt('menu.tgNotifySet', !on ? T['sb.on'] : T['sb.off']));
-  } catch (e) {
-    log(`[tabbar] 推播到 Telegram 切換失敗：${e}`);
-  }
-}
 
 /**
  * 這個分頁實際在哪個目錄工作：開了沙盒＝沙盒的工作區（worktree），否則＝啟動時的工作目錄。
@@ -604,10 +594,18 @@ async function openShellHere(id) {
   }
 }
 
+/**
+ * 「複製路徑」「檔案總管開啟」用的目錄：AI agent 的分頁＝工作目錄（[`workDirOf`]）；
+ * PowerShell 分頁＝它目前所在的目錄（提示字串回報的 `cwdPath`；2.1.3 使用者指定也要有這兩項）。
+ */
+function dirOf(tab) {
+  return workDirOf(tab) || (tab.kind === 'powershell' ? tab.cwdPath || '' : '');
+}
+
 /** 分頁右鍵「複製路徑」（2.0.15）：把這個分頁的工作目錄（沙盒＝沙盒的工作區）放進剪貼簿。 */
 async function copyWorkDir(id) {
   const tab = state.tabs.find((t) => t.id === id);
-  const dir = tab ? workDirOf(tab) : '';
+  const dir = tab ? dirOf(tab) : '';
   if (!dir) return;
   if (await writeClipboard(dir)) toast(fmt('menu.copyPathDone', dir));
 }
@@ -615,7 +613,7 @@ async function copyWorkDir(id) {
 /** 分頁右鍵「檔案總管開啟」／「Finder 開啟」／「檔案管理員開啟」（2.0.15）：用系統的檔案管理程式開工作目錄。 */
 async function openWorkDir(id) {
   const tab = state.tabs.find((t) => t.id === id);
-  const dir = tab ? workDirOf(tab) : '';
+  const dir = tab ? dirOf(tab) : '';
   if (!dir) return;
   try {
     await invoke('open_dir', { path: dir });
@@ -859,14 +857,6 @@ async function stopTeam(key) {
   }
 }
 
-async function openTeamBus(key) {
-  try {
-    const dir = await invoke('agent_bus_dir', { key });
-    if (dir) await invoke('open_dir', { path: dir });
-  } catch (e) {
-    log(`[tabbar] 開啟訊息資料夾失敗：${e}`);
-  }
-}
 
 async function setTeamLimit(key, tag) {
   const limit = tag === 'pause' ? null : Number(tag);
@@ -948,33 +938,27 @@ function installStripEvents() {
     if (team && !isChat) renderDeliveryMenu(team);
     // 「PowerShell 開啟」／「Terminal 開啟」：AI agent 的分頁（自訂連線、代理團隊的格）而且知道工作目錄才顯示
     el.menuShellHere.hidden = !(tab && tab.connName && workDirOf(tab));
-    // 「複製路徑」「檔案總管開啟」夾在它上下，顯示條件一樣（2.0.15）
-    el.menuCopyPath.hidden = el.menuShellHere.hidden;
-    el.menuOpenFolder.hidden = el.menuShellHere.hidden;
+    // 「複製路徑」「檔案總管開啟」：知道目錄就顯示——AI agent 的分頁用工作目錄，PowerShell 分頁用目前目錄（2.1.3）
+    el.menuCopyPath.hidden = !(tab && dirOf(tab));
+    el.menuOpenFolder.hidden = el.menuCopyPath.hidden;
     // 「重新啟動」：知道怎麼重開的分頁才顯示；代理團隊整組不在這裡重開
     el.menuRestart.hidden = !(tab && !team && canRestart(tab));
     // 沙盒那兩項只對「自訂連線開的分頁」有意義（PowerShell／SSH 分頁沒有連線設定）
     // 代理團隊的沙盒是整組的、在建團隊時決定 → 不給逐分頁切換
     const hasConn = !!(tab && tab.connName) && !team;
     el.menuSandbox.hidden = !hasConn;
-    el.menuSandboxClear.hidden = !(tab && tab.sandbox && tab.sandbox.hasWorktree);
+    // 「清除沙盒…」有兩個位置：自訂連線分頁在沙盒那一組；代理團隊／聊天室在它們自己那一組的最後（2.1.3）
+    const hasWorktree = !!(tab && tab.sandbox && tab.sandbox.hasWorktree);
+    el.menuSandboxClear.hidden = !(hasWorktree && !team);
+    el.menuSandboxClearTeam.hidden = !(hasWorktree && team);
     if (hasConn) {
       // 勾勾顯示的是**連線設定**的值（改了下次啟動才生效），不是目前分頁的狀態。
       // 勾勾放在文字**後面**：放前面的話這一項的字會比其他項目往右縮，整排對不齊
       const on = tab.connSandbox === true;
       el.menuSandbox.textContent = `${T['sb.menu']}${on ? ' ✓' : ''}`;
     }
-    // 推播到 Telegram：遠端沒開就整項隱藏（沒開的話這個勾勾沒有任何意義）
-    el.menuTgNotify.hidden = true;
-    invoke('telegram_state')
-      .then((st) => {
-        if (!st.running) return;
-        el.menuTgNotify.hidden = false;
-        return invoke('telegram_tab_state', { id }).then((on) => {
-          el.menuTgNotify.textContent = `${T['menu.tgNotify']}${on ? ' ✓' : ''}`;
-        });
-      })
-      .catch(() => {});
+    // 推播要不要：只看「遠端設定」的全域開關（2.1.3 拿掉逐分頁的「推播到 Telegram」，使用者指定）
+    tidyMenuSeps(el.tabMenu);
     showMenu(el.tabMenu, e.clientX, e.clientY, { id: String(id) });
   });
 
@@ -1108,6 +1092,27 @@ function placeSubmenu(item) {
     r = sub.getBoundingClientRect();
   }
   if (r.top < pad) sub.style.top = `${-5 + Math.round(pad - r.top)}px`;
+}
+
+/**
+ * 收掉多餘的分隔線：前面沒有任何可見項目的（開頭、或連續兩條）、以及最後一條之後沒東西的都藏起來。
+ * 分頁列右鍵是同一份 HTML 給五種分頁用，各組項目藏起來之後分隔線才不會疊在一起（2.1.3）。
+ */
+function tidyMenuSeps(menu) {
+  let pendingSep = null;
+  let seenItem = false;
+  for (const node of menu.children) {
+    if (node.classList.contains('menu-sep')) {
+      node.hidden = true;
+      if (seenItem) pendingSep = node;
+    } else if (!node.hidden) {
+      if (pendingSep) {
+        pendingSep.hidden = false;
+        pendingSep = null;
+      }
+      seenItem = true;
+    }
+  }
 }
 
 function showMenu(menu, x, y, data) {
@@ -1299,10 +1304,6 @@ function installMenus() {
       if (team) stopTeam(team.key);
       return;
     }
-    if (item.dataset.act === 'ma-bus') {
-      if (team) openTeamBus(team.key);
-      return;
-    }
     if (item.dataset.act === 'close' && team) {
       closeTeam(team);
       return;
@@ -1316,7 +1317,6 @@ function installMenus() {
     else if (item.dataset.act === 'restart') restartTab(id);
     else if (item.dataset.act === 'sandbox') toggleSandbox(id);
     else if (item.dataset.act === 'sandbox-clear') clearSandbox(id);
-    else if (item.dataset.act === 'tg-notify') toggleTgNotify(id);
     else if (item.dataset.act === 'close') closeTab(id);
   });
 
@@ -1851,7 +1851,6 @@ function applyTexts() {
     setText(el.tabMenu, '[data-act="restart"]', T['menu.restart']);
     setText(el.tabMenu, '[data-act="close"]', T['menu.close']);
     setText(el.tabMenu, '[data-act="sandbox-clear"]', T['sb.clear']);
-    setText(el.tabMenu, '[data-act="tg-notify"]', T['menu.tgNotify']);
     // 代理團隊那幾項（「投遞」有子選單，只換前面那段文字）
     const dev = el.tabMenu.querySelector('[data-act="ma-delivery"]');
     if (dev && dev.firstChild) dev.firstChild.nodeValue = T['ma.menuDelivery'];
@@ -1863,7 +1862,6 @@ function applyTexts() {
     setText(el.tabMenu, '[data-act="chat-end"]', T['chat.menuEnd']);
     setText(el.tabMenu, '[data-act="chat-folder"]', T['chat.menuOpenFolder']);
     setText(el.tabMenu, '[data-act="ma-stop"]', T['ma.menuStop']);
-    setText(el.tabMenu, '[data-act="ma-bus"]', T['ma.menuOpenBus']);
     setText(el.newMenu, '[data-kind="manage"]', T['tb.manageConns']);
     setText(el.tabMenu, '[data-color=""]', T['menu.colorDefault']);
     for (const [sel, key] of [
@@ -1941,8 +1939,8 @@ export async function initTabBar() {
   el.menuOpenFolder = el.tabMenu.querySelector('[data-act="open-folder"]');
   el.menuRestart = el.tabMenu.querySelector('[data-act="restart"]');
   el.menuSandbox = el.tabMenu.querySelector('[data-act="sandbox"]');
-  el.menuSandboxClear = el.tabMenu.querySelector('[data-act="sandbox-clear"]');
-  el.menuTgNotify = el.tabMenu.querySelector('[data-act="tg-notify"]');
+  el.menuSandboxClear = el.tabMenu.querySelector('[data-act="sandbox-clear"][data-conn]');
+  el.menuSandboxClearTeam = el.tabMenu.querySelector('[data-act="sandbox-clear"][data-team]');
   el.toast = $('toast');
   el.hostkey = $('hostkey');
   el.hostkeyBox = $('hostkey-box');

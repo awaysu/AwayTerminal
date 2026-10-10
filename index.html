@@ -110,26 +110,11 @@
   <!-- 分頁右鍵選單（舊版 ContextMenu：更改名稱 / 記錄 log… / 配色 ▸ / 關閉）。
        配色的色票由 settings.palette 填進 #color-items。 -->
   <div id="tab-menu" class="popup-menu" hidden>
+    <!-- 順序是 2.1.3 使用者指定的（2026-10-11）。分隔線是動態的：tabbar.js 開選單時把
+         「前面沒有任何可見項目」的分隔線藏起來（tidyMenuSeps），所以同一份 HTML 五種分頁都適用。 -->
     <div class="menu-item" data-act="rename">更改名稱</div>
     <div class="menu-item" data-act="log">記錄 log…</div>
     <div class="menu-item" data-act="macro">執行巨集…</div>
-    <!-- 「執行巨集…」下面一條分隔線（2.0.4，使用者指定）：上面三項是每個分頁都有的，下面是視分頁而定的 -->
-    <div class="menu-sep"></div>
-    <!-- 在這個分頁的工作目錄另開一個 PowerShell／終端機分頁（2.0.3 新增）。只有自訂連線開的分頁
-         （Claude Code、Codex… 與代理團隊的格）才顯示：AI agent 在跑的時候想自己下指令看一下。
-         文字是「PowerShell 開啟」（Windows）或「Terminal 開啟」（mac／Linux），由 tabbar.js 填 -->
-    <!-- 複製路徑／檔案總管開啟（2.0.15，使用者要求）：夾在「PowerShell 開啟」的上下，顯示條件和它一樣。
-         「檔案總管開啟」在 mac 叫「Finder 開啟」、Linux 叫「檔案管理員開啟」（tabbar.js 填） -->
-    <div class="menu-item" data-act="copy-path">複製路徑</div>
-    <div class="menu-item" data-act="shell-here">PowerShell 開啟</div>
-    <div class="menu-item" data-act="open-folder">檔案總管開啟</div>
-    <!-- 沙盒模式（新功能）：勾勾（在文字後面）顯示的是**連線設定**的值，改了下次啟動生效 -->
-    <div class="menu-item" data-act="sandbox">沙盒模式</div>
-    <div class="menu-item" data-act="sandbox-clear">清除沙盒…</div>
-    <!-- 重新啟動（2.0.3 新增，排在配色上面）：關掉這個分頁、用同樣的連線／目錄／模型重開一個，
-         放回原本的位置。代理團隊那一列不顯示（各格的重新啟動在「代理團隊設定…」裡） -->
-    <div class="menu-item" data-act="restart">重新啟動</div>
-    <!-- 配色排在沙盒模式下面（2026-10-02 使用者指定的順序） -->
     <div class="menu-item has-sub" data-act="color">配色
       <span class="menu-arrow">▸</span>
       <div class="popup-menu submenu" id="color-menu">
@@ -138,25 +123,36 @@
         <div id="color-items"></div>
       </div>
     </div>
-    <!-- 推播到 Telegram（v2 多的；舊版只有全域的 /notify）。遠端沒開時整項隱藏 -->
-    <div class="menu-item" data-act="tg-notify">推播到 Telegram</div>
-    <!-- 代理團隊那一列才顯示（舊版分頁右鍵的 ma.* 那幾項） -->
-    <!-- AI 聊天室那一列才顯示（舊版分頁右鍵的 chat.* 那幾項） -->
-    <div class="menu-sep" data-chat="1"></div>
+    <div class="menu-sep"></div>
+    <!-- 目錄那三項：知道目錄才顯示。「複製路徑」「檔案總管開啟」PowerShell 分頁也有（用它目前的目錄）；
+         「PowerShell 開啟」（mac／Linux 叫「Terminal 開啟」）只有 AI agent 的分頁（自訂連線、代理團隊、聊天室）。
+         「檔案總管開啟」在 mac 叫「Finder 開啟」、Linux 叫「檔案管理員開啟」（tabbar.js 填） -->
+    <div class="menu-item" data-act="copy-path">複製路徑</div>
+    <div class="menu-item" data-act="open-folder">檔案總管開啟</div>
+    <div class="menu-item" data-act="shell-here">PowerShell 開啟</div>
+    <div class="menu-sep"></div>
+    <!-- 沙盒（自訂連線分頁）：勾勾（在文字後面）顯示的是**連線設定**的值，改了下次啟動生效 -->
+    <div class="menu-item" data-act="sandbox">沙盒模式</div>
+    <div class="menu-item" data-act="sandbox-clear" data-conn="1">清除沙盒…</div>
+    <div class="menu-sep"></div>
+    <!-- AI 聊天室那一列才顯示 -->
     <div class="menu-item" data-act="chat-setup" data-chat="1">AI聊天室設定…</div>
     <div class="menu-item" data-act="chat-topic" data-chat="1">開始討論／換主題…</div>
     <div class="menu-item" data-act="chat-say" data-chat="1">插話…</div>
     <div class="menu-item" data-act="chat-end" data-chat="1">結束討論</div>
     <div class="menu-item" data-act="chat-folder" data-chat="1">開啟討論紀錄資料夾</div>
-    <div class="menu-sep" data-ma="1"></div>
+    <!-- 代理團隊那一列才顯示 -->
     <div class="menu-item" data-act="ma-setup" data-ma="1">代理團隊設定…</div>
     <div class="menu-item has-sub" data-act="ma-delivery" data-ma="1">投遞
       <span class="menu-arrow">&#9656;</span>
       <div class="popup-menu submenu" id="ma-delivery-menu"></div>
     </div>
     <div class="menu-item" data-act="ma-stop" data-ma="1">停止任務</div>
-    <div class="menu-item" data-act="ma-bus" data-ma="1">開啟訊息資料夾</div>
+    <!-- 代理團隊／聊天室的「清除沙盒…」排在它們自己那一組的最後（有 worktree 才顯示） -->
+    <div class="menu-item" data-act="sandbox-clear" data-team="1">清除沙盒…</div>
     <div class="menu-sep"></div>
+    <!-- 重新啟動：知道怎麼重開的分頁才顯示；代理團隊／聊天室整組不在這裡重開 -->
+    <div class="menu-item" data-act="restart">重新啟動</div>
     <div class="menu-item" data-act="close">關閉</div>
   </div>
 

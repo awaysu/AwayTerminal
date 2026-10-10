@@ -770,7 +770,6 @@ export default {
   'tg.off': '關',
 
   // 遠端設定（Telegram）：舊版 `Dialogs/RemoteDialog` 的字串（TASK-029 搬回獨立視窗）
-  // 分頁右鍵的「推播到 Telegram」在下面（只在前端用）
   'remote.title': '遠端設定 (Telegram)',
   'remote.enable': '啟用遠端控制',
   'remote.token': 'Bot Token',
@@ -785,8 +784,6 @@ export default {
   'remote.tokenNone': '（尚未設定）',
   'remote.running': '遠端正在執行。',
   'remote.stopped': '遠端未執行。',
-  'menu.tgNotify': '推播到 Telegram',
-  'menu.tgNotifySet': '推播到 Telegram：{0}',
 
   // TASK-021：/new /ssh /telnet /history
   'tg.cmdNew': '開新連線（每種列一個，選數字）',

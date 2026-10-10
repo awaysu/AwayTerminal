@@ -256,8 +256,6 @@ pub fn run() {
             telegram::telegram_apply,
             telegram::telegram_get_chat_id,
             telegram::telegram_opened,
-            telegram::telegram_tab_notify,
-            telegram::telegram_tab_state,
             telegram::probe::telegram_probe,
             claudemd::claude_md_available,
             claudemd::claude_md_update,
