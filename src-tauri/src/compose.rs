@@ -128,9 +128,9 @@ pub async fn compose_load_file(
     }))
 }
 
-/// 工具列「輸入圖片」（2.1.2，使用者要求）：跳圖片選擇 → 回完整路徑，前端把路徑貼進目前分頁
-///（不送 Enter）。Claude Code／Codex 這類 agent 收到圖片路徑會自己附成圖片，使用者接著打字說明。
-/// 對話框開在上次選的那張圖的資料夾；沒選（取消）回 `None`。
+/// 工具列「輸入檔案」（2.1.2 是「輸入圖片」，2.1.4 改成任意檔案，使用者要求）：跳檔案選擇 → 回完整路徑，
+/// 前端把路徑貼進目前分頁（不送 Enter）。Claude Code／Codex 這類 agent 收到圖片路徑會自己附成圖片，
+/// 其他檔案就是一個路徑，使用者接著打字說明。對話框開在上次選的那個檔案的資料夾；沒選（取消）回 `None`。
 #[tauri::command]
 pub async fn image_pick(
     app: AppHandle,
@@ -145,11 +145,6 @@ pub async fn image_pick(
     }
     dialog
         .set_title(t("dlg.pickImage"))
-        .add_filter(
-            t("dlg.imageFiles"),
-            &["png", "jpg", "jpeg", "gif", "webp", "bmp"],
-        )
-        .add_filter(t("dlg.allFiles"), &["*"])
         .pick_file(move |f| {
             let _ = tx.send(f);
         });
@@ -159,7 +154,7 @@ pub async fn image_pick(
     let Some(path) = picked else { return Ok(None) };
     let path = path.to_string();
     settings.update(|s| s.image_last_file = path.clone());
-    println!("[AwayTerminal] 輸入圖片：{path}");
+    println!("[AwayTerminal] 輸入檔案：{path}");
     Ok(Some(path))
 }
 

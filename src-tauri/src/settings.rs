@@ -78,6 +78,9 @@ pub struct AppSettings {
 
     /// 上次選過的工作目錄（舊版 `LastDir`）：資料夾選擇視窗會預選它。
     pub last_dir: String,
+    /// AI agent 的工作目錄（2.1.4，使用者要求；「新分頁 ▾ → 工作目錄設定…」）：
+    /// 自訂連線／代理團隊／AI 聊天室開啟時的資料夾選擇**從這裡開始**。空＝桌面。
+    pub agent_work_dir: String,
 
     // ---- SSH（舊版 KeepAliveMins / AutoReconnect）----
     /// 保持連線的間隔（分鐘），0＝關閉。舊版預設 10。
@@ -130,8 +133,16 @@ pub struct AppSettings {
     /// 「輸入文字」上次載入（2.0.14）或儲存（2.0.15）的文字檔（完整路徑；使用者要求）。
     /// 下次按「載入檔案」或「儲存」時檔案對話框就開在那個資料夾、預選那個檔名。空＝還沒用過。
     pub compose_last_file: String,
-    /// 工具列「輸入圖片」上次選的圖片（完整路徑；2.1.2）。下次的檔案對話框開在那個資料夾。空＝還沒用過。
+    /// 工具列「輸入檔案」上次選的檔案（完整路徑；2.1.2 是「輸入圖片」，2.1.4 改成任意檔案，欄位名沿用）。下次的檔案對話框開在那個資料夾。空＝還沒用過。
     pub image_last_file: String,
+
+    /// 我的最愛 →「GitHub…」（2.1.4）：要列 repo 的帳號。
+    pub github_user: String,
+    /// GitHub token（選填；有填才列得到私人 repo、也拿來 clone／pull）。
+    /// ⚠️ 機密：不進 log、不進 tooltip。
+    pub github_token: String,
+    /// repo 下載到哪個資料夾。空＝桌面。
+    pub github_dir: String,
 
     /// 各家 AI CLI **上次選的模型**（key＝`claude-code`／`codex`／`opencode`／`geminicli`，
     /// 2.0.6 起多 `antigravity`、2.0.10 起多 `grok`；空字串＝選了「預設」）。選模型的視窗用它當預選值
@@ -269,6 +280,7 @@ impl Default for AppSettings {
             log_timestamp: true,
             log_append: true,
             last_dir: String::new(),
+            agent_work_dir: String::new(),
             keep_alive_mins: 10,
             auto_reconnect: false,
             ssh_weak_accepted: Vec::new(),
@@ -291,6 +303,9 @@ impl Default for AppSettings {
             compose_send_enter: true,
             compose_last_file: String::new(),
             image_last_file: String::new(),
+            github_user: String::new(),
+            github_token: String::new(),
+            github_dir: String::new(),
             last_models: std::collections::BTreeMap::new(),
             ask_model_on_open: false,
             model_auto_refresh: false,

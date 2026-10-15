@@ -68,7 +68,7 @@
       <button id="btn-favs" type="button" class="tool-btn"><img class="tool-ico" src="icon/favorite.png" alt="" draggable="false" /><span class="tool-label">我的最愛 ▾</span></button>
       <span class="tool-sep"></span>
       <button id="btn-compose" type="button" class="tool-btn"><img class="tool-ico" src="icon/compose.png" alt="" draggable="false" /><span class="tool-label">輸入文字</span></button>
-      <button id="btn-image" type="button" class="tool-btn"><img class="tool-ico" src="icon/image.png" alt="" draggable="false" /><span class="tool-label">輸入圖片</span></button>
+      <button id="btn-image" type="button" class="tool-btn"><img class="tool-ico" src="icon/file.png" alt="" draggable="false" /><span class="tool-label">輸入檔案</span></button>
       <button id="btn-copy" type="button" class="tool-btn"><img class="tool-ico" src="icon/copy.png" alt="" draggable="false" /><span class="tool-label">複製</span></button>
       <button id="btn-paste" type="button" class="tool-btn"><img class="tool-ico" src="icon/paste.png" alt="" draggable="false" /><span class="tool-label">純文字貼上</span></button>
       <button id="btn-copyall" type="button" class="tool-btn"><img class="tool-ico" src="icon/copy-all.png" alt="" draggable="false" /><span class="tool-label">複製全部</span></button>
@@ -176,12 +176,18 @@
     <div class="menu-item with-icon" data-kind="multiagent"><img class="menu-ico" src="icon/multi-agent.png" alt="" draggable="false" /><span class="menu-label">代理團隊…</span></div>
     <div class="menu-item with-icon" data-kind="chatroom"><img class="menu-ico" src="icon/chatroom.png" alt="" draggable="false" /><span class="menu-label">AI聊天室…</span></div>
     <div class="menu-sep"></div>
+    <!-- 工作目錄設定（2.1.4，使用者要求）：AI agent（自訂連線／代理團隊／AI 聊天室）開啟時選資料夾
+         從這裡開始，預設桌面。點了直接跳資料夾選擇；tooltip 顯示目前的路徑 -->
+    <div class="menu-item with-icon" data-kind="workdir"><img class="menu-ico" src="icon/settings.png" alt="" draggable="false" /><span class="menu-label">工作目錄設定…</span></div>
     <div class="menu-item with-icon" data-kind="manage"><img class="menu-ico" src="icon/settings.png" alt="" draggable="false" /><span class="menu-label">自訂連線設定…</span></div>
   </div>
 
   <!-- 我的最愛下拉（舊版 Favorites_Click：各筆最愛 → 分隔線 → 加到我的最愛 → 設定…） -->
   <div id="favs-menu" class="popup-menu" hidden>
     <div id="favs-items"></div>
+    <!-- GitHub（2.1.4）：固定在各筆最愛的最後，上下各一條分隔線 -->
+    <div class="menu-sep"></div>
+    <div class="menu-item with-icon" data-fav="github"><img class="menu-ico" src="icon/git.png" alt="" draggable="false" /><span class="menu-label">GitHub…</span></div>
     <div class="menu-sep"></div>
     <div class="menu-item with-icon" data-fav="add"><img class="menu-ico" src="icon/favorite.png" alt="" draggable="false" /><span class="menu-label">加到我的最愛：目前分頁</span></div>
     <div class="menu-item with-icon" data-fav="manage"><img class="menu-ico" src="icon/settings.png" alt="" draggable="false" /><span class="menu-label">設定…</span></div>
@@ -199,6 +205,26 @@
         <button id="favs-rename" type="button">改名</button>
         <button id="favs-delete" type="button">刪除</button>
         <button id="favs-close" type="button">關閉</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 我的最愛 → GitHub（2.1.4）：上面 repo 清單，下面帳號／token／暫存目錄。點 repo＝下載或檢查更新（github.js） -->
+  <div id="github" hidden>
+    <div id="github-box">
+      <div id="github-title">GitHub</div>
+      <div id="github-list"></div>
+      <div id="github-form">
+        <label><span id="gh-user-label">GitHub 帳號</span><input id="gh-user" type="text" spellcheck="false" autocomplete="off" /></label>
+        <label><span id="gh-token-label">Token</span><input id="gh-token" type="password" spellcheck="false" autocomplete="off" /></label>
+        <label><span id="gh-dir-label">暫存目錄</span>
+          <span class="cf-path-row"><input id="gh-dir" type="text" spellcheck="false" autocomplete="off" /><button id="gh-browse" type="button">瀏覽…</button></span>
+        </label>
+      </div>
+      <div id="github-note"></div>
+      <div class="modal-buttons">
+        <button id="gh-save" type="button">儲存並重新整理</button>
+        <button id="github-close" type="button">關閉</button>
       </div>
     </div>
   </div>

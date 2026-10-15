@@ -693,7 +693,7 @@ export async function restoreAgentTeam(indices, createSession, entries) {
 export async function openChatRoom(createSession) {
   let dir;
   try {
-    dir = await invoke('pick_work_dir', { title: T['chat.pickDir'] });
+    dir = await invoke('pick_work_dir', { title: T['chat.pickDir'], agent: true });
   } catch (e) {
     log(`[agentdlg] 選資料夾失敗：${e}`);
     return;
@@ -791,7 +791,7 @@ export async function openTeamFavorite(f, createSession) {
 export async function openAgentTeam(createSession) {
   let dir;
   try {
-    dir = await invoke('pick_work_dir', { title: T['ma.pickDir'] });
+    dir = await invoke('pick_work_dir', { title: T['ma.pickDir'], agent: true });
   } catch (e) {
     log(`[agentdlg] 選資料夾失敗：${e}`);
     return;

@@ -195,6 +195,9 @@ pub async fn save_text_to_file(
 
 /// 選工作目錄（舊版 `PickWorkDir`）。預選上次選過的資料夾並記住新的選擇。
 ///
+/// `agent` ＝ true（自訂連線／代理團隊／AI 聊天室，2.1.4）：改從「AI agent 工作目錄」
+///（[`agent_dir_get`]，預設桌面）開始選，不看上次選過的。
+///
 /// 舊版對 `LastDir` 做了「背景執行緒探測、最多等 300ms」的保護（休眠的硬碟／斷線的網路磁碟
 /// 會讓 `Directory.Exists` 卡住好幾秒 → 對話框遲遲不出現）。這裡同樣不在主執行緒上檢查存在性：
 /// 直接把路徑交給對話框，開不開得起來由系統決定。
@@ -202,9 +205,14 @@ pub async fn save_text_to_file(
 pub async fn pick_work_dir(
     app: AppHandle,
     title: String,
+    agent: Option<bool>,
     settings: State<'_, Arc<SettingsStore>>,
 ) -> Result<Option<String>, String> {
-    let last = settings.get().last_dir;
+    let last = if agent.unwrap_or(false) {
+        agent_dir_of(&app, &settings)
+    } else {
+        settings.get().last_dir
+    };
     let mut builder = app.dialog().file().set_title(&title);
     if !last.trim().is_empty() {
         builder = builder.set_directory(&last);
@@ -219,6 +227,31 @@ pub async fn pick_work_dir(
     let dir = path.to_string_lossy().to_string();
     settings.update(|s| s.last_dir = dir.clone());
     Ok(Some(dir))
+}
+
+/// AI agent 工作目錄：設定裡有就用，沒有＝桌面（找不到桌面才退回上次選過的）。
+fn agent_dir_of(app: &AppHandle, settings: &SettingsStore) -> String {
+    use tauri::Manager;
+    let s = settings.get();
+    if !s.agent_work_dir.trim().is_empty() {
+        return s.agent_work_dir;
+    }
+    app.path()
+        .desktop_dir()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or(s.last_dir)
+}
+
+/// 「新分頁 ▾ → 工作目錄設定…」的 tooltip 用：目前的 AI agent 工作目錄（回實際會用的路徑）。
+#[tauri::command]
+pub fn agent_dir_get(app: AppHandle, settings: State<'_, Arc<SettingsStore>>) -> String {
+    agent_dir_of(&app, &settings)
+}
+
+/// 存「AI agent 工作目錄」（空＝回到預設的桌面）。
+#[tauri::command]
+pub fn agent_dir_set(dir: String, settings: State<'_, Arc<SettingsStore>>) {
+    settings.update(|s| s.agent_work_dir = dir.trim().to_string());
 }
 
 /// 網址選單的「用瀏覽器開啟」（舊版 `OpenUrlExternal`）。

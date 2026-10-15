@@ -13,6 +13,7 @@ pub mod custom;
 pub mod favorites;
 pub mod fonts;
 pub mod fontstore;
+pub mod github;
 pub mod host;
 pub mod i18n;
 pub mod logging;
@@ -163,6 +164,8 @@ pub fn run() {
             toolbar::tab_colors,
             toolbar::save_text_to_file,
             toolbar::pick_work_dir,
+            toolbar::agent_dir_get,
+            toolbar::agent_dir_set,
             toolbar::open_url,
             toolbar::log_defaults,
             toolbar::log_pick_path,
@@ -187,6 +190,12 @@ pub fn run() {
             custom::custom_delete,
             custom::conn_set_sandbox,
             custom::sandbox_clear,
+            github::github_get_config,
+            github::github_set_config,
+            github::github_list_repos,
+            github::github_local_state,
+            github::github_clone,
+            github::github_pull,
             favorites::fav_list,
             favorites::fav_candidate,
             favorites::fav_add,

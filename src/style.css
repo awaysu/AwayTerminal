@@ -566,6 +566,41 @@ body.col-resizing { cursor: col-resize; user-select: none; }
   background: #3a3a3d; color: #e0e0e0; border: 1px solid #555; border-radius: 4px;
 }
 #favs .modal-buttons button:hover { background: #50505a; }
+/* 我的最愛 → GitHub（2.1.4）：外框比照 #favs；下面三個欄位比照自訂連線表單 */
+#github {
+  position: fixed; inset: 0; z-index: 320; display: flex; align-items: center; justify-content: center;
+  background: rgba(0,0,0,.45);
+  font: 13px "Microsoft JhengHei", "微軟正黑體", sans-serif;
+}
+#github-box {
+  width: 560px; max-width: 92vw; max-height: 88vh; overflow: auto; padding: 16px 18px;
+  background: #2d2d30; border: 1px solid #FDFFB0; border-radius: 6px; color: #e0e0e0;
+}
+#github-title { font-size: 14px; color: #FDFFB0; margin-bottom: 10px; }
+#github-list {
+  height: 300px; overflow-y: auto;
+  background: #252528; border: 1px solid #555; border-radius: 4px; padding: 4px;
+}
+#github.busy #github-list { opacity: .6; cursor: progress; }
+#github.busy .conns-row { cursor: progress; }
+#github-form { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+#github-form > label { display: flex; flex-direction: column; gap: 3px; color: #999; font-size: 12px; }
+#github-form input {
+  background: #1e1e1e; color: #e0e0e0; border: 1px solid #555; outline: none;
+  padding: 4px 6px; font-size: 13px; font-family: inherit;
+}
+#github-form input:focus { border-color: #FDFFB0; }
+#github-form .cf-path-row button {
+  padding: 4px 10px; cursor: pointer; font-size: 12px; font-family: inherit;
+  background: #3a3a3d; color: #e0e0e0; border: 1px solid #555; border-radius: 4px;
+}
+#github-note { margin-top: 8px; color: #A5D6A7; font-size: 12px; min-height: 16px; word-break: break-all; white-space: pre-wrap; }
+#github-note.error { color: #EF9A9A; }
+#github .modal-buttons button {
+  min-width: 72px; padding: 5px 10px; cursor: pointer; font-size: 12px; font-family: inherit;
+  background: #3a3a3d; color: #e0e0e0; border: 1px solid #555; border-radius: 4px;
+}
+#github .modal-buttons button:hover, #github-form .cf-path-row button:hover { background: #50505a; }
 /* 就地改名的輸入框（TASK-030）：占掉名稱那一格，樣式比照其他輸入框 */
 .favs-rename-input {
   flex: 1 1 auto; min-width: 0; box-sizing: border-box;

@@ -35,6 +35,7 @@ import {
 } from './agentdlg.js';
 import { onLangChange, shellKey, fileManagerKey } from './i18n.js';
 import { initFavs, addConnFavorite } from './favs.js';
+import { initGithub } from './github.js';
 import { initModelDialog, pickConnModel, resolveSavedModel } from './modeldlg.js';
 
 const MIN_PANEL_WIDTH = 120; // 舊版 TabPanelMinWidth
@@ -1327,8 +1328,9 @@ function installMenus() {
     openCompose(state);
   });
 
-  // 「輸入圖片」（2.1.2）：選一張圖 → 把路徑貼進目前分頁，**不送 Enter**，讓使用者接著打字說明。
-  // 走純文字貼上同一條路（`v` 協定）：Claude 分頁是 bracketed paste，Claude Code 會把圖片路徑附成 [Image #n]。
+  // 「輸入檔案」（2.1.2 是「輸入圖片」，2.1.4 改成任意檔案）：選一個檔案 → 把路徑貼進目前分頁，
+  // **不送 Enter**，讓使用者接著打字說明。走純文字貼上同一條路（`v` 協定）：Claude 分頁是
+  // bracketed paste，Claude Code 會把圖片路徑附成 [Image #n]，其他檔案就是一個路徑。
   // 路徑有空白就加雙引號；尾巴補一個空白，接著打的字不會黏在路徑上。
   setToolLabel(el.btnImage, T['tb.image']);
   el.btnImage.title = T['tip.image'];
@@ -1340,11 +1342,11 @@ function installMenus() {
     try {
       path = await invoke('image_pick');
     } catch (e) {
-      log(`[tabbar] 選圖片失敗：${e}`);
+      log(`[tabbar] 選檔案失敗：${e}`);
     }
     if (path) {
       const text = /\s/.test(path) ? `"${path}" ` : `${path} `;
-      await invoke('toolbar_paste', { id, text }).catch((e) => log(`[tabbar] 貼上圖片路徑失敗：${e}`));
+      await invoke('toolbar_paste', { id, text }).catch((e) => log(`[tabbar] 貼上檔案路徑失敗：${e}`));
     }
     focusTerminal();
   });
@@ -1356,6 +1358,7 @@ function installMenus() {
     if (show) {
       showMenuUnder(el.newMenu, el.btnNew);
       refreshTeamItems();
+      refreshWorkDirTip();
     }
   });
 
@@ -1378,6 +1381,10 @@ function installMenus() {
     }
     if (item.dataset.kind === 'detect') {
       await detectConns();
+      return;
+    }
+    if (item.dataset.kind === 'workdir') {
+      await pickAgentWorkDir();
       return;
     }
     await newSession(item.dataset.kind);
@@ -1604,6 +1611,29 @@ async function newSession(kind) {
   }
 }
 
+/** 「工作目錄設定…」的 tooltip：目前的 AI agent 工作目錄（沒設＝桌面）。 */
+async function refreshWorkDirTip() {
+  const item = el.newMenu.querySelector('[data-kind="workdir"]');
+  const dir = await invoke('agent_dir_get').catch(() => '');
+  if (item) item.title = fmt('tip.workDir', dir);
+}
+
+/**
+ * 「新分頁 ▾ → 工作目錄設定…」（2.1.4）：選一個資料夾當 AI agent 的工作目錄
+ * （自訂連線／代理團隊／AI 聊天室開啟時的資料夾選擇從這裡開始）。對話框從目前的設定（預設桌面）開。
+ */
+async function pickAgentWorkDir() {
+  try {
+    const dir = await invoke('pick_work_dir', { title: T['conn.pickWorkDir'], agent: true });
+    if (!dir) return;
+    await invoke('agent_dir_set', { dir });
+    // 設完跳訊息框（使用者要求），不只是 toast
+    await showInfo(T['tb.workDir'].replace(/…$/, ''), fmt('conn.workDirSet', dir));
+  } catch (e) {
+    log(`[tabbar] 工作目錄設定失敗：${e}`);
+  }
+}
+
 /**
  * 開一條自訂連線。`pickDir` 的連線會先跳資料夾選擇（同舊版 `OpenCustom`），
  * 取消就不開分頁。沙盒是後端依連線設定決定的，前端不用管。
@@ -1620,7 +1650,8 @@ async function openConn(name) {
   try {
     let cwd = null;
     if (c.pickDir) {
-      cwd = await invoke('pick_work_dir', { title: T['dlg.pickDirCustom'] });
+      // 從「AI agent 工作目錄」開始選（2.1.4；自訂連線設定視窗下面那一欄，預設桌面）
+      cwd = await invoke('pick_work_dir', { title: T['dlg.pickDirCustom'], agent: true });
       if (!cwd) return; // 取消（同舊版：PickWorkDir 回 null 就不開）
     }
     // AI CLI 的連線：選完目錄後先問 CLI 目前有哪些模型，再讓使用者選（2.0.2）。
@@ -1863,6 +1894,7 @@ function applyTexts() {
     setText(el.tabMenu, '[data-act="chat-folder"]', T['chat.menuOpenFolder']);
     setText(el.tabMenu, '[data-act="ma-stop"]', T['ma.menuStop']);
     setText(el.newMenu, '[data-kind="manage"]', T['tb.manageConns']);
+    setText(el.newMenu, '[data-kind="workdir"]', T['tb.workDir']);
     setText(el.tabMenu, '[data-color=""]', T['menu.colorDefault']);
     for (const [sel, key] of [
       ['[data-scroll="up"]', 'page.up'],
@@ -1996,6 +2028,7 @@ export async function initTabBar() {
   initAdb({ showInfo, askYesNo: (body) => askYesNo(T['tb.adb'], body), pickFromList: askFromList, createSession });
   initAgentDialog();
   initModelDialog();
+  initGithub({ createSession, askYesNo, toast });
   await initFavs({
     createSession,
     askText,
