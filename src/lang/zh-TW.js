@@ -274,6 +274,8 @@ export default {
   'gh.cloned': '{0} 已下載',
   'gh.updated': '{0} 已更新到最新',
   'gh.upToDate': '{0} 已是最新',
+  'gh.upToDateDirty': '{0} 已是最新（GitHub 沒有新 commit；本機有你尚未提交的修改，不會被動到）',
+  'gh.dirtyWarn': '注意：本機有尚未提交的修改。更新只會快轉，改到同一個檔會失敗、不會覆蓋你的修改。',
   'gh.agent': '開啟方式（下載／更新完用什麼開）',
   'gh.agentAuto': '自動（新分頁第一個 AI agent：{0}）',
   'gh.agentShell': 'PowerShell／終端機',

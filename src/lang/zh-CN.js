@@ -268,6 +268,8 @@ export default {
   'gh.cloned': '{0} 已下载',
   'gh.updated': '{0} 已更新到最新',
   'gh.upToDate': '{0} 已是最新',
+  'gh.upToDateDirty': '{0} 已是最新（GitHub 没有新提交；本地有你尚未提交的修改，不会被改动）',
+  'gh.dirtyWarn': '注意：本地有尚未提交的修改。更新只会快进，改到同一个文件会失败、不会覆盖你的修改。',
   'gh.agent': '打开方式（下载／更新后用什么打开）',
   'gh.agentAuto': '自动（新标签页第一个 AI agent：{0}）',
   'gh.agentShell': 'PowerShell／终端',

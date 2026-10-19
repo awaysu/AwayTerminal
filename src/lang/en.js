@@ -275,6 +275,8 @@ export default {
   'gh.cloned': '{0} downloaded',
   'gh.updated': '{0} updated to the latest',
   'gh.upToDate': '{0} is up to date',
+  'gh.upToDateDirty': '{0} is up to date (no new commits on GitHub; your uncommitted local changes are left untouched)',
+  'gh.dirtyWarn': 'Note: you have uncommitted local changes. The update is fast-forward only — it fails instead of overwriting a file you changed.',
   'gh.agent': 'Open with (after download/update)',
   'gh.agentAuto': 'Auto (first AI agent in New tab: {0})',
   'gh.agentShell': 'PowerShell / terminal',

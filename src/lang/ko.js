@@ -268,6 +268,8 @@ export default {
   'gh.cloned': '{0} 내려받기 완료',
   'gh.updated': '{0} 을(를) 최신으로 업데이트했습니다',
   'gh.upToDate': '{0} 은(는) 최신입니다',
+  'gh.upToDateDirty': '{0} 은(는) 최신입니다 (GitHub에 새 커밋 없음; 커밋하지 않은 로컬 변경은 그대로 둡니다)',
+  'gh.dirtyWarn': '참고: 커밋하지 않은 로컬 변경이 있습니다. 업데이트는 fast-forward만 하며, 같은 파일을 건드리면 덮어쓰지 않고 실패합니다.',
   'gh.agent': '열기 방식(다운로드/업데이트 후)',
   'gh.agentAuto': '자동(새 탭의 첫 번째 AI agent: {0})',
   'gh.agentShell': 'PowerShell / 터미널',

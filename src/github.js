@@ -171,14 +171,16 @@ async function openRepo(repo) {
       path = await invoke('github_clone', { name, cloneUrl: repo.cloneUrl });
       hooks.toast(fmt('gh.cloned', name));
     } else if (st.behind > 0) {
-      const yes = await hooks.askYesNo(T['gh.title'], fmt('gh.askPull', name, st.behind));
+      // 本機有沒 commit 的修改：更新可能因為衝到同一個檔而失敗（--ff-only 不會硬合併），先講
+      const ask = fmt('gh.askPull', name, st.behind) + (st.dirty ? '\n\n' + T['gh.dirtyWarn'] : '');
+      const yes = await hooks.askYesNo(T['gh.title'], ask);
       if (yes) {
         progress(fmt('gh.pulling', name));
         await invoke('github_pull', { name });
         hooks.toast(fmt('gh.updated', name));
       }
     } else {
-      hooks.toast(fmt('gh.upToDate', name));
+      hooks.toast(fmt(st.dirty ? 'gh.upToDateDirty' : 'gh.upToDate', name));
     }
     await invoke('github_record_use', {
       repo: {

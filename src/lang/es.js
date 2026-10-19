@@ -268,6 +268,8 @@ export default {
   'gh.cloned': '{0} descargado',
   'gh.updated': '{0} actualizado a la última versión',
   'gh.upToDate': '{0} está al día',
+  'gh.upToDateDirty': '{0} está al día (sin commits nuevos en GitHub; tus cambios locales sin confirmar no se tocan)',
+  'gh.dirtyWarn': 'Aviso: tienes cambios locales sin confirmar. La actualización es solo fast-forward: falla en lugar de sobrescribir un archivo que cambiaste.',
   'gh.agent': 'Abrir con (tras descargar/actualizar)',
   'gh.agentAuto': 'Automático (primer agente IA de Nueva pestaña: {0})',
   'gh.agentShell': 'PowerShell / terminal',

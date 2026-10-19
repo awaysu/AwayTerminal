@@ -81,6 +81,9 @@ pub struct LocalState {
     pub behind: u32,
     /// 比上游多幾個 commit（本機有自己的 commit）。
     pub ahead: u32,
+    /// 本機有還沒 commit 的修改（`git status --porcelain` 非空；2.1.6）。
+    /// 「已是最新」只看 commit，使用者自己改過檔案要另外講，不然像沒偵測到。
+    pub dirty: bool,
 }
 
 /// 沒設定暫存目錄時用的位置：**AI agent 工作目錄底下的 `github`**（2.1.5 使用者要求；
@@ -342,7 +345,7 @@ fn local_state(cfg: &GithubConfig, name: &str) -> Result<LocalState, String> {
     let path = repo_path(cfg, name)?;
     let shown = path.to_string_lossy().to_string();
     if !path.exists() {
-        return Ok(LocalState { path: shown, exists: false, behind: 0, ahead: 0 });
+        return Ok(LocalState { path: shown, exists: false, behind: 0, ahead: 0, dirty: false });
     }
     if !path.join(".git").exists() {
         // 資料夾在、但不是 git repo：不去動它（可能是使用者自己的東西）
@@ -351,11 +354,14 @@ fn local_state(cfg: &GithubConfig, name: &str) -> Result<LocalState, String> {
     let mut fetch = git(cfg, Some(&path));
     fetch.args(["fetch", "--quiet"]);
     run(fetch, "fetch")?;
+    let mut status = git(cfg, Some(&path));
+    status.args(["status", "--porcelain", "--untracked-files=normal"]);
+    let dirty = !run(status, "status")?.is_empty();
     // 沒有上游（detached HEAD、本機分支）＝沒得比，當成最新
     let mut up = git(cfg, Some(&path));
     up.args(["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]);
     if run(up, "rev-parse").is_err() {
-        return Ok(LocalState { path: shown, exists: true, behind: 0, ahead: 0 });
+        return Ok(LocalState { path: shown, exists: true, behind: 0, ahead: 0, dirty });
     }
     let mut count = git(cfg, Some(&path));
     count.args(["rev-list", "--left-right", "--count", "HEAD...@{u}"]);
@@ -363,8 +369,8 @@ fn local_state(cfg: &GithubConfig, name: &str) -> Result<LocalState, String> {
     let mut it = text.split_whitespace().map(|s| s.parse::<u32>().unwrap_or(0));
     let ahead = it.next().unwrap_or(0);
     let behind = it.next().unwrap_or(0);
-    println!("[AwayTerminal] GitHub：{name} 落後 {behind}、超前 {ahead}");
-    Ok(LocalState { path: shown, exists: true, behind, ahead })
+    println!("[AwayTerminal] GitHub：{name} 落後 {behind}、超前 {ahead}、本機修改={dirty}");
+    Ok(LocalState { path: shown, exists: true, behind, ahead, dirty })
 }
 
 /// 下載（`git clone`）到暫存目錄，回完整路徑。

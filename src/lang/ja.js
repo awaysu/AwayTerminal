@@ -268,6 +268,8 @@ export default {
   'gh.cloned': '{0} をダウンロードしました',
   'gh.updated': '{0} を最新に更新しました',
   'gh.upToDate': '{0} は最新です',
+  'gh.upToDateDirty': '{0} は最新です（GitHub に新しいコミットはありません。ローカルの未コミット変更はそのまま残ります）',
+  'gh.dirtyWarn': '注意：ローカルに未コミットの変更があります。更新は fast-forward のみで、同じファイルに触れる場合は失敗し、上書きはしません。',
   'gh.agent': '開き方（ダウンロード／更新後）',
   'gh.agentAuto': '自動（新しいタブの最初の AI agent：{0}）',
   'gh.agentShell': 'PowerShell／ターミナル',

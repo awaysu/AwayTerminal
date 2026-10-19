@@ -268,6 +268,8 @@ export default {
   'gh.cloned': '{0} téléchargé',
   'gh.updated': '{0} mis à jour',
   'gh.upToDate': '{0} est à jour',
+  'gh.upToDateDirty': '{0} est à jour (aucun nouveau commit sur GitHub ; vos modifications locales non validées restent intactes)',
+  'gh.dirtyWarn': 'Remarque : vous avez des modifications locales non validées. La mise à jour est fast-forward uniquement : elle échoue au lieu d’écraser un fichier modifié.',
   'gh.agent': 'Ouvrir avec (après téléchargement/mise à jour)',
   'gh.agentAuto': 'Automatique (premier agent IA de Nouvel onglet : {0})',
   'gh.agentShell': 'PowerShell / terminal',
