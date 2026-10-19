@@ -280,7 +280,7 @@ dependencies = [
 
 [[package]]
 name = "awayterminal"
-version = "2.1.5"
+version = "2.1.6"
 dependencies = [
  "awayterm-platform",
  "chrono",
