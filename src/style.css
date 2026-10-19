@@ -286,7 +286,8 @@ body.col-resizing { cursor: col-resize; user-select: none; }
 
 /* 複製提示（舊版 CopyPopup：#E6222226 底、圓角 5、Padding 10,6）*/
 #toast {
-  position: fixed; z-index: 400; top: 46px; left: 50%; transform: translateX(-50%);
+  /* 2.1.6 使用者要求：擺在程式正中間（原本在工具列下方 46px） */
+  position: fixed; z-index: 400; top: 50%; left: 50%; transform: translate(-50%, -50%);
   background: #222226; color: #F0F0F0; border-radius: 5px; padding: 6px 10px;
   font: 12px "Microsoft JhengHei", "微軟正黑體", sans-serif;
   box-shadow: 0 2px 10px rgba(0,0,0,.6); pointer-events: none; opacity: .95;
