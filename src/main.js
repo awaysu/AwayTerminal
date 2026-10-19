@@ -2647,7 +2647,8 @@ async function offerMigration() {
  *
  * 是 → 用它（沒有就先問要不要建立）；否 → 跳資料夾選擇自己選；取消 → 維持預設的桌面。
  * 不管答什麼都只問這一次（`work_dir_asked`）；已經有工作目錄（例如匯入舊版設定帶來的）就不問。
- * 之後隨時可以在「設定 → 系統 → AI agent 工作目錄」改。GitHub 的暫存目錄預設跟著它（`<工作目錄>\github`）。
+ * 之後隨時可以在「設定 → 系統 → AI agent 工作目錄」改。GitHub 的暫存目錄預設跟著它（`<工作目錄>\github`），
+ * log 預設資料夾也一起設成 `<工作目錄>\log`（2.1.5 使用者要求；之後在「設定 → 記錄」改）。
  */
 async function offerWorkspace() {
   try {
@@ -2673,8 +2674,8 @@ async function offerWorkspace() {
         return;
       }
     }
-    await invoke('workspace_set', { dir });
-    await showInfo(T['ws.title'], fmt('conn.workDirSet', dir));
+    const r = await invoke('workspace_set', { dir });
+    await showInfo(T['ws.title'], fmt('ws.done', r.dir, r.logDir));
   } catch (e) {
     log(`[workspace] 失敗：${e}`);
   }

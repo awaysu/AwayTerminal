@@ -83,13 +83,19 @@ pub fn settings_apply(
     patch: PrefsPatch,
     settings: State<'_, Arc<SettingsStore>>,
 ) -> AppSettings {
-    // log 資料夾被清空時的預設值（同啟動時的 `fill_log_dir`）
+    // log 資料夾被清空時的預設值：有 AI agent 工作目錄就 `<工作目錄>\log`（2.1.5），
+    // 沒有才是啟動時 `fill_log_dir` 的「我的文件\AwayTerminalLogs」
     let default_log_dir = {
         use tauri::Manager;
-        app.path()
-            .document_dir()
-            .ok()
-            .map(|d| d.join("AwayTerminalLogs").to_string_lossy().to_string())
+        let work = settings.get().agent_work_dir;
+        if work.trim().is_empty() {
+            app.path()
+                .document_dir()
+                .ok()
+                .map(|d| d.join("AwayTerminalLogs").to_string_lossy().to_string())
+        } else {
+            Some(std::path::Path::new(work.trim()).join("log").to_string_lossy().to_string())
+        }
     };
     let after = settings.update(|s| {
         if let Some(lang) = &patch.language {

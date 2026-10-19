@@ -274,19 +274,25 @@ pub fn workspace_probe(app: AppHandle, settings: State<'_, Arc<SettingsStore>>) 
 }
 
 /// 第一次啟動問答的答案：建立（沒有就建）並存成 AI agent 工作目錄，之後不再問。
+/// **log 預設資料夾也一起改成 `<工作目錄>\log`**（2.1.5 使用者要求；啟動時填的
+/// 「我的文件\AwayTerminalLogs」只是還沒問之前的暫時值）。回傳 `{ dir, logDir }` 給前端顯示。
 #[tauri::command]
-pub fn workspace_set(dir: String, settings: State<'_, Arc<SettingsStore>>) -> Result<(), String> {
+pub fn workspace_set(dir: String, settings: State<'_, Arc<SettingsStore>>) -> Result<serde_json::Value, String> {
     let dir = dir.trim().to_string();
     if dir.is_empty() {
         return Err(t("err.needDir"));
     }
-    std::fs::create_dir_all(&dir).map_err(|e| tf("err.mkdirFailed", &[&format!("{dir}（{e}）")]))?;
+    let log_dir = std::path::Path::new(&dir).join("log").to_string_lossy().to_string();
+    for d in [&dir, &log_dir] {
+        std::fs::create_dir_all(d).map_err(|e| tf("err.mkdirFailed", &[&format!("{d}（{e}）")]))?;
+    }
     settings.update(|s| {
         s.agent_work_dir = dir.clone();
+        s.log_dir = log_dir.clone();
         s.work_dir_asked = true;
     });
-    println!("[AwayTerminal] 預設工作目錄：{dir}");
-    Ok(())
+    println!("[AwayTerminal] 預設工作目錄：{dir}；log 資料夾：{log_dir}");
+    Ok(serde_json::json!({ "dir": dir, "logDir": log_dir }))
 }
 
 /// 第一次啟動問答按了取消：記下問過了，之後不再問（工作目錄維持預設的桌面）。
