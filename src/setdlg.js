@@ -19,6 +19,8 @@ import { fillRemote, checkRemote, applyRemote } from './remotedlg.js';
 
 const el = {};
 let hooks = {};
+/** 開設定時的 AI agent 工作目錄（實際路徑）：按確定時有改才存。 */
+let workDirBefore = '';
 /** 開啟時的設定（按「取消」要能原樣回去，也用來判斷哪些欄位真的被改了）。 */
 let opened = null;
 /** 開啟時「檔案總管右鍵選單」是不是已經登錄（只在勾選變了才動登錄檔）。 */
@@ -323,6 +325,9 @@ export async function openSettings() {
   await fillFonts(opened.fontFamily);
   el.fontNote.textContent = '';
   fill(opened);
+  // AI agent 工作目錄（2.1.5 搬進來）：顯示實際會用的路徑（沒設＝桌面），存回去時空字串＝回到預設
+  workDirBefore = await invoke('agent_dir_get').catch(() => opened.agentWorkDir || '');
+  el.workDir.value = workDirBefore;
   // 「遠端」那一類（2.1.5 起欄位在設定視窗裡）
   await fillRemote(opened);
   updateFontButtons();
@@ -428,6 +433,16 @@ async function save(e) {
       return;
     }
   }
+  // AI agent 工作目錄（2.1.5 搬進來）：有改才存；空＝回到預設（桌面）
+  if (el.workDir.value.trim() !== workDirBefore) {
+    try {
+      await invoke('agent_dir_set', { dir: el.workDir.value });
+    } catch (err) {
+      el.note.textContent = String(err);
+      showPage('system');
+      return;
+    }
+  }
   // Telegram 遠端（2.1.5 起在「遠端」那一類）：欄位有改才重啟遠端。
   // 放在 `settings_apply` 之後：那是只改 patch 裡欄位的寫法，不會把遠端欄位蓋回去
   const remoteErr = await applyRemote();
@@ -503,6 +518,10 @@ function applyTexts() {
   for (const b of el.navButtons) {
     b.textContent = T[NAV_KEYS[b.dataset.page]] || b.dataset.page;
   }
+  el.lWorkDir.textContent = T['settings.groupWorkDir'];
+  el.lWorkDirPath.textContent = T['settings.workDir'];
+  el.workDirPick.textContent = T['settings.browse'];
+  el.workDirHint.textContent = T['settings.workDirHint'];
   el.lShell.textContent = T['settings.groupShell'];
   el.lShellMenu.textContent = T['settings.shellMenu'];
   el.lRender.textContent = T['settings.groupRender'];
@@ -599,6 +618,11 @@ export function initSettings(injected) {
   }
   el.nav = $('st-nav');
   el.navButtons = [...el.nav.querySelectorAll('button[data-page]')];
+  el.lWorkDir = $('st-l-workdir');
+  el.lWorkDirPath = $('st-l-workdirpath');
+  el.workDir = $('st-workdir');
+  el.workDirPick = $('st-workdir-pick');
+  el.workDirHint = $('st-workdir-hint');
   el.lShell = $('st-l-shell');
   el.lShellMenu = $('st-l-shellmenu');
   // ⚠️ 這一行從 TASK-016 就漏掉了（TASK-028 才發現）：`fill()` 第一件事就是
@@ -673,6 +697,14 @@ export function initSettings(injected) {
     hooks.showInfo?.(T['settings.imeQuietHelpTitle'], T['settings.imeQuietHelp']);
   });
 
+  el.workDirPick.addEventListener('click', async () => {
+    try {
+      const dir = await invoke('pick_work_dir', { title: T['settings.workDir'], agent: true });
+      if (dir) el.workDir.value = dir;
+    } catch (err) {
+      el.note.textContent = String(err);
+    }
+  });
   el.logDirPick.addEventListener('click', async () => {
     try {
       const dir = await invoke('pick_work_dir', { title: T['settings.logDir'] });

@@ -1358,7 +1358,6 @@ function installMenus() {
     if (show) {
       showMenuUnder(el.newMenu, el.btnNew);
       refreshTeamItems();
-      refreshWorkDirTip();
     }
   });
 
@@ -1381,10 +1380,6 @@ function installMenus() {
     }
     if (item.dataset.kind === 'detect') {
       await detectConns();
-      return;
-    }
-    if (item.dataset.kind === 'workdir') {
-      await pickAgentWorkDir();
       return;
     }
     await newSession(item.dataset.kind);
@@ -1608,29 +1603,6 @@ async function newSession(kind) {
   } catch (err) {
     log(`[tabbar] ${T['msg.connectFail']}：${err}`);
     await showInfo(T['msg.connectFail'], String(err));
-  }
-}
-
-/** 「工作目錄設定…」的 tooltip：目前的 AI agent 工作目錄（沒設＝桌面）。 */
-async function refreshWorkDirTip() {
-  const item = el.newMenu.querySelector('[data-kind="workdir"]');
-  const dir = await invoke('agent_dir_get').catch(() => '');
-  if (item) item.title = fmt('tip.workDir', dir);
-}
-
-/**
- * 「新分頁 ▾ → 工作目錄設定…」（2.1.4）：選一個資料夾當 AI agent 的工作目錄
- * （自訂連線／代理團隊／AI 聊天室開啟時的資料夾選擇從這裡開始）。對話框從目前的設定（預設桌面）開。
- */
-async function pickAgentWorkDir() {
-  try {
-    const dir = await invoke('pick_work_dir', { title: T['conn.pickWorkDir'], agent: true });
-    if (!dir) return;
-    await invoke('agent_dir_set', { dir });
-    // 設完跳訊息框（使用者要求），不只是 toast
-    await showInfo(T['tb.workDir'].replace(/…$/, ''), fmt('conn.workDirSet', dir));
-  } catch (e) {
-    log(`[tabbar] 工作目錄設定失敗：${e}`);
   }
 }
 
@@ -1921,7 +1893,6 @@ function applyTexts() {
     setText(el.tabMenu, '[data-act="chat-folder"]', T['chat.menuOpenFolder']);
     setText(el.tabMenu, '[data-act="ma-stop"]', T['ma.menuStop']);
     setText(el.newMenu, '[data-kind="manage"]', T['tb.manageConns']);
-    setText(el.newMenu, '[data-kind="workdir"]', T['tb.workDir']);
     setText(el.tabMenu, '[data-color=""]', T['menu.colorDefault']);
     for (const [sel, key] of [
       ['[data-scroll="up"]', 'page.up'],

@@ -296,11 +296,9 @@ export default {
   'conn.pickWorkDir': '選擇 AI agent 工作目錄',
   'conn.workDirSet': 'AI agent 工作目錄：{0}',
   'ws.title': '預設工作目錄',
-  'ws.ask': 'AI agent 與遠端開的分頁預設都放在這個工作目錄：\n{0}\n\n可以嗎？（「否」＝自己選一個資料夾；之後可在「新分頁 ▾ → 工作目錄設定…」改）',
+  'ws.ask': 'AI agent 與遠端開的分頁預設都放在這個工作目錄：\n{0}\n\n可以嗎？（「否」＝自己選一個資料夾；之後可在「設定 → 系統」改）',
   'ws.createAsk': '找不到資料夾 {0}，要建立嗎？',
   'ws.pick': '選擇預設工作目錄',
-  'tb.workDir': '工作目錄設定…',
-  'tip.workDir': 'AI agent（自訂連線、代理團隊、AI 聊天室）開啟時選資料夾從這裡開始：\n{0}',
   'conn.new': '新增',
   'conn.save': '儲存',
   'conn.delete': '刪除',
@@ -413,6 +411,9 @@ export default {
       '預設 20。這是降低問題頻率的緩解措施；根本原因在 Claude Code 端的畫面重繪。',
   // 檔案總管右鍵選單：**還沒做**（Windows 登錄檔那一段是 TASK-016），所以灰掉並註明
   'settings.groupShell': '檔案總管',
+  'settings.groupWorkDir': 'AI agent 工作目錄',
+  'settings.workDir': '工作目錄',
+  'settings.workDirHint': '自訂連線、代理團隊、AI 聊天室開啟時的資料夾選擇從這裡開始；遠端 /new 與 GitHub 暫存目錄也放在這底下。空＝桌面。',
   'settings.shellMenu':     '資料夾右鍵選單加入「用 AwayTerminal 開啟」（在該資料夾開 PowerShell 分頁）',
   'settings.todo': '（這項還沒搬過來）',
 

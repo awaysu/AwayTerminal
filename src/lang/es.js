@@ -290,11 +290,9 @@ export default {
   'conn.pickWorkDir': 'Elegir la carpeta de trabajo de agentes IA',
   'conn.workDirSet': 'Carpeta de trabajo de agentes IA: {0}',
   'ws.title': 'Carpeta de trabajo predeterminada',
-  'ws.ask': 'Los agentes IA y las pestañas abiertas desde el remoto usarán esta carpeta de trabajo:\n{0}\n\n¿De acuerdo? («No» = elegir una carpeta; se puede cambiar luego en Nueva pestaña ▾ → Carpeta de trabajo…)',
+  'ws.ask': 'Los agentes IA y las pestañas abiertas desde el remoto usarán esta carpeta de trabajo:\n{0}\n\n¿De acuerdo? («No» = elegir una carpeta; se puede cambiar luego en Configuración → Sistema)',
   'ws.createAsk': 'La carpeta {0} no existe. ¿Crearla?',
   'ws.pick': 'Elegir la carpeta de trabajo predeterminada',
-  'tb.workDir': 'Carpeta de trabajo…',
-  'tip.workDir': 'Los selectores de carpeta de los agentes IA (conexiones personalizadas, equipos de agentes, salas de chat IA) empiezan aquí:\n{0}',
   'conn.new': 'Nueva',
   'conn.save': 'Guardar',
   'conn.delete': 'Eliminar',
@@ -397,6 +395,9 @@ export default {
   'settings.imeQuietHelp': 'Esta opción solo afecta a las pestañas de Claude Code.\n\nAl confirmar texto con el IME, al pegar o al pulsar Retroceso mientras Claude está redibujando la pantalla (ejecutando algo, o con el texto de sugerencia cambiando), enviarlo de inmediato puede hacer que Claude muestre dos veces lo que acabas de escribir, o que calcule mal la columna del cursor cuando se mezclan caracteres de ancho completo y medio (una columna de menos, o un resto en pantalla).\n\nCon esta opción, esas entradas esperan a que la salida de Claude esté en silencio los milisegundos indicados antes de enviarse, evitando el momento del redibujado y reduciendo esos problemas.\n\n• El retardo solo se aplica mientras Claude está redibujando; al escribir en un prompt inactivo el retardo es 0.\n• Las letras y números normales, Enter y las teclas Ctrl no se ven afectados.\n• Un valor más alto es más conservador (menos fallos, algo más de retardo cuando está ocupado); más bajo responde antes y protege menos.\n• Ponlo a 0 para desactivarlo (envío inmediato).\n\nEl valor predeterminado es 20. Es una mitigación que reduce la frecuencia; la causa de fondo es el redibujado de pantalla de Claude Code.',
   // 檔案總管右鍵選單：**還沒做**（Windows 登錄檔那一段是 TASK-016），所以灰掉並註明
   'settings.groupShell': 'Explorador de archivos',
+  'settings.groupWorkDir': 'Carpeta de trabajo de agentes IA',
+  'settings.workDir': 'Carpeta de trabajo',
+  'settings.workDirHint': 'Los selectores de carpeta de conexiones personalizadas, equipos de agentes y salas de chat IA empiezan aquí; /new remoto y la carpeta de GitHub también van debajo. Vacío = Escritorio.',
   'settings.shellMenu': 'Añadir «Abrir en AwayTerminal» al menú contextual de carpetas (abre una pestaña de PowerShell ahí)',
   'settings.todo': '(todavía no está implementado)',
 

@@ -290,11 +290,9 @@ export default {
   'conn.pickWorkDir': 'Arbeitsordner für KI-Agenten wählen',
   'conn.workDirSet': 'Arbeitsordner für KI-Agenten: {0}',
   'ws.title': 'Standard-Arbeitsordner',
-  'ws.ask': 'KI-Agenten und per Fernsteuerung geöffnete Tabs nutzen standardmäßig diesen Arbeitsordner:\n{0}\n\nEinverstanden? („Nein“ = selbst einen Ordner wählen; später änderbar unter Neuer Tab ▾ → Arbeitsordner…)',
+  'ws.ask': 'KI-Agenten und per Fernsteuerung geöffnete Tabs nutzen standardmäßig diesen Arbeitsordner:\n{0}\n\nEinverstanden? („Nein“ = selbst einen Ordner wählen; später änderbar unter Einstellungen → System)',
   'ws.createAsk': 'Der Ordner {0} existiert nicht. Anlegen?',
   'ws.pick': 'Standard-Arbeitsordner wählen',
-  'tb.workDir': 'Arbeitsordner…',
-  'tip.workDir': 'Die Ordnerauswahl für KI-Agenten (eigene Verbindungen, Agenten-Teams, KI-Chaträume) beginnt hier:\n{0}',
   'conn.new': 'Neu',
   'conn.save': 'Speichern',
   'conn.delete': 'Löschen',
@@ -397,6 +395,9 @@ export default {
   'settings.imeQuietHelp': 'Diese Einstellung betrifft nur Claude-Code-Tabs.\n\nWenn du IME-Text bestätigst, etwas einfügst oder die Rücktaste drückst, während Claude den Bildschirm neu zeichnet (es läuft etwas, oder der Vorschlagstext ändert sich), kann sofortiges Senden dazu führen, dass Claude den gerade eingegebenen Text doppelt anzeigt oder die Cursorspalte falsch berechnet, wenn Zeichen voller und halber Breite gemischt sind (eine Spalte zu wenig oder ein Rest bleibt stehen).\n\nIst die Option aktiv, warten diese Eingaben, bis die Ausgabe von Claude so viele Millisekunden ruhig war, und umgehen damit das Neuzeichnen.\n\n• Die Verzögerung greift nur, während Claude neu zeichnet; an einer untätigen Eingabeaufforderung ist sie 0.\n• Normale Buchstaben und Zahlen, Enter und Strg-Tasten sind nicht betroffen.\n• Höher = vorsichtiger (weniger Fehler, etwas mehr Verzögerung bei Auslastung); niedriger = schneller, aber schwächerer Schutz.\n• 0 schaltet die Funktion aus (sofort senden).\n\nStandard ist 20. Das ist eine Abmilderung, die die Häufigkeit senkt; die Ursache liegt im Neuzeichnen von Claude Code selbst.',
   // 檔案總管右鍵選單：**還沒做**（Windows 登錄檔那一段是 TASK-016），所以灰掉並註明
   'settings.groupShell': 'Explorer',
+  'settings.groupWorkDir': 'Arbeitsordner für KI-Agenten',
+  'settings.workDir': 'Arbeitsordner',
+  'settings.workDirHint': 'Die Ordnerauswahl für eigene Verbindungen, Agenten-Teams und KI-Chaträume beginnt hier; /new per Fernsteuerung und der GitHub-Ordner liegen ebenfalls darunter. Leer = Desktop.',
   'settings.shellMenu': '„In AwayTerminal öffnen“ zum Kontextmenü von Ordnern hinzufügen (öffnet dort einen PowerShell-Tab)',
   'settings.todo': '(noch nicht übernommen)',
 

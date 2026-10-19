@@ -2647,7 +2647,7 @@ async function offerMigration() {
  *
  * 是 → 用它（沒有就先問要不要建立）；否 → 跳資料夾選擇自己選；取消 → 維持預設的桌面。
  * 不管答什麼都只問這一次（`work_dir_asked`）；已經有工作目錄（例如匯入舊版設定帶來的）就不問。
- * 之後隨時可以在「新分頁 ▾ → 工作目錄設定…」改。GitHub 的暫存目錄預設跟著它（`<工作目錄>\github`）。
+ * 之後隨時可以在「設定 → 系統 → AI agent 工作目錄」改。GitHub 的暫存目錄預設跟著它（`<工作目錄>\github`）。
  */
 async function offerWorkspace() {
   try {

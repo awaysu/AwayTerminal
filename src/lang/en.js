@@ -297,11 +297,9 @@ export default {
   'conn.pickWorkDir': 'Choose the AI agent working folder',
   'conn.workDirSet': 'AI agent working folder: {0}',
   'ws.title': 'Default work folder',
-  'ws.ask': 'AI agents and tabs opened from the remote will use this work folder by default:\n{0}\n\nOK? ("No" = pick a folder yourself; you can change it later under New tab ▾ → Work folder…)',
+  'ws.ask': 'AI agents and tabs opened from the remote will use this work folder by default:\n{0}\n\nOK? ("No" = pick a folder yourself; you can change it later under Settings → System)',
   'ws.createAsk': 'The folder {0} does not exist. Create it?',
   'ws.pick': 'Choose the default work folder',
-  'tb.workDir': 'Working folder…',
-  'tip.workDir': 'Folder pickers for AI agents (custom connections, agent teams, AI chat rooms) start here:\n{0}',
   'conn.new': 'New',
   'conn.save': 'Save',
   'conn.delete': 'Delete',
@@ -416,6 +414,9 @@ export default {
       "Default is 20. This is a mitigation that lowers the frequency; the root cause is Claude Code's own screen repaint.",
   // 檔案總管右鍵選單：**還沒做**（Windows 登錄檔那一段是 TASK-016），所以灰掉並註明
   'settings.groupShell': 'File Explorer',
+  'settings.groupWorkDir': 'AI agent work folder',
+  'settings.workDir': 'Work folder',
+  'settings.workDirHint': 'Folder pickers for custom connections, agent teams and AI chat rooms start here; remote /new tabs and the GitHub folder live under it too. Empty = Desktop.',
   'settings.shellMenu':     'Add "Open in AwayTerminal" to the folder context menu (opens a PowerShell tab there)',
   'settings.todo': '(not ported yet)',
 

@@ -290,11 +290,9 @@ export default {
   'conn.pickWorkDir': 'Choisir le dossier de travail des agents IA',
   'conn.workDirSet': 'Dossier de travail des agents IA : {0}',
   'ws.title': 'Dossier de travail par défaut',
-  'ws.ask': 'Les agents IA et les onglets ouverts à distance utiliseront ce dossier de travail :\n{0}\n\nD’accord ? (« Non » = choisir un dossier ; modifiable ensuite dans Nouvel onglet ▾ → Dossier de travail…)',
+  'ws.ask': 'Les agents IA et les onglets ouverts à distance utiliseront ce dossier de travail :\n{0}\n\nD’accord ? (« Non » = choisir un dossier ; modifiable ensuite dans Paramètres → Système)',
   'ws.createAsk': 'Le dossier {0} n’existe pas. Le créer ?',
   'ws.pick': 'Choisir le dossier de travail par défaut',
-  'tb.workDir': 'Dossier de travail…',
-  'tip.workDir': 'Le choix du dossier pour les agents IA (connexions personnalisées, équipes d’agents, salons IA) commence ici :\n{0}',
   'conn.new': 'Nouvelle',
   'conn.save': 'Enregistrer',
   'conn.delete': 'Supprimer',
@@ -397,6 +395,9 @@ export default {
   'settings.imeQuietHelp': 'Ce paramètre ne concerne que les onglets Claude Code.\n\nQuand vous validez du texte avec l’IME, que vous collez ou que vous appuyez sur Retour arrière pendant que Claude redessine l’écran (exécution en cours, ou texte de suggestion qui change), un envoi immédiat peut faire afficher deux fois le texte que vous venez de saisir, ou décaler la colonne du curseur quand des caractères pleine et demi-largeur se mélangent (une colonne en moins, ou un reste à l’écran).\n\nAvec cette option, ces saisies attendent que la sortie de Claude soit restée calme pendant le nombre de millisecondes indiqué, ce qui évite la phase de redessin et réduit ces problèmes.\n\n• Le délai ne s’applique que pendant le redessin ; à une invite inactive, le délai est de 0.\n• Les lettres et chiffres normaux, Entrée et les touches Ctrl ne sont pas concernés.\n• Plus la valeur est élevée, plus c’est prudent (moins d’anomalies, un peu plus de délai quand c’est chargé) ; plus elle est basse, plus c’est réactif et moins protégé.\n• Mettez 0 pour désactiver (envoi immédiat).\n\nLa valeur par défaut est 20. C’est une atténuation qui réduit la fréquence ; la cause de fond est le redessin d’écran de Claude Code.',
   // 檔案總管右鍵選單：**還沒做**（Windows 登錄檔那一段是 TASK-016），所以灰掉並註明
   'settings.groupShell': 'Explorateur de fichiers',
+  'settings.groupWorkDir': 'Dossier de travail des agents IA',
+  'settings.workDir': 'Dossier de travail',
+  'settings.workDirHint': 'Les sélecteurs de dossier des connexions personnalisées, équipes d’agents et salons IA démarrent ici ; /new à distance et le dossier GitHub y sont aussi. Vide = Bureau.',
   'settings.shellMenu': 'Ajouter « Ouvrir dans AwayTerminal » au menu contextuel des dossiers (ouvre un onglet PowerShell à cet endroit)',
   'settings.todo': '(pas encore repris)',
 

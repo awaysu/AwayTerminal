@@ -290,11 +290,9 @@ export default {
   'conn.pickWorkDir': '选择 AI agent 工作目录',
   'conn.workDirSet': 'AI agent 工作目录：{0}',
   'ws.title': '默认工作目录',
-  'ws.ask': 'AI agent 与远程打开的标签页默认都放在这个工作目录：\n{0}\n\n可以吗？（「否」＝自己选一个文件夹；之后可在「新标签页 ▾ → 工作目录设置…」修改）',
+  'ws.ask': 'AI agent 与远程打开的标签页默认都放在这个工作目录：\n{0}\n\n可以吗？（「否」＝自己选一个文件夹；之后可在「设置 → 系统」修改）',
   'ws.createAsk': '找不到文件夹 {0}，要创建吗？',
   'ws.pick': '选择默认工作目录',
-  'tb.workDir': '工作目录设置…',
-  'tip.workDir': 'AI agent（自定义连接、代理团队、AI 聊天室）打开时选文件夹从这里开始：\n{0}',
   'conn.new': '新增',
   'conn.save': '保存',
   'conn.delete': '删除',
@@ -397,6 +395,9 @@ export default {
   'settings.imeQuietHelp': '此设置只作用于 Claude Code 标签页。\n\n用输入法打字（整段发送）、粘贴、或按 Backspace 时，如果 Claude 正在重绘屏幕（运行中、建议文本在跳），直接发送偶尔会让 Claude 把刚输入的字重复显示成两份，或在全角/半角混合时把光标位置算错、少一格或留下残影。\n\n开启后，这几类输入会等 Claude 屏幕静止“这么多毫秒”才发送，避开重绘的间隙、降低上述问题。\n\n• 只有 Claude 忙于重绘时才会有这点延迟；停在提示符前打字时 0 延迟。\n• 普通英文数字输入、Enter、Ctrl 键不受影响。\n• 数值越大越保守（较不易出错，忙时延迟略增）；越小反应越快、保护越弱。\n• 设为 0 = 关闭此功能（立即发送）。\n\n默认 20。这是降低问题频率的缓解措施；根本原因在 Claude Code 端的屏幕重绘。',
   // 檔案總管右鍵選單：**還沒做**（Windows 登錄檔那一段是 TASK-016），所以灰掉並註明
   'settings.groupShell': '文件资源管理器',
+  'settings.groupWorkDir': 'AI agent 工作目录',
+  'settings.workDir': '工作目录',
+  'settings.workDirHint': '自定义连接、代理团队、AI 聊天室打开时的文件夹选择从这里开始；远程 /new 与 GitHub 暂存目录也放在这下面。空＝桌面。',
   'settings.shellMenu': '在文件夹右键菜单加入“用 AwayTerminal 打开”（在该文件夹打开 PowerShell 标签页）',
   'settings.todo': '（这项还没移植）',
 

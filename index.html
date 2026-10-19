@@ -178,9 +178,6 @@
     <div class="menu-item with-icon" data-kind="multiagent"><img class="menu-ico" src="icon/multi-agent.png" alt="" draggable="false" /><span class="menu-label">代理團隊…</span></div>
     <div class="menu-item with-icon" data-kind="chatroom"><img class="menu-ico" src="icon/chatroom.png" alt="" draggable="false" /><span class="menu-label">AI聊天室…</span></div>
     <div class="menu-sep"></div>
-    <!-- 工作目錄設定（2.1.4，使用者要求）：AI agent（自訂連線／代理團隊／AI 聊天室）開啟時選資料夾
-         從這裡開始，預設桌面。點了直接跳資料夾選擇；tooltip 顯示目前的路徑 -->
-    <div class="menu-item with-icon" data-kind="workdir"><img class="menu-ico" src="icon/settings.png" alt="" draggable="false" /><span class="menu-label">工作目錄設定…</span></div>
     <div class="menu-item with-icon" data-kind="manage"><img class="menu-ico" src="icon/settings.png" alt="" draggable="false" /><span class="menu-label">自訂連線設定…</span></div>
   </div>
 
@@ -797,6 +794,17 @@
 
       <!-- 系統 -->
       <div class="st-page st-off" data-page="system" role="tabpanel">
+      <!-- AI agent 工作目錄（2.1.4 在「新分頁 ▾ → 工作目錄設定…」，2.1.5 搬進設定；使用者要求）。
+           空＝桌面；第一次啟動的問答（main.js offerWorkspace）也是存到這裡 -->
+      <fieldset>
+        <legend id="st-l-workdir"></legend>
+        <div class="st-grid">
+          <label id="st-l-workdirpath" for="st-workdir"></label>
+          <span class="sd-row"><input id="st-workdir" autocomplete="off" spellcheck="false" />
+            <button id="st-workdir-pick" type="button"></button></span>
+        </div>
+        <div id="st-workdir-hint" class="sd-hint"></div>
+      </fieldset>
       <fieldset>
         <legend id="st-l-shell"></legend>
         <label class="sd-check"><input id="st-shellmenu" type="checkbox" /><span id="st-l-shellmenu"></span></label>
