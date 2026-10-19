@@ -1,12 +1,14 @@
-//! 我的最愛 →「GitHub…」（2.1.4，使用者要求）。
+//! 工具列「GitHub」（2.1.4 使用者要求；2.1.4 在我的最愛下拉，2.1.5 拉到工具列並改成下拉選單）。
 //!
-//! 視窗上面列出 GitHub 帳號的全部 repo，下面設定帳號、token（選填）與暫存目錄（預設桌面）。
+//! 下拉選單上面是最常用的 repo（最多 [`RECENT_SHOWN`] 個，[`github_recent`]），最後是「設定…」。
+//! 設定視窗上面列出 GitHub 帳號的全部 repo，下面設定帳號、token（選填）、暫存目錄（預設桌面）
+//! 與開啟方式（[`GithubConfig::agent`]）。
 //! 點一個 repo：
 //!
 //! - 暫存目錄裡**沒有**這個 repo → 直接 `git clone`（最新版）。
 //! - **已經有** → `git fetch` 後比對上游；落後就由前端問要不要更新（`git pull --ff-only`）。
 //!
-//! 做完前端在那個目錄開一個 PowerShell／終端機分頁。
+//! 做完前端在那個目錄開一個分頁：預設是「新分頁 ▾」裡第一個 AI agent（2.1.5），可改成指定的或 PowerShell。
 //!
 //! ## 為什麼這樣做
 //!
@@ -28,12 +30,16 @@ use std::time::Duration;
 use tauri::{AppHandle, Manager, State};
 
 use crate::i18n::{t, tf};
-use crate::settings::SettingsStore;
+use crate::settings::{GithubRecent, SettingsStore};
 
 const API: &str = "https://api.github.com";
 const TIMEOUT: Duration = Duration::from_secs(20);
 /// 一頁最多 100 筆（GitHub 的上限）；再多就翻頁，最多翻到這裡為止。
 const MAX_PAGES: usize = 20;
+/// 下拉選單最多列幾個常用 repo（使用者要求「不超過 10 個」）。
+pub const RECENT_SHOWN: usize = 10;
+/// 設定裡最多記幾個（超過就丟掉最少用的；比顯示的多一些，排名才不會一掉出去就歸零）。
+const RECENT_KEPT: usize = 50;
 
 /// 視窗下面那三個設定。
 #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
@@ -43,17 +49,23 @@ pub struct GithubConfig {
     pub token: String,
     /// 暫存目錄。設定裡空的＝用 [`default_dir`]（[`config_of`] 會填好，這裡永遠是實際路徑）。
     pub dir: String,
+    /// 開啟方式：空＝自動（新分頁第一個 AI agent）、`@shell`＝PowerShell／終端機、其他＝自訂連線名稱。
+    #[serde(default)]
+    pub agent: String,
 }
 
 /// 清單上的一個 repo。
-#[derive(Clone, Debug, serde::Serialize)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RepoInfo {
     pub name: String,
     pub full_name: String,
     pub clone_url: String,
+    #[serde(default)]
     pub description: String,
+    #[serde(default)]
     pub private: bool,
+    #[serde(default)]
     pub fork: bool,
 }
 
@@ -100,7 +112,7 @@ fn config_of(settings: &SettingsStore, app: &AppHandle) -> GithubConfig {
     } else {
         s.github_dir
     };
-    GithubConfig { user: s.github_user, token: s.github_token, dir }
+    GithubConfig { user: s.github_user, token: s.github_token, dir, agent: s.github_agent }
 }
 
 // ------------------------------------------------------------------ 設定
@@ -117,7 +129,60 @@ pub fn github_set_config(settings: State<'_, Arc<SettingsStore>>, config: Github
         s.github_user = config.user.trim().to_string();
         s.github_token = config.token.trim().to_string();
         s.github_dir = config.dir.trim().to_string();
+        s.github_agent = config.agent.trim().to_string();
     });
+}
+
+// ------------------------------------------------------------------ 常用 repo
+
+fn now_secs() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+/// 次數多的排前面；一樣多時最近用的排前面。
+fn sort_recent(list: &mut [GithubRecent]) {
+    list.sort_by(|a, b| b.count.cmp(&a.count).then(b.last_used.cmp(&a.last_used)));
+}
+
+/// 記一次「點了這個 repo」（`repo` 是清單或下拉選單上的那一筆）。
+fn record_use(list: &mut Vec<GithubRecent>, repo: &RepoInfo, now: u64) {
+    if let Some(r) = list.iter_mut().find(|r| r.full_name.eq_ignore_ascii_case(&repo.full_name)) {
+        r.count = r.count.saturating_add(1);
+        r.last_used = now;
+        // 改名或轉成私人：以最新的為準
+        r.name = repo.name.clone();
+        r.clone_url = repo.clone_url.clone();
+        r.private = repo.private;
+    } else {
+        list.push(GithubRecent {
+            name: repo.name.clone(),
+            full_name: repo.full_name.clone(),
+            clone_url: repo.clone_url.clone(),
+            private: repo.private,
+            count: 1,
+            last_used: now,
+        });
+    }
+    sort_recent(list);
+    list.truncate(RECENT_KEPT);
+}
+
+/// 下拉選單用：最常用的前 [`RECENT_SHOWN`] 個。
+#[tauri::command]
+pub fn github_recent(settings: State<'_, Arc<SettingsStore>>) -> Vec<GithubRecent> {
+    let mut list = settings.get().github_recent;
+    sort_recent(&mut list);
+    list.truncate(RECENT_SHOWN);
+    list
+}
+
+#[tauri::command]
+pub fn github_record_use(settings: State<'_, Arc<SettingsStore>>, repo: RepoInfo) {
+    let now = now_secs();
+    settings.update(|s| record_use(&mut s.github_recent, &repo, now));
 }
 
 // ------------------------------------------------------------------ 列 repo
@@ -365,7 +430,7 @@ mod tests {
     #[ignore]
     fn live_list_clone_and_update() {
         let dir = std::env::temp_dir().join(format!("awt-gh-test-{}", std::process::id()));
-        let cfg = GithubConfig { user: "awaysu".into(), token: String::new(), dir: dir.to_string_lossy().into() };
+        let cfg = GithubConfig { user: "awaysu".into(), dir: dir.to_string_lossy().into(), ..Default::default() };
         let repos = list_repos(&cfg).expect("list");
         assert!(repos.iter().any(|r| r.name == "AwayTerminal"), "列不到 AwayTerminal");
         let repo = repos.iter().min_by_key(|r| r.name.len()).unwrap();
@@ -388,6 +453,32 @@ mod tests {
             assert_eq!(local_state(&cfg, &repo.name).unwrap().behind, 0);
         }
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn recent_counts_and_orders_by_use() {
+        let repo = |n: &str| RepoInfo {
+            name: n.into(),
+            full_name: format!("awaysu/{n}"),
+            clone_url: format!("https://github.com/awaysu/{n}.git"),
+            description: String::new(),
+            private: false,
+            fork: false,
+        };
+        let mut list = Vec::new();
+        record_use(&mut list, &repo("a"), 1);
+        record_use(&mut list, &repo("b"), 2);
+        record_use(&mut list, &repo("b"), 3);
+        record_use(&mut list, &repo("c"), 4);
+        let names: Vec<&str> = list.iter().map(|r| r.name.as_str()).collect();
+        // b 用了兩次排第一；a、c 都一次 → 最近用的 c 在前
+        assert_eq!(names, ["b", "c", "a"]);
+        assert_eq!(list[0].count, 2);
+        for i in 0..(RECENT_KEPT + 5) {
+            record_use(&mut list, &repo(&format!("r{i}")), 10 + i as u64);
+        }
+        assert_eq!(list.len(), RECENT_KEPT);
+        assert_eq!(list[0].name, "b", "最常用的不會因為記滿被擠掉");
     }
 
     #[test]

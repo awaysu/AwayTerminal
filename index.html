@@ -66,8 +66,9 @@
     <div id="toolbar">
       <button id="btn-new" type="button" class="tool-btn"><img class="tool-ico" src="icon/new-connecting.png" alt="" draggable="false" /><span class="tool-label">新分頁 ▾</span></button>
       <button id="btn-favs" type="button" class="tool-btn"><img class="tool-ico" src="icon/favorite.png" alt="" draggable="false" /><span class="tool-label">我的最愛 ▾</span></button>
-      <!-- GitHub（2.1.5 從「我的最愛」下拉拉出來；位置是把「遠端設定」收進設定視窗空出來的） -->
-      <button id="btn-github" type="button" class="tool-btn"><img class="tool-ico" src="icon/git.png" alt="" draggable="false" /><span class="tool-label">GitHub</span></button>
+      <!-- GitHub（2.1.5 從「我的最愛」下拉拉出來；位置是把「遠端設定」收進設定視窗空出來的）。
+           同我的最愛：按了是下拉選單（最常用的 repo → 設定…） -->
+      <button id="btn-github" type="button" class="tool-btn"><img class="tool-ico" src="icon/git.png" alt="" draggable="false" /><span class="tool-label">GitHub ▾</span></button>
       <span class="tool-sep"></span>
       <button id="btn-compose" type="button" class="tool-btn"><img class="tool-ico" src="icon/compose.png" alt="" draggable="false" /><span class="tool-label">輸入文字</span></button>
       <button id="btn-image" type="button" class="tool-btn"><img class="tool-ico" src="icon/file.png" alt="" draggable="false" /><span class="tool-label">輸入檔案</span></button>
@@ -183,6 +184,13 @@
     <div class="menu-item with-icon" data-kind="manage"><img class="menu-ico" src="icon/settings.png" alt="" draggable="false" /><span class="menu-label">自訂連線設定…</span></div>
   </div>
 
+  <!-- GitHub 下拉（2.1.5，同我的最愛）：最常用的 repo（最多 10 個，github.js 填）→ 分隔線 → 設定… -->
+  <div id="github-menu" class="popup-menu" hidden>
+    <div id="github-recent"></div>
+    <div class="menu-sep"></div>
+    <div class="menu-item with-icon" data-gh="settings"><img class="menu-ico" src="icon/settings.png" alt="" draggable="false" /><span class="menu-label">設定…</span></div>
+  </div>
+
   <!-- 我的最愛下拉（舊版 Favorites_Click：各筆最愛 → 分隔線 → 加到我的最愛 → 設定…） -->
   <div id="favs-menu" class="popup-menu" hidden>
     <div id="favs-items"></div>
@@ -218,6 +226,8 @@
         <label><span id="gh-dir-label">暫存目錄</span>
           <span class="cf-path-row"><input id="gh-dir" type="text" spellcheck="false" autocomplete="off" /><button id="gh-browse" type="button">瀏覽…</button></span>
         </label>
+        <!-- 開啟方式（2.1.5）：下載／更新完用什麼開那個資料夾。選項由 github.js 依自訂連線填 -->
+        <label><span id="gh-agent-label">開啟方式</span><select id="gh-agent"></select></label>
       </div>
       <div id="github-note"></div>
       <div class="modal-buttons">
@@ -628,8 +638,7 @@
         <button type="button" role="tab" data-page="input"></button>
         <button type="button" role="tab" data-page="conn"></button>
         <button type="button" role="tab" data-page="log"></button>
-        <!-- 遠端（2.1.5）：工具列的「遠端設定」收進來，騰位置給 GitHub。欄位仍在獨立的 #remotedlg，
-             這一頁只放開它的按鈕（兩個地方改同一組欄位會互相蓋，見 setdlg.js save()） -->
+        <!-- 遠端（2.1.5）：工具列的「遠端設定」收進來，騰位置給 GitHub；欄位就在這一頁 -->
         <button type="button" role="tab" data-page="remote"></button>
       </nav>
 
@@ -795,13 +804,26 @@
       </fieldset>
       </div>
 
-      <!-- 遠端（Telegram） -->
+      <!-- 遠端（Telegram）：2.1.5 起欄位直接放在這一頁（使用者要求，不再另開視窗），
+           跟其他設定一起按「確定」才套用（remotedlg.js）。欄位照舊版 RemoteDialog -->
       <div class="st-page st-off" data-page="remote" role="tabpanel">
-      <fieldset>
+      <fieldset id="rm-box">
         <legend id="st-l-remote"></legend>
-        <div class="sd-row st-weak">
-          <button id="st-remote-open" type="button"></button>
+        <label class="sd-check"><input id="rm-enabled" type="checkbox" /><span id="rm-l-enabled"></span></label>
+        <div class="rm-field">
+          <label id="rm-l-token" for="rm-token"></label>
+          <input id="rm-token" type="password" autocomplete="off" spellcheck="false" />
         </div>
+        <div class="rm-field">
+          <label id="rm-l-chat" for="rm-chat"></label>
+          <span class="sd-row">
+            <input id="rm-chat" type="text" inputmode="numeric" spellcheck="false" />
+            <button id="rm-getid" type="button"></button>
+          </span>
+        </div>
+        <label class="sd-check rm-notify-row"><input id="rm-notify" type="checkbox" /><span id="rm-l-notify"></span></label>
+        <div id="rm-hint" class="sd-hint"></div>
+        <div id="rm-note" class="sd-hint"></div>
       </fieldset>
       </div>
       </div>
@@ -821,36 +843,6 @@
   <!-- 遠端設定（Telegram）：舊版 `Dialogs/RemoteDialog.xaml` 的搬移版。
        欄位順序、鎖灰規則、提示文字都照它；token 欄位**永遠不回填**（後端只回「有沒有設定」），
        留空＝不變更。舊版的「遠端已由另一個視窗使用中」沒有搬（見 docs/TELEGRAM.md 的說明）。 -->
-  <div id="remotedlg" hidden>
-    <form id="remotedlg-box">
-      <div id="remotedlg-title"></div>
-
-      <label class="sd-check"><input id="rm-enabled" type="checkbox" /><span id="rm-l-enabled"></span></label>
-
-      <div class="rm-field">
-        <label id="rm-l-token" for="rm-token"></label>
-        <input id="rm-token" type="password" autocomplete="off" spellcheck="false" />
-      </div>
-
-      <div class="rm-field">
-        <label id="rm-l-chat" for="rm-chat"></label>
-        <span class="sd-row">
-          <input id="rm-chat" type="text" inputmode="numeric" spellcheck="false" />
-          <button id="rm-getid" type="button"></button>
-        </span>
-      </div>
-
-      <label class="sd-check rm-notify-row"><input id="rm-notify" type="checkbox" /><span id="rm-l-notify"></span></label>
-
-      <div id="rm-hint" class="sd-hint"></div>
-      <div id="rm-note" class="sd-hint"></div>
-
-      <div class="modal-buttons">
-        <button id="rm-ok" type="submit"></button>
-        <button id="rm-cancel" type="button"></button>
-      </div>
-    </form>
-  </div>
 
   <div id="aboutdlg" hidden>
     <div id="aboutdlg-box">

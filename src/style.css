@@ -199,7 +199,7 @@ body.col-resizing { cursor: col-resize; user-select: none; }
    覆蓋層的疊放順序（TASK-031 掃過一次，由下往上）。改 z-index 前先看這張表：
      50   #searchbar／#macrostatus      （黏在終端機上的小東西）
      60   #composedlg／#macrodlg        （輸入文字、巨集問答）
-     62   #setdlg／#remotedlg／#aboutdlg／#updatedlg／#madlg
+     62   #setdlg／#aboutdlg／#updatedlg／#madlg
      200  .popup-menu                    （子選單是它的 `absolute` 子元素，見下面）
      305+ #conns 320／#favs 320／#sshdlg 330／#comdlg 330／#weakalgo 340／#hostkey 350
      400  #toast                         （操作回饋，壓在對話框上面是刻意的）
@@ -774,7 +774,6 @@ body.col-resizing { cursor: col-resize; user-select: none; }
 /* 舊版是 470px 寬、SizeToContent="Height" 的 WPF 視窗；這裡照那個寬度，
    欄位多了一組「其他」與「沙盒模式」，所以高度給上限 + 內容捲動。 */
 #setdlg,
-#remotedlg,
 #aboutdlg,
 #updatedlg {
   position: fixed;
@@ -789,7 +788,6 @@ body.col-resizing { cursor: col-resize; user-select: none; }
    和其他對話框（13px 微軟正黑體）大小不一。固定 13px，不隨語言或元件而變。
    `#madlg`（代理團隊／AI 聊天室的設定視窗）是 2026-10-02 補進來的，同一個毛病。 */
 #setdlg,
-#remotedlg,
 #aboutdlg,
 #updatedlg,
 #madlg {
@@ -799,22 +797,17 @@ body.col-resizing { cursor: col-resize; user-select: none; }
 #setdlg input,
 #setdlg select,
 #setdlg button,
-#remotedlg input,
-#remotedlg select,
-#remotedlg button,
 #madlg input,
 #madlg select,
 #madlg button {
   font: inherit;
 }
 #setdlg[hidden],
-#remotedlg[hidden],
 #aboutdlg[hidden],
 #updatedlg[hidden] {
   display: none;
 }
 #setdlg-box,
-#remotedlg-box,
 #aboutdlg-box,
 #updatedlg-box {
   width: 470px;
@@ -911,8 +904,7 @@ body.col-resizing { cursor: col-resize; user-select: none; }
   }
   .st-nav > button[aria-selected='true'] { border-bottom-color: #0E7ACC; }
 }
-#setdlg-title,
-#remotedlg-title {
+#setdlg-title {
   font-weight: bold;
   margin-bottom: 8px;
 }
@@ -932,9 +924,14 @@ body.col-resizing { cursor: col-resize; user-select: none; }
 #rm-note.rm-error { color: #EF9A9A; }
 #rm-getid { flex: 0 0 auto; }
 /* 未勾「啟用遠端控制」時整組鎖灰（舊版 UpdateEnabledUI 用 Opacity 0.45） */
-#remotedlg.rm-off .rm-field,
-#remotedlg.rm-off #rm-hint,
-#remotedlg.rm-off .rm-notify-row { opacity: .45; }
+#rm-box.rm-off .rm-field,
+#rm-box.rm-off #rm-hint,
+#rm-box.rm-off .rm-notify-row { opacity: .45; }
+#rm-box .rm-field:first-of-type { margin-top: 4px; }
+#github-form select {
+  background: #1e1e1e; color: #e0e0e0; border: 1px solid #555; outline: none;
+  padding: 4px 6px; font-size: 13px; font-family: inherit;
+}
 /* 間距收緊一點（TASK-030）：兩欄之後還差幾十像素才一頁放得下，
    每一組省 6px × 四組 × 兩欄就回來了。再小就會擠。 */
 #setdlg fieldset {

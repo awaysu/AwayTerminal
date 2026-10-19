@@ -41,6 +41,21 @@ impl Default for WindowBounds {
     }
 }
 
+/// 用過的 GitHub repo（`settings.github_recent` 的一筆；2.1.5）。存 clone 網址，
+/// 下拉選單點了不用先列一次 repo 就能直接下載／更新。
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct GithubRecent {
+    pub name: String,
+    pub full_name: String,
+    pub clone_url: String,
+    pub private: bool,
+    /// 點過幾次。
+    pub count: u32,
+    /// 最後一次點的時間（Unix 秒）；次數一樣時新的排前面。
+    pub last_used: u64,
+}
+
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct AppSettings {
@@ -136,13 +151,18 @@ pub struct AppSettings {
     /// 工具列「輸入檔案」上次選的檔案（完整路徑；2.1.2 是「輸入圖片」，2.1.4 改成任意檔案，欄位名沿用）。下次的檔案對話框開在那個資料夾。空＝還沒用過。
     pub image_last_file: String,
 
-    /// 我的最愛 →「GitHub…」（2.1.4）：要列 repo 的帳號。
+    /// 工具列「GitHub」（2.1.4 在我的最愛下拉，2.1.5 拉到工具列）：要列 repo 的帳號。
     pub github_user: String,
     /// GitHub token（選填；有填才列得到私人 repo、也拿來 clone／pull）。
     /// ⚠️ 機密：不進 log、不進 tooltip。
     pub github_token: String,
     /// repo 下載到哪個資料夾。空＝桌面。
     pub github_dir: String,
+    /// 下載／更新完用什麼開那個資料夾（2.1.5）：空＝自動（「新分頁 ▾」裡第一個 AI agent，
+    /// 沒有就 PowerShell）；`@shell`＝PowerShell／終端機；其他＝自訂連線的名稱。
+    pub github_agent: String,
+    /// GitHub 下拉選單上面那幾個「最常用的 repo」（2.1.5）：每點一次 repo 記一次。
+    pub github_recent: Vec<GithubRecent>,
 
     /// 各家 AI CLI **上次選的模型**（key＝`claude-code`／`codex`／`opencode`／`geminicli`，
     /// 2.0.6 起多 `antigravity`、2.0.10 起多 `grok`；空字串＝選了「預設」）。選模型的視窗用它當預選值
@@ -306,6 +326,8 @@ impl Default for AppSettings {
             github_user: String::new(),
             github_token: String::new(),
             github_dir: String::new(),
+            github_agent: String::new(),
+            github_recent: Vec::new(),
             last_models: std::collections::BTreeMap::new(),
             ask_model_on_open: false,
             model_auto_refresh: false,

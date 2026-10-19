@@ -348,7 +348,7 @@ async function verifyToolbarButtons() {
     ['btn-favs', 'favs-menu', '我的最愛 ▾'],
     ['btn-page', 'page-menu', '翻頁 ▾'],
     ['btn-compose', 'composedlg', '輸入文字'],
-    ['btn-github', 'github', 'GitHub'],
+    ['btn-github', 'github-menu', 'GitHub ▾'],
     ['btn-settings', 'setdlg', '設定'],
     ['btn-about', 'aboutdlg', '關於'],
     ['btn-clear', 'modal', '清除畫面（確認框）'],
@@ -639,18 +639,16 @@ async function verifyDialogs() {
       },
     ],
     ['composedlg', '輸入文字', () => clickSel('#btn-compose')],
-    // 遠端設定（2.1.5 起在設定視窗「遠端」那一類裡面）：照真的點法，先開設定、再按那顆按鈕
+    ['github-menu', 'GitHub ▾', () => clickSel('#btn-github')],
     [
-      'remotedlg',
-      '遠端設定',
+      'github',
+      'GitHub 設定',
       async () => {
-        clickSel('#btn-settings');
+        clickSel('#btn-github');
         await wait(200);
-        clickSel('#st-nav [data-page="remote"]');
-        return clickSel('#st-remote-open');
+        return clickSel('#github-menu [data-gh="settings"]');
       },
     ],
-    ['github', 'GitHub', () => clickSel('#btn-github')],
     ['setdlg', '設定', () => clickSel('#btn-settings')],
     ['aboutdlg', '關於', () => clickSel('#btn-about')],
     ['modal', '確認框（清除畫面）', () => clickSel('#btn-clear')],

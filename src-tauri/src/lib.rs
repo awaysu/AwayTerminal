@@ -196,6 +196,8 @@ pub fn run() {
             github::github_local_state,
             github::github_clone,
             github::github_pull,
+            github::github_recent,
+            github::github_record_use,
             favorites::fav_list,
             favorites::fav_candidate,
             favorites::fav_add,

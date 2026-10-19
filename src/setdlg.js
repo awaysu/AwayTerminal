@@ -15,7 +15,7 @@ import { setToolLabel } from './icons.js';
 import { applyLang, onLangChange } from './i18n.js';
 import { log } from './bridge.js';
 import { loadAppFonts } from './appfonts.js';
-import { openRemote } from './remotedlg.js';
+import { fillRemote, checkRemote, applyRemote } from './remotedlg.js';
 
 const el = {};
 let hooks = {};
@@ -323,6 +323,8 @@ export async function openSettings() {
   await fillFonts(opened.fontFamily);
   el.fontNote.textContent = '';
   fill(opened);
+  // 「遠端」那一類（2.1.5 起欄位在設定視窗裡）
+  await fillRemote(opened);
   updateFontButtons();
   // 每次開都從第一類（外觀）開始；這次視窗裡切過的分類不記到下一次。
   // 焦點照舊放在字型下拉（ST23：鍵盤可操作）
@@ -377,6 +379,11 @@ function showPage(page) {
 
 async function save(e) {
   e?.preventDefault();
+  // 遠端（Telegram）：勾了啟用卻缺 token／chat id → 跳到那一頁、不存（先擋，其他設定也還沒動）
+  if (!(await checkRemote())) {
+    showPage('remote');
+    return;
+  }
   const lang = el.lang.value;
   const patch = {
     language: lang,
@@ -421,8 +428,14 @@ async function save(e) {
       return;
     }
   }
-  // 註：Telegram 遠端搬回舊版的獨立「遠端設定」視窗了（`remotedlg.js`，TASK-029）。
-  // 兩個地方改同一組欄位會互相蓋，所以這裡**不要**再放一份。
+  // Telegram 遠端（2.1.5 起在「遠端」那一類）：欄位有改才重啟遠端。
+  // 放在 `settings_apply` 之後：那是只改 patch 裡欄位的寫法，不會把遠端欄位蓋回去
+  const remoteErr = await applyRemote();
+  if (remoteErr) {
+    el.note.textContent = remoteErr;
+    showPage('remote');
+    return;
+  }
   // 介面文字：前端自己換（Rust 那邊有自己的一份表，見 src-tauri/src/i18n.rs）
   applyLang(after.language);
   // BUG D6：settings.json 壞掉（解析失敗）時這次改的只留在記憶體、重開就不見——要說出來，視窗不關
@@ -490,8 +503,6 @@ function applyTexts() {
   for (const b of el.navButtons) {
     b.textContent = T[NAV_KEYS[b.dataset.page]] || b.dataset.page;
   }
-  el.lRemote.textContent = T['tip.remote'];
-  el.remoteOpen.textContent = T['tb.remote'] + '…';
   el.lShell.textContent = T['settings.groupShell'];
   el.lShellMenu.textContent = T['settings.shellMenu'];
   el.lRender.textContent = T['settings.groupRender'];
@@ -588,8 +599,6 @@ export function initSettings(injected) {
   }
   el.nav = $('st-nav');
   el.navButtons = [...el.nav.querySelectorAll('button[data-page]')];
-  el.lRemote = $('st-l-remote');
-  el.remoteOpen = $('st-remote-open');
   el.lShell = $('st-l-shell');
   el.lShellMenu = $('st-l-shellmenu');
   // ⚠️ 這一行從 TASK-016 就漏掉了（TASK-028 才發現）：`fill()` 第一件事就是
@@ -617,25 +626,13 @@ export function initSettings(injected) {
   el.reset.addEventListener('click', resetDefaults);
   document.addEventListener('keydown', (e) => {
     // 頁內 #modal（字型清單、確認框…）開著時 Esc 只關 modal，不連底下這個視窗一起關（BUG-AUDIT B3）
-    // 疊在上面的遠端設定（#remotedlg）開著時也一樣：Esc 只關它，回到設定視窗
-    if (
-      e.key === 'Escape' &&
-      !el.root.hidden &&
-      document.getElementById('modal').hidden &&
-      document.getElementById('remotedlg').hidden
-    )
-      close();
+    if (e.key === 'Escape' && !el.root.hidden && document.getElementById('modal').hidden) close();
   });
 
   // 字型下拉：選「自訂…」才把輸入框叫出來；選真的字型就把值收回輸入框
   //（`save()` 只讀 `el.family`，兩條路收斂在同一個地方）
   el.fontDownload.addEventListener('click', downloadFont);
   el.fontImport.addEventListener('click', importFonts);
-  // 遠端設定（2.1.5 從工具列搬進來）：#remotedlg 在 DOM 裡排在 #setdlg 後面、同一層 z-index，
-  // 所以直接疊在設定視窗上面開；關掉後回到這裡，設定視窗沒存的改動不受影響
-  el.remoteOpen.addEventListener('click', () => {
-    openRemote().catch((e) => log(`[remote] 開啟失敗：${e}`));
-  });
   el.fontRemove.addEventListener('click', removeFont);
   el.fontCancel.addEventListener('click', () => {
     if (downloading) invoke('font_download_cancel', { id: downloading }).catch(() => {});

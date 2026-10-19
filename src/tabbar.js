@@ -1026,7 +1026,7 @@ function installStripEvents() {
 // ------------------------------------------------------------------ 選單
 
 function hideMenus() {
-  for (const m of [el.tabMenu, el.newMenu, el.pageMenu, el.termMenu, el.urlMenu, el.favsMenu]) {
+  for (const m of [el.tabMenu, el.newMenu, el.pageMenu, el.termMenu, el.urlMenu, el.favsMenu, el.githubMenu]) {
     if (!m) continue;
     m.hidden = true;
     closeSubmenus(m);
@@ -1250,7 +1250,7 @@ export function noSelectionToast(id) {
 
 function installMenus() {
   // 有子選單的選單（目前只有分頁右鍵）：滑過父項才展開，並且當場量位置
-  for (const m of [el.tabMenu, el.newMenu, el.pageMenu, el.termMenu, el.urlMenu, el.favsMenu]) {
+  for (const m of [el.tabMenu, el.newMenu, el.pageMenu, el.termMenu, el.urlMenu, el.favsMenu, el.githubMenu]) {
     installSubmenus(m);
   }
   el.tabMenu.addEventListener('click', (e) => {
@@ -1665,6 +1665,33 @@ async function openConn(name) {
   }
 }
 
+/**
+ * GitHub「開啟方式」能選的自訂連線（2.1.5）：「新分頁 ▾」看得到的、不是 ADB 的，順序同選單。
+ * `auto` 是「自動」實際會開的那一條：其中第一個 AI agent（會問工作目錄的＝`pickDir`），沒有就 null（PowerShell）。
+ */
+function githubAgents() {
+  const list = currentConns().filter((c) => !c.hidden && !isAdbConn(c));
+  return { list, auto: list.find((c) => c.pickDir) || null };
+}
+
+/**
+ * 在指定的資料夾開一個分頁（GitHub 下載／更新完用，2.1.5）。`choice` 同 `settings.githubAgent`：
+ * 空＝自動、`@shell`＝PowerShell／終端機、其他＝自訂連線名稱（被刪掉了就退回自動）。
+ * 資料夾已經決定好了，所以**不問工作目錄**；AI CLI 照樣先選模型（同 `openConn`）。
+ */
+async function openInDir(choice, cwd) {
+  const { list, auto } = githubAgents();
+  let c = null;
+  if (choice !== '@shell') c = (choice && list.find((x) => x.name === choice)) || auto;
+  if (!c) {
+    await createSession({ kind: 'shell', cwd });
+    return;
+  }
+  const model = await pickConnModel(c, toast);
+  if (model === null) return; // 在選模型的視窗按了取消＝不開
+  await createSession({ kind: 'conn', conn: c.name, cwd, model });
+}
+
 /** 把自訂連線填進「新分頁 ▾」（隱藏的不列，同舊版）。 */
 function renderConnMenu(list) {
   el.newConns.textContent = '';
@@ -1966,6 +1993,7 @@ export async function initTabBar() {
   el.colorItems = $('color-items');
   el.newConns = $('new-conns');
   el.favsMenu = $('favs-menu');
+  el.githubMenu = $('github-menu');
   el.menuShellHere = el.tabMenu.querySelector('[data-act="shell-here"]');
   el.menuCopyPath = el.tabMenu.querySelector('[data-act="copy-path"]');
   el.menuOpenFolder = el.tabMenu.querySelector('[data-act="open-folder"]');
@@ -2023,12 +2051,12 @@ export async function initTabBar() {
   await initCompose({ toast });
   initSettings({ showInfo, hideMenus, askYesNo, askFromList });
   initAbout({ showInfo, hideMenus });
-  // 遠端設定（Telegram）：舊版就是工具列獨立一顆按鈕 ＋ 獨立視窗
+  // 遠端設定（Telegram）：2.1.5 起是設定視窗的「遠端」那一類（setdlg.js 驅動）
   initRemoteDialog({ showInfo, hideMenus });
   initAdb({ showInfo, askYesNo: (body) => askYesNo(T['tb.adb'], body), pickFromList: askFromList, createSession });
   initAgentDialog();
   initModelDialog();
-  initGithub({ createSession, askYesNo, toast, hideMenus });
+  initGithub({ createSession, askYesNo, showInfo, toast, hideMenus, showMenuUnder, openInDir, githubAgents });
   await initFavs({
     createSession,
     askText,
