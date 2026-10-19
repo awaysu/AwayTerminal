@@ -1,4 +1,4 @@
-//! 四家 Coding Agent CLI 的差異（搬移舊版 `Services/MultiAgent/*Adapter.cs`）。
+//! 五家 Coding Agent CLI 的差異（搬移舊版 `Services/MultiAgent/*Adapter.cs`）。
 //!
 //! 上層只做兩件會碰到 CLI 的事：**啟動它**（自訂連線＋附加參數，走既有的 `session_create`
 //! `kind = "conn"` 那條路）、**往它的終端機打一行字**（[`super::deliver::send_text_then_enter`]），
@@ -10,11 +10,12 @@
 //! | Codex | `-c tui.whimsy=false -c "developer_instructions='…'"` | 只有字串版、沒有檔案版（官方 issue #12926 not-planned） |
 //! | OpenCode | `--auto` ＋ 第一次閒置時打「請先讀角色檔，讀完回 READY」 | 沒有每 session 附加系統提示的參數 |
 //! | GeminiCLI | 第一次閒置時打同一句 | `GEMINI_SYSTEM_MD` 會**整份取代**內建提示，不適合注入角色 |
+//! | Grok | `--rules "<短指引>"` ＋ `--always-approve` | `--rules`（別名 `--append-system-prompt`）包成 `<human_rules>` 附加在預設系統提示後（grok 1.0.62 `-p` 實測有效；2.1.7）。只有字串版，所以帶「先讀角色檔」的短指引，不內嵌整份 |
 
 use crate::settings::{CustomConn, SettingsStore};
 
-/// 四家的 key（＝圖示 key）。順序＝設定視窗下拉的順序。
-pub const ALL_KEYS: &[&str] = &["claude-code", "codex", "opencode", "geminicli"];
+/// 五家的 key（＝圖示 key）。順序＝設定視窗下拉的順序。
+pub const ALL_KEYS: &[&str] = &["claude-code", "codex", "opencode", "geminicli", "grok"];
 
 /// Codex 的 `developer_instructions` 直接內嵌的字數上限（超過就改帶短指引）。
 const MAX_INLINE: usize = 8000;
@@ -26,6 +27,8 @@ pub enum Backend {
     Codex,
     OpenCode,
     GeminiCli,
+    /// xAI 的 Grok CLI（Grok Build，執行檔叫 `grok`；2.1.7 加進團隊）。
+    Grok,
 }
 
 impl Backend {
@@ -35,6 +38,7 @@ impl Backend {
             "codex" => Self::Codex,
             "opencode" => Self::OpenCode,
             "geminicli" => Self::GeminiCli,
+            "grok" => Self::Grok,
             _ => return None,
         })
     }
@@ -45,6 +49,7 @@ impl Backend {
             Self::Codex => "codex",
             Self::OpenCode => "opencode",
             Self::GeminiCli => "geminicli",
+            Self::Grok => "grok",
         }
     }
 
@@ -55,16 +60,31 @@ impl Backend {
             Self::Codex => "Codex",
             Self::OpenCode => "OpenCode",
             Self::GeminiCli => "GeminiCLI",
+            Self::Grok => "Grok",
         }
     }
 
     /// 執行檔名含這個字就算同一種（使用者換過圖示或手動新增的自訂連線）。
+    /// Grok 例外：要**整個檔名相等**（同 `sandbox::tool_kind`，別把名字裡剛好有 grok 的工具算進來）。
     fn exe_word(self) -> &'static str {
         match self {
             Self::ClaudeCode => "claude",
             Self::Codex => "codex",
             Self::OpenCode => "opencode",
             Self::GeminiCli => "gemini",
+            Self::Grok => "grok",
+        }
+    }
+
+    /// 這個執行檔是不是這一家（見 [`Self::exe_word`]）。
+    fn exe_matches(self, path: &str) -> bool {
+        let stem = std::path::Path::new(path)
+            .file_stem()
+            .map(|s| s.to_string_lossy().to_ascii_lowercase())
+            .unwrap_or_default();
+        match self {
+            Self::Grok => stem == "grok",
+            _ => stem.contains(self.exe_word()),
         }
     }
 }
@@ -130,7 +150,7 @@ pub fn resolve(settings: &SettingsStore, backend: Backend) -> Option<CustomConn>
         .or_else(|| {
             conns.iter().find(|c| {
                 !ALL_KEYS.iter().any(|k| k.eq_ignore_ascii_case(&c.icon))
-                    && exe_matches(&c.path, backend.exe_word())
+                    && backend.exe_matches(&c.path)
                     && usable(c)
             })
         });
@@ -176,14 +196,7 @@ pub fn backend_of(conn: &CustomConn) -> Option<Backend> {
     ALL_KEYS
         .iter()
         .filter_map(|k| Backend::by_key(k))
-        .find(|b| exe_matches(&conn.path, b.exe_word()))
-}
-
-fn exe_matches(path: &str, word: &str) -> bool {
-    std::path::Path::new(path)
-        .file_stem()
-        .map(|s| s.to_string_lossy().to_ascii_lowercase().contains(word))
-        .unwrap_or(false)
+        .find(|b| b.exe_matches(&conn.path))
 }
 
 /// 舊版 `RunsViaPowerShell`：`.cmd`／`.bat` 也算（cmd.exe 的命令列上限是 8191）。
@@ -270,6 +283,25 @@ pub fn build_launch(
                 pointer(agent_id, role_title, role_file)
             )),
         },
+        Backend::Grok => {
+            // `--rules`：附加在預設系統提示後（grok 1.0.62 實測 `-p` 模式有效；它的文件
+            // 12-project-rules.md：包成 `<human_rules>`）。只有字串版，所以帶短指引、不內嵌整份
+            // 角色檔（同 Codex 太長時的做法；pointer 不含引號，放進命令列安全）。
+            // `--always-approve`：團隊裡一跳權限詢問就停在那等人按（同 OpenCode 的 --auto）；
+            // 使用者的連線參數已經有 --always-approve／--yolo／--permission-mode 就不再加。
+            let has_perm = conn.args.split_whitespace().any(|w| {
+                let w = w.to_ascii_lowercase();
+                w == "--always-approve" || w == "--yolo" || w.starts_with("--permission-mode")
+            });
+            let text = one_line(&pointer(agent_id, role_title, role_file));
+            Launch {
+                extra_args: format!(
+                    "{} --rules \"{text}\"",
+                    if has_perm { "" } else { " --always-approve" }
+                ),
+                first_message: None,
+            }
+        }
     }
 }
 
@@ -305,6 +337,8 @@ mod tests {
         assert_eq!(backend_of(&conn("C:\\npm\\opencode.cmd", "", true)), Some(Backend::OpenCode));
         assert_eq!(backend_of(&conn("C:\\bin\\claude.exe", "", false)), Some(Backend::ClaudeCode));
         assert_eq!(backend_of(&conn("/usr/bin/gemini", "", false)), Some(Backend::GeminiCli));
+        assert_eq!(backend_of(&conn(r"C:\Users\x\.grok\bin\grok.exe", "", false)), Some(Backend::Grok));
+        assert_eq!(backend_of(&conn(r"C:\tools\grokker.exe", "", false)), None, "grok 要整個檔名相等");
         assert_eq!(backend_of(&conn("C:\\Windows\\System32\\wsl.exe", "", false)), None);
         assert_eq!(backend_of(&conn("C:\\adb\\adb.exe", "shell", false)), None);
     }
@@ -415,6 +449,33 @@ mod tests {
         );
         assert_eq!(l.extra_args, "");
         assert!(l.first_message.is_some());
+    }
+
+    /// Grok：`--rules` 帶短指引（不是整份角色檔）＋ `--always-approve`；已有權限參數就不加。
+    #[test]
+    fn grok_appends_rules_and_always_approve() {
+        let l = build_launch(
+            Backend::Grok,
+            &conn(r"C:\g\grok.exe", "", false),
+            "Agent-15",
+            "Reviewer",
+            r"C:\d\Agent-15.md",
+            "whole role text",
+        );
+        assert!(l.extra_args.starts_with(" --always-approve --rules \""), "{}", l.extra_args);
+        assert!(l.extra_args.contains(r"read the file C:\d\Agent-15.md"));
+        assert!(!l.extra_args.contains("whole role text"));
+        assert_eq!(l.first_message, None);
+
+        let l2 = build_launch(
+            Backend::Grok,
+            &conn(r"C:\g\grok.exe", "--permission-mode auto", false),
+            "Agent-15",
+            "Reviewer",
+            r"C:\d\Agent-15.md",
+            "",
+        );
+        assert!(l2.extra_args.starts_with(" --rules \""), "{}", l2.extra_args);
     }
 
     /// 打進 TUI 的指引不能含引號與換行（命令列與 TOML 都要安全）。

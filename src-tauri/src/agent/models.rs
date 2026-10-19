@@ -65,28 +65,21 @@ pub const ANTIGRAVITY_MODELS: &[(&str, &str)] = &[
     ("gpt-oss-120b", "GPT-OSS 120B"),
 ];
 
-/// 模型清單認得的 CLI：代理團隊那四家（[`Backend`]），加上只做到「自訂連線＋選模型」的
-/// Antigravity 與 Grok。
+/// 模型清單認得的 CLI：代理團隊那五家（[`Backend`]，Grok 2.1.7 起也在裡面），加上只做到
+/// 「自訂連線＋選模型」的 Antigravity。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ModelCli {
     Agent(Backend),
     Antigravity,
-    /// xAI 的 Grok CLI（Grok Build，指令叫 `grok`；2.0.10）。
-    Grok,
 }
 
 impl ModelCli {
     /// Antigravity 的 key（＝圖示 key、`last_models` 的 key）。
     pub const ANTIGRAVITY_KEY: &'static str = "antigravity";
-    /// Grok CLI 的 key（同上）。
-    pub const GROK_KEY: &'static str = "grok";
 
     pub fn by_key(key: &str) -> Option<Self> {
         if key.eq_ignore_ascii_case(Self::ANTIGRAVITY_KEY) {
             return Some(Self::Antigravity);
-        }
-        if key.eq_ignore_ascii_case(Self::GROK_KEY) {
-            return Some(Self::Grok);
         }
         Backend::by_key(key).map(Self::Agent)
     }
@@ -95,7 +88,6 @@ impl ModelCli {
         match self {
             Self::Agent(b) => b.key(),
             Self::Antigravity => Self::ANTIGRAVITY_KEY,
-            Self::Grok => Self::GROK_KEY,
         }
     }
 
@@ -103,7 +95,6 @@ impl ModelCli {
         match self {
             Self::Agent(b) => b.display_name(),
             Self::Antigravity => "Antigravity",
-            Self::Grok => "Grok",
         }
     }
 
@@ -117,11 +108,6 @@ impl ModelCli {
             || crate::sandbox::tool_kind(&conn.path) == crate::sandbox::ToolKind::Antigravity
         {
             return Some(Self::Antigravity);
-        }
-        if conn.icon.eq_ignore_ascii_case(Self::GROK_KEY)
-            || crate::sandbox::tool_kind(&conn.path) == crate::sandbox::ToolKind::Grok
-        {
-            return Some(Self::Grok);
         }
         None
     }
@@ -152,7 +138,7 @@ pub struct ModelInfo {
 #[derive(Clone, Debug, Default, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ModelList {
-    /// `claude-code`／`codex`／`opencode`／`geminicli`。
+    /// `claude-code`／`codex`／`opencode`／`geminicli`／`grok`。
     pub backend: String,
     pub backend_name: String,
     pub models: Vec<ModelInfo>,
@@ -841,21 +827,6 @@ fn fetch(cli: ModelCli, conn: &CustomConn, refresh: bool) -> ModelList {
             list.source = "static".to_string();
             return list;
         }
-        ModelCli::Grok => {
-            // `grok models`＝這個帳號能用的模型（2.0.12 實機確認過格式 → 權威：上次的模型不在
-            // 裡面就是真的不能用了）；拿不到就沒有清單，使用者自己輸入
-            match run(exe, &["models"], LIST_TIMEOUT).map(|t| parse_grok(&t)) {
-                Ok(models) if !models.is_empty() => {
-                    list.models = models;
-                    list.source = "cli".to_string();
-                    list.authoritative = true;
-                    list.note = format!("{exe_name} models");
-                }
-                Ok(_) => list.note = "empty list".to_string(),
-                Err(e) => list.note = e,
-            }
-            return list;
-        }
     };
     match backend {
         Backend::Codex => match run(exe, &["debug", "models"], LIST_TIMEOUT).map(|t| parse_codex(&t)) {
@@ -921,6 +892,20 @@ fn fetch(cli: ModelCli, conn: &CustomConn, refresh: bool) -> ModelList {
             if !models.is_empty() {
                 list.models = models;
                 list.source = "builtin".to_string();
+            }
+        }
+        Backend::Grok => {
+            // `grok models`＝這個帳號能用的模型（2.0.12 實機確認過格式 → 權威：上次的模型不在
+            // 裡面就是真的不能用了）；拿不到就沒有清單，使用者自己輸入
+            match run(exe, &["models"], LIST_TIMEOUT).map(|t| parse_grok(&t)) {
+                Ok(models) if !models.is_empty() => {
+                    list.models = models;
+                    list.source = "cli".to_string();
+                    list.authoritative = true;
+                    list.note = format!("{exe_name} models");
+                }
+                Ok(_) => list.note = "empty list".to_string(),
+                Err(e) => list.note = e,
             }
         }
     }
@@ -1452,9 +1437,9 @@ mod tests {
         assert!(ids[0].starts_with("gemini-"));
     }
 
-    /// Grok CLI（2.0.10，同 Antigravity 只做到第 1 層）：圖示或執行檔名 `grok` 都認得；不是代理團隊的 Backend。
+    /// Grok CLI：圖示或執行檔名 `grok` 都認得（整個檔名相等）；2.1.7 起也是代理團隊的 Backend。
     #[test]
-    fn grok_is_a_model_cli_but_not_a_team_backend() {
+    fn grok_is_a_model_cli_and_a_team_backend() {
         let conn = |path: &str, icon: &str| CustomConn {
             name: "x".into(),
             path: path.into(),
@@ -1467,12 +1452,12 @@ mod tests {
         } else {
             "/home/x/.grok/bin/grok"
         };
-        assert_eq!(ModelCli::of_conn(&conn(grok, "run")), Some(ModelCli::Grok));
-        assert_eq!(ModelCli::of_conn(&conn("D:\\tools\\mything.exe", "grok")), Some(ModelCli::Grok));
+        assert_eq!(ModelCli::of_conn(&conn(grok, "run")), Some(ModelCli::Agent(Backend::Grok)));
+        assert_eq!(ModelCli::of_conn(&conn("D:\\tools\\mything.exe", "grok")), Some(ModelCli::Agent(Backend::Grok)));
         assert_eq!(ModelCli::of_conn(&conn("C:\\x\\grokker.exe", "run")), None);
-        assert_eq!(ModelCli::by_key("Grok"), Some(ModelCli::Grok));
-        assert_eq!(Backend::by_key("grok"), None, "代理團隊不能選它（第 1 層）");
-        assert_eq!(ModelCli::Grok.key(), "grok");
+        assert_eq!(ModelCli::by_key("Grok"), Some(ModelCli::Agent(Backend::Grok)));
+        assert_eq!(Backend::by_key("grok"), Some(Backend::Grok), "2.1.7 起代理團隊也能選它");
+        assert_eq!(ModelCli::Agent(Backend::Grok).key(), "grok");
     }
 
     /// `grok models` 的輸出格式沒在本機看過 → 幾種常見的樣子都要拿得到名稱、表頭與說明要跳過。
