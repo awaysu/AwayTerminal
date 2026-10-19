@@ -264,7 +264,7 @@ pub fn workspace_probe(app: AppHandle, settings: State<'_, Arc<SettingsStore>>) 
     let suggested = app
         .path()
         .desktop_dir()
-        .map(|d| d.join("workspace").to_string_lossy().to_string())
+        .map(|d| d.join("Workspace").to_string_lossy().to_string())
         .unwrap_or_default();
     serde_json::json!({
         "asked": s.work_dir_asked,
