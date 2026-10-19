@@ -111,8 +111,11 @@ html, body { height: 100%; margin: 0; background: #1e1e1e; overflow: hidden; }
   gap: 2px; padding: 0 10px; color: #c8c8c8; cursor: default;
   font: 12px/1.25 "Cascadia Mono", Consolas, "Microsoft JhengHei", monospace;
   white-space: nowrap;
+  /* 2.1.5（使用者要求）：還沒有額度數字時也**先把位置留著**（一行約 250px），
+     不然 Claude Code 問第一個問題、額度一冒出來，左邊的按鈕就全部被擠窄一次。 */
+  min-width: 260px;
 }
-#quota[hidden] { display: none; }
+#quota[hidden] { display: flex; visibility: hidden; }
 #quota .quota-hot { color: #ff6b6b; font-weight: bold; }
 #quota .quota-stale { opacity: 0.5; }
 /* 圖上字下，數字全部照舊版 `ToolBtn` 樣式（MainWindow.xaml 第 16～49 行）：
