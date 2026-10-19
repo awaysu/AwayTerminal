@@ -2643,6 +2643,44 @@ async function offerMigration() {
 }
 
 /**
+ * 第一次啟動問「預設工作目錄放 桌面\workspace 可以嗎？」（2.1.5，使用者要求）。
+ *
+ * 是 → 用它（沒有就先問要不要建立）；否 → 跳資料夾選擇自己選；取消 → 維持預設的桌面。
+ * 不管答什麼都只問這一次（`work_dir_asked`）；已經有工作目錄（例如匯入舊版設定帶來的）就不問。
+ * 之後隨時可以在「新分頁 ▾ → 工作目錄設定…」改。GitHub 的暫存目錄預設跟著它（`<工作目錄>\github`）。
+ */
+async function offerWorkspace() {
+  try {
+    const p = await invoke('workspace_probe');
+    if (p.asked) return;
+    if (p.current) {
+      await invoke('workspace_skip');
+      return;
+    }
+    let dir = p.suggested;
+    const useSuggested = await askYesNo(T['ws.title'], fmt('ws.ask', dir));
+    if (!useSuggested) {
+      dir = await invoke('pick_work_dir', { title: T['ws.pick'] }).catch(() => null);
+      if (!dir) {
+        await invoke('workspace_skip');
+        return;
+      }
+    }
+    if (!(await invoke('dir_exists', { path: dir }))) {
+      const create = await askYesNo(T['ws.title'], fmt('ws.createAsk', dir));
+      if (!create) {
+        await invoke('workspace_skip');
+        return;
+      }
+    }
+    await invoke('workspace_set', { dir });
+    await showInfo(T['ws.title'], fmt('conn.workDirSet', dir));
+  } catch (e) {
+    log(`[workspace] 失敗：${e}`);
+  }
+}
+
+/**
  * 在指定資料夾開一個 shell 分頁（檔案總管右鍵「用 AwayTerminal 開啟」）。
  *
  * 舊版 `OpenDirFromShell`：資料夾不存在就提示、存在就開一個 PowerShell 分頁在那裡。
@@ -2747,6 +2785,8 @@ async function openDirTab(dir) {
 
   // 第一次啟動而且有舊版設定 → 問要不要匯入（舊檔只讀，不會被改）
   if (!opt.verify) await offerMigration();
+  // 第一次啟動 → 問預設工作目錄（桌面\workspace；2.1.5 使用者要求）。問過就不再問
+  if (!opt.verify) await offerWorkspace();
 
   // 啟動參數帶的資料夾（右鍵開啟時沒有既有實例可轉交）→ 開一個 shell 分頁在那裡。
   // 要等 bridge 的 onReady（恢復分頁／預設分頁）做完再開，否則兩邊同時建分頁、

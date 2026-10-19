@@ -96,6 +96,9 @@ pub struct AppSettings {
     /// AI agent 的工作目錄（2.1.4，使用者要求；「新分頁 ▾ → 工作目錄設定…」）：
     /// 自訂連線／代理團隊／AI 聊天室開啟時的資料夾選擇**從這裡開始**。空＝桌面。
     pub agent_work_dir: String,
+    /// 第一次啟動問過「預設工作目錄放桌面\workspace 可以嗎」了（2.1.5）。問過就不再問，
+    /// 不管使用者答了什麼。
+    pub work_dir_asked: bool,
 
     // ---- SSH（舊版 KeepAliveMins / AutoReconnect）----
     /// 保持連線的間隔（分鐘），0＝關閉。舊版預設 10。
@@ -301,6 +304,7 @@ impl Default for AppSettings {
             log_append: true,
             last_dir: String::new(),
             agent_work_dir: String::new(),
+            work_dir_asked: false,
             keep_alive_mins: 10,
             auto_reconnect: false,
             ssh_weak_accepted: Vec::new(),

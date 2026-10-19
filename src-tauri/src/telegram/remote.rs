@@ -64,6 +64,18 @@ pub struct State {
     /// 最後一次「使用者來訊」的時間（閒置計時）。
     last_user_msg: Option<Instant>,
     idle_warned: bool,
+    /// `/new` 選了要開在資料夾裡的連線之後，等使用者回覆資料夾名稱（2.1.5）。
+    /// 下一則不是 `/` 開頭的文字就是名稱；任何 `/` 指令都會把它作廢。
+    pending_new: Option<PendingNew>,
+}
+
+/// `/new` 等資料夾名稱中的那一條連線。
+struct PendingNew {
+    spec: OpenSpec,
+    /// 工作目錄（資料夾會建在這底下）。
+    base: String,
+    /// 使用者不想取名時用的：`remote01`、`remote02`…（第一個還不存在的）。
+    default_name: String,
 }
 
 impl State {
@@ -473,6 +485,12 @@ fn handle(app: &AppHandle, api: &Api, chat_id: i64, state: &Arc<Mutex<State>>, m
             if let Ok(n) = rest.parse::<usize>() {
                 do_new(app, api, chat_id, state, Some(n));
             }
+        } else if data == "newdir:use" {
+            // 「用 remoteNN」按鈕
+            finish_new(app, api, chat_id, state, None);
+        } else if data == "newdir:cancel" {
+            state.lock().unwrap_or_else(|e| e.into_inner()).pending_new = None;
+            send(api, chat_id, &crate::i18n::t("tg.cancelled"));
         } else if let Some(rest) = data.strip_prefix("hist:") {
             if let Ok(n) = rest.parse::<usize>() {
                 do_history(app, api, chat_id, state, Some(n));
@@ -503,6 +521,18 @@ fn handle(app: &AppHandle, api: &Api, chat_id: i64, state: &Arc<Mutex<State>>, m
         return;
     }
     let Some(text) = m.text.as_deref() else { return };
+    // `/new` 正在等資料夾名稱：不是指令的文字就是名稱；是指令就作廢等待、照常執行
+    {
+        let waiting = state.lock().unwrap_or_else(|e| e.into_inner()).pending_new.is_some();
+        if waiting {
+            if text.trim_start().starts_with('/') {
+                state.lock().unwrap_or_else(|e| e.into_inner()).pending_new = None;
+            } else {
+                finish_new(app, api, chat_id, state, Some(text));
+                return;
+            }
+        }
+    }
     match cmd::parse(text) {
         Action::Help => send(api, chat_id, &cmd::help_text()),
         Action::TabList => send_tab_list(app, api, chat_id, state),
@@ -1186,7 +1216,8 @@ fn conn_list(app: &AppHandle) -> Vec<(String, OpenSpec)> {
         return Vec::new();
     };
     let s = store.get();
-    let desk = dirs_desktop();
+    // 2.1.5：開在 AI agent 工作目錄底下（以前是桌面；工作目錄沒設時那個值就是桌面）
+    let desk = work_dir(app);
     let mut out: Vec<(String, OpenSpec)> = Vec::new();
 
     let mut ps = OpenSpec::of("shell");
@@ -1248,13 +1279,65 @@ fn conn_list(app: &AppHandle) -> Vec<(String, OpenSpec)> {
     out
 }
 
-fn dirs_desktop() -> Option<String> {
-    std::env::var("USERPROFILE")
-        .ok()
-        .map(|h| format!("{h}\\Desktop"))
-        .filter(|p| std::path::Path::new(p).is_dir())
-        .or_else(|| std::env::var("HOME").ok().map(|h| format!("{h}/Desktop")))
-        .filter(|p| std::path::Path::new(p).is_dir())
+/// AI agent 工作目錄（`toolbar::agent_dir_of`：設定裡的，沒設＝桌面）。
+fn work_dir(app: &AppHandle) -> Option<String> {
+    let store = app.try_state::<Arc<crate::settings::SettingsStore>>()?;
+    let d = crate::toolbar::agent_dir_of(app, &store);
+    (!d.trim().is_empty()).then_some(d)
+}
+
+/// `remote01`、`remote02`…：工作目錄底下第一個還不存在的名字。
+fn next_remote_name(base: &str) -> String {
+    for i in 1..1000u32 {
+        let name = format!("remote{i:02}");
+        if !std::path::Path::new(base).join(&name).exists() {
+            return name;
+        }
+    }
+    format!("remote{}", std::process::id())
+}
+
+/// 資料夾名稱只能是一層（不能空、不能 `.`／`..`、不能有路徑分隔或 Windows 不允許的字元）。
+fn valid_dir_name(name: &str) -> bool {
+    let n = name.trim();
+    !n.is_empty()
+        && n != "."
+        && n != ".."
+        && n.len() <= 100
+        && !n
+            .chars()
+            .any(|c| matches!(c, '\\' | '/' | ':' | '*' | '?' | '"' | '<' | '>' | '|') || c.is_control())
+}
+
+/// `/new` 第二步（2.1.5）：有了資料夾名稱（`None`＝用預設的 remoteNN）→ 建資料夾、開分頁、附著。
+fn finish_new(app: &AppHandle, api: &Api, chat_id: i64, state: &Arc<Mutex<State>>, name: Option<&str>) {
+    let Some(p) = state.lock().unwrap_or_else(|e| e.into_inner()).pending_new.take() else {
+        send(api, chat_id, &crate::i18n::t("tg.cancelled"));
+        return;
+    };
+    let name = match name {
+        Some(n) => {
+            if !valid_dir_name(n) {
+                // 名字不合法：放回去再問一次
+                send(api, chat_id, &crate::i18n::t("tg.badDirName"));
+                state.lock().unwrap_or_else(|e| e.into_inner()).pending_new = Some(p);
+                return;
+            }
+            n.trim().to_string()
+        }
+        None => p.default_name.clone(),
+    };
+    let dir = std::path::Path::new(&p.base).join(&name);
+    if let Err(e) = std::fs::create_dir_all(&dir) {
+        send(api, chat_id, &crate::i18n::tf("err.mkdirFailed", &[&format!("{}（{e}）", dir.display())]));
+        return;
+    }
+    let mut spec = p.spec;
+    spec.cwd = Some(dir.to_string_lossy().to_string());
+    match open_tab(app, &spec) {
+        Some((id, title)) => attach_and_report(app, api, chat_id, state, id, &title, spec.kind == "ssh"),
+        None => send(api, chat_id, &crate::i18n::t("tg.openFailed")),
+    }
 }
 
 /// `/new [n]`：不帶編號＝列清單＋按鈕；帶編號＝開那一條並附著。
@@ -1290,6 +1373,20 @@ fn do_new(
         return;
     }
     let (_, spec) = &list[n - 1];
+    // 會開在資料夾裡的（本機 shell、要選目錄的自訂連線）：先問資料夾名稱（2.1.5 使用者要求），
+    // 下一則文字就是名字；不取名就按按鈕用 remoteNN。SSH／Telnet／COM／ADB 沒有資料夾，直接開。
+    if let Some(base) = spec.cwd.clone() {
+        let default_name = next_remote_name(&base);
+        let text = crate::i18n::tf("tg.askDirName", &[&default_name, &base]);
+        let rows = vec![vec![
+            (crate::i18n::tf("tg.useDir", &[&default_name]), "newdir:use".to_string()),
+            (crate::i18n::t("tg.cancel"), "newdir:cancel".to_string()),
+        ]];
+        state.lock().unwrap_or_else(|e| e.into_inner()).pending_new =
+            Some(PendingNew { spec: spec.clone(), base, default_name });
+        let _ = api.send_message(chat_id, &text, false, &rows);
+        return;
+    }
     match open_tab(app, spec) {
         Some((id, title)) => {
             attach_and_report(app, api, chat_id, state, id, &title, spec.kind == "ssh")

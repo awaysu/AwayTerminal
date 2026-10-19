@@ -230,7 +230,7 @@ pub async fn pick_work_dir(
 }
 
 /// AI agent 工作目錄：設定裡有就用，沒有＝桌面（找不到桌面才退回上次選過的）。
-fn agent_dir_of(app: &AppHandle, settings: &SettingsStore) -> String {
+pub fn agent_dir_of(app: &AppHandle, settings: &SettingsStore) -> String {
     use tauri::Manager;
     let s = settings.get();
     if !s.agent_work_dir.trim().is_empty() {
@@ -252,6 +252,47 @@ pub fn agent_dir_get(app: AppHandle, settings: State<'_, Arc<SettingsStore>>) ->
 #[tauri::command]
 pub fn agent_dir_set(dir: String, settings: State<'_, Arc<SettingsStore>>) {
     settings.update(|s| s.agent_work_dir = dir.trim().to_string());
+}
+
+/// 第一次啟動的「預設工作目錄」問答（2.1.5，使用者要求）的依據：
+/// `asked`＝問過了、`current`＝已經設了、`suggested`＝建議的位置（桌面\workspace）。
+/// 前端只在 `!asked && current 是空的` 時問。
+#[tauri::command]
+pub fn workspace_probe(app: AppHandle, settings: State<'_, Arc<SettingsStore>>) -> serde_json::Value {
+    use tauri::Manager;
+    let s = settings.get();
+    let suggested = app
+        .path()
+        .desktop_dir()
+        .map(|d| d.join("workspace").to_string_lossy().to_string())
+        .unwrap_or_default();
+    serde_json::json!({
+        "asked": s.work_dir_asked,
+        "current": s.agent_work_dir,
+        "suggested": suggested,
+    })
+}
+
+/// 第一次啟動問答的答案：建立（沒有就建）並存成 AI agent 工作目錄，之後不再問。
+#[tauri::command]
+pub fn workspace_set(dir: String, settings: State<'_, Arc<SettingsStore>>) -> Result<(), String> {
+    let dir = dir.trim().to_string();
+    if dir.is_empty() {
+        return Err(t("err.needDir"));
+    }
+    std::fs::create_dir_all(&dir).map_err(|e| tf("err.mkdirFailed", &[&format!("{dir}（{e}）")]))?;
+    settings.update(|s| {
+        s.agent_work_dir = dir.clone();
+        s.work_dir_asked = true;
+    });
+    println!("[AwayTerminal] 預設工作目錄：{dir}");
+    Ok(())
+}
+
+/// 第一次啟動問答按了取消：記下問過了，之後不再問（工作目錄維持預設的桌面）。
+#[tauri::command]
+pub fn workspace_skip(settings: State<'_, Arc<SettingsStore>>) {
+    settings.update(|s| s.work_dir_asked = true);
 }
 
 /// 網址選單的「用瀏覽器開啟」（舊版 `OpenUrlExternal`）。

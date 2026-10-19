@@ -27,7 +27,7 @@ use std::process::Command;
 use std::sync::Arc;
 use std::time::Duration;
 
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, State};
 
 use crate::i18n::{t, tf};
 use crate::settings::{GithubRecent, SettingsStore};
@@ -83,9 +83,12 @@ pub struct LocalState {
     pub ahead: u32,
 }
 
-/// 沒設定暫存目錄時用的位置：**桌面**（使用者要求）。系統找不到桌面才退回暫存資料夾。
-pub fn default_dir(app: &AppHandle) -> PathBuf {
-    app.path().desktop_dir().unwrap_or_else(|_| std::env::temp_dir())
+/// 沒設定暫存目錄時用的位置：**AI agent 工作目錄底下的 `github`**（2.1.5 使用者要求；
+/// 工作目錄沒設時那個值本身就是桌面，所以等於 2.1.4 的「桌面」再多一層）。
+pub fn default_dir(app: &AppHandle, settings: &SettingsStore) -> PathBuf {
+    let base = crate::toolbar::agent_dir_of(app, settings);
+    let base = if base.trim().is_empty() { std::env::temp_dir() } else { PathBuf::from(base) };
+    base.join("github")
 }
 
 fn base_dir(cfg: &GithubConfig) -> PathBuf {
@@ -108,7 +111,7 @@ fn repo_path(cfg: &GithubConfig, name: &str) -> Result<PathBuf, String> {
 fn config_of(settings: &SettingsStore, app: &AppHandle) -> GithubConfig {
     let s = settings.get();
     let dir = if s.github_dir.trim().is_empty() {
-        default_dir(app).to_string_lossy().to_string()
+        default_dir(app, settings).to_string_lossy().to_string()
     } else {
         s.github_dir
     };
