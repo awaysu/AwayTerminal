@@ -330,6 +330,8 @@ export default {
   'tb.remote': 'À distance',
   'tip.settings': 'Police, couleurs, langue et autres paramètres',
   'tip.remote': 'Commande à distance (Telegram)',
+  'tb.github': 'GitHub',
+  'tip.github': 'Lister vos dépôts GitHub et les cloner ou mettre à jour',
   'settings.title': 'Paramètres',
   // machine-translation notice (under the language picker, and on the About page)
   'settings.langNote': 'Toutes les langues sauf le chinois traditionnel et l’anglais sont traduites automatiquement ; les corrections sont bienvenues.',
@@ -339,6 +341,7 @@ export default {
   'settings.navLog': 'Journaux',
   'settings.navAi': 'Outils IA',
   'settings.navSystem': 'Système',
+  'settings.navRemote': 'À distance',
   'settings.groupRestore': 'Restauration des onglets',
   'settings.groupLang': 'Langue',
   'settings.groupFont': 'Police et couleurs',

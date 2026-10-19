@@ -330,6 +330,8 @@ export default {
   'tb.remote': 'リモート設定',
   'tip.settings': 'フォント、色、言語などの設定',
   'tip.remote': 'リモート操作の設定 (Telegram)',
+  'tb.github': 'GitHub',
+  'tip.github': 'GitHub アカウントのリポジトリを一覧し、ダウンロード／更新',
   'settings.title': '設定',
   // machine-translation notice (under the language picker, and on the About page)
   'settings.langNote': '繁体字中国語と英語以外は機械翻訳です。修正を歓迎します。',
@@ -339,6 +341,7 @@ export default {
   'settings.navLog': 'ログ',
   'settings.navAi': 'AI ツール',
   'settings.navSystem': 'システム',
+  'settings.navRemote': 'リモート',
   'settings.groupRestore': 'タブの復元',
   'settings.groupLang': '言語',
   'settings.groupFont': 'フォントと背景色',

@@ -330,6 +330,8 @@ export default {
   'tb.remote': 'Fernsteuerung',
   'tip.settings': 'Schriftart, Farben, Sprache und weitere Einstellungen',
   'tip.remote': 'Fernsteuerung einrichten (Telegram)',
+  'tb.github': 'GitHub',
+  'tip.github': 'GitHub-Repos auflisten und lokal klonen oder aktualisieren',
   'settings.title': 'Einstellungen',
   // machine-translation notice (under the language picker, and on the About page)
   'settings.langNote': 'Alle Sprachen außer traditionellem Chinesisch und Englisch sind maschinell übersetzt; Korrekturen sind willkommen.',
@@ -339,6 +341,7 @@ export default {
   'settings.navLog': 'Protokolle',
   'settings.navAi': 'KI-Werkzeuge',
   'settings.navSystem': 'System',
+  'settings.navRemote': 'Fernsteuerung',
   'settings.groupRestore': 'Tabs wiederherstellen',
   'settings.groupLang': 'Sprache',
   'settings.groupFont': 'Schriftart und Farben',

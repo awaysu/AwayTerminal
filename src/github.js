@@ -1,4 +1,4 @@
-// 我的最愛 →「GitHub…」（2.1.4，使用者要求）。
+// 工具列「GitHub」（2.1.4 使用者要求；原本在我的最愛下拉，2.1.5 拉到工具列）。
 //
 // 視窗上面是 repo 清單（GitHub 帳號的全部 repo），下面設定帳號、token（選填）與暫存目錄（預設桌面）。
 // 點一個 repo：暫存目錄沒有 → 直接下載最新版；已經有 → 先看是不是最新，不是就問要不要更新。
@@ -7,7 +7,7 @@
 import { invoke } from '@tauri-apps/api/core';
 
 import { T, fmt } from './strings.js';
-import { iconImg } from './icons.js';
+import { iconImg, setToolLabel } from './icons.js';
 import { onLangChange } from './i18n.js';
 import { log } from './bridge.js';
 
@@ -23,6 +23,8 @@ function $(id) {
 }
 
 function applyTexts() {
+  setToolLabel(el.btn, T['tb.github']);
+  el.btn.title = T['tip.github'];
   el.title.textContent = T['gh.title'];
   $('gh-user-label').textContent = T['gh.user'];
   $('gh-token-label').textContent = T['gh.token'];
@@ -157,8 +159,15 @@ export function initGithub(injected) {
   el.save = $('gh-save');
   el.note = $('github-note');
   el.close = $('github-close');
+  el.btn = $('btn-github');
 
+  applyTexts();
   onLangChange(applyTexts);
+
+  el.btn.addEventListener('click', () => {
+    hooks.hideMenus?.();
+    openGithub().catch((e) => log(`[github] 開啟失敗：${e}`));
+  });
 
   el.list.addEventListener('click', (e) => {
     const row = e.target.closest('[data-repo]');

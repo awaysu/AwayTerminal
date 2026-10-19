@@ -348,7 +348,7 @@ async function verifyToolbarButtons() {
     ['btn-favs', 'favs-menu', '我的最愛 ▾'],
     ['btn-page', 'page-menu', '翻頁 ▾'],
     ['btn-compose', 'composedlg', '輸入文字'],
-    ['btn-remote', 'remotedlg', '遠端設定'],
+    ['btn-github', 'github', 'GitHub'],
     ['btn-settings', 'setdlg', '設定'],
     ['btn-about', 'aboutdlg', '關於'],
     ['btn-clear', 'modal', '清除畫面（確認框）'],
@@ -438,10 +438,10 @@ async function verifyToolbarButtons() {
   // 順序也要對（舊版 MainWindow.xaml 的排法）。TASK-029 之前「輸入文字」跑到「翻頁」右邊，
   // 自動檢查沒有人看順序，是 PM 用 CDP 讀出來才發現的 → 現在寫成斷言。
   const WANT = [
-    'btn-new', 'btn-favs',
-    'btn-compose', 'btn-copy', 'btn-paste', 'btn-copyall', 'btn-clear', 'btn-page',
+    'btn-new', 'btn-favs', 'btn-github',
+    'btn-compose', 'btn-image', 'btn-copy', 'btn-paste', 'btn-copyall', 'btn-clear', 'btn-page',
     'btn-view',
-    'btn-remote', 'btn-settings',
+    'btn-settings',
     'btn-about',
   ];
   const got = [...document.querySelectorAll('#toolbar .tool-btn')].map((b) => b.id);
@@ -639,7 +639,18 @@ async function verifyDialogs() {
       },
     ],
     ['composedlg', '輸入文字', () => clickSel('#btn-compose')],
-    ['remotedlg', '遠端設定', () => clickSel('#btn-remote')],
+    // 遠端設定（2.1.5 起在設定視窗「遠端」那一類裡面）：照真的點法，先開設定、再按那顆按鈕
+    [
+      'remotedlg',
+      '遠端設定',
+      async () => {
+        clickSel('#btn-settings');
+        await wait(200);
+        clickSel('#st-nav [data-page="remote"]');
+        return clickSel('#st-remote-open');
+      },
+    ],
+    ['github', 'GitHub', () => clickSel('#btn-github')],
     ['setdlg', '設定', () => clickSel('#btn-settings')],
     ['aboutdlg', '關於', () => clickSel('#btn-about')],
     ['modal', '確認框（清除畫面）', () => clickSel('#btn-clear')],

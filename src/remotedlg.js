@@ -16,7 +16,6 @@
 import { invoke } from '@tauri-apps/api/core';
 
 import { T, fmt } from './strings.js';
-import { setToolLabel } from './icons.js';
 import { onLangChange } from './i18n.js';
 import { log } from './bridge.js';
 
@@ -148,8 +147,6 @@ function applyTexts() {
   el.hint.textContent = T['remote.hint'];
   el.ok.textContent = T['dlg.save'];
   el.cancel.textContent = T['dlg.cancel'];
-  setToolLabel(el.btn, T['tb.remote']);
-  el.btn.title = T['tip.remote'];
   el.token.placeholder = T[state.hasToken ? 'remote.tokenSet' : 'remote.tokenNone'];
 }
 
@@ -171,15 +168,10 @@ export function initRemoteDialog(injected) {
   el.note = $('rm-note');
   el.ok = $('rm-ok');
   el.cancel = $('rm-cancel');
-  el.btn = $('btn-remote');
 
   applyTexts();
   onLangChange(applyTexts);
 
-  el.btn.addEventListener('click', () => {
-    if (hooks.hideMenus) hooks.hideMenus();
-    openRemote().catch((e) => log(`[remote] 開啟失敗：${e}`));
-  });
   el.enabled.addEventListener('change', applyEnabled);
   el.getId.addEventListener('click', () => {
     getChatId().catch((e) => log(`[remote] 取得 chat id 失敗：${e}`));

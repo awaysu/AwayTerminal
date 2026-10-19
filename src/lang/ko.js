@@ -330,6 +330,8 @@ export default {
   'tb.remote': '원격 설정',
   'tip.settings': '글꼴, 색, 언어 및 기타 설정',
   'tip.remote': '원격 제어 설정 (Telegram)',
+  'tb.github': 'GitHub',
+  'tip.github': 'GitHub 계정의 저장소를 나열하고 내려받거나 업데이트',
   'settings.title': '설정',
   // machine-translation notice (under the language picker, and on the About page)
   'settings.langNote': '번체 중국어와 영어를 제외한 언어는 기계 번역입니다. 수정 제안을 환영합니다.',
@@ -339,6 +341,7 @@ export default {
   'settings.navLog': '로그',
   'settings.navAi': 'AI 도구',
   'settings.navSystem': '시스템',
+  'settings.navRemote': '원격',
   'settings.groupRestore': '탭 복원',
   'settings.groupLang': '언어',
   'settings.groupFont': '글꼴과 배경색',

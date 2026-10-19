@@ -336,6 +336,8 @@ export default {
   'tb.remote': '遠端設定',
   'tip.settings': '字型、顏色、語言與其他設定',
   'tip.remote': '遠端控制設定 (Telegram)',
+  'tb.github': 'GitHub',
+  'tip.github': '列出 GitHub 帳號的 repo，下載或更新到本機',
   'settings.title': '設定',
   // 機器翻譯的說明（設定視窗的語言下拉底下，以及關於頁各一行）
   'settings.langNote': '除了「繁體中文」與 English 之外都是機器翻譯，歡迎修正。',
@@ -345,6 +347,7 @@ export default {
   'settings.navLog': '記錄',
   'settings.navAi': 'AI 工具',
   'settings.navSystem': '系統',
+  'settings.navRemote': '遠端',
   'settings.groupRestore': '恢復分頁',
   'settings.groupLang': '語言',
   'settings.groupFont': '字體背景顏色',

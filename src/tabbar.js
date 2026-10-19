@@ -2028,7 +2028,7 @@ export async function initTabBar() {
   initAdb({ showInfo, askYesNo: (body) => askYesNo(T['tb.adb'], body), pickFromList: askFromList, createSession });
   initAgentDialog();
   initModelDialog();
-  initGithub({ createSession, askYesNo, toast });
+  initGithub({ createSession, askYesNo, toast, hideMenus });
   await initFavs({
     createSession,
     askText,

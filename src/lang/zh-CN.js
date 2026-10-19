@@ -330,6 +330,8 @@ export default {
   'tb.remote': '远程设置',
   'tip.settings': '字体、颜色、语言与其他设置',
   'tip.remote': '远程控制设置 (Telegram)',
+  'tb.github': 'GitHub',
+  'tip.github': '列出 GitHub 账号的仓库，下载或更新到本地',
   'settings.title': '设置',
   // machine-translation notice (under the language picker, and on the About page)
   'settings.langNote': '除“繁體中文”与 English 之外都是机器翻译，欢迎修正。',
@@ -339,6 +341,7 @@ export default {
   'settings.navLog': '日志',
   'settings.navAi': 'AI 工具',
   'settings.navSystem': '系统',
+  'settings.navRemote': '远程',
   'settings.groupRestore': '恢复标签页',
   'settings.groupLang': '语言',
   'settings.groupFont': '字体与背景颜色',

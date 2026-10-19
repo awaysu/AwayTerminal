@@ -12,7 +12,6 @@ import { T, fmt } from './strings.js';
 import { iconImg, setToolLabel } from './icons.js';
 import { onLangChange, shellKey } from './i18n.js';
 import { log } from './bridge.js';
-import { openGithub } from './github.js';
 
 const el = {};
 let items = [];
@@ -373,10 +372,6 @@ export function initFavs(injected) {
     hooks.hideMenus();
     if (act.dataset.fav === 'manage') {
       openManager();
-      return;
-    }
-    if (act.dataset.fav === 'github') {
-      await openGithub();
       return;
     }
     // 加到我的最愛：目前分頁

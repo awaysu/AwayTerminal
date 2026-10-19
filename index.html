@@ -66,6 +66,8 @@
     <div id="toolbar">
       <button id="btn-new" type="button" class="tool-btn"><img class="tool-ico" src="icon/new-connecting.png" alt="" draggable="false" /><span class="tool-label">新分頁 ▾</span></button>
       <button id="btn-favs" type="button" class="tool-btn"><img class="tool-ico" src="icon/favorite.png" alt="" draggable="false" /><span class="tool-label">我的最愛 ▾</span></button>
+      <!-- GitHub（2.1.5 從「我的最愛」下拉拉出來；位置是把「遠端設定」收進設定視窗空出來的） -->
+      <button id="btn-github" type="button" class="tool-btn"><img class="tool-ico" src="icon/git.png" alt="" draggable="false" /><span class="tool-label">GitHub</span></button>
       <span class="tool-sep"></span>
       <button id="btn-compose" type="button" class="tool-btn"><img class="tool-ico" src="icon/compose.png" alt="" draggable="false" /><span class="tool-label">輸入文字</span></button>
       <button id="btn-image" type="button" class="tool-btn"><img class="tool-ico" src="icon/file.png" alt="" draggable="false" /><span class="tool-label">輸入檔案</span></button>
@@ -77,7 +79,6 @@
       <span class="tool-sep"></span>
       <button id="btn-view" type="button" class="tool-btn"><img class="tool-ico" src="icon/arrange.png" alt="" draggable="false" /><span class="tool-label">視窗分割</span></button>
       <span class="tool-sep"></span>
-      <button id="btn-remote" type="button" class="tool-btn"><img class="tool-ico" src="icon/remote-settings.png" alt="" draggable="false" /><span class="tool-label">遠端設定</span></button>
       <button id="btn-settings" type="button" class="tool-btn"><img class="tool-ico" src="icon/settings.png" alt="" draggable="false" /><span class="tool-label">設定</span></button>
       <span class="tool-sep"></span>
       <button id="btn-about" type="button" class="tool-btn"><img class="tool-ico" src="icon/about.png" alt="" draggable="false" /><span class="tool-label">關於</span></button>
@@ -185,9 +186,6 @@
   <!-- 我的最愛下拉（舊版 Favorites_Click：各筆最愛 → 分隔線 → 加到我的最愛 → 設定…） -->
   <div id="favs-menu" class="popup-menu" hidden>
     <div id="favs-items"></div>
-    <!-- GitHub（2.1.4）：固定在各筆最愛的最後，上下各一條分隔線 -->
-    <div class="menu-sep"></div>
-    <div class="menu-item with-icon" data-fav="github"><img class="menu-ico" src="icon/git.png" alt="" draggable="false" /><span class="menu-label">GitHub…</span></div>
     <div class="menu-sep"></div>
     <div class="menu-item with-icon" data-fav="add"><img class="menu-ico" src="icon/favorite.png" alt="" draggable="false" /><span class="menu-label">加到我的最愛：目前分頁</span></div>
     <div class="menu-item with-icon" data-fav="manage"><img class="menu-ico" src="icon/settings.png" alt="" draggable="false" /><span class="menu-label">設定…</span></div>
@@ -209,7 +207,7 @@
     </div>
   </div>
 
-  <!-- 我的最愛 → GitHub（2.1.4）：上面 repo 清單，下面帳號／token／暫存目錄。點 repo＝下載或檢查更新（github.js） -->
+  <!-- 工具列「GitHub」（2.1.4 在我的最愛下拉，2.1.5 拉到工具列）：上面 repo 清單，下面帳號／token／暫存目錄。點 repo＝下載或檢查更新（github.js） -->
   <div id="github" hidden>
     <div id="github-box">
       <div id="github-title">GitHub</div>
@@ -630,6 +628,9 @@
         <button type="button" role="tab" data-page="input"></button>
         <button type="button" role="tab" data-page="conn"></button>
         <button type="button" role="tab" data-page="log"></button>
+        <!-- 遠端（2.1.5）：工具列的「遠端設定」收進來，騰位置給 GitHub。欄位仍在獨立的 #remotedlg，
+             這一頁只放開它的按鈕（兩個地方改同一組欄位會互相蓋，見 setdlg.js save()） -->
+        <button type="button" role="tab" data-page="remote"></button>
       </nav>
 
       <!-- 六頁疊在同一格（2.0.8 起的做法，使用者要求「不要讓視窗忽大忽小」）：`.st-pages` 是一格的 grid，
@@ -790,6 +791,16 @@
         <div class="sd-row st-weak">
           <button id="st-migrate" type="button"></button>
           <span id="st-migrate-note" class="sd-hint"></span>
+        </div>
+      </fieldset>
+      </div>
+
+      <!-- 遠端（Telegram） -->
+      <div class="st-page st-off" data-page="remote" role="tabpanel">
+      <fieldset>
+        <legend id="st-l-remote"></legend>
+        <div class="sd-row st-weak">
+          <button id="st-remote-open" type="button"></button>
         </div>
       </fieldset>
       </div>

@@ -337,6 +337,8 @@ export default {
   'tb.remote': 'Remote',
   'tip.settings': 'Font, colors, language and other settings',
   'tip.remote': 'Remote control (Telegram)',
+  'tb.github': 'GitHub',
+  'tip.github': 'List your GitHub repos and clone or update them locally',
   'settings.title': 'Settings',
   // machine-translation notice (under the language picker, and on the About page)
   'settings.langNote': 'Every language other than Traditional Chinese and English is machine-translated; corrections are welcome.',
@@ -346,6 +348,7 @@ export default {
   'settings.navLog': 'Logging',
   'settings.navAi': 'AI tools',
   'settings.navSystem': 'System',
+  'settings.navRemote': 'Remote',
   'settings.groupRestore': 'Restore tabs',
   'settings.groupLang': 'Language',
   'settings.groupFont': 'Font & colors',
