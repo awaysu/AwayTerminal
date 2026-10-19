@@ -590,7 +590,6 @@ body.col-resizing { cursor: col-resize; user-select: none; }
 #github.busy #github-list { opacity: .6; cursor: progress; }
 #github.busy .conns-row { cursor: progress; }
 #github-form { flex: 0 0 300px; display: flex; flex-direction: column; gap: 8px; }
-#gh-save { align-self: flex-start; }
 #gh-save, #gh-ok {
   padding: 4px 10px; cursor: pointer; font-size: 12px; font-family: inherit;
   background: #3a3a3d; color: #e0e0e0; border: 1px solid #555; border-radius: 4px;

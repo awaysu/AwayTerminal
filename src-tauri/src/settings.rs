@@ -389,14 +389,15 @@ pub fn font_fallback() -> &'static str {
 
 /// 預設字型（**設定檔第一次建立時**才會用到）。
 ///
-/// TASK-033 起是**自帶的 `JetBrains Mono`**，三個平台一樣——以前是依平台猜一個系統字型
+/// 2.1.6 起是**自帶的 `Cascadia Mono`**（使用者 2026-10-19 決定；TASK-033～2.1.5 是
+/// 同樣自帶的 JetBrains Mono），三個平台一樣——以前是依平台猜一個系統字型
 /// （Windows `Cascadia Mono`／mac `Menlo`／Linux `DejaVu Sans Mono`），
 /// 三台機器長得不一樣，而且 Linux 上那套不一定裝了。
 ///
 /// ⚠️ **已經有 settings.json 的使用者不會被改到**：`font_family` 是從檔案讀出來的，
 /// 這個函式只在「檔案不存在」或「舊檔案裡根本沒有這個欄位」時才會被問到。
 pub fn default_font_family() -> &'static str {
-    "JetBrains Mono"
+    "Cascadia Mono"
 }
 
 impl AppSettings {

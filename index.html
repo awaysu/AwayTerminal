@@ -228,13 +228,14 @@
           </label>
           <!-- 開啟方式（2.1.5）：下載／更新完用什麼開那個資料夾。選項由 github.js 依自訂連線填 -->
           <label><span id="gh-agent-label">開啟方式</span><select id="gh-agent"></select></label>
-          <button id="gh-save" type="button">儲存並重新整理</button>
           <!-- 選到的 repo（沒選＝提示先選） -->
           <div id="gh-selected" class="sd-hint"></div>
         </div>
       </div>
       <div id="github-note"></div>
+      <!-- 2.1.6：「儲存並重新整理」從右欄搬到底部按鈕列、放在「下載」左邊（使用者要求） -->
       <div class="modal-buttons">
+        <button id="gh-save" type="button">儲存並重新整理</button>
         <button id="gh-ok" type="button">下載</button>
         <button id="github-close" type="button">關閉</button>
       </div>
