@@ -244,6 +244,25 @@ pub fn detect_report(existing: &[CustomConn], sandbox_global: bool) -> (Vec<Cust
     (added, report)
 }
 
+/// 自動偵測完把整份清單排好（2.1.5，使用者要求：Claude Code 第一、Codex 第二、ADB 最後）。
+///
+/// 以前偵測到的新工具是接在清單**最後面**，先偵測過 ADB 的人之後再裝 Codex，Codex 就排到
+/// ADB 後面去了。現在：已知工具照 [`KNOWN_TOOLS`] 的順序，使用者自己加的（不是已知工具）
+/// 放在已知工具之後、ADB 之前，ADB 永遠最後。同一級的維持原本的相對順序（stable sort）。
+/// 清單沒有手動排序的介面，所以重排不會蓋掉使用者排過的順序。
+pub fn sort_known_first(conns: &mut [CustomConn]) {
+    let adb = KNOWN_TOOLS.len() + 1;
+    conns.sort_by_key(|c| {
+        if c.name.eq_ignore_ascii_case("ADB") {
+            return adb;
+        }
+        KNOWN_TOOLS
+            .iter()
+            .position(|t| t.name.eq_ignore_ascii_case(&c.name))
+            .unwrap_or(KNOWN_TOOLS.len())
+    });
+}
+
 // ------------------------------------------------------------------ commands
 
 /// 自訂連線清單（前端「新分頁 ▾」與設定對話框用）。
@@ -257,9 +276,16 @@ pub fn custom_list(settings: State<'_, Arc<SettingsStore>>) -> Vec<CustomConn> {
 pub fn custom_detect(settings: State<'_, Arc<SettingsStore>>) -> Vec<DetectItem> {
     let cfg = settings.get();
     let (added, report) = detect_report(&cfg.custom_conns, cfg.sandbox_default);
-    if !added.is_empty() {
-        let names: Vec<String> = added.iter().map(|c| c.name.clone()).collect();
-        settings.update(|s| s.custom_conns.extend(added));
+    let names: Vec<String> = added.iter().map(|c| c.name.clone()).collect();
+    let mut list = cfg.custom_conns.clone();
+    list.extend(added);
+    sort_known_first(&mut list);
+    // 沒加新的、順序也本來就對 → 不寫檔（加了新的長度就不同，一定算「變了」）
+    let reordered = list.iter().map(|c| &c.name).ne(cfg.custom_conns.iter().map(|c| &c.name));
+    if reordered {
+        settings.update(|s| s.custom_conns = list);
+    }
+    if !names.is_empty() {
         println!("[AwayTerminal] 自動偵測加入：{}", names.join("、"));
     }
     report
@@ -442,6 +468,21 @@ mod tests {
         let added_names: Vec<&str> = report.iter().filter(|r| r.status == "added").map(|r| r.name.as_str()).collect();
         assert_eq!(added_names, added.iter().map(|c| c.name.as_str()).collect::<Vec<_>>());
         assert!(report.iter().filter(|r| r.status == "missing").all(|r| r.path.is_empty()));
+    }
+
+    /// 使用者 2.1.4 的實際清單：Codex、Grok 後來才偵測到，被接在 ADB 後面
+    #[test]
+    fn sort_puts_claude_codex_first_and_adb_last() {
+        let mut list: Vec<CustomConn> = ["ClaudeCode", "WSL", "MyTool", "OpenCode", "ADB", "Codex", "Grok"]
+            .iter()
+            .map(|n| CustomConn {
+                name: n.to_string(),
+                ..CustomConn::default()
+            })
+            .collect();
+        sort_known_first(&mut list);
+        let names: Vec<&str> = list.iter().map(|c| c.name.as_str()).collect();
+        assert_eq!(names, ["ClaudeCode", "Codex", "OpenCode", "Grok", "WSL", "MyTool", "ADB"]);
     }
 
     #[test]
