@@ -18,6 +18,7 @@ pub mod host;
 pub mod i18n;
 pub mod logging;
 pub mod migrate;
+pub mod ocdb;
 pub mod output;
 pub mod prefs;
 pub mod pty;
@@ -164,6 +165,9 @@ pub fn run() {
             toolbar::tab_colors,
             toolbar::save_text_to_file,
             toolbar::pick_work_dir,
+            ocdb::ocdb_info,
+            ocdb::ocdb_should_warn,
+            ocdb::ocdb_cleanup,
             toolbar::agent_dir_get,
             toolbar::agent_dir_set,
             toolbar::workspace_probe,

@@ -176,6 +176,9 @@ pub fn set_pushed(lang: &str, strings: HashMap<String, String>) -> usize {
 /// 舊版沒有的（內建 SSH／Telnet／COM／TTL／沙盒都是新版才有的東西）才自己寫。
 #[rustfmt::skip]
 static TABLE: &[(&str, &str, &str)] = &[
+    // OpenCode 資料庫清理（2.1.8，ocdb.rs）
+    ("err.ocdbLocked", "OpenCode 還在執行（資料庫被鎖住）。請先關掉所有 OpenCode 分頁與團隊格，再清理。", "OpenCode is still running (the database is locked). Close every OpenCode tab and team pane first, then clean."),
+    ("err.ocdbMissing", "找不到 OpenCode 資料庫。", "OpenCode database not found."),
     // ---------------- 連線建立（commands.rs）----------------
     ("err.sshNeedsParams",     "kind=ssh 需要 ssh 參數", "kind=ssh requires the ssh parameters"),
     ("err.telnetNeedsParams",  "kind=telnet 需要 telnet 參數", "kind=telnet requires the telnet parameters"),

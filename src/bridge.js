@@ -14,7 +14,8 @@ import { listen } from '@tauri-apps/api/event';
 import { restoreSavedTabs } from './restoretabs.js';
 
 import { T, fmt } from './strings.js';
-import { showUrlMenu, noteMouseHint, noSelectionToast, toast, writeClipboard } from './tabbar.js';
+import { showUrlMenu, noteMouseHint, noSelectionToast, toast, writeClipboard, askYesNo } from './tabbar.js';
+import { openSettings } from './setdlg.js';
 
 const US = '\x1f';
 
@@ -339,6 +340,19 @@ let lastSize = { cols: 120, rows: 30 };
  * **channel 可能比 `session_create` 的回覆更早送資料**，所以 id 還不知道時先扣住。
  */
 export async function createSession(opts = {}) {
+  // OpenCode 資料庫過大（2.1.8）：它一啟動就會把幾 GB 的 event 表讀進記憶體然後閃退，
+  // 所以開 OpenCode 的連線或團隊格之前先問一次要不要去「設定 → 系統」清理（每次執行只問一次；
+  // Rust 端只對 OpenCode 的連線回 Some）。選「是」＝這一格不開、跳到設定；「否」＝照常開。
+  if (opts.kind === 'conn' || opts.kind === 'agent') {
+    const size = await invoke('ocdb_should_warn', {
+      conn: opts.kind === 'conn' ? opts.conn || null : null,
+      agent: opts.kind === 'agent' ? opts.agent || null : null,
+    }).catch(() => null);
+    if (size && (await askYesNo(T['ocdb.warnTitle'], fmt('ocdb.warnAsk', size)))) {
+      openSettings('system');
+      throw new Error(T['ocdb.cancelled']);
+    }
+  }
   const holder = { id: null, pending: [] };
   const onEvent = new Channel();
   onEvent.onmessage = (m) => {

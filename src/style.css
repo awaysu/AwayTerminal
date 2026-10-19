@@ -241,11 +241,17 @@ body.col-resizing { cursor: col-resize; user-select: none; }
 }
 #modal-title { font-size: 14px; color: #FDFFB0; margin-bottom: 8px; }
 #modal-prompt { margin-bottom: 8px; white-space: pre-wrap; word-break: break-all; }
-#modal-input {
+#modal-input, #modal-area {
   width: 100%; box-sizing: border-box; background: #1e1e1e; color: #e0e0e0;
   border: 1px solid #555; outline: none; padding: 5px 6px; font-size: 13px; font-family: inherit;
 }
-#modal-input:focus { border-color: #FDFFB0; }
+/* 多行版（AI 聊天室主題／插話）：主題常是一整段，所以撐滿對話框、預設 10 行、可拉高。
+   以前沒設樣式，textarea 用瀏覽器預設約 250×150，在 70vw 寬的對話框裡只有一小格。 */
+#modal-area {
+  display: block; min-width: min(640px, 70vw); min-height: 200px; line-height: 1.5;
+  resize: vertical; max-height: 60vh;
+}
+#modal-input:focus, #modal-area:focus { border-color: #FDFFB0; }
 .modal-buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
 .modal-buttons button {
   min-width: 68px; padding: 5px 12px; cursor: pointer; font-size: 13px; font-family: inherit;

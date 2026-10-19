@@ -315,7 +315,7 @@ async function removeFont() {
   }
 }
 
-export async function openSettings() {
+export async function openSettings(page = 'look') {
   try {
     opened = await invoke('settings_get');
   } catch (e) {
@@ -328,18 +328,32 @@ export async function openSettings() {
   // AI agent 工作目錄（2.1.5 搬進來）：顯示實際會用的路徑（沒設＝桌面），存回去時空字串＝回到預設
   workDirBefore = await invoke('agent_dir_get').catch(() => opened.agentWorkDir || '');
   el.workDir.value = workDirBefore;
+  await refreshOcdb();
   // 「遠端」那一類（2.1.5 起欄位在設定視窗裡）
   await fillRemote(opened);
   updateFontButtons();
   // 每次開都從第一類（外觀）開始；這次視窗裡切過的分類不記到下一次。
   // 焦點照舊放在字型下拉（ST23：鍵盤可操作）
-  showPage('look');
+  showPage(page);
   el.root.hidden = false;
   el.familySel.focus();
 }
 
 function close() {
   el.root.hidden = true;
+}
+
+/** 「系統 → OpenCode 資料庫」那一行：大小與按鈕狀態（沒有資料庫＝按鈕灰掉）。 */
+async function refreshOcdb(keepNote = false) {
+  if (!keepNote) el.ocdbNote.textContent = '';
+  const info = await invoke('ocdb_info').catch(() => null);
+  if (!info || !info.exists) {
+    el.ocdbSize.textContent = T['settings.ocdbNone'];
+    el.ocdbClean.disabled = true;
+    return;
+  }
+  el.ocdbSize.textContent = info.size + (info.warn ? '  ⚠' : '');
+  el.ocdbClean.disabled = false;
 }
 
 /**
@@ -519,6 +533,10 @@ function applyTexts() {
     b.textContent = T[NAV_KEYS[b.dataset.page]] || b.dataset.page;
   }
   el.lWorkDir.textContent = T['settings.groupWorkDir'];
+  el.lOcdb.textContent = T['settings.groupOcdb'];
+  el.lOcdbSize.textContent = T['settings.ocdbSize'];
+  el.ocdbClean.textContent = T['settings.ocdbClean'];
+  el.ocdbHint.textContent = T['settings.ocdbHint'];
   el.lWorkDirPath.textContent = T['settings.workDir'];
   el.workDirPick.textContent = T['settings.browse'];
   el.workDirHint.textContent = T['settings.workDirHint'];
@@ -619,6 +637,12 @@ export function initSettings(injected) {
   el.nav = $('st-nav');
   el.navButtons = [...el.nav.querySelectorAll('button[data-page]')];
   el.lWorkDir = $('st-l-workdir');
+  el.lOcdb = $('st-l-ocdb');
+  el.lOcdbSize = $('st-l-ocdbsize');
+  el.ocdbSize = $('st-ocdb-size');
+  el.ocdbClean = $('st-ocdb-clean');
+  el.ocdbHint = $('st-ocdb-hint');
+  el.ocdbNote = $('st-ocdb-note');
   el.lWorkDirPath = $('st-l-workdirpath');
   el.workDir = $('st-workdir');
   el.workDirPick = $('st-workdir-pick');
@@ -697,6 +721,23 @@ export function initSettings(injected) {
     hooks.showInfo?.(T['settings.imeQuietHelpTitle'], T['settings.imeQuietHelp']);
   });
 
+  // OpenCode 資料庫「清理…」（2.1.8）：先問、清理中鎖按鈕、結果寫在底下那行
+  el.ocdbClean.addEventListener('click', async () => {
+    const info = await invoke('ocdb_info').catch(() => null);
+    if (!info || !info.exists) return;
+    if (!(await hooks.askYesNo?.(T['settings.groupOcdb'], fmt('settings.ocdbAsk', info.size)))) return;
+    el.ocdbClean.disabled = true;
+    el.ocdbNote.textContent = T['settings.ocdbBusy'];
+    try {
+      const r = await invoke('ocdb_cleanup');
+      el.ocdbNote.textContent = fmt('settings.ocdbDone', r.before, r.after, r.backup);
+    } catch (err) {
+      el.ocdbNote.textContent = String(err);
+    } finally {
+      el.ocdbClean.disabled = false;
+      await refreshOcdb(true);
+    }
+  });
   el.workDirPick.addEventListener('click', async () => {
     try {
       const dir = await invoke('pick_work_dir', { title: T['settings.workDir'], agent: true });

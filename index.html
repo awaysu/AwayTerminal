@@ -608,7 +608,7 @@
       <input id="modal-input" type="text" autocomplete="off" spellcheck="false" />
       <!-- 多行版（AI 聊天室的主題與插話；舊版 InputDialog(multiline: true)）。
            主題常常是一整段（背景、限制、想要的結論），單行輸入框不夠用。 -->
-      <textarea id="modal-area" rows="6" spellcheck="false" hidden></textarea>
+      <textarea id="modal-area" rows="10" spellcheck="false" hidden></textarea>
       <!-- 從清單挑一個（ADB 選裝置用；舊版是「新分頁」按鈕下的選單） -->
       <select id="modal-list" size="6" hidden></select>
       <div id="modal-extra" hidden>
@@ -805,6 +805,18 @@
             <button id="st-workdir-pick" type="button"></button></span>
         </div>
         <div id="st-workdir-hint" class="sd-hint"></div>
+      </fieldset>
+      <!-- OpenCode 資料庫（2.1.8）：它的 event 表無限長大、大到幾 GB 就啟動閃退（上游 bug），
+           這裡顯示大小並提供「清理…」；開 OpenCode 連線／團隊格時超過 1 GB 也會提示來這裡 -->
+      <fieldset>
+        <legend id="st-l-ocdb"></legend>
+        <div class="st-grid">
+          <label id="st-l-ocdbsize"></label>
+          <span class="sd-row"><span id="st-ocdb-size"></span>
+            <button id="st-ocdb-clean" type="button"></button></span>
+        </div>
+        <div id="st-ocdb-hint" class="sd-hint"></div>
+        <div id="st-ocdb-note" class="sd-hint"></div>
       </fieldset>
       <fieldset>
         <legend id="st-l-shell"></legend>

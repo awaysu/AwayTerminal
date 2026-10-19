@@ -336,3 +336,14 @@ npm run verify                            # ＝ --verify 2；最後兩段是代�
 `agent_probe` 與 `--verify` 都**不啟動真的 claude／codex**（用 `examples/fake_agent.rs`）、
 **不動使用者的自訂連線清單**（`agent_verify_begin` 的覆寫只活在記憶體裡）、
 **不碰使用者的 `.ai/`**（專案資料夾在 `%TEMP%`，驗完整個刪掉）。
+
+## OpenCode 格一開就 crash（Bun segfault）
+
+OpenCode 把每次對話的過程以事件快照寫進 `~/.local/share/opencode/opencode.db` 的 `event` 表，從不清理
+（上游 anomalyco/opencode #52936、#46833、#33356、#47729；1.19.3 仍沒有清理指令）。檔案長到幾 GB 之後
+TUI 一啟動就把它讀進記憶體 → Bun 段錯誤閃退，log（`~/.local/share/opencode/log/opencode.log`）只到 `init`。
+非互動的 `opencode run` 不受影響，所以很容易誤判成 AwayTerminal 的問題。
+
+2.1.8 起：「設定 → 系統 → OpenCode 資料庫」可以看大小並一鍵清理（`src-tauri/src/ocdb.rs`：備份 → 刪 7 天前
+session 的事件與孤兒事件 → VACUUM）；開 OpenCode 連線／團隊格時超過 1 GB 會先提示。清理需要獨佔鎖，
+OpenCode 還在跑會回「請先關掉」，**不會**去砍它。
