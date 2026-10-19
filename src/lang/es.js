@@ -273,6 +273,8 @@ export default {
   'gh.agentShell': 'PowerShell / terminal',
   'gh.onlyPublic': 'Solo se listaron repos públicos. Si tienes repos privados, pon el Repository access del token en "All repositories" con lectura de Contents',
   'gh.recentEmpty': '(Aún no has usado ningún repo; elige uno en Configuración…)',
+  'gh.selected': 'Seleccionado: {0}',
+  'gh.pickOne': 'Elige un repo en la lista de la izquierda',
   'fav.addNamed': 'Añadir a favoritos: {0}',
   'fav.settings': 'Configuración…',
   'fav.added': 'Añadido a favoritos: {0}',

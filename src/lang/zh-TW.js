@@ -279,6 +279,8 @@ export default {
   'gh.agentShell': 'PowerShell／終端機',
   'gh.onlyPublic': '列到的都是公開 repo。若你有私人 repo：token 的 Repository access 要選「All repositories」，並給 Contents 讀取權限',
   'gh.recentEmpty': '（還沒用過任何 repo，按「設定…」從清單選）',
+  'gh.selected': '已選：{0}',
+  'gh.pickOne': '在左邊清單選一個 repo',
   'fav.addNamed': '加到我的最愛：{0}',
   'fav.settings': '設定…',
   'fav.added': '已加入我的最愛：{0}',

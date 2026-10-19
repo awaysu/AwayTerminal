@@ -217,21 +217,28 @@
 
   <!-- 工具列「GitHub」（2.1.4 在我的最愛下拉，2.1.5 拉到工具列）：上面 repo 清單，下面帳號／token／暫存目錄。點 repo＝下載或檢查更新（github.js） -->
   <div id="github" hidden>
+    <!-- 2.1.5 改成左右兩欄（使用者要求）：左邊 repo 清單（點＝選取，不會馬上下載），
+         右邊帳號／token／暫存目錄／開啟方式；按「確定」才下載／更新並開 AI agent -->
     <div id="github-box">
       <div id="github-title">GitHub</div>
-      <div id="github-list"></div>
-      <div id="github-form">
-        <label><span id="gh-user-label">GitHub 帳號</span><input id="gh-user" type="text" spellcheck="false" autocomplete="off" /></label>
-        <label><span id="gh-token-label">Token</span><input id="gh-token" type="password" spellcheck="false" autocomplete="off" /></label>
-        <label><span id="gh-dir-label">暫存目錄</span>
-          <span class="cf-path-row"><input id="gh-dir" type="text" spellcheck="false" autocomplete="off" /><button id="gh-browse" type="button">瀏覽…</button></span>
-        </label>
-        <!-- 開啟方式（2.1.5）：下載／更新完用什麼開那個資料夾。選項由 github.js 依自訂連線填 -->
-        <label><span id="gh-agent-label">開啟方式</span><select id="gh-agent"></select></label>
+      <div id="github-layout">
+        <div id="github-list"></div>
+        <div id="github-form">
+          <label><span id="gh-user-label">GitHub 帳號</span><input id="gh-user" type="text" spellcheck="false" autocomplete="off" /></label>
+          <label><span id="gh-token-label">Token</span><input id="gh-token" type="password" spellcheck="false" autocomplete="off" /></label>
+          <label><span id="gh-dir-label">暫存目錄</span>
+            <span class="cf-path-row"><input id="gh-dir" type="text" spellcheck="false" autocomplete="off" /><button id="gh-browse" type="button">瀏覽…</button></span>
+          </label>
+          <!-- 開啟方式（2.1.5）：下載／更新完用什麼開那個資料夾。選項由 github.js 依自訂連線填 -->
+          <label><span id="gh-agent-label">開啟方式</span><select id="gh-agent"></select></label>
+          <button id="gh-save" type="button">儲存並重新整理</button>
+          <!-- 選到的 repo（沒選＝提示先選） -->
+          <div id="gh-selected" class="sd-hint"></div>
+        </div>
       </div>
       <div id="github-note"></div>
       <div class="modal-buttons">
-        <button id="gh-save" type="button">儲存並重新整理</button>
+        <button id="gh-ok" type="button">確定</button>
         <button id="github-close" type="button">關閉</button>
       </div>
     </div>

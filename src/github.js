@@ -3,7 +3,8 @@
 // 下拉選單（同我的最愛）：上面是最常用的 repo（最多 10 個，後端 `github_recent` 依點的次數排），
 // 最後是「設定…」。設定視窗上面是 repo 清單（GitHub 帳號的全部 repo），下面設定帳號、token（選填）、
 // 暫存目錄（預設桌面）與開啟方式。
-// 點一個 repo（選單或清單都一樣）：暫存目錄沒有 → 直接下載最新版；已經有 → 先看是不是最新，
+// 設定視窗是左右兩欄（2.1.5 使用者要求）：左邊清單點＝選取，右邊按「確定」才動手；下拉選單點了直接動手。
+// 動手＝暫存目錄沒有 → 直接下載最新版；已經有 → 先看是不是最新，
 // 不是就問要不要更新。做完在那個目錄開一個分頁：預設是「新分頁 ▾」裡第一個 AI agent（2.1.5），
 // 可在設定改成指定的 agent 或 PowerShell。git 與 GitHub API 都在後端（`github.rs`）。
 
@@ -20,6 +21,8 @@ let repos = [];
 let busy = false;
 /** 目前存的開啟方式（`settings.githubAgent`）：空＝自動、`@shell`＝PowerShell、其他＝自訂連線名稱。 */
 let agentChoice = '';
+/** 設定視窗左邊清單目前選到的 repo 名稱（null＝沒選）。 */
+let selected = null;
 /** 由 tabbar 注入：開分頁、問是否、訊息框、toast、選單、在資料夾開 agent。 */
 let hooks = {};
 
@@ -38,7 +41,9 @@ function applyTexts() {
   $('gh-agent-label').textContent = T['gh.agent'];
   el.browse.textContent = T['gh.browse'];
   el.save.textContent = T['gh.save'];
+  el.ok.textContent = T['dlg.ok'];
   el.close.textContent = T['dlg.close'];
+  showSelected();
   if (!el.root.hidden) fillAgents();
 }
 
@@ -66,6 +71,7 @@ function renderList(message) {
     const row = document.createElement('div');
     row.className = 'conns-row';
     row.dataset.repo = r.name;
+    row.classList.toggle('active', r.name === selected);
     row.title = [r.fullName, r.description].filter(Boolean).join('\n');
     const name = document.createElement('span');
     name.className = 'conns-row-name';
@@ -87,6 +93,21 @@ function renderList(message) {
   }
 }
 
+/** 右下角那行「已選：xxx」；沒選就灰掉「確定」。 */
+function showSelected() {
+  const has = !!selected && repos.some((r) => r.name === selected);
+  el.ok.disabled = !has;
+  el.selected.textContent = has ? fmt('gh.selected', selected) : T['gh.pickOne'];
+}
+
+function select(name) {
+  selected = name;
+  for (const row of el.list.querySelectorAll('[data-repo]')) {
+    row.classList.toggle('active', row.dataset.repo === name);
+  }
+  showSelected();
+}
+
 async function loadRepos() {
   if (!el.user.value.trim() && !el.token.value.trim()) {
     repos = [];
@@ -97,6 +118,7 @@ async function loadRepos() {
   try {
     repos = await invoke('github_list_repos');
     renderList();
+    showSelected();
     // 有填 token 卻一個私人 repo 都沒有：fine-grained token 的 Repository access 預設是
     // 「Public repositories」，這時 API 照樣回 200、只是看不到私人的（2.1.5 使用者踩到）
     if (el.token.value.trim() && repos.length > 0 && !repos.some((r) => r.private)) {
@@ -105,6 +127,7 @@ async function loadRepos() {
   } catch (e) {
     repos = [];
     renderList(' ');
+    showSelected();
     setNote(String(e), true);
   }
 }
@@ -241,6 +264,8 @@ export function initGithub(injected) {
   el.agent = $('gh-agent');
   el.browse = $('gh-browse');
   el.save = $('gh-save');
+  el.ok = $('gh-ok');
+  el.selected = $('gh-selected');
   el.note = $('github-note');
   el.close = $('github-close');
   el.btn = $('btn-github');
@@ -266,9 +291,17 @@ export function initGithub(injected) {
     openGithub().catch((e) => log(`[github] 開啟失敗：${e}`));
   });
 
+  // 清單點＝選取；連點兩下＝等於按「確定」
   el.list.addEventListener('click', (e) => {
     const row = e.target.closest('[data-repo]');
-    if (row) openRepo(repos.find((r) => r.name === row.dataset.repo));
+    if (row) select(row.dataset.repo);
+  });
+  el.list.addEventListener('dblclick', (e) => {
+    const row = e.target.closest('[data-repo]');
+    if (row && !el.ok.disabled) el.ok.click();
+  });
+  el.ok.addEventListener('click', () => {
+    openRepo(repos.find((r) => r.name === selected));
   });
 
   el.browse.addEventListener('click', async () => {

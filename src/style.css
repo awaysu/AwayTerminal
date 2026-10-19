@@ -576,17 +576,27 @@ body.col-resizing { cursor: col-resize; user-select: none; }
   font: 13px "Microsoft JhengHei", "微軟正黑體", sans-serif;
 }
 #github-box {
-  width: 560px; max-width: 92vw; max-height: 88vh; overflow: auto; padding: 16px 18px;
+  width: 760px; max-width: 92vw; max-height: 88vh; overflow: auto; padding: 16px 18px;
   background: #2d2d30; border: 1px solid #FDFFB0; border-radius: 6px; color: #e0e0e0;
 }
 #github-title { font-size: 14px; color: #FDFFB0; margin-bottom: 10px; }
+/* 左右兩欄（2.1.5）：左清單吃剩下的寬、右設定固定 300 */
+#github-layout { display: flex; gap: 14px; align-items: stretch; }
 #github-list {
-  height: 300px; overflow-y: auto;
+  flex: 1 1 auto; min-width: 0; height: 340px; overflow-y: auto;
   background: #252528; border: 1px solid #555; border-radius: 4px; padding: 4px;
 }
 #github.busy #github-list { opacity: .6; cursor: progress; }
 #github.busy .conns-row { cursor: progress; }
-#github-form { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+#github-form { flex: 0 0 300px; display: flex; flex-direction: column; gap: 8px; }
+#gh-save { align-self: flex-start; }
+#gh-save, #gh-ok {
+  padding: 4px 10px; cursor: pointer; font-size: 12px; font-family: inherit;
+  background: #3a3a3d; color: #e0e0e0; border: 1px solid #555; border-radius: 4px;
+}
+#gh-save:hover, #gh-ok:hover { background: #50505a; }
+#gh-ok:disabled { color: #666; cursor: default; background: #3a3a3d; }
+#gh-selected { margin-top: auto; color: #FDFFB0; }
 #github-form > label { display: flex; flex-direction: column; gap: 3px; color: #999; font-size: 12px; }
 #github-form input {
   background: #1e1e1e; color: #e0e0e0; border: 1px solid #555; outline: none;
