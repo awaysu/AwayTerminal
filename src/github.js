@@ -41,7 +41,7 @@ function applyTexts() {
   $('gh-agent-label').textContent = T['gh.agent'];
   el.browse.textContent = T['gh.browse'];
   el.save.textContent = T['gh.save'];
-  el.ok.textContent = T['dlg.ok'];
+  el.ok.textContent = T['gh.download'];
   el.close.textContent = T['dlg.close'];
   showSelected();
   if (!el.root.hidden) fillAgents();

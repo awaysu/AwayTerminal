@@ -274,6 +274,7 @@ export default {
   'gh.onlyPublic': '공개 저장소만 표시되었습니다. 비공개 저장소가 있다면 token의 Repository access를 "All repositories"로 하고 Contents 읽기 권한을 주세요',
   'gh.recentEmpty': '(아직 사용한 저장소가 없습니다. 「설정…」 목록에서 고르세요)',
   'gh.selected': '선택: {0}',
+  'gh.download': '다운로드',
   'gh.pickOne': '왼쪽 목록에서 저장소를 선택하세요',
   'fav.addNamed': '즐겨찾기에 추가: {0}',
   'fav.settings': '설정…',

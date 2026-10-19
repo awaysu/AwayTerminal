@@ -274,6 +274,7 @@ export default {
   'gh.onlyPublic': '公開リポジトリしか表示されていません。非公開リポジトリがある場合は、token の Repository access を「All repositories」にし、Contents の読み取り権限を付けてください',
   'gh.recentEmpty': '（まだ使ったリポジトリがありません。「設定…」の一覧から選んでください）',
   'gh.selected': '選択中：{0}',
+  'gh.download': 'ダウンロード',
   'gh.pickOne': '左の一覧からリポジトリを選んでください',
   'fav.addNamed': 'お気に入りに追加：{0}',
   'fav.settings': '設定…',

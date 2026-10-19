@@ -274,6 +274,7 @@ export default {
   'gh.onlyPublic': '列出的都是公开仓库。若你有私有仓库：token 的 Repository access 要选「All repositories」，并授予 Contents 读取权限',
   'gh.recentEmpty': '（还没用过任何仓库，点「设置…」从列表选择）',
   'gh.selected': '已选：{0}',
+  'gh.download': '下载',
   'gh.pickOne': '在左侧列表选择一个仓库',
   'fav.addNamed': '添加到收藏：{0}',
   'fav.settings': '设置…',
