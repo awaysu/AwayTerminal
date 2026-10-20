@@ -1,6 +1,6 @@
 # 代理團隊（Multi-Agent）
 
-2～4 個互動 AI CLI（ClaudeCode／Codex／OpenCode／GeminiCLI／Grok）各帶一個角色，用專案裡的
+2～4 個互動 AI CLI（ClaudeCode／Codex／OpenCode／Antigravity／Grok）各帶一個角色，用專案裡的
 `.ai/bus/` 資料夾互寄信，AwayTerminal 看到新信就在**收件人閒置時**把「請讀 …」那一行
 打進它的終端機。
 
@@ -36,7 +36,7 @@ Agent ID ＝ `Agent-{組號}{格號}`，組號 1～9（最多同時 9 組），�
 | 閒置檢查 | 30 分鐘 | 整組閒置這麼久就請 Agent-x1 問大家狀況（15／30／60／不檢查） |
 | **沙盒** | **關** | 新版才有，見第 6 節。2026-10-02 起預設關（原本預設開） |
 | 每格：啟用 | 格 1、2 | 格 1 一定啟用（使用者就是要跟它說話），不能取消 |
-| 每格：代理人類型 | 第一個找得到的 | ClaudeCode／Codex／OpenCode／GeminiCLI／Grok（2.1.7）；**這台沒裝的不列** |
+| 每格：代理人類型 | 第一個找得到的 | ClaudeCode／Codex／OpenCode／Antigravity（2.1.9）／Grok（2.1.7）；**這台沒裝的不列**。GeminiCLI 2.1.9 起不在團隊裡（自訂連線照舊） |
 | 每格：代理人角色 | PM／SE／Architect／QA | `roles/*.md` 的檔名，可自己加 |
 | 每格：**模型** | 那一家 CLI 上次選的（沒選過＝預設） | 2.0.2 新增。**設定視窗的「開啟時可選模型」有勾才會顯示這一欄**（2.0.3，預設沒勾；沒勾時新開的格用 CLI 的預設、既有的格沿用原本的模型）。可編輯下拉：清單是視窗打開前問 CLI 的（Codex `codex debug models`、OpenCode `opencode models`；Claude Code 與 Gemini CLI 沒有列清單的指令，是別名加上從它們的程式本體找出來的每個版本），也可以自己打。選了就用 `--model <名稱>` 啟動那一格；「預設」＝不加參數。**啟動時才生效**，既有團隊改模型＝重開那一格。恢復分頁與我的最愛都會記住；記下來的模型不在清單裡時才再問一次（`agent/models.rs`） |
 
@@ -104,7 +104,7 @@ Agent ID ＝ `Agent-{組號}{格號}`，組號 1～9（最多同時 9 組），�
 | ClaudeCode | `--append-system-prompt-file "<角色檔>"` | 附加在預設系統提示後（舊版 1.1.11 實跑驗證） |
 | Codex | `-c tui.whimsy=false -c "developer_instructions='…整份角色檔…'"` | 只有字串版、沒有檔案版（官方 issue #12926 not-planned）。超過 8000 字或經 PowerShell 啟動（cmd.exe 命令列上限 8191）→ 改帶一句「先讀角色檔」 |
 | OpenCode | `--auto` ＋ **第一次閒置時打**「先讀角色檔，讀完回 READY」 | 沒有每 session 附加系統提示的參數；`--auto` 是因為一跳權限詢問就卡住 |
-| GeminiCLI | 同上（只打字） | `GEMINI_SYSTEM_MD` 會**整份取代**內建提示 |
+| Antigravity（2.1.9） | `-i "<先讀角色檔的短指引>"` ＋ `--dangerously-skip-permissions` | 沒有附加系統提示的參數，但 `-i`（`--prompt-interactive`）會在啟動後先跑這一句再進互動模式，不必等閒置再打字；`--dangerously-skip-permissions` 同 OpenCode 的 `--auto`（連線參數已有它或 `--mode` 就不再加）。GeminiCLI 2.1.9 起不在團隊裡：它只能靠打字（`GEMINI_SYSTEM_MD` 會整份取代內建提示） |
 | Grok（2.1.7） | `--rules "<先讀角色檔的短指引>"` ＋ `--always-approve` | `--rules`（別名 `--append-system-prompt`）附加在預設系統提示後，但只有字串版、沒有檔案版，所以帶短指引不內嵌整份；`--always-approve` 同 OpenCode 的 `--auto`（連線參數已有 `--always-approve`／`--yolo`／`--permission-mode` 就不再加） |
 
 `tui.whimsy=false` 的理由（舊版 probe 實錄）：gpt-6-astra 閒置時輸入框有星星閃爍動畫，

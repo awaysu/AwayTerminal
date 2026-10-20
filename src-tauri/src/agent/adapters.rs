@@ -9,13 +9,13 @@
 //! | ClaudeCode | `--append-system-prompt-file "<角色檔>"` | 附加在預設系統提示後（舊版 1.1.11 實跑驗證） |
 //! | Codex | `-c tui.whimsy=false -c "developer_instructions='…'"` | 只有字串版、沒有檔案版（官方 issue #12926 not-planned） |
 //! | OpenCode | `--auto` ＋ 第一次閒置時打「請先讀角色檔，讀完回 READY」 | 沒有每 session 附加系統提示的參數 |
-//! | GeminiCLI | 第一次閒置時打同一句 | `GEMINI_SYSTEM_MD` 會**整份取代**內建提示，不適合注入角色 |
+//! | Antigravity | `-i "<短指引>"` ＋ `--dangerously-skip-permissions` | 沒有附加系統提示的參數；`-i`（`--prompt-interactive`）＝啟動後先跑這一句再進互動模式（agy 1.4.2 `--help`；2.1.9）。GeminiCLI 2.1.9 起不在團隊裡（使用者 2026-10-20 決定；它的 `GEMINI_SYSTEM_MD` 會整份取代內建提示，一直只能靠打字） |
 //! | Grok | `--rules "<短指引>"` ＋ `--always-approve` | `--rules`（別名 `--append-system-prompt`）包成 `<human_rules>` 附加在預設系統提示後（grok 1.0.62 `-p` 實測有效；2.1.7）。只有字串版，所以帶「先讀角色檔」的短指引，不內嵌整份 |
 
 use crate::settings::{CustomConn, SettingsStore};
 
 /// 五家的 key（＝圖示 key）。順序＝設定視窗下拉的順序。
-pub const ALL_KEYS: &[&str] = &["claude-code", "codex", "opencode", "geminicli", "grok"];
+pub const ALL_KEYS: &[&str] = &["claude-code", "codex", "opencode", "antigravity", "grok"];
 
 /// Codex 的 `developer_instructions` 直接內嵌的字數上限（超過就改帶短指引）。
 const MAX_INLINE: usize = 8000;
@@ -26,7 +26,8 @@ pub enum Backend {
     ClaudeCode,
     Codex,
     OpenCode,
-    GeminiCli,
+    /// Google 的 Antigravity CLI（執行檔叫 `agy`；2.1.9 加進團隊，接下 GeminiCLI 的位置）。
+    Antigravity,
     /// xAI 的 Grok CLI（Grok Build，執行檔叫 `grok`；2.1.7 加進團隊）。
     Grok,
 }
@@ -37,7 +38,7 @@ impl Backend {
             "claude-code" => Self::ClaudeCode,
             "codex" => Self::Codex,
             "opencode" => Self::OpenCode,
-            "geminicli" => Self::GeminiCli,
+            "antigravity" => Self::Antigravity,
             "grok" => Self::Grok,
             _ => return None,
         })
@@ -48,7 +49,7 @@ impl Backend {
             Self::ClaudeCode => "claude-code",
             Self::Codex => "codex",
             Self::OpenCode => "opencode",
-            Self::GeminiCli => "geminicli",
+            Self::Antigravity => "antigravity",
             Self::Grok => "grok",
         }
     }
@@ -59,19 +60,20 @@ impl Backend {
             Self::ClaudeCode => "ClaudeCode",
             Self::Codex => "Codex",
             Self::OpenCode => "OpenCode",
-            Self::GeminiCli => "GeminiCLI",
+            Self::Antigravity => "Antigravity",
             Self::Grok => "Grok",
         }
     }
 
     /// 執行檔名含這個字就算同一種（使用者換過圖示或手動新增的自訂連線）。
-    /// Grok 例外：要**整個檔名相等**（同 `sandbox::tool_kind`，別把名字裡剛好有 grok 的工具算進來）。
+    /// Grok、Antigravity 例外：要**整個檔名相等**（`grok`／`agy`；同 `sandbox::tool_kind`，別把
+    /// 名字裡剛好有 grok 的工具或 strategy.exe 算進來）；檔名含 `antigravity` 也算 Antigravity。
     fn exe_word(self) -> &'static str {
         match self {
             Self::ClaudeCode => "claude",
             Self::Codex => "codex",
             Self::OpenCode => "opencode",
-            Self::GeminiCli => "gemini",
+            Self::Antigravity => "agy",
             Self::Grok => "grok",
         }
     }
@@ -84,6 +86,7 @@ impl Backend {
             .unwrap_or_default();
         match self {
             Self::Grok => stem == "grok",
+            Self::Antigravity => stem == "agy" || stem.contains("antigravity"),
             _ => stem.contains(self.exe_word()),
         }
     }
@@ -276,13 +279,28 @@ pub fn build_launch(
                 )),
             }
         }
-        Backend::GeminiCli => Launch {
-            extra_args: String::new(),
-            first_message: Some(format!(
+        Backend::Antigravity => {
+            // 沒有附加系統提示的參數（agy 1.4.2 `--help`），但有 `-i`／`--prompt-interactive`：
+            // 「Run an initial prompt interactively and continue the session」→ 啟動就先跑
+            // 「先讀角色檔」的短指引，比等閒置再打字可靠（不用猜它什麼時候準備好）。
+            // `--dangerously-skip-permissions`：同 OpenCode 的 --auto；連線參數已有它或 `--mode`
+            // 就不再加。
+            let has_perm = conn.args.split_whitespace().any(|w| {
+                let w = w.to_ascii_lowercase();
+                w == "--dangerously-skip-permissions" || w.starts_with("--mode")
+            });
+            let text = one_line(&format!(
                 "{} After reading it, reply only with READY.",
                 pointer(agent_id, role_title, role_file)
-            )),
-        },
+            ));
+            Launch {
+                extra_args: format!(
+                    "{} -i \"{text}\"",
+                    if has_perm { "" } else { " --dangerously-skip-permissions" }
+                ),
+                first_message: None,
+            }
+        }
         Backend::Grok => {
             // `--rules`：附加在預設系統提示後（grok 1.0.62 實測 `-p` 模式有效；它的文件
             // 12-project-rules.md：包成 `<human_rules>`）。只有字串版，所以帶短指引、不內嵌整份
@@ -322,7 +340,8 @@ mod tests {
     #[test]
     fn maps_keys_and_names() {
         assert_eq!(Backend::by_key("CLAUDE-CODE"), Some(Backend::ClaudeCode));
-        assert_eq!(Backend::by_key("geminicli"), Some(Backend::GeminiCli));
+        assert_eq!(Backend::by_key("antigravity"), Some(Backend::Antigravity));
+        assert_eq!(Backend::by_key("geminicli"), None, "2.1.9 起 GeminiCLI 不在團隊裡");
         assert_eq!(Backend::by_key("aider"), None);
         assert_eq!(display_name_of("codex"), "Codex");
         assert_eq!(display_name_of("nope"), "nope", "認不出來就原樣回傳");
@@ -336,7 +355,9 @@ mod tests {
         assert_eq!(backend_of(&c), Some(Backend::Codex), "圖示是 codex");
         assert_eq!(backend_of(&conn("C:\\npm\\opencode.cmd", "", true)), Some(Backend::OpenCode));
         assert_eq!(backend_of(&conn("C:\\bin\\claude.exe", "", false)), Some(Backend::ClaudeCode));
-        assert_eq!(backend_of(&conn("/usr/bin/gemini", "", false)), Some(Backend::GeminiCli));
+        assert_eq!(backend_of(&conn("/usr/bin/gemini", "", false)), None, "GeminiCLI 不是團隊的 Backend");
+        assert_eq!(backend_of(&conn(r"C:\Users\x\AppData\Local\agy\bin\agy.exe", "", false)), Some(Backend::Antigravity));
+        assert_eq!(backend_of(&conn(r"C:\tools\strategy.exe", "", false)), None, "agy 要整個檔名相等");
         assert_eq!(backend_of(&conn(r"C:\Users\x\.grok\bin\grok.exe", "", false)), Some(Backend::Grok));
         assert_eq!(backend_of(&conn(r"C:\tools\grokker.exe", "", false)), None, "grok 要整個檔名相等");
         assert_eq!(backend_of(&conn("C:\\Windows\\System32\\wsl.exe", "", false)), None);
@@ -436,19 +457,33 @@ mod tests {
         assert_eq!(l2.extra_args, "");
     }
 
-    /// Gemini：完全不加參數，只靠第一句。
+    /// Antigravity：`-i` 帶短指引（啟動就先跑）＋ `--dangerously-skip-permissions`；已有權限參數就不加。
     #[test]
-    fn gemini_only_types_the_first_message() {
+    fn antigravity_uses_prompt_interactive_and_skips_permissions() {
         let l = build_launch(
-            Backend::GeminiCli,
-            &conn("C:\\g\\gemini.cmd", "", false),
+            Backend::Antigravity,
+            &conn(r"C:\a\agy.exe", "", false),
             "Agent-14",
-            "None",
-            "C:\\d\\Agent-14.md",
+            "Planner",
+            r"C:\d\Agent-14.md",
+            "whole role text",
+        );
+        assert!(l.extra_args.starts_with(" --dangerously-skip-permissions -i \""), "{}", l.extra_args);
+        assert!(l.extra_args.contains(r"read the file C:\d\Agent-14.md"));
+        assert!(l.extra_args.ends_with("reply only with READY.\""));
+        assert!(!l.extra_args.contains("whole role text"));
+        assert!(!l.extra_args.contains('\n'));
+        assert_eq!(l.first_message, None);
+
+        let l2 = build_launch(
+            Backend::Antigravity,
+            &conn(r"C:\a\agy.exe", "--mode auto", false),
+            "Agent-14",
+            "Planner",
+            r"C:\d\Agent-14.md",
             "",
         );
-        assert_eq!(l.extra_args, "");
-        assert!(l.first_message.is_some());
+        assert!(l2.extra_args.starts_with(" -i \""), "{}", l2.extra_args);
     }
 
     /// Grok：`--rules` 帶短指引（不是整份角色檔）＋ `--always-approve`；已有權限參數就不加。

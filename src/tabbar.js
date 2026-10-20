@@ -1678,11 +1678,12 @@ function renderConnMenu(list) {
     label.className = 'menu-label';
     label.textContent = c.name;
     item.appendChild(label);
-    if (!c.sandbox) {
-      // 沒開沙盒的要一眼看得出來——這是使用者最在意的那個開關
+    if (c.sandbox) {
+      // 有開沙盒的標綠色「沙盒模式」；沒開的不標（使用者 2026-10-20 改的：原本是標紅色「無沙盒」，
+      // 但沙盒預設關、大多數連線都沒開，整排紅字反而刺眼）
       const tag = document.createElement('span');
-      tag.className = 'menu-tag';
-      tag.textContent = T['conn.sandboxOff'];
+      tag.className = 'menu-tag on';
+      tag.textContent = T['sb.menu'];
       item.appendChild(tag);
     }
     el.newConns.appendChild(item);

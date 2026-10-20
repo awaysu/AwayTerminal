@@ -353,6 +353,8 @@ body.col-resizing { cursor: col-resize; user-select: none; }
   margin-left: 8px; padding: 0 4px; border-radius: 6px;
   background: #4a2e2e; color: #EF9A9A; font-size: 10px;
 }
+/* 有開沙盒＝綠色（新分頁下拉只標有開的） */
+.popup-menu .menu-tag.on { background: #26402a; color: #A5D6A7; }
 
 /* 自訂連線設定對話框 */
 #conns {

@@ -1,6 +1,6 @@
 # AI 聊天室（`.ai/chat/`）
 
-2～4 個 AI（ClaudeCode／Codex／OpenCode／GeminiCLI／Grok）各帶一個角色，針對使用者給的主題
+2～4 個 AI（ClaudeCode／Codex／OpenCode／Antigravity／Grok）各帶一個角色，針對使用者給的主題
 **輪流**討論，最後由主持人寫結論。搬移自舊版 v1.2.8 的
 `MainWindow.ChatRoom.cs`、`Services/ChatRoom/ChatRoleLibrary.cs`、`Resources/ChatRoom/`。
 

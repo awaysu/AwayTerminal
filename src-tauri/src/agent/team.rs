@@ -76,7 +76,7 @@ pub struct Slot {
     pub role: String,
     /// 角色標題（角色檔第一個 `#` 標題；None＝`None`）。
     pub role_title: String,
-    /// CLI 種類（`claude-code`／`codex`／`opencode`／`geminicli`）。
+    /// CLI 種類（`claude-code`／`codex`／`opencode`／`antigravity`／`grok`）。
     pub backend: String,
     /// 這一格用的模型（傳給 CLI 的 `--model`；空＝預設，不加參數）。**啟動時才生效**，
     /// 所以改模型和改 CLI／角色一樣要重開那一格。

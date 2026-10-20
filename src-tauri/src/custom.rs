@@ -72,9 +72,9 @@ pub const KNOWN_TOOLS: &[KnownTool] = &[
         pick_dir: true,
     },
     // Antigravity CLI（Google，2026-05 推出；指令叫 `agy`，Go 單一執行檔，Windows 裝在
-    // %LOCALAPPDATA%\agy\bin，mac／Linux 在 ~/.local/bin）。2.0.6 只做到「自訂連線＋選模型＋沙盒」
-    // （使用者 2026-10-05 定的第 1 層），代理團隊還不能選它。參數留空（要跳過核准的人自己加
-    // --dangerously-skip-permissions）
+    // %LOCALAPPDATA%\agy\bin，mac／Linux 在 ~/.local/bin）。2.0.6 先做「自訂連線＋選模型＋沙盒」
+    // （第 1 層），2.1.9 起代理團隊也能選它（團隊裡自動帶 --dangerously-skip-permissions）。
+    // 參數留空（自己開連線要跳過核准的人自己加 --dangerously-skip-permissions）
     KnownTool {
         name: "Antigravity",
         exe_names: &["agy.exe", "agy"],

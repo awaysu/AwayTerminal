@@ -9,7 +9,7 @@
 //! | OpenCode | `opencode models`（一行一個 `供應商/模型`） | 權威 |
 //! | Claude Code | **沒有列清單的指令** → 內建別名（`--help` 寫的那幾個）＋從它的程式本體（`claude.exe`／`cli.js`）找出來的每個版本，`~/.claude.json` 補 `[1m]` 的寫法（2.0.3） | 不權威 |
 //! | Gemini CLI | 沒有列清單的指令 → 別名（auto／pro／flash／flash-lite）＋從它的程式本體找出來的每個版本（2.0.3）；找不到程式本體就只能自己輸入 | 不權威 |
-//! | Antigravity CLI | 沒有列清單的指令，而且它的清單在伺服器上（程式本體只看得到 `GetCascadeModelConfigs` 這種 RPC 名）→ **內建的靜態清單**（[`ANTIGRAVITY_MODELS`]，從 1.2.16 的程式本體字串整理的；2.0.6） | 不權威 |
+//! | Antigravity CLI | `agy models`（agy 1.4.2 起有；一行一個 `id<TAB>顯示名`，第一行是「Fetching available models...」；2.1.9）。跑不起來（舊版 agy）才退回**內建的靜態清單**（[`ANTIGRAVITY_MODELS`]，從 1.2.16 的程式本體字串整理的；2.0.6） | 權威（2.1.9 起；退回靜態清單時不權威） |
 //! | Grok CLI（xAI Grok Build） | `grok models`（列出這個帳號能用的模型；2.0.10）。輸出是說明文字＋`  * grok-4.7 (default)` 這種清單（2.0.12 在 grok 1.0.46 實機確認），[`parse_grok`] 取每行第一個像模型名稱的字 | 權威（2.0.12 起） |
 //!
 //! 「權威」＝清單是 CLI 自己回報的，所以「上次用的模型不在裡面」是真的不見了，要請使用者重選。
@@ -19,9 +19,9 @@
 //! 使用者在自訂連線的「參數」欄自己寫了 `--model`／`-m` 時，選了模型就把它拿掉再接上新的
 //! （Codex 重複給會直接報錯）。
 //!
-//! Antigravity CLI 只做到這一層（使用者 2026-10-05 定的「第 1 層」：自訂連線＋選模型＋沙盒），
-//! **代理團隊不能選它**——所以它不是 [`adapters::Backend`]，這裡另外用 [`ModelCli`] 把五家包起來。
-//! Grok CLI（2.0.10）同樣只做到第 1 層，也是 [`ModelCli`] 另外的一家。
+//! 2.1.9 起 Antigravity 進了代理團隊（[`adapters::Backend::Antigravity`]），GeminiCLI 退出團隊
+//! （使用者 2026-10-20 決定）但自訂連線與選模型照舊——所以這裡用 [`ModelCli`] 把團隊那五家
+//! 加上「只做到選模型」的 GeminiCLI 包起來（2.0.6～2.1.8 這個位置是 Antigravity）。
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -65,21 +65,21 @@ pub const ANTIGRAVITY_MODELS: &[(&str, &str)] = &[
     ("gpt-oss-120b", "GPT-OSS 120B"),
 ];
 
-/// 模型清單認得的 CLI：代理團隊那五家（[`Backend`]，Grok 2.1.7 起也在裡面），加上只做到
-/// 「自訂連線＋選模型」的 Antigravity。
+/// 模型清單認得的 CLI：代理團隊那五家（[`Backend`]，Grok 2.1.7、Antigravity 2.1.9 起在裡面），
+/// 加上只做到「自訂連線＋選模型」的 GeminiCLI（2.1.9 起退出團隊）。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ModelCli {
     Agent(Backend),
-    Antigravity,
+    GeminiCli,
 }
 
 impl ModelCli {
-    /// Antigravity 的 key（＝圖示 key、`last_models` 的 key）。
-    pub const ANTIGRAVITY_KEY: &'static str = "antigravity";
+    /// GeminiCLI 的 key（＝圖示 key、`last_models` 的 key）。
+    pub const GEMINI_KEY: &'static str = "geminicli";
 
     pub fn by_key(key: &str) -> Option<Self> {
-        if key.eq_ignore_ascii_case(Self::ANTIGRAVITY_KEY) {
-            return Some(Self::Antigravity);
+        if key.eq_ignore_ascii_case(Self::GEMINI_KEY) {
+            return Some(Self::GeminiCli);
         }
         Backend::by_key(key).map(Self::Agent)
     }
@@ -87,14 +87,14 @@ impl ModelCli {
     pub fn key(self) -> &'static str {
         match self {
             Self::Agent(b) => b.key(),
-            Self::Antigravity => Self::ANTIGRAVITY_KEY,
+            Self::GeminiCli => Self::GEMINI_KEY,
         }
     }
 
     pub fn display_name(self) -> &'static str {
         match self {
             Self::Agent(b) => b.display_name(),
-            Self::Antigravity => "Antigravity",
+            Self::GeminiCli => "GeminiCLI",
         }
     }
 
@@ -104,10 +104,10 @@ impl ModelCli {
         if let Some(b) = adapters::backend_of(conn) {
             return Some(Self::Agent(b));
         }
-        if conn.icon.eq_ignore_ascii_case(Self::ANTIGRAVITY_KEY)
-            || crate::sandbox::tool_kind(&conn.path) == crate::sandbox::ToolKind::Antigravity
+        if conn.icon.eq_ignore_ascii_case(Self::GEMINI_KEY)
+            || crate::sandbox::tool_kind(&conn.path) == crate::sandbox::ToolKind::Gemini
         {
-            return Some(Self::Antigravity);
+            return Some(Self::GeminiCli);
         }
         None
     }
@@ -300,6 +300,32 @@ pub fn parse_grok(text: &str) -> Vec<ModelInfo> {
         out.push(ModelInfo {
             id: id.to_string(),
             label: id.to_string(),
+        });
+    }
+    out
+}
+
+/// `agy models` 的輸出（agy 1.4.2 實錄，2026-10-20）：
+///
+/// ```text
+/// Fetching available models...
+/// gemini-3.8-flash-high	Gemini 3.8 Flash (High)
+/// claude-sonnet-4-6	Claude Sonnet 4.6 (Thinking)
+/// ```
+///
+/// 一行一個 `id<TAB>顯示名`；沒有 TAB 的行（說明文字、錯誤）跳過，重複的只留一個。
+pub fn parse_agy(text: &str) -> Vec<ModelInfo> {
+    let mut out: Vec<ModelInfo> = Vec::new();
+    for line in text.lines() {
+        let Some((id, label)) = line.split_once('\t') else { continue };
+        let id = id.trim();
+        let label = label.trim();
+        if !valid_model(id) || id.chars().any(|c| c.is_whitespace()) || out.iter().any(|m| m.id == id) {
+            continue;
+        }
+        out.push(ModelInfo {
+            id: id.to_string(),
+            label: if label.is_empty() { id.to_string() } else { label.to_string() },
         });
     }
     out
@@ -821,10 +847,18 @@ fn fetch(cli: ModelCli, conn: &CustomConn, refresh: bool) -> ModelList {
     };
     let backend = match cli {
         ModelCli::Agent(b) => b,
-        ModelCli::Antigravity => {
-            // 清單在它的伺服器上，程式本體找不到 → 內建的靜態清單（`static`：提示列會講清楚）
-            list.models = antigravity_models();
-            list.source = "static".to_string();
+        ModelCli::GeminiCli => {
+            // 沒有列清單的指令：去它的程式本體裡找（同 Claude Code）。找不到（裝法不認得）
+            // 就維持沒有清單，使用者自己輸入
+            let models = gemini_program_dirs(exe)
+                .iter()
+                .map(|d| gemini_models(&scan_gemini_dir(d)))
+                .find(|m| !m.is_empty())
+                .unwrap_or_default();
+            if !models.is_empty() {
+                list.models = models;
+                list.source = "builtin".to_string();
+            }
             return list;
         }
     };
@@ -881,17 +915,24 @@ fn fetch(cli: ModelCli, conn: &CustomConn, refresh: bool) -> ModelList {
             list.models = claude_models(&known, &seen);
             list.source = "builtin".to_string();
         }
-        Backend::GeminiCli => {
-            // 也沒有列清單的指令：去它的程式本體裡找（同 Claude Code）。找不到（裝法不認得）
-            // 就維持沒有清單，使用者自己輸入
-            let models = gemini_program_dirs(exe)
-                .iter()
-                .map(|d| gemini_models(&scan_gemini_dir(d)))
-                .find(|m| !m.is_empty())
-                .unwrap_or_default();
-            if !models.is_empty() {
-                list.models = models;
-                list.source = "builtin".to_string();
+        Backend::Antigravity => {
+            // `agy models`（1.4.2 起）＝這個帳號能用的模型 → 權威。舊版 agy 沒這個子指令、或沒登入
+            // → 退回內建的靜態清單（`static`：提示列會講清楚可能過時）
+            match run(exe, &["models"], LIST_TIMEOUT).map(|t| parse_agy(&t)) {
+                Ok(models) if !models.is_empty() => {
+                    list.models = models;
+                    list.source = "cli".to_string();
+                    list.authoritative = true;
+                    list.note = format!("{exe_name} models");
+                }
+                other => {
+                    list.models = antigravity_models();
+                    list.source = "static".to_string();
+                    list.note = match other {
+                        Err(e) => e,
+                        Ok(_) => "empty list".to_string(),
+                    };
+                }
             }
         }
         Backend::Grok => {
@@ -944,7 +985,7 @@ pub fn list_for(settings: &SettingsStore, cli: ModelCli, conn: &CustomConn, refr
                 if l.note.is_empty() { String::new() } else { format!("，{}", l.note) }
             );
             // 失敗的結果不快取：使用者修好（例如重新登入）之後下一次就要拿得到
-            if l.source != "none" || cli == ModelCli::Agent(Backend::GeminiCli) {
+            if l.source != "none" || cli == ModelCli::GeminiCli {
                 if let Ok(mut c) = cache().lock() {
                     c.insert(key, (Instant::now(), l.clone()));
                 }
@@ -1041,7 +1082,7 @@ pub async fn cli_models(
     let settings = settings.inner().clone();
     let refresh = refresh.unwrap_or(false);
     tokio::task::spawn_blocking(move || {
-        // 代理團隊的設定視窗只會問四家；Antigravity 不在團隊裡，這裡不認它（它的清單走 `conn_models`）
+        // 代理團隊的設定視窗只問團隊那五家；GeminiCLI 不在團隊裡，這裡不認它（它的清單走 `conn_models`）
         let jobs: Vec<(ModelCli, CustomConn)> = backends
             .iter()
             .filter_map(|k| Backend::by_key(k))
@@ -1403,9 +1444,10 @@ mod tests {
         );
     }
 
-    /// Antigravity CLI（2.0.6，只做到選模型）：圖示或執行檔名 `agy` 都認得；不是代理團隊的 Backend。
+    /// Antigravity CLI：圖示或執行檔名 `agy` 都認得；2.1.9 起也是代理團隊的 Backend。
+    /// GeminiCLI 反過來：2.1.9 起只做到選模型，不是 Backend。
     #[test]
-    fn antigravity_is_a_model_cli_but_not_a_team_backend() {
+    fn antigravity_is_a_team_backend_and_gemini_is_model_only() {
         let conn = |path: &str, icon: &str| CustomConn {
             name: "x".into(),
             path: path.into(),
@@ -1418,14 +1460,28 @@ mod tests {
         } else {
             "/home/x/.local/bin/agy"
         };
-        assert_eq!(ModelCli::of_conn(&conn(agy, "run")), Some(ModelCli::Antigravity));
-        assert_eq!(ModelCli::of_conn(&conn("D:\\tools\\mything.exe", "antigravity")), Some(ModelCli::Antigravity));
+        assert_eq!(ModelCli::of_conn(&conn(agy, "run")), Some(ModelCli::Agent(Backend::Antigravity)));
+        assert_eq!(
+            ModelCli::of_conn(&conn("D:\\tools\\mything.exe", "antigravity")),
+            Some(ModelCli::Agent(Backend::Antigravity))
+        );
         assert_eq!(ModelCli::of_conn(&conn("C:\\npm\\claude.cmd", "run")), Some(ModelCli::Agent(Backend::ClaudeCode)));
         assert_eq!(ModelCli::of_conn(&conn("C:\\x\\strategy.exe", "run")), None);
-        assert_eq!(ModelCli::by_key("ANTIGRAVITY"), Some(ModelCli::Antigravity));
+        assert_eq!(ModelCli::by_key("ANTIGRAVITY"), Some(ModelCli::Agent(Backend::Antigravity)));
         assert_eq!(ModelCli::by_key("codex"), Some(ModelCli::Agent(Backend::Codex)));
-        assert_eq!(Backend::by_key("antigravity"), None, "代理團隊不能選它（第 1 層）");
-        assert_eq!(ModelCli::Antigravity.key(), "antigravity");
+        assert_eq!(Backend::by_key("antigravity"), Some(Backend::Antigravity), "2.1.9 起代理團隊可以選它");
+        assert_eq!(ModelCli::Agent(Backend::Antigravity).key(), "antigravity");
+        // GeminiCLI：圖示或執行檔名 gemini 都認得，但不是 Backend
+        assert_eq!(ModelCli::of_conn(&conn("C:\\npm\\gemini.cmd", "run")), Some(ModelCli::GeminiCli));
+        assert_eq!(ModelCli::of_conn(&conn("D:\\x\\tool.exe", "geminicli")), Some(ModelCli::GeminiCli));
+        assert_eq!(ModelCli::by_key("GeminiCLI"), Some(ModelCli::GeminiCli));
+        assert_eq!(ModelCli::GeminiCli.key(), "geminicli");
+        assert_eq!(Backend::by_key("geminicli"), None, "2.1.9 起代理團隊不能選它");
+
+        // `agy models` 的輸出
+        let m = parse_agy("Fetching available models...\ngemini-3.8-flash-high\tGemini 3.8 Flash (High)\r\nclaude-sonnet-4-6\tClaude Sonnet 4.6 (Thinking)\ngemini-3.8-flash-high\tdup\nError: not logged in\n");
+        assert_eq!(m.iter().map(|x| x.id.as_str()).collect::<Vec<_>>(), ["gemini-3.8-flash-high", "claude-sonnet-4-6"]);
+        assert_eq!(m[0].label, "Gemini 3.8 Flash (High)");
 
         // 靜態清單：id 都合法、不重複、Gemini 在前
         let list = antigravity_models();

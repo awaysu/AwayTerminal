@@ -101,7 +101,7 @@ impl TeamManager {
 #[serde(rename_all = "camelCase")]
 pub struct SlotSetup {
     pub enabled: bool,
-    /// CLI 種類（`claude-code`／`codex`／`opencode`／`geminicli`／`grok`）。
+    /// CLI 種類（`claude-code`／`codex`／`opencode`／`antigravity`／`grok`；`geminicli` 2.1.9 起不在團隊裡）。
     pub backend: String,
     /// 角色檔名（空＝None）。
     pub role: String,

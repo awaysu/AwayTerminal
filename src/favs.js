@@ -93,7 +93,7 @@ function isTeam(f) {
 
 /** 團隊成員的簡述：`ClaudeCode／Codex·gpt-6-sol`（有選模型的格多標模型）。 */
 function teamMembers(f) {
-  const names = { 'claude-code': 'ClaudeCode', codex: 'Codex', opencode: 'OpenCode', geminicli: 'GeminiCLI' };
+  const names = { 'claude-code': 'ClaudeCode', codex: 'Codex', opencode: 'OpenCode', antigravity: 'Antigravity', grok: 'Grok', geminicli: 'GeminiCLI' };
   return ((f.team && f.team.slots) || [])
     .filter((s) => s.enabled)
     .map((s) => {
