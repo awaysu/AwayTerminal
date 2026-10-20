@@ -75,22 +75,6 @@
 
 ---
 
-## 下載
-
-請到 <https://www.awaysu.cc/software/awayterminal> 下載。
-Windows 有安裝檔（`.exe`）與免安裝版（`.zip`）。
-
-⚠️ 目前**還沒有程式碼簽章**，Windows 的 SmartScreen 會出現警告
-（[docs/RELEASE.md](docs/RELEASE.md) 說明原因與計畫）。
-
-### 從舊版升級
-
-第一次啟動會問要不要匯入 `%LOCALAPPDATA%\AwayTerminal\settings.json`（**唯讀，不改動舊檔**）。
-對照表與 21 條刻意跳過的欄位見 [docs/MIGRATION.md](docs/MIGRATION.md)。
-兩個版本可以並存（設定放在不同地方）。
-
----
-
 ## 從原始碼建置
 
 需要 Rust（1.89+）、Node 20+、以及各平台的 webview 開發套件。

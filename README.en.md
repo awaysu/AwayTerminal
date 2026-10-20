@@ -75,23 +75,6 @@ Type multi-line text, or load a prompt you wrote earlier from a text file, and s
 
 ---
 
-## Download
-
-Download from <https://www.awaysu.cc/software/awayterminal>.
-For Windows there is an installer (`.exe`) and a portable version (`.zip`).
-
-⚠️ The binaries are **not code-signed yet**, so Windows SmartScreen will warn
-([docs/RELEASE.md](docs/RELEASE.md) explains why and what the plan is).
-
-### Upgrading from 1.x
-
-On first run it offers to import `%LOCALAPPDATA%\AwayTerminal\settings.json`
-(**read-only; the old file is never modified**). The field mapping and the 21 deliberately
-skipped keys are in [docs/MIGRATION.md](docs/MIGRATION.md). Both versions can coexist —
-they store settings in different places.
-
----
-
 ## Building from source
 
 You need Rust (1.89+), Node 20+, and your platform's webview development packages.
