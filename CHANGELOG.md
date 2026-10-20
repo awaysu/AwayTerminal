@@ -5,7 +5,7 @@
 
 ---
 
-## 未發佈
+## 2.1.9（2026-10-20）
 
 - **代理團隊／AI 聊天室可以選 Antigravity**（Google Antigravity CLI，指令 `agy`）：角色用 `-i "<先讀角色檔的短指引>"`
   （啟動後先跑這一句再進互動模式）、團隊裡自動帶 `--dangerously-skip-permissions`。模型清單改問 `agy models`
