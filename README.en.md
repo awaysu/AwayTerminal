@@ -4,8 +4,6 @@
 
 [繁體中文](README.md)　|　MIT licence　|　Download: <https://www.awaysu.cc/software/awayterminal>
 
-![AwayTerminal: the New Tab menu lists Claude Code, Codex, OpenCode, Antigravity, Grok and more](docs/img/awterminal01.jpg)
-
 ---
 
 ## For working with AI agents

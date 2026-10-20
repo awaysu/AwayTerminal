@@ -4,8 +4,6 @@
 
 [English](README.en.md)　|　授權 MIT　|　下載：<https://www.awaysu.cc/software/awayterminal>
 
-![AwayTerminal：新分頁選單裡列出 Claude Code、Codex、OpenCode、Antigravity、Grok 等 AI CLI](docs/img/awterminal01.jpg)
-
 ---
 
 ## 給 AI 開發用的
