@@ -27,6 +27,7 @@
 ---
 
 ## 畫面
+
 ### AI CLI 與忙碌提示
 
 支援 Claude Code、Codex、OpenCode、Antigravity、Grok 等。忙碌中的分頁與工作列圖示會標紅圈，可先縮小視窗去做別的事；右上角即時顯示 Claude Code 與 Codex 的使用額度。

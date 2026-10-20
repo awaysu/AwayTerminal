@@ -27,6 +27,7 @@
 ---
 
 ## Screenshots
+
 ### AI CLIs and the busy indicator
 
 Claude Code, Codex, OpenCode, Antigravity, Grok and more. Busy tabs and the taskbar icon get a red badge, so you can minimise the window and do something else; Claude Code and Codex usage is shown live in the top-right corner.
