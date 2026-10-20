@@ -4,6 +4,8 @@
 
 [English](README.en.md)　|　授權 MIT　|　下載：<https://www.awaysu.cc/software/awayterminal>
 
+![AwayTerminal](docs/img/awterminal00.jpg)
+
 ---
 
 ## 給 AI 開發用的

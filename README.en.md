@@ -4,6 +4,8 @@
 
 [繁體中文](README.md)　|　MIT licence　|　Download: <https://www.awaysu.cc/software/awayterminal>
 
+![AwayTerminal](docs/img/awterminal00.jpg)
+
 ---
 
 ## For working with AI agents
