@@ -1,101 +1,77 @@
-# AwayTerminal 2
+# AwayTerminal
 
-A tabbed terminal: local shells, SSH, Telnet, serial ports, TTL macros, AI agent teams
-and a Telegram remote.
+**A tabbed terminal built for coding with AI agents**, for Windows, macOS and Linux.
 
-[繁體中文](README.md)　|　MIT licence
+[繁體中文](README.md)　|　MIT licence　|　Download: <https://www.awaysu.cc/software/awayterminal>
 
-**This is a cross-platform rewrite of [AwayTerminal 1.x](https://github.com/awaysu/AwayTerminal/tree/1.2.8)**
-(C# WPF + WebView2, Windows only; its source is on the `1.2.8` branch). The goal is "every feature of the old version, the same
-behaviour, faster, and cross-platform".
-
-| | 1.2.8 | This version |
-|---|---|---|
-| Stack | .NET 9 + WPF + WebView2 | **Rust (Tauri 2)** + xterm.js |
-| Platforms | Windows only | Windows (**done**), macOS/Linux (**code written, awaiting real hardware**) |
-| Terminal rendering | DOM | **WebGL** (falls back to DOM automatically) |
-| Needs the .NET runtime | Yes | **No** |
-| Installer | Bundles the .NET + WebView2 installers | ~5.8 MB (WebView2 bootstrapper included) |
-| UI languages | Chinese/English | **Eight** |
-
-The terminal front-end (`src/terminal.js`) is **the original file from the old version**
-with only four necessary changes (+61/−5 lines, each marked `// AT2-n` and documented in
-[docs/TERMINAL-JS-DIFF.md](docs/TERMINAL-JS-DIFF.md)). The long-tuned behaviours — Bopomofo
-composition, re-entering text, multi-line paste into Claude Code — are carried over as-is.
+![AwayTerminal: the New Tab menu lists Claude Code, Codex, OpenCode, Antigravity, Grok and more](docs/img/awterminal01.jpg)
 
 ---
 
-## Status
+## For working with AI agents
 
-| Platform | State |
-|---|---|
-| **Windows 10/11 x64** | Feature-complete; automated and manual tests pass |
-| **macOS** | Platform code written and passing `cargo check`/`clippy` for `aarch64`/`x86_64`, **never run on real hardware** |
-| **Linux** | Same, for `x86_64-unknown-linux-gnu`, **never run on real hardware** |
+- **One-click AI CLIs**: Claude Code, Codex, OpenCode, Antigravity, Grok and more; auto-detects what is installed on this machine.
+- **Multi-Agent team**: mix different AI agents with 2–4 roles (PM, engineer, QA…) working side by side in one window.
+- **AI Chat Room**: mix different AI agents with 2–4 roles taking turns on one topic; the host wraps up with a conclusion.
+- **Telegram remote**: watch the screen, send commands and get a push when a task finishes, from your phone.
+- **GitHub repo list**: download a repo directly and hand it to an AI agent to edit.
+- **Busy indicator**: busy tabs and the taskbar icon get a red badge, so you can minimise the window and do something else.
+- **Usage quota**: Claude Code and Codex usage shown live in the top-right corner.
 
-Not done yet: code signing, auto-update (the config skeleton is in place with an empty
-public key, i.e. the feature is disabled), and macOS/Linux testing and packaging.
-See [docs/PLATFORM-UNIX.md](docs/PLATFORM-UNIX.md) and [CHANGELOG.md](CHANGELOG.md).
+## Regular terminal features
+
+- Local shell, built-in SSH (PuTTY-style, `.ppk`, auto-reconnect), Telnet, serial ports, WSL, ADB.
+- Tabs / split / columns, search, logging, favourites, restore tabs with scrollback, eight UI languages.
+- TeraTerm-compatible TTL macros.
 
 ---
 
-## Features
+## Screenshots
 
-### Connections
+### AI CLIs and the busy indicator
 
-| | |
-|---|---|
-| Local shell (Windows PowerShell/`pwsh`; macOS `$SHELL` = zsh; Linux `$SHELL` = bash) | ✅ |
-| **Built-in SSH** (no longer shells out to `ssh.exe`): in-terminal `login as:`, host-key confirmation (SHA256 + MD5), PuTTY's algorithm ordering with weak-algorithm warnings, `.ppk` keys, Pageant on Windows, keepalive, automatic reconnect | ✅ |
-| **Built-in Telnet**: option negotiation, IAC escaping, **NAWS** (the old version never sent it), `TTYPE` | ✅ |
-| **Serial ports**: friendly USB names, baud/bits/parity/flow control | ✅ |
-| WSL, ADB (device picker via `adb devices`) | ✅ |
-| Custom connections (Claude Code, Codex CLI, Gemini CLI, OpenCode, QwenCode, Antigravity CLI, Grok CLI… with auto-detection) | ✅ |
+Claude Code, Codex, OpenCode, Antigravity, Grok and more. Busy tabs and the taskbar icon get a red badge, so you can minimise the window and do something else; Claude Code and Codex usage is shown live in the top-right corner.
 
-### Terminal and UI
+![New Tab menu and the usage quota in the top-right corner](docs/img/awterminal01.jpg)
 
-Tabs / split / columns (drag to rearrange), right-hand tab strip (resizable, hideable,
-drag to reorder, status lights, rename, runtime in the tooltip), copy / paste-as-plain-text /
-copy-all / save, Ctrl+F search, URL menu, OSC 52 clipboard, Ctrl+wheel zoom, per-tab colours,
-clear screen (with confirmation), the compose window (UTF-8/Big5), session logging (ANSI
-stripped, timestamps, append), favourites, session restore (**including scrollback
-playback**), keepalive, update check, About page.
+### Telegram remote
 
-Eight UI languages: Traditional Chinese, English, Simplified Chinese, Japanese, Korean,
-Spanish, German, French.
+Enter a bot token and chat ID in Settings, then watch the screen and send commands from your phone; a push arrives when a task finishes.
 
-### TTL macros
+![Settings → Remote: Telegram](docs/img/awterminal04.jpg)
+![Claude Code finishing a task](docs/img/awterminal13.jpg)
+![The completion push on the phone](docs/img/telegram01.jpg)
 
-Translated into Rust section by section from TeraTerm's own `ttpmacro/` sources.
-**139 of the 214 reserved words are implemented** — considerably more than the old
-hand-written C# interpreter. Includes `if/elseif/else`, `for/while/until/do`,
-`break/continue`, `goto/call`, `include`, arrays, `sprintf`, date and time, 37 file and
-directory commands, regular expressions ([`fancy-regex`; 28 of 30 measured Oniguruma
-constructs](docs/TTL-REGEX.md)), and CRC/checksums.
+### GitHub repo list
 
-⚠️ **Three places where the old C# interpreter disagreed with TeraTerm are now fixed**:
-`and`/`or`/`xor`/`not` are **bitwise** (not logical), bitwise operators bind tighter than
-comparisons, and integers are 32-bit and wrap. Old `.ttl` files that relied on the wrong
-behaviour will produce different results.
+Lists your repos (including private ones); pick one to download and hand to an AI agent.
 
-### New features (not in the old version)
+![GitHub repo list](docs/img/awterminal05.jpg)
 
-- **Sandbox mode** (an option for custom connections and agent teams, off by default): a `git worktree`
-  per tab, `TEMP`/`CARGO_TARGET_DIR` redirected into the sandbox (**`HOME`/`APPDATA` are
-  deliberately not isolated** — that would log Claude Code and Codex out), a Windows Job
-  Object with kill-on-close (process groups on Unix), and generated guard configuration for
-  each tool (Claude Code's `PreToolUse` hook refuses `taskkill /IM`, deleting paths outside
-  the repo, `git push --force`).
-  **This is a guard rail, not a sandbox** — the agents share the user's login session and
-  can still reach the desktop if they go around it
-  ([docs/AGENT-SANDBOX.md](docs/AGENT-SANDBOX.md) is explicit about this).
-- **Agent teams**: two to four AI CLIs, each with a role, writing to each other through an
-  `.ai/bus/` mailbox, and only typing into a pane while its agent is idle.
-- **AI chat room**: 21 roles taking turns, with a host writing the conclusion into `.ai/chat/`.
-- **Telegram remote**: read panes, send commands, take screenshots, get a push when a tab
-  finishes, with a 37-rule noise filter.
-- Per-tab "push to Telegram" toggle, window geometry persistence, "Select all" in the
-  terminal context menu.
+### Compose text
+
+Type multi-line text, or load a prompt you wrote earlier from a text file, and send it to the AI CLI in one go.
+
+![Compose text dialog](docs/img/awterminal06.jpg)
+
+### Multi-Agent team
+
+Mix different AI agents with 2–4 roles side by side in one window; agents message each other through the project's `.ai/bus/` mailbox.
+
+![Multi-Agent team setup](docs/img/awterminal07.jpg)
+![A team at work: one AI per pane](docs/img/awterminal08.jpg)
+
+### AI Chat Room
+
+Mix different AI agents with 2–4 roles taking turns on one topic; the host wraps up with a conclusion.
+
+![AI Chat Room setup](docs/img/awterminal11.jpg)
+![AI Chat Room in progress](docs/img/awterminal12.jpg)
+
+### macOS and Linux
+
+![Linux](docs/img/awterminal-linux.jpg)
+![macOS](docs/img/awterminal-mac.jpg)
 
 ---
 

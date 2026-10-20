@@ -1,89 +1,77 @@
-# AwayTerminal 2
+# AwayTerminal
 
-分頁式終端機：本機 shell、SSH、Telnet、連接埠（序列埠）、TTL 巨集、AI 代理團隊、Telegram 遠端。
+**專為「用 AI agent 寫程式」設計的分頁式終端機**，支援 Windows、macOS 與 Linux。
 
-[English](README.en.md)　|　授權 MIT
+[English](README.en.md)　|　授權 MIT　|　下載：<https://www.awaysu.cc/software/awayterminal>
 
-**這是 [AwayTerminal 1.x](https://github.com/awaysu/AwayTerminal/tree/1.2.8)（C# WPF + WebView2，僅 Windows；原始碼在 `1.2.8` 分支）
-的跨平台重寫版。** 目標是「舊版所有功能都在、行為相容、跑得更快、而且能跨平台」。
-
-| | 舊版 1.2.8 | 這一版 |
-|---|---|---|
-| 技術 | .NET 9 ＋ WPF ＋ WebView2 | **Rust（Tauri 2）** ＋ xterm.js |
-| 平台 | 只有 Windows | Windows（**完成**）、macOS（**真機自動測試全過，手動項目待驗**）、Linux（**程式寫好了，等機器實測**） |
-| 終端機繪製 | DOM | **WebGL**（載不起來自動退回 DOM） |
-| 需要 .NET 執行環境 | 是 | **不需要** |
-| 安裝檔 | 含 .NET ＋ WebView2 安裝程式 | 約 5.8 MB（含 WebView2 bootstrapper） |
-| 介面語言 | 中／英 | **八種** |
-
-前端的終端機部分（`src/terminal.js`）是**舊版原檔**，只有四處必要修改
-（+61／−5 行，每處都標 `// AT2-n` 並登記在 [docs/TERMINAL-JS-DIFF.md](docs/TERMINAL-JS-DIFF.md)）
-——注音組字、二次輸入、Claude Code 多行貼上這些調校過很久的行為完全沿用。
+![AwayTerminal：新分頁選單裡列出 Claude Code、Codex、OpenCode、Antigravity、Grok 等 AI CLI](docs/img/awterminal01.jpg)
 
 ---
 
-## 狀態
+## 給 AI 開發用的
 
-| 平台 | 狀態 |
-|---|---|
-| **Windows 10／11 x64** | 功能完成，自動與手動測試都跑過 |
-| **macOS** | **Apple Silicon 真機（macOS 26.6）跑過第一批**：`cargo build` 零錯誤、`cargo test` 全過、5 支 probe 全過、`npm run verify` 25 段全過（2026-10-05）。IME／序列埠／沙盒收程序等手動項目待驗，見 [docs/PLATFORM-UNIX.md](docs/PLATFORM-UNIX.md) 第 7 節 |
-| **Linux** | 同上（`x86_64-unknown-linux-gnu`），**還沒在真機跑過** |
+- **一鍵開 AI CLI**：Claude Code、Codex、OpenCode、Antigravity、Grok 等，自動偵測這台已安裝的工具。
+- **代理團隊**：用不同的 AI agent 搭配 2～4 個 AI 角色（PM、工程師、QA…）在同一視窗分格協作。
+- **AI 聊天室**：用不同的 AI agent 搭配 2～4 個 AI 角色輪流討論一個題目，主持人收尾寫結論。
+- **Telegram 遠端**：手機上看畫面、下指令、任務完成推播。
+- **GitHub 倉庫列表**：直接下載 repo，下指令讓 AI agent 編輯。
+- **忙碌提示**：忙碌中的分頁與工作列圖示會標紅圈，可先縮小視窗去做別的事。
+- **使用額度**：右上角即時顯示 Claude Code 與 Codex 的使用額度。
 
-還沒做：程式碼簽章、自動更新（設定骨架在、公鑰留空 ＝ 功能停用）、mac／Linux 的實測與發佈。
-細節見 [docs/PLATFORM-UNIX.md](docs/PLATFORM-UNIX.md) 與 [CHANGELOG.md](CHANGELOG.md)。
+## 一般終端機功能
+
+- 本機 shell、內建 SSH（PuTTY 風格、`.ppk`、自動重連）、Telnet、序列埠、WSL、ADB。
+- 分頁／分割／分欄、搜尋、log 記錄、我的最愛、恢復分頁含畫面倒回、八種介面語言。
+- 相容 TeraTerm 的 TTL 巨集。
 
 ---
 
-## 功能
+## 畫面
 
-### 連線
+### AI CLI 與忙碌提示
 
-| | 狀態 |
-|---|---|
-| 本機 shell（Windows PowerShell／`pwsh`；mac `$SHELL`＝zsh；Linux `$SHELL`＝bash） | ✅ |
-| **SSH（內建，不呼叫系統 `ssh.exe`）**：終端機裡問 `login as:`、主機金鑰確認（SHA256＋MD5）、PuTTY 的演算法順序與弱演算法警告、`.ppk`、Windows Pageant、keepalive、斷線自動重連 | ✅ |
-| **Telnet（內建）**：選項協商、IAC 轉義、**NAWS**（舊版沒有）、`TTYPE` | ✅ |
-| **連接埠（序列埠）**：USB 友善名稱、鮑率／位元／同位／流控 | ✅ |
-| WSL、ADB（`adb devices` 選裝置） | ✅ |
-| 自訂連線（Claude Code、Codex CLI、Gemini CLI、OpenCode、QwenCode、Antigravity CLI、Grok CLI…含「自動偵測」） | ✅ |
+支援 Claude Code、Codex、OpenCode、Antigravity、Grok 等。忙碌中的分頁與工作列圖示會標紅圈，可先縮小視窗去做別的事；右上角即時顯示 Claude Code 與 Codex 的使用額度。
 
-### 終端機與介面
+![新分頁選單與右上角的使用額度](docs/img/awterminal01.jpg)
 
-分頁／分割／分欄三態（可拖曳重排）、右側分頁列（拖寬、顯示隱藏、拖曳排序、狀態燈、
-改名、tooltip 顯示執行時間）、複製／純文字貼上／複製全部／存檔、Ctrl+F 搜尋、網址選單、
-OSC 52 剪貼簿、Ctrl+滾輪縮放、逐分頁配色、清畫面（確認）、輸入文字視窗（UTF-8／Big5）、
-log 記錄（去 ANSI、時間戳、append）、我的最愛、恢復分頁（**含畫面紀錄倒回**）、
-保持連線、更新檢查、關於頁。
+### Telegram 遠端
 
-介面語言八種：繁體中文、English、简体中文、日本語、한국어、Español、Deutsch、Français。
+在設定裡填 bot token 與 chat ID，手機上就能看畫面、下指令，任務完成會推播通知。
 
-### TTL 巨集
+![設定 → 遠端：Telegram 設定](docs/img/awterminal04.jpg)
+![Claude Code 完成任務](docs/img/awterminal13.jpg)
+![手機 Telegram 收到完成推播](docs/img/telegram01.jpg)
 
-以 TeraTerm 開源的 `ttpmacro/` 原始碼為藍本**逐段翻寫成 Rust**，
-**214 個保留字裡實作了 139 個**（舊版自寫的 C# 版少很多）。
-含 `if/elseif/else`、`for/while/until/do`、`break/continue`、`goto/call`、`include`、陣列、
-`sprintf`、時間日期、37 個檔案／資料夾指令、正規表示式（`fancy-regex`，
-[實測 30 個 Oniguruma 語法支援 28 個](docs/TTL-REGEX.md)）、CRC／checksum。
+### GitHub 倉庫列表
 
-⚠️ **修掉舊版 C# 版三個與 TeraTerm 不一致的地方**：`and`／`or`／`xor`／`not` 是**位元**運算
-（不是邏輯運算）、位元運算比比較運算更緊密、整數是 32 位元且會繞回。
-舊的 `.ttl` 檔如果依賴錯誤的行為，結果會變。
+列出自己的 repo（含私人），選一個直接下載，再交給 AI agent 編輯。
 
-### 新功能（舊版沒有）
+![GitHub 倉庫列表](docs/img/awterminal05.jpg)
 
-- **沙盒模式**（自訂連線與代理團隊的選項，預設關閉）：每個分頁一棵 `git worktree`、
-  `TEMP`／`CARGO_TARGET_DIR` 導到沙盒目錄（**不隔離 `HOME`／`APPDATA`**——那會讓
-  Claude Code、Codex 掉登入）、Windows Job Object kill-on-close（Unix 用行程群組）、
-  自動產生各工具的護欄設定（Claude Code 的 `PreToolUse` hook 會拒絕 `taskkill /IM`、
-  砍 repo 外的路徑、`git push --force`）。
-  **這是防呆不是防壞**——agent 和使用者在同一個登入工作階段，繞路仍碰得到桌面
-  （[docs/AGENT-SANDBOX.md](docs/AGENT-SANDBOX.md) 講清楚了）。
-- **代理團隊**（Multi-Agent）：2～4 個 AI CLI 各帶一個角色，靠 `.ai/bus/` 信箱互相寫信，
-  只在對方閒置時才打字進去。
-- **AI 聊天室**：21 個角色，輪流發言、主持人寫結論，紀錄在 `.ai/chat/`。
-- **Telegram 遠端**：用手機看分頁、下指令、截圖、完成推播、雜訊過濾（37 條規則）。
-- 逐分頁「推播到 Telegram」開關、視窗大小位置記憶、終端機右鍵「全選」。
+### 輸入文字
+
+可輸入多行文字，或載入已經寫好的 prompt 文字檔，一次送進 AI CLI。
+
+![輸入文字視窗](docs/img/awterminal06.jpg)
+
+### 代理團隊
+
+用不同的 AI agent 搭配 2～4 個 AI 角色，在同一視窗分格協作；agent 之間靠專案裡的 `.ai/bus/` 信箱互相傳訊。
+
+![代理團隊設定](docs/img/awterminal07.jpg)
+![代理團隊運作中：四格各一個 AI](docs/img/awterminal08.jpg)
+
+### AI 聊天室
+
+用不同的 AI agent 搭配 2～4 個 AI 角色輪流討論一個題目，主持人收尾寫結論。
+
+![AI 聊天室設定](docs/img/awterminal11.jpg)
+![AI 聊天室討論中](docs/img/awterminal12.jpg)
+
+### macOS 與 Linux
+
+![Linux](docs/img/awterminal-linux.jpg)
+![macOS](docs/img/awterminal-mac.jpg)
 
 ---
 
