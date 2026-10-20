@@ -27,32 +27,11 @@
 ---
 
 ## 畫面
-
 ### AI CLI 與忙碌提示
 
 支援 Claude Code、Codex、OpenCode、Antigravity、Grok 等。忙碌中的分頁與工作列圖示會標紅圈，可先縮小視窗去做別的事；右上角即時顯示 Claude Code 與 Codex 的使用額度。
 
 ![新分頁選單與右上角的使用額度](docs/img/awterminal01.jpg)
-
-### Telegram 遠端
-
-在設定裡填 bot token 與 chat ID，手機上就能看畫面、下指令，任務完成會推播通知。
-
-![設定 → 遠端：Telegram 設定](docs/img/awterminal04.jpg)
-![Claude Code 完成任務](docs/img/awterminal13.jpg)
-![手機 Telegram 收到完成推播](docs/img/telegram01.jpg)
-
-### GitHub 倉庫列表
-
-列出自己的 repo（含私人），選一個直接下載，再交給 AI agent 編輯。
-
-![GitHub 倉庫列表](docs/img/awterminal05.jpg)
-
-### 輸入文字
-
-可輸入多行文字，或載入已經寫好的 prompt 文字檔，一次送進 AI CLI。
-
-![輸入文字視窗](docs/img/awterminal06.jpg)
 
 ### 代理團隊
 
@@ -67,6 +46,26 @@
 
 ![AI 聊天室設定](docs/img/awterminal11.jpg)
 ![AI 聊天室討論中](docs/img/awterminal12.jpg)
+
+### Telegram 遠端
+
+在設定裡填 bot token 與 chat ID，手機上就能看畫面、下指令，任務完成會推播通知。
+
+![設定 → 遠端：Telegram 設定](docs/img/awterminal04.jpg)
+![Claude Code 完成任務](docs/img/awterminal13.jpg)
+<img src="docs/img/telegram01.jpg" alt="手機 Telegram 收到完成推播" width="360">
+
+### GitHub 倉庫列表
+
+列出自己的 repo（含私人），選一個直接下載，再交給 AI agent 編輯。
+
+![GitHub 倉庫列表](docs/img/awterminal05.jpg)
+
+### 輸入文字
+
+可輸入多行文字，或載入已經寫好的 prompt 文字檔，一次送進 AI CLI。
+
+![輸入文字視窗](docs/img/awterminal06.jpg)
 
 ### macOS 與 Linux
 

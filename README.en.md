@@ -27,32 +27,11 @@
 ---
 
 ## Screenshots
-
 ### AI CLIs and the busy indicator
 
 Claude Code, Codex, OpenCode, Antigravity, Grok and more. Busy tabs and the taskbar icon get a red badge, so you can minimise the window and do something else; Claude Code and Codex usage is shown live in the top-right corner.
 
 ![New Tab menu and the usage quota in the top-right corner](docs/img/awterminal01.jpg)
-
-### Telegram remote
-
-Enter a bot token and chat ID in Settings, then watch the screen and send commands from your phone; a push arrives when a task finishes.
-
-![Settings → Remote: Telegram](docs/img/awterminal04.jpg)
-![Claude Code finishing a task](docs/img/awterminal13.jpg)
-![The completion push on the phone](docs/img/telegram01.jpg)
-
-### GitHub repo list
-
-Lists your repos (including private ones); pick one to download and hand to an AI agent.
-
-![GitHub repo list](docs/img/awterminal05.jpg)
-
-### Compose text
-
-Type multi-line text, or load a prompt you wrote earlier from a text file, and send it to the AI CLI in one go.
-
-![Compose text dialog](docs/img/awterminal06.jpg)
 
 ### Multi-Agent team
 
@@ -67,6 +46,26 @@ Mix different AI agents with 2–4 roles taking turns on one topic; the host wra
 
 ![AI Chat Room setup](docs/img/awterminal11.jpg)
 ![AI Chat Room in progress](docs/img/awterminal12.jpg)
+
+### Telegram remote
+
+Enter a bot token and chat ID in Settings, then watch the screen and send commands from your phone; a push arrives when a task finishes.
+
+![Settings → Remote: Telegram](docs/img/awterminal04.jpg)
+![Claude Code finishing a task](docs/img/awterminal13.jpg)
+<img src="docs/img/telegram01.jpg" alt="The completion push on the phone" width="360">
+
+### GitHub repo list
+
+Lists your repos (including private ones); pick one to download and hand to an AI agent.
+
+![GitHub repo list](docs/img/awterminal05.jpg)
+
+### Compose text
+
+Type multi-line text, or load a prompt you wrote earlier from a text file, and send it to the AI CLI in one go.
+
+![Compose text dialog](docs/img/awterminal06.jpg)
 
 ### macOS and Linux
 
