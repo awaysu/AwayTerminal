@@ -127,6 +127,18 @@
       if (IMEDBG) dbgLog(id, "onData " + JSON.stringify(d));
       var rec0 = terms[id];
       if (!rec0) { ws.postMessage("i" + id + US + d); return; }
+      // 2.1.10 所有分頁的重複交付去重：mac 開著中文輸入法（注音等）時按空白，WKWebView 送 keydown(229) 再送
+      // input(insertText " ")——xterm 的 _inputEvent 送一次、keydown(229) 排的 _handleAnyTextareaChanges 比對差異又送一次
+      // ＝SSH／Telnet 每個空白變兩個（使用者回報，macOS 26.6.2）。同 IME_DUP_MS 的判斷：同字串、期間沒有任何 keydown、
+      // IME_DUP_MS 內再來一次＝xterm 重複交付。只看可列印文字（滑鼠回報、方向鍵等含 ESC 的序列本來就會合法重複）；貼上不套。
+      if (!rec0.pasting && isPrintable(d)) {
+        var now0 = performance.now(), last0 = rec0.typedLast;
+        if (last0 && last0.text === d && last0.keySeq === rec0.keySeq && (now0 - last0.t) < IME_DUP_MS) {
+          dbgLog(id, "dup-delivery dropped " + JSON.stringify(d) + " dt=" + Math.round(now0 - last0.t) + "ms");
+          return;
+        }
+        rec0.typedLast = { text: d, t: now0, keySeq: rec0.keySeq };
+      }
       // IME 水位（1.1.9，見 setupImeGuard）：claude/一般分頁的 IME 文字都經這裡。d 若對得上 textarea「尚未送出」的
       // 內容＝xterm 正常從 textarea 送出→推進水位後照送；它前面若還夾著沒送過的字（前一筆漏送、使用者又接著打）先補送、保序。
       // d 若「已在水位後方」＝補救計時器已搶先送過同一段（xterm 的延遲送出比 40ms 補救更晚才落地）→ 抑制，避免重複送兩次。
@@ -252,6 +264,7 @@
                   claudePaste: !!(flags && flags.indexOf("c") >= 0),
                   sendQ: [], sending: false, lastOutMs: 0,
                   keySeq: 0, imeLast: null,                 // IME 去重（1.0.45，見 sendTyped）
+                  typedLast: null,                          // 所有分頁的重複交付去重（2.1.10，見 onData）
                   fitted: false, pendingRestore: null, pendingSep: null, held: null, restoreTimer: null, // 緩衝區恢復（1.0.45，見 applyRestore）
                   ta: null, taMark: 0, composing: false, compEndPending: false, rescueTimer: null, // IME 漏送補救（1.1.9，見 setupImeGuard）
                   appSel: "" };                             // 程式以 OSC 52 送來的選取文字（1.1.10，見 registerOscHandler(52) 與 selectionFor）
@@ -331,6 +344,14 @@
       if (c > 0x7f) nonAscii = true;
     }
     return d.length > 1 || nonAscii;
+  }
+  function isPrintable(d) {
+    if (!d.length) return false;
+    for (var i = 0; i < d.length; i++) {
+      var c = d.charCodeAt(i);
+      if (c < 0x20 || c === 0x7f) return false;
+    }
+    return true;
   }
   function qPush(rec, id, data, delay, gate) {
     rec.sendQ.push({ d: data, t: delay, g: !!gate, enq: performance.now() });
