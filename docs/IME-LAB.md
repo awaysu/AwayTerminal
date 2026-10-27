@@ -26,6 +26,7 @@
 | dev（Vite） | `npm run dev` 之後開 `http://localhost:1420/ime-lab.html` |
 | dev（Tauri 視窗內，**建議**） | `npm run tauri dev`，在終端機視窗的網址上加 `/ime-lab.html`，或在 devtools console 打 `location = '/ime-lab.html'` |
 | 正式版 | 同上（Vite 的 `public/` 會原樣複製進 bundle，路徑不變） |
+| **一行開好（建議）** | `npm run ime-lab`：`tauri dev` 加上 `src-tauri/ime-lab.conf.json`，主視窗直接開這頁，不用 devtools。「送到後端 log」的結果印在這個指令的輸出裡 |
 
 **建議在 Tauri 視窗裡開**，而不是用一般瀏覽器：要量的就是這個 webview 的行為，
 而且只有在 Tauri 視窗裡「送到後端 log」按鈕才有用（見下）。
@@ -56,7 +57,7 @@
 「送到後端 log」是給代理用的：使用者不必截圖、也不用搶焦點，跑完按一下，
 結果就出現在 `npm run tauri dev` 的終端輸出裡。
 
-## 九項固定劇本
+## 十一項固定劇本
 
 頁頂也列著同一份清單。**照順序做一次，每做完一項按「分段標記」**：
 
@@ -67,10 +68,12 @@
 | ③ | 組字中按 `Esc` | `compositionend` 的 `data` 是空字串還是原文；Esc 會不會漏到終端機（會中斷 claude） |
 | ④ | 候選字視窗出來後用**數字鍵**選字 | 數字鍵會不會同時當成輸入送出（`beforeinput`/`input` 的 `inputType`） |
 | ⑤ | `Shift` 切成英文後打 `abc` | 中英切換有沒有殘留的 composition 狀態 |
-| ⑥ | 貼上多行文字（`Ctrl+V`，先複製 3 行以上） | `paste` 事件有沒有來、`clipboardData` 拿不拿得到、之後有幾個 `input` |
+| ⑥ | 貼上多行文字（`Ctrl+V`／mac `Cmd+V`，先複製 3 行以上） | `paste` 事件有沒有來、`clipboardData` 拿不拿得到、之後有幾個 `input` |
 | ⑦ | 直接打英文 `abc` 再按 `Enter`（**對照組**，沒有組字） | 正常路徑長什麼樣，用來對比 ① |
 | ⑧ | 打全形標點（`，` `。` `？`） | 全形標點走 composition 還是直接 `input` |
 | ⑨ | 快速連打「ㄘㄜˋ ㄕˋ」**不等候選視窗** | 事件會不會擠在同一個 macrotask、`compositionupdate` 會不會掉 |
+| ⑩ | 注音輸入法開著、**沒有在組字**時按 3 下空白 | 空白的事件順序（macOS 26.6.2 實測是正常的 `keydown`(32)→`keypress`→`input`）。⚠️ 2.1.10 的「SSH／Telnet 空白變兩個」**不是**這裡的順序造成的：WKWebView 在 xterm 送出空白後仍把 NBSP 插進 textarea，被 `terminal.js` 的 IME 漏送補救又送一次——裸 textarea 的錄影頁看不到，要在真的 app 開 `IMEDBG` 才看得到 |
+| ⑪ | 切到英文輸入法（mac 的 ABC）按 3 下空白（**對照組**） | 和 ⑩ 比：沒有輸入法介入時空白走哪條路 |
 
 劇本 ①⑨ 對應舊版踩雷紀錄裡最麻煩的兩條（`_inputEvent` 與 `compositionend`
 重複交付、注音組字閃英數字）；⑥ 對應多行貼上；③ 對應「Esc 中斷 claude」。
@@ -82,7 +85,7 @@
 | 檔名 | 平台 | 狀態 |
 |---|---|---|
 | `webview2-win10.md` | Windows 10 19045 + WebView2 + 微軟注音 | **待使用者操作**（代理不能搶焦點打字） |
-| `wkwebview.md` | macOS + WKWebView + 系統注音 | 待階段 1 的 mac 驗證 |
+| `wkwebview.md` | macOS + WKWebView + 系統注音 | **2026-10-27 部分完成**（遠端操作；⑧⑨ 待實體鍵盤） |
 | `webkitgtk-fcitx5.md` | Ubuntu + WebKitGTK + fcitx5 | 待階段 1 的 Linux 驗證 |
 | `webkitgtk-ibus.md` | Ubuntu + WebKitGTK + ibus | 同上（ibus 與 fcitx5 行為不同，分開存） |
 

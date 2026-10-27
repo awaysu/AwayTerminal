@@ -11,6 +11,7 @@
     "tauri": "tauri",
     "lint": "eslint .",
     "verify": "node scripts/dev-verify.mjs",
+    "ime-lab": "tauri dev --config src-tauri/ime-lab.conf.json",
     "verify:release": "node scripts/dev-verify.mjs 1 300 --release"
   },
   "dependencies": {

@@ -127,18 +127,7 @@
       if (IMEDBG) dbgLog(id, "onData " + JSON.stringify(d));
       var rec0 = terms[id];
       if (!rec0) { ws.postMessage("i" + id + US + d); return; }
-      // 2.1.10 所有分頁的重複交付去重：mac 開著中文輸入法（注音等）時按空白，WKWebView 送 keydown(229) 再送
-      // input(insertText " ")——xterm 的 _inputEvent 送一次、keydown(229) 排的 _handleAnyTextareaChanges 比對差異又送一次
-      // ＝SSH／Telnet 每個空白變兩個（使用者回報，macOS 26.6.2）。同 IME_DUP_MS 的判斷：同字串、期間沒有任何 keydown、
-      // IME_DUP_MS 內再來一次＝xterm 重複交付。只看可列印文字（滑鼠回報、方向鍵等含 ESC 的序列本來就會合法重複）；貼上不套。
-      if (!rec0.pasting && isPrintable(d)) {
-        var now0 = performance.now(), last0 = rec0.typedLast;
-        if (last0 && last0.text === d && last0.keySeq === rec0.keySeq && (now0 - last0.t) < IME_DUP_MS) {
-          dbgLog(id, "dup-delivery dropped " + JSON.stringify(d) + " dt=" + Math.round(now0 - last0.t) + "ms");
-          return;
-        }
-        rec0.typedLast = { text: d, t: now0, keySeq: rec0.keySeq };
-      }
+      rec0.lastSent = { d: d, keySeq: rec0.keySeq };   // 給 setupImeGuard 的 input 監聽比對（2.1.10，WebKit 會把已送出的鍵留在 textarea）
       // IME 水位（1.1.9，見 setupImeGuard）：claude/一般分頁的 IME 文字都經這裡。d 若對得上 textarea「尚未送出」的
       // 內容＝xterm 正常從 textarea 送出→推進水位後照送；它前面若還夾著沒送過的字（前一筆漏送、使用者又接著打）先補送、保序。
       // d 若「已在水位後方」＝補救計時器已搶先送過同一段（xterm 的延遲送出比 40ms 補救更晚才落地）→ 抑制，避免重複送兩次。
@@ -264,7 +253,7 @@
                   claudePaste: !!(flags && flags.indexOf("c") >= 0),
                   sendQ: [], sending: false, lastOutMs: 0,
                   keySeq: 0, imeLast: null,                 // IME 去重（1.0.45，見 sendTyped）
-                  typedLast: null,                          // 所有分頁的重複交付去重（2.1.10，見 onData）
+                  lastSent: null,                           // 最近一次 onData 送出的內容（2.1.10，見 setupImeGuard）
                   fitted: false, pendingRestore: null, pendingSep: null, held: null, restoreTimer: null, // 緩衝區恢復（1.0.45，見 applyRestore）
                   ta: null, taMark: 0, composing: false, compEndPending: false, rescueTimer: null, // IME 漏送補救（1.1.9，見 setupImeGuard）
                   appSel: "" };                             // 程式以 OSC 52 送來的選取文字（1.1.10，見 registerOscHandler(52) 與 selectionFor）
@@ -345,14 +334,6 @@
     }
     return d.length > 1 || nonAscii;
   }
-  function isPrintable(d) {
-    if (!d.length) return false;
-    for (var i = 0; i < d.length; i++) {
-      var c = d.charCodeAt(i);
-      if (c < 0x20 || c === 0x7f) return false;
-    }
-    return true;
-  }
   function qPush(rec, id, data, delay, gate) {
     rec.sendQ.push({ d: data, t: delay, g: !!gate, enq: performance.now() });
     if (rec.sending) return;
@@ -409,11 +390,17 @@
   //   ② 任何 IME/鍵盤事件後 IME_RESCUE_MS 內再無事件、且不在組字中→水位之後還有字＝xterm 漏送→補送並記 diag（ime-rescue）；
   //   ③ 真正的 Enter／Ctrl+C（非 229）在 xterm 清 textarea 之前先補送，順序＝文字→Enter。
   //   compEndPending：compositionend 排的 xterm 延遲送出還沒跑（主執行緒忙時 Enter 可能同批進來）→ 這時不補救，讓 xterm 自己同步送、不重複。
+  //
+  // 2.1.10 mac：WKWebView 不理會 xterm 在 keypress 的 preventDefault——xterm 從 keypress 送出空白之後，WebKit 照樣把它
+  //   插進 textarea，而且插的是 **U+00A0（NBSP）**。補救計時器看到「沒送過的非 ASCII 字」就當成注音漏送補送出去
+  //   ＝SSH／Telnet 每個空白變兩個（使用者回報 macOS 26.6.2；Mac mini 開 IMEDBG 實測：onData " " 之後 40ms
+  //   ime-rescue timer " "）。對策：① textarea 的 insertText 若就是剛剛 onData 送出的那個鍵（同 keySeq）→ 直接推水位；
+  //   ② 比對與補送前把 NBSP 還原成空白（單一空白＝單一 ASCII，本來就不補）。Chromium 的 keypress 字不進 textarea，不受影響。
   var IME_RESCUE_MS = 40;
   function taUnsent(rec) {
     var v = rec.ta ? rec.ta.value : "";
     if (rec.taMark > v.length) rec.taMark = v.length;   // xterm 清過 textarea（Enter/Ctrl+C）或 IME 取消組字
-    return v.substring(rec.taMark);
+    return v.substring(rec.taMark).replace(/ /g, " ");
   }
   function rescueUnsent(rec, id, why) {
     if (!rec.ta || rec.composing || rec.compEndPending || !terms[id]) return;
@@ -439,7 +426,13 @@
       setTimeout(function () { rec.compEndPending = false; }, 0);  // 排在 xterm 的延遲送出（同為 setTimeout 0）之後
       arm();
     }, true);
-    ta.addEventListener("input", arm, true);
+    ta.addEventListener("input", function (e) {
+      // 見 IME_RESCUE_MS 的 2.1.10 註解 ①：這段 insertText 是 xterm 已經送出的鍵 → 推水位，補救不再送一次
+      var ls = rec.lastSent;
+      if (e.inputType === "insertText" && !e.isComposing && e.data && ls && ls.keySeq === rec.keySeq &&
+          ls.d === e.data.replace(/ /g, " ") && taUnsent(rec) === ls.d) rec.taMark = ta.value.length;
+      arm();
+    }, true);
     ta.addEventListener("keyup", arm, true);
     // body capture 層＝比 xterm 掛在 textarea 上的 keydown 先跑：真 Enter／Ctrl+C 會讓 xterm 清空 textarea，先把沒送的字送掉
     body.addEventListener("keydown", function (e) {

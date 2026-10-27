@@ -15,7 +15,7 @@
 // # 拿到 mac／Linux 機器的第一天要做的事
 //
 // 1. 開 `public/ime-lab.html`（IME 事件錄影頁），在 WKWebView／WebKitGTK 各跑一次
-//    `docs/IME-LAB.md` 列的九項劇本（注音+Enter、組字中 Backspace、Esc、候選字選字、
+//    `docs/IME-LAB.md` 列的十一項劇本（注音+Enter、組字中 Backspace、Esc、候選字選字、
 //    中英切換、嘸蝦米／倉頡、Claude Code 多行貼上、單行貼上、4KB 貼上）。
 // 2. 把錄到的事件序列和 Windows 的基準（`docs/ime-baseline/`）做差異表，寫進
 //    `docs/IME-LAB.md`。

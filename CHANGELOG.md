@@ -7,10 +7,11 @@
 
 ## 2.1.10（2026-10-27）
 
-- **修正 macOS 上 SSH／Telnet 每按一次空白就出現兩個空白**（使用者回報，macOS 26.6.2）：開著中文輸入法時，
-  WKWebView 的空白鍵會先送 keydown(229) 再送 insertText，xterm.js 兩條路徑各送了一次。現在所有分頁都會丟掉
-  「同字串、中間沒有按鍵、100ms 內」的重複交付（以前只對 Claude Code 分頁的中文片語做）；真的連按或按住連發不受影響。
-
+- **修正 macOS 上 SSH／Telnet 每按一次空白就出現兩個空白**（使用者回報，macOS 26.6.2）：WKWebView 不理會 xterm 在
+  keypress 的 preventDefault，空白送出後仍被插進 xterm 的隱藏輸入框，而且是 NBSP（U+00A0）；「IME 漏送補救」（1.1.9）
+  把它當成注音漏送的字，40ms 後又補送一次。現在輸入框裡「剛剛已經送出的那個鍵」會直接記為已送出，比對時也把 NBSP 當一般空白。
+  Windows（Chromium）的按鍵字不會進輸入框，不受影響。
+- IME 事件錄影頁（`public/ime-lab.html`）加兩個空白鍵劇本；`npm run ime-lab` 直接在 Tauri 視窗開錄影頁。
 ---
 
 ## 2.1.9（2026-10-20）

@@ -142,7 +142,7 @@ cd .. && npm run verify
 | # | 做什麼 | 看什麼 |
 |---|---|---|
 | M1 | 啟動，看 stdout | `renderer = WebGL`（WKWebView 上 WebGL 應該穩定）、`webview 引擎＝webkit（wkwebview）` |
-| M2 | 開 `public/ime-lab.html`，跑 `docs/IME-LAB.md` 的九項劇本 | **錄下事件序列**，和 `docs/ime-baseline/`（Windows）做差異表 → 寫進 `docs/IME-LAB.md`，再照表寫 `src/ime/ime-webkit.js` |
+| M2 | 開 `public/ime-lab.html`，跑 `docs/IME-LAB.md` 的十一項劇本 | **錄下事件序列**，和 `docs/ime-baseline/`（Windows）做差異表 → 寫進 `docs/IME-LAB.md`，再照表寫 `src/ime/ime-webkit.js` |
 | M3 | 注音打一句 ＋ Enter | **有沒有多送一個 Enter**（`CLAUDE.md` 風險 1 的主要嫌疑） |
 | M4 | 開一個 shell 分頁 | 是 `$SHELL`（zsh）；提示字元正常；分頁名跟著工作目錄變 |
 | M5 | `which` 找得到 Homebrew 裝的東西嗎 | 從 **Dock／Finder 啟動**（不是從終端機！）之後，新分頁選單裡 node／pwsh／adb 的偵測結果 |

@@ -71,10 +71,12 @@
   <li>組字中按 <code>Esc</code></li>
   <li>候選字視窗出來後用<strong>數字鍵</strong>選字</li>
   <li><code>Shift</code> 切成英文後打 <code>abc</code></li>
-  <li>貼上多行文字（<code>Ctrl+V</code>，請先複製 3 行以上）</li>
+  <li>貼上多行文字（<code>Ctrl+V</code>／mac 用 <code>Cmd+V</code>，請先複製 3 行以上）</li>
   <li>直接打英文 <code>abc</code> 再按 <code>Enter</code>（對照組，沒有組字）</li>
   <li>打全形標點（例如 <code>，</code><code>。</code><code>？</code>）</li>
   <li>快速連打「ㄘㄜˋ ㄕˋ」<strong>不等候選視窗</strong></li>
+  <li>注音輸入法開著、<strong>沒有在組字</strong>時按 3 下<code>空白</code></li>
+  <li>切到英文輸入法（mac 的 ABC）按 3 下<code>空白</code>（對照組）</li>
 </ol>
 
 <div class="inputs">
@@ -281,7 +283,7 @@
   };
 
   document.getElementById('mark').onclick = function () {
-    // 插一列純標記，方便把劇本九項切開
+    // 插一列純標記，方便把各劇本切開
     var tr = document.createElement('tr');
     tr.className = 'boundary';
     var td = document.createElement('td');
